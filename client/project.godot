@@ -10,6 +10,7 @@ config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 AppManager="*res://Autoloads/AppManager.cs"
 SessionManager="*res://Autoloads/SessionManager.cs"
 NetworkManager="*res://Autoloads/NetworkManager.cs"
+NetworkBridge="*res://Autoloads/NetworkBridge.cs"
 AuthManager="*res://Autoloads/AuthManager.cs"
 UIManager="*res://Autoloads/UIManager.cs"
 AvatarManager="*res://Autoloads/AvatarManager.cs"

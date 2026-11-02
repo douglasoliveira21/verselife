@@ -19,12 +19,17 @@ jwt.Validate();
 var islandServiceKey = builder.Configuration["IslandServer:SharedKey"] ?? string.Empty;
 if (islandServiceKey.Length < 32 || islandServiceKey.Contains("CONFIGURE", StringComparison.OrdinalIgnoreCase))
     throw new InvalidOperationException("IslandServer:SharedKey must be supplied securely and contain at least 32 characters.");
+var islandEntry = builder.Configuration.GetSection(IslandEntryOptions.SectionName).Get<IslandEntryOptions>()
+    ?? throw new InvalidOperationException("IslandEntry configuration is required.");
+islandEntry.Validate();
 
 builder.Services.AddSingleton(jwt);
+builder.Services.AddSingleton(islandEntry);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<LifeVerseDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AuthService>();
+builder.Services.AddScoped<IslandEntryTokenService>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();

@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Godot;
+using LifeVerse.Shared.Networking;
 
 namespace LifeVerse.IslandServer.Scripts;
 
@@ -15,21 +16,32 @@ public partial class ServerMain : Node
     private TcpListener? _healthListener;
     private bool _registered;
     private bool _stopping;
+    private NetworkBridge _bridge = null!;
+    private readonly Dictionary<int, ConnectedPlayer> _players = [];
+    private readonly Dictionary<Guid, SuspendedPlayer> _suspended = [];
+    private readonly HashSet<Guid> _usedTickets = [];
+    private uint _serverTick;
+    private double _snapshotAccumulator;
 
     public override async void _Ready()
     {
         try
         {
             _config = ServerConfiguration.FromEnvironment();
+            _bridge = GetNode<NetworkBridge>("/root/NetworkBridge");
             _api.DefaultRequestHeaders.Add("X-LifeVerse-Service-Key", _config.ServiceKey);
             _healthListener = new TcpListener(IPAddress.Loopback, _config.HealthPort);
             _healthListener.Start();
             _ = ServeHealthAsync(_shutdown.Token);
             await RegisterAsync(_shutdown.Token);
+            var peer = new ENetMultiplayerPeer();
+            var enetError = peer.CreateServer(_config.GamePort, _config.MaxPlayers, 3);
+            if (enetError != Error.Ok) throw new InvalidOperationException($"ENet failed to listen: {enetError}");
+            Multiplayer.MultiplayerPeer = peer;
+            Multiplayer.PeerConnected += OnPeerConnected;
+            Multiplayer.PeerDisconnected += OnPeerDisconnected;
             _ = HeartbeatLoopAsync(_shutdown.Token);
-            // ENet is deliberately not opened in Phase 01. A future authenticated
-            // admission layer must validate the temporary island token first.
-            Log("server_started", new { _config.InstanceId, _config.IslandId, _config.GamePort, _config.HealthPort, enet = "prepared_not_listening" });
+            Log("server_started", new { _config.InstanceId, _config.IslandId, _config.GamePort, _config.HealthPort, enet = "listening", _config.ProtocolVersion });
         }
         catch (Exception exception)
         {
@@ -37,6 +49,121 @@ public partial class ServerMain : Node
             GetTree().Quit(1);
         }
     }
+
+    public override void _PhysicsProcess(double delta)
+    {
+        _serverTick++;
+        var dt = Math.Min((float)delta, 1f / 20f);
+        foreach (var player in _players.Values.Where(x => x.Authenticated))
+        {
+            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt);
+            player.LastProcessedInput = player.LatestInput.Sequence;
+            player.LatestInput = player.LatestInput with
+            {
+                Flags = player.LatestInput.Flags & (InputFlags.Run | InputFlags.Descend)
+            };
+        }
+        _snapshotAccumulator += delta;
+        if (_snapshotAccumulator >= 1d / _config.SnapshotRate)
+        {
+            _snapshotAccumulator = 0;
+            BroadcastSnapshots();
+        }
+        var now = DateTimeOffset.UtcNow;
+        foreach (var peer in _players.Values.Where(x => !x.Authenticated && now - x.ConnectedAt > TimeSpan.FromSeconds(5)).Select(x => x.PeerId).ToArray())
+            Multiplayer.MultiplayerPeer.DisconnectPeer(peer);
+        foreach (var avatar in _suspended.Where(x => x.Value.ExpiresAt <= now).Select(x => x.Key).ToArray()) _suspended.Remove(avatar);
+    }
+
+    private void OnPeerConnected(long peerId)
+    {
+        _players[(int)peerId] = new ConnectedPlayer((int)peerId);
+        Log("peer_connected", new { peerId });
+    }
+
+    private void OnPeerDisconnected(long peerId)
+    {
+        if (!_players.Remove((int)peerId, out var player)) return;
+        if (player.Authenticated)
+        {
+            _suspended[player.AvatarId] = new SuspendedPlayer(player, DateTimeOffset.UtcNow.AddSeconds(10));
+            foreach (var other in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(other.PeerId, NetworkBridge.MethodName.DespawnPlayer, player.PeerId, true);
+        }
+        Log("peer_disconnected", new { peerId, player.AvatarId });
+    }
+
+    public async void Authenticate(int peerId, string token, int protocolVersion)
+    {
+        if (!_players.TryGetValue(peerId, out var player) || player.Authenticated || token.Length > 4096) return;
+        if (protocolVersion != _config.ProtocolVersion)
+        {
+            _bridge.RpcId(peerId, NetworkBridge.MethodName.ProtocolRejected, _config.ProtocolVersion);
+            Multiplayer.MultiplayerPeer.DisconnectPeer(peerId); return;
+        }
+        try
+        {
+            using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/entry-tokens/validate",
+                new { token, islandId = _config.IslandId }, _shutdown.Token);
+            if (!response.IsSuccessStatusCode) { Reject(peerId, "invalid_ticket"); return; }
+            var admission = await response.Content.ReadFromJsonAsync<AdmissionResponse>(cancellationToken: _shutdown.Token);
+            if (admission is null || admission.ProtocolVersion != _config.ProtocolVersion || !_usedTickets.Add(admission.TokenId)) { Reject(peerId, "ticket_reused_or_invalid"); return; }
+            if (_suspended.Remove(admission.AvatarId, out var suspended)) player.State = suspended.Player.State;
+            else
+            {
+                var slot = _players.Values.Count(x => x.Authenticated);
+                player.State.X = slot % 8 * 2f; player.State.Z = slot / 8 * 2f;
+            }
+            player.Authenticated = true; player.UserId = admission.UserId; player.AvatarId = admission.AvatarId;
+            player.SessionId = admission.SessionId; player.DisplayName = admission.DisplayName; player.AppearanceJson = admission.AppearanceJson;
+            foreach (var existing in _players.Values.Where(x => x.Authenticated && x.PeerId != peerId))
+            {
+                SendSpawn(peerId, existing);
+                SendSpawn(existing.PeerId, player);
+            }
+            SendSpawn(peerId, player);
+            _bridge.RpcId(peerId, NetworkBridge.MethodName.AuthResult, true, "ok", (long)_serverTick);
+            Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
+        }
+        catch (Exception exception) { Log("admission_failed", new { peerId, error = exception.Message }); Reject(peerId, "admission_unavailable"); }
+    }
+
+    public void SubmitInput(int peerId, long sequence, float x, float z, int flags)
+    {
+        if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated || sequence <= player.LatestInput.Sequence || sequence > uint.MaxValue) return;
+        if (!float.IsFinite(x) || !float.IsFinite(z)) return;
+        var allowed = InputFlags.Run | InputFlags.Jump | InputFlags.Fly | InputFlags.Descend | InputFlags.Sit | InputFlags.Wave | InputFlags.Dance;
+        player.LatestInput = new MovementInput((uint)sequence, Math.Clamp(x, -1f, 1f), Math.Clamp(z, -1f, 1f), (InputFlags)flags & allowed);
+    }
+
+    public void SendChat(int peerId, string message)
+    {
+        if (!_players.TryGetValue(peerId, out var sender) || !sender.Authenticated) return;
+        var now = DateTimeOffset.UtcNow;
+        while (sender.ChatTimes.Count > 0 && now - sender.ChatTimes.Peek() > TimeSpan.FromSeconds(10)) sender.ChatTimes.Dequeue();
+        message = new string(message.Trim().Where(c => !char.IsControl(c)).Take(NetworkProtocol.MaxChatCharacters).ToArray());
+        if (message.Length == 0 || sender.ChatTimes.Count >= 5 || ContainsBlockedTerm(message)) return;
+        sender.ChatTimes.Enqueue(now);
+        foreach (var target in _players.Values.Where(x => x.Authenticated && DistanceSquared(sender.State, x.State) <= 30f * 30f))
+            _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, peerId, sender.DisplayName, message, now.ToUnixTimeMilliseconds());
+    }
+
+    private void BroadcastSnapshots()
+    {
+        foreach (var target in _players.Values.Where(x => x.Authenticated))
+        {
+            var visible = _players.Values.Where(x => x.Authenticated && DistanceSquared(target.State, x.State) <= _config.InterestRadius * _config.InterestRadius)
+                .Select(x => new PlayerSnapshot(x.PeerId, x.State.X, x.State.Y, x.State.Z, x.State.VelocityX, x.State.VelocityY, x.State.VelocityZ,
+                    MathF.Atan2(x.State.VelocityX, -x.State.VelocityZ), x.Motion, x.LastProcessedInput)).ToArray();
+            _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.Snapshot, SnapshotCodec.Encode(_serverTick, visible));
+        }
+    }
+
+    private void SendSpawn(int targetPeer, ConnectedPlayer player) => _bridge.RpcId(targetPeer, NetworkBridge.MethodName.SpawnPlayer,
+        player.PeerId, player.AvatarId.ToString(), player.DisplayName, player.AppearanceJson, player.State.X, player.State.Y, player.State.Z, (int)player.Motion);
+    private void Reject(int peerId, string code) { _bridge.RpcId(peerId, NetworkBridge.MethodName.AuthResult, false, code, (long)_serverTick); Multiplayer.MultiplayerPeer.DisconnectPeer(peerId); }
+    private static float DistanceSquared(AuthoritativePlayerState a, AuthoritativePlayerState b) => (a.X-b.X)*(a.X-b.X)+(a.Y-b.Y)*(a.Y-b.Y)+(a.Z-b.Z)*(a.Z-b.Z);
+    private static bool ContainsBlockedTerm(string message) => (System.Environment.GetEnvironmentVariable("LIFEVERSE_CHAT_BLOCKED_TERMS") ?? string.Empty)
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
 
     public override void _Notification(int what)
     {
@@ -91,6 +218,7 @@ public partial class ServerMain : Node
         if (_stopping) return;
         _stopping = true;
         _shutdown.Cancel();
+        Multiplayer.MultiplayerPeer?.Close();
         _healthListener?.Stop();
         if (_registered)
         {
@@ -103,4 +231,24 @@ public partial class ServerMain : Node
     }
 
     private static void Log(string eventName, object properties) => GD.Print(JsonSerializer.Serialize(new { timestamp = DateTimeOffset.UtcNow, @event = eventName, properties }));
+
+    private sealed class ConnectedPlayer(int peerId)
+    {
+        public int PeerId { get; } = peerId;
+        public DateTimeOffset ConnectedAt { get; } = DateTimeOffset.UtcNow;
+        public bool Authenticated { get; set; }
+        public Guid UserId { get; set; }
+        public Guid AvatarId { get; set; }
+        public Guid SessionId { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public string AppearanceJson { get; set; } = "{}";
+        public AuthoritativePlayerState State { get; set; } = new();
+        public MovementInput LatestInput { get; set; }
+        public uint LastProcessedInput { get; set; }
+        public NetworkMotionState Motion { get; set; }
+        public Queue<DateTimeOffset> ChatTimes { get; } = new();
+    }
+    private sealed record SuspendedPlayer(ConnectedPlayer Player, DateTimeOffset ExpiresAt);
+    private sealed record AdmissionResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
+        int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson);
 }

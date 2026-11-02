@@ -137,7 +137,7 @@ public sealed class AuthService(
             IpAddress = context.Connection.RemoteIpAddress?.ToString()
         };
         db.Sessions.Add(session);
-        var access = tokens.CreateAccessToken(user);
+        var access = tokens.CreateAccessToken(user, session.Id);
         return (new AuthResponse(access.Token, refreshToken, access.ExpiresAt,
             new UserSummary(user.Id, user.Username, user.Email, user.Avatar?.DisplayName ?? user.Username)), session.Id);
     }

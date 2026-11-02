@@ -1,6 +1,7 @@
 using Godot;
 using LifeVerse.Client.Autoloads;
 using LifeVerse.Shared.Gameplay;
+using LifeVerse.Shared.Networking;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -30,6 +31,8 @@ public partial class PlayerController : CharacterBody3D
     private float _cameraSensitivity = .003f;
     private bool _invertY;
     private float _cameraDistance = 5.2f;
+    private NetworkManager _network = null!;
+    private uint _inputSequence;
 
     public override void _Ready()
     {
@@ -37,6 +40,8 @@ public partial class PlayerController : CharacterBody3D
         FloorSnapLength = .35f;
         FloorStopOnSlope = true;
         _rig = GetNode<AvatarRig>("AvatarRig");
+        _network = GetNode<NetworkManager>("/root/NetworkManager");
+        _network.RegisterLocalPlayer(this);
         _cameraPivot = GetNode<Node3D>("CameraPivot");
         _springArm = GetNode<SpringArm3D>("CameraPivot/SpringArm3D");
         _camera = GetNode<Camera3D>("CameraPivot/SpringArm3D/Camera3D");
@@ -57,6 +62,7 @@ public partial class PlayerController : CharacterBody3D
         Input.MouseMode = Input.MouseModeEnum.Visible;
         var avatars = GetNodeOrNull<AvatarManager>("/root/AvatarManager");
         if (avatars is not null) avatars.AvatarLoaded -= OnAvatarLoaded;
+        _network?.UnregisterLocalPlayer(this);
     }
 
     public override void _UnhandledInput(InputEvent input)
@@ -102,6 +108,12 @@ public partial class PlayerController : CharacterBody3D
         var forward = -GlobalTransform.Basis.Z; forward.Y = 0; forward = forward.Normalized();
         var right = GlobalTransform.Basis.X; right.Y = 0; right = right.Normalized();
         var direction = (right * input.X + forward * -input.Y).Normalized();
+        var flags = InputFlags.None;
+        if (Input.IsActionPressed("run")) flags |= InputFlags.Run;
+        if (Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
+        if (Input.IsActionJustPressed("fly_toggle")) flags |= InputFlags.Fly;
+        if (Input.IsActionPressed("descend")) flags |= InputFlags.Descend;
+        _network.SendInput(++_inputSequence, new Vector2(direction.X, direction.Z), flags);
         var velocity = Velocity;
 
         if (_swimming)
@@ -133,6 +145,13 @@ public partial class PlayerController : CharacterBody3D
     }
 
     public void SetSwimming(bool value) => _swimming = value;
+    public void Reconcile(Vector3 authoritativePosition, Vector3 authoritativeVelocity, uint acknowledgedInput)
+    {
+        var error = GlobalPosition.DistanceTo(authoritativePosition);
+        if (error > 3f) GlobalPosition = authoritativePosition;
+        else if (error > .08f) GlobalPosition = GlobalPosition.Lerp(authoritativePosition, .18f);
+        if (error > .5f) Velocity = Velocity.Lerp(authoritativeVelocity, .35f);
+    }
     public void Sit(InteractableSeat seat)
     {
         if (_flying || _swimming || _seat is not null) return;

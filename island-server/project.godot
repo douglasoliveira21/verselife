@@ -6,6 +6,9 @@ config/name="LifeVerse Island Server"
 run/main_scene="res://Scenes/Server.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
+[autoload]
+NetworkBridge="*res://Scripts/NetworkBridge.cs"
+
 [display]
 window/size/viewport_width=1
 window/size/viewport_height=1

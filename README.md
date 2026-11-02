@@ -28,6 +28,10 @@ Use `./scripts/dev-logs.ps1`, `./scripts/dev-down.ps1`, and `./scripts/dev-updat
 
 The avatar creator is available after registration and through **Edit avatar** in the world HUD.
 
+## Phase 03 multiplayer
+
+The World scene now contains the Multiplayer panel. Enter an island UUID to request a short-lived entry ticket, connect through ENet, see nearby authenticated avatars, and use local chat. The authoritative protocol, admission flow, rate limits, reconnect behavior, and operational settings are documented in [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
+
 ## Repository layout
 
 - `client`: Godot .NET desktop client

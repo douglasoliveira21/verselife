@@ -26,7 +26,7 @@ public sealed class TokenServiceTests
             PasswordHash = "unused", CreatedAt = now, UpdatedAt = now
         };
 
-        var result = service.CreateAccessToken(user);
+        var result = service.CreateAccessToken(user, Guid.NewGuid());
         var jwt = new JwtSecurityTokenHandler().ReadJwtToken(result.Token);
 
         Assert.Equal(now.AddMinutes(15), result.ExpiresAt);
@@ -63,7 +63,7 @@ public sealed class TokenServiceTests
             Email = "test@example.test", NormalizedEmail = "TEST@EXAMPLE.TEST",
             PasswordHash = "unused", CreatedAt = then, UpdatedAt = then
         };
-        var token = new TokenService(options, new FixedTimeProvider(then)).CreateAccessToken(user).Token;
+        var token = new TokenService(options, new FixedTimeProvider(then)).CreateAccessToken(user, Guid.NewGuid()).Token;
         var validation = new TokenValidationParameters
         {
             ValidateIssuer = true, ValidIssuer = options.Issuer,

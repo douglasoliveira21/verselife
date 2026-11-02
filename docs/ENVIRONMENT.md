@@ -25,3 +25,7 @@ TCP ports 5000, 5001, 5432, 6379, 7070, 7777, 8080, 9000, and 9001 were not list
 ## Consequences
 
 The API and Godot C# assemblies compile with the installed .NET SDK. Client, creator, and world scenes were launched with the verified portable engine. Docker startup, PostgreSQL integration, migration application, and container persistence/restart checks still require Docker Desktop or another compatible Docker engine.
+
+## Phase 03 verification note
+
+The shared protocol, API, client assembly, and island-server assembly compile cleanly after the multiplayer changes. `dotnet test` builds the test assembly, but the installed VSTest 18.6 runner loses its testhost after discovery on this Windows sandbox (including a filter containing only the deterministic protocol tests); this is retained as an environment limitation rather than reported as a passing runtime suite.

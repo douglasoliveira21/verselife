@@ -4,7 +4,7 @@ namespace LifeVerse.Client.Autoloads;
 
 public partial class AppManager : Node
 {
-    public const string Version = "0.2.0";
+    public const string Version = "0.3.0";
     public string ApiBaseUrl { get; private set; } = "http://localhost:8080";
 
     public override void _Ready()

@@ -9,7 +9,7 @@ namespace LifeVerse.Api.Modules.Identity;
 
 public sealed class TokenService(JwtOptions options, TimeProvider timeProvider)
 {
-    public (string Token, DateTimeOffset ExpiresAt) CreateAccessToken(User user)
+    public (string Token, DateTimeOffset ExpiresAt) CreateAccessToken(User user, Guid sessionId)
     {
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddMinutes(options.AccessTokenMinutes);
@@ -18,7 +18,8 @@ public sealed class TokenService(JwtOptions options, TimeProvider timeProvider)
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim(JwtRegisteredClaimNames.UniqueName, user.Username),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim("sid", sessionId.ToString())
         };
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey));
         var token = new JwtSecurityToken(options.Issuer, options.Audience, claims,

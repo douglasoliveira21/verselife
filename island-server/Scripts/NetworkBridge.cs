@@ -1,0 +1,24 @@
+using Godot;
+
+namespace LifeVerse.IslandServer.Scripts;
+
+public partial class NetworkBridge : Node
+{
+    private ServerMain Server => GetNode<ServerMain>("/root/Server");
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void Authenticate(string token, int protocolVersion) => Server.Authenticate(Multiplayer.GetRemoteSenderId(), token, protocolVersion);
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered, TransferChannel = 1)]
+    public void SubmitInput(long sequence, float x, float z, int flags) => Server.SubmitInput(Multiplayer.GetRemoteSenderId(), sequence, x, z, flags);
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void SendChat(string message) => Server.SendChat(Multiplayer.GetRemoteSenderId(), message);
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void AuthResult(bool success, string code, long serverTick) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void SpawnPlayer(int peerId, string avatarId, string displayName, string appearanceJson, float x, float y, float z, int state) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void DespawnPlayer(int peerId, bool suspended) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered, TransferChannel = 2)] public void Snapshot(byte[] payload) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void ReceiveChat(int peerId, string displayName, string message, long unixMilliseconds) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void ProtocolRejected(int serverVersion) { }
+}
