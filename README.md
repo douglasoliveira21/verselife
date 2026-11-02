@@ -56,4 +56,6 @@ Global discovery, teleport reservations, landmarks, events, photos and minimap b
 LV Coins, the ledger, marketplace purchases and island rentals are documented in [docs/ECONOMY.md](docs/ECONOMY.md).
 
 The administrative panel, RBAC/MFA contract, audit trail and backup runbook are documented in [docs/ADMINISTRATION.md](docs/ADMINISTRATION.md).
+
+Windows build, launcher, installer, manifest and release gates are documented in [docs/RELEASE.md](docs/RELEASE.md).
 - `docs`: product, architecture, security, operations, and progress records

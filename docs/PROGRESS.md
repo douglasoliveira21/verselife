@@ -28,6 +28,7 @@ Last updated: 2026-11-02.
 - Phase 09 paginated public island discovery, favorites, World Manager teleport reservations, landmarks, events, photos, and the client map/minimap panel.
 - Phase 10 integer LV Coins wallets, atomic/idempotent ledger purchases and transfers, marketplace publication/delivery, island rental contracts, and the client marketplace panel.
 - Phase 11 fail-closed admin RBAC/MFA endpoints, web operations dashboard, moderation decisions, correlation IDs, audit records, and recovery runbook.
+- Phase 12 persistent graphics settings, performance overlay, Windows launcher/update scripts, SHA-256 manifests, installer template, and release pipeline documentation.
 - Unit tests and end-to-end smoke script.
 
 ## Not complete / blocked

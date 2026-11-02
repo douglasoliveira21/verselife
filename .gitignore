@@ -28,5 +28,6 @@ Desktop.ini
 # Runtime data and logs
 /data/
 /logs/
+/artifacts/
 *.log
 *.pfx

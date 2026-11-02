@@ -104,6 +104,18 @@ Run date: 2026-11-02.
 | Backup runbook | Documented | [docs/ADMINISTRATION.md](ADMINISTRATION.md) defines encrypted dump, MinIO export, checksums and restore drills |
 | Operational runtime | Environment-blocked | Docker/PostgreSQL/host metrics unavailable in this environment |
 
+## Phase 12
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Client settings persistence | Passed | `ClientSettings` stores graphics/audio/UI preferences in `user://settings.cfg` |
+| Performance instrumentation | Passed | Optional FPS/frame/RAM/node overlay via `LIFEVERSE_SHOW_METRICS=1` |
+| Release build script | Passed locally | `scripts/build-release.ps1` compiled all four projects and emitted `artifacts/0.6.0` manifest artifacts |
+| Update integrity | Prepared | Launcher requires HTTPS and verifies SHA-256 before atomic replacement |
+| Windows installer | Prepared | Inno Setup script includes configurable install path, shortcuts and uninstall |
+| Windows export/install/update/load tests | Blocked | Godot export templates, official servers and Windows installation environment unavailable here |
+| Load/security/stability gates | Blocked | Must run in authorized beta infrastructure before public launch |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |
