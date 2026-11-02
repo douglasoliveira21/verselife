@@ -35,7 +35,8 @@ public enum NetworkMotionState : byte
     Fly,
     Sit,
     Wave,
-    Dance
+    Dance,
+    Swim
 }
 
 public readonly record struct MovementInput(uint Sequence, float X, float Z, InputFlags Flags);

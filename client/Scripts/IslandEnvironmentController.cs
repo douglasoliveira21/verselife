@@ -48,6 +48,8 @@ void sky() {
     private DirectionalLight3D _sun = null!;
     private WorldEnvironment _environment = null!;
     private ShaderMaterial? _sky;
+    /// 0 at night, 1 in full daylight; the ocean and sky use it to darken.
+    public float DayFactor { get; private set; } = 1f;
 
     public override void _Ready()
     {
@@ -76,6 +78,7 @@ void sky() {
     {
         var elevation = Mathf.Sin((Hour - 6f) / 12f * Mathf.Pi);
         var day = Mathf.SmoothStep(-.08f, .3f, elevation);
+        DayFactor = day;
         if (_sun is not null)
         {
             _sun.RotationDegrees = new Vector3(-(Hour - 6f) / 12f * 180f, -28f, 0);

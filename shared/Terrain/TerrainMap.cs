@@ -18,6 +18,12 @@ public sealed class TerrainMap
     public const float MinHeight = -8f;
     public const float MaxHeight = 48f;
     public const float MaxBrushRadius = 24f;
+    /// <summary>Water surface height; flat land (0) stands just above it and the shore slopes down into the sea.</summary>
+    public const float SeaLevel = -.8f;
+    /// <summary>Width of the beach that slopes from the flat interior down to the sea floor at the island edge.</summary>
+    public const float ShoreWidth = 24f;
+    /// <summary>Open ocean around the island that avatars can swim in before reaching the world limit.</summary>
+    public const float OceanMargin = 192f;
     private const int MinUnits = -8000; // MinHeight in millimetres
     private const int MaxCells = 256;
     private const uint Magic = 0x3154564C; // "LVT1"
@@ -39,8 +45,22 @@ public sealed class TerrainMap
         CellSize = Math.Clamp(cellSize, .25f, 16f);
         _heights = new float[VertexCount * VertexCount];
         _splat = new byte[VertexCount * VertexCount * LayerCount];
-        for (var i = 0; i < _heights.Length; i++) _splat[i * LayerCount] = 255;
+        // Flat grassy interior with a sandy beach sloping to the sea floor along the edge.
+        for (var z = 0; z <= Cells; z++)
+        for (var x = 0; x <= Cells; x++)
+        {
+            var i = z * VertexCount + x;
+            var edge = Math.Min(Math.Min(x, z), Math.Min(Cells - x, Cells - z)) * CellSize;
+            _heights[i] = MathF.Round(MinHeight * (1f - SmoothStep(0f, ShoreWidth, edge)) * 1000f) / 1000f;
+            var sand = 1f - SmoothStep(ShoreWidth * .25f, ShoreWidth * .6f, edge);
+            var sandWeight = (byte)MathF.Round(sand * 255f);
+            _splat[i * LayerCount] = (byte)(255 - sandWeight);
+            _splat[i * LayerCount + 2] = sandWeight;
+        }
     }
+
+    public bool IsBorder(int x, int z) => x == 0 || z == 0 || x == Cells || z == Cells;
+    public static float WaterDepth(float groundHeight) => SeaLevel - groundHeight;
 
     public float HeightAt(int x, int z) => _heights[Math.Clamp(z, 0, Cells) * VertexCount + Math.Clamp(x, 0, Cells)];
 
@@ -85,6 +105,8 @@ public sealed class TerrainMap
             if (distance > radius) continue;
             var t = 1f - distance / radius;
             var weight = t * t * (3f - 2f * t);
+            // The outermost ring is the sea floor that continues out to the world limit; it never changes.
+            if (IsBorder(x, z)) continue;
             var index = z * VertexCount + x;
             switch (tool)
             {
@@ -133,6 +155,9 @@ public sealed class TerrainMap
             var heights = new byte[loaded._heights.Length * 2];
             deflate.ReadExactly(heights);
             for (var i = 0; i < loaded._heights.Length; i++) loaded._heights[i] = (BitConverter.ToUInt16(heights, i * 2) + MinUnits) / 1000f;
+            for (var z = 0; z <= cells; z++)
+            for (var x = 0; x <= cells; x++)
+                if (loaded.IsBorder(x, z)) loaded._heights[z * loaded.VertexCount + x] = MinHeight; // maps saved before the ocean existed
             deflate.ReadExactly(loaded._splat);
             if (deflate.ReadByte() != -1) return false;
             map = loaded;
@@ -207,4 +232,10 @@ public sealed class TerrainMap
     }
 
     private static float Lerp(float from, float to, float amount) => from + (to - from) * amount;
+
+    private static float SmoothStep(float edge0, float edge1, float value)
+    {
+        var t = Math.Clamp((value - edge0) / (edge1 - edge0), 0f, 1f);
+        return t * t * (3f - 2f * t);
+    }
 }

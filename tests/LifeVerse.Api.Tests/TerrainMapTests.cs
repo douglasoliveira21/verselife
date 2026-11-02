@@ -7,11 +7,12 @@ namespace LifeVerse.Api.Tests;
 public sealed class TerrainMapTests
 {
     [Fact]
-    public void NewTerrain_IsFlatAndFullyCoveredByTheFirstTexture()
+    public void NewTerrain_IsFlatInsideWithABeachSlopingIntoTheSea()
     {
         var map = new TerrainMap();
         Assert.Equal(0f, map.SampleHeight(0, 0));
-        Assert.Equal(0f, map.SampleHeight(map.HalfExtent, -map.HalfExtent));
+        Assert.Equal(TerrainMap.MinHeight, map.SampleHeight(map.HalfExtent, -map.HalfExtent));
+        Assert.Equal(0f, map.SampleHeight(map.HalfExtent - TerrainMap.ShoreWidth - 2, 0));
         Assert.Equal(255, map.SplatAt(10, 10, 0));
         Assert.Equal(0, map.SplatAt(10, 10, 1));
     }
@@ -140,4 +141,78 @@ public sealed class TerrainMapTests
         AuthoritativeMovement.Step(state, new MovementInput(1, 0, 0, InputFlags.None), 1f / 60f, map.SampleHeight);
         Assert.InRange(state.Y, map.SampleHeight(0, 0) - .001f, map.SampleHeight(0, 0) + .001f);
     }
+}
+
+public sealed class OceanTests
+{
+    private static readonly Func<float, float, float> Ground = new TerrainMap().SampleHeight;
+    private static readonly float Limit = new TerrainMap().HalfExtent + TerrainMap.OceanMargin;
+
+    [Fact]
+    public void Shore_SlopesFromLandThroughTheWaterlineToTheSeaFloor()
+    {
+        var map = new TerrainMap();
+        Assert.True(map.SampleHeight(map.HalfExtent - 2, 0) < TerrainMap.SeaLevel - AuthoritativeMovement.WadeDepth);
+        Assert.True(map.SampleHeight(map.HalfExtent - ShoreMid(), 0) is > TerrainMap.MinHeight and < 0f);
+        Assert.Equal(TerrainMap.MinHeight, map.SampleHeight(map.HalfExtent + 100, 0));
+        Assert.True(map.SplatAt(map.Cells - 2, map.Cells / 2, 2) > 200); // sandy beach
+        Assert.Equal(255, map.SplatAt(map.Cells / 2, map.Cells / 2, 0)); // grassy interior
+    }
+
+    [Fact]
+    public void SeaFloorRing_CannotBeSculpted()
+    {
+        var map = new TerrainMap();
+        map.Apply(TerrainTool.Raise, map.HalfExtent, 0, 12, 1f);
+        map.Apply(TerrainTool.Flatten, map.HalfExtent, 0, 12, 1f);
+        Assert.Equal(TerrainMap.MinHeight, map.SampleHeight(map.HalfExtent, 0));
+        Assert.Equal(TerrainMap.MinHeight, map.HeightAt(map.Cells, map.Cells / 2));
+    }
+
+    [Fact]
+    public void Avatar_WalksIntoTheSeaAndSwimsAtTheSurface()
+    {
+        var state = new AuthoritativePlayerState { X = 60 };
+        var motion = NetworkMotionState.Idle;
+        for (var i = 0; i < 1200 && !state.Swimming; i++)
+            motion = AuthoritativeMovement.Step(state, new MovementInput((uint)i, 1, 0, InputFlags.None), 1f / 60f, Ground, TerrainMap.SeaLevel, Limit);
+        Assert.True(state.Swimming);
+        Assert.Equal(NetworkMotionState.Swim, motion);
+        for (var i = 0; i < 600; i++)
+            motion = AuthoritativeMovement.Step(state, new MovementInput((uint)i, 1, 0, InputFlags.None), 1f / 60f, Ground, TerrainMap.SeaLevel, Limit);
+        var floatY = TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth;
+        Assert.InRange(state.Y, floatY - .15f, floatY + .15f);
+        Assert.True(state.Swimming);
+    }
+
+    [Fact]
+    public void Swimming_JumpRisesToTheSurfaceAndDescendDivesToTheSeaFloor()
+    {
+        var state = new AuthoritativePlayerState { X = 140, Y = TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth };
+        for (var i = 0; i < 240; i++) AuthoritativeMovement.Step(state, new MovementInput((uint)i, 0, 0, InputFlags.Jump), 1f / 60f, Ground, TerrainMap.SeaLevel, Limit);
+        Assert.InRange(state.Y, TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth, TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth + AuthoritativeMovement.SwimSurfaceMargin + .001f);
+        for (var i = 0; i < 600; i++) AuthoritativeMovement.Step(state, new MovementInput((uint)i, 0, 0, InputFlags.Descend), 1f / 60f, Ground, TerrainMap.SeaLevel, Limit);
+        Assert.InRange(state.Y, TerrainMap.MinHeight, TerrainMap.MinHeight + .01f);
+    }
+
+    [Fact]
+    public void Swimming_IsSlowerThanRunningAndStopsAtTheWorldLimit()
+    {
+        var state = new AuthoritativePlayerState { X = 200, Y = TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth };
+        for (var i = 0; i < 120; i++) AuthoritativeMovement.Step(state, new MovementInput((uint)i, 1, 0, InputFlags.Run), 1f / 60f, Ground, TerrainMap.SeaLevel, Limit);
+        Assert.InRange(MathF.Abs(state.VelocityX), AuthoritativeMovement.SwimRunSpeed - .01f, AuthoritativeMovement.SwimRunSpeed + .01f);
+        for (var i = 0; i < 6000; i++) AuthoritativeMovement.Step(state, new MovementInput((uint)i, 1, 0, InputFlags.Run), 1f / 60f, Ground, TerrainMap.SeaLevel, Limit);
+        Assert.Equal(Limit, state.X);
+    }
+
+    [Fact]
+    public void Flying_OverTheOceanIsNotSwimming()
+    {
+        var state = new AuthoritativePlayerState { X = 150, Y = 5, Flying = true };
+        var motion = AuthoritativeMovement.Step(state, new MovementInput(1, 0, 0, InputFlags.None), 1f / 60f, Ground, TerrainMap.SeaLevel, Limit);
+        Assert.False(state.Swimming);
+        Assert.Equal(NetworkMotionState.Fly, motion);
+    }
+
+    private static float ShoreMid() => TerrainMap.ShoreWidth / 2f;
 }

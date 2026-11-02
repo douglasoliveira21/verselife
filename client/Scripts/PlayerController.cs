@@ -2,6 +2,7 @@ using Godot;
 using LifeVerse.Client.Autoloads;
 using LifeVerse.Shared.Gameplay;
 using LifeVerse.Shared.Networking;
+using LifeVerse.Shared.Terrain;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -27,7 +28,10 @@ public partial class PlayerController : CharacterBody3D
     private InteractableSeat? _selectedSeat;
     private InteractableSeat? _seat;
     private bool _flying;
-    private bool _swimming;
+    private bool _volumeSwimming;
+    private bool _oceanSwimming;
+    private IslandTerrain? _terrainNode;
+    private bool _swimming => _volumeSwimming || _oceanSwimming;
     private bool _firstPerson;
     private bool _cursorFree;
     private bool _rightDragging;
@@ -95,6 +99,8 @@ public partial class PlayerController : CharacterBody3D
         // The pivot is a child of the body, so its local yaw is the camera yaw relative to the avatar.
         _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
+        // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
+        _cameraPivot.Position = new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, _oceanSwimming ? 2.7f : 1.55f, weight * .35f), 0);
     }
 
     public override void _UnhandledInput(InputEvent input)
@@ -108,7 +114,7 @@ public partial class PlayerController : CharacterBody3D
             _contextMenu.Visible = false; _rightDragging = false; SetCursorFree(true);
             GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
         }
-        if (input.IsActionPressed("fly_toggle") && _seat is null && !_swimming)
+        if (input.IsActionPressed("fly_toggle") && _seat is null && !_volumeSwimming)
         {
             _flying = !_flying;
             if (_flying) Velocity = new Vector3(Velocity.X, 2f, Velocity.Z);
@@ -187,15 +193,28 @@ public partial class PlayerController : CharacterBody3D
         // Swing the camera behind the avatar while it walks or turns, unless the user is orbiting.
         if ((moving || Mathf.Abs(input.X) > .01f) && !_rightDragging && _cameraMode is CameraMode.ThirdPerson or CameraMode.FirstPerson)
             _targetYaw += Mathf.Wrap(_targetBodyYaw - _targetYaw, -Mathf.Pi, Mathf.Pi) * (1f - Mathf.Exp(-CameraFollowRate * dt));
+        // Ocean: same rule as the server (water over the ground at least chest deep means swimming).
+        _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
+        _oceanSwimming = !_flying && _terrainNode is not null && TerrainMap.WaterDepth(_terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z)) >= AuthoritativeMovement.WadeDepth;
         var flags = InputFlags.None;
         if (Input.IsActionPressed("run")) flags |= InputFlags.Run;
-        if (Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
+        if (_flying || _swimming ? Input.IsActionPressed("jump") : Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
         if (Input.IsActionJustPressed("fly_toggle")) flags |= InputFlags.Fly;
         if (Input.IsActionPressed("descend")) flags |= InputFlags.Descend;
         _network.SendInput(++_inputSequence, new Vector2(direction.X, direction.Z), flags);
         var velocity = Velocity;
 
-        if (_swimming)
+        if (_oceanSwimming)
+        {
+            // Buoyancy keeps the avatar floating chest-deep; jump surfaces/rises, descend dives toward the sea floor.
+            var swimSpeed = Input.IsActionPressed("run") ? AuthoritativeMovement.SwimRunSpeed : AuthoritativeMovement.SwimSpeed;
+            var floatY = TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth;
+            velocity.X = SmoothHorizontal(velocity.X, direction.X * swimSpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * swimSpeed, dt);
+            var verticalTarget = Input.IsActionPressed("jump") ? AuthoritativeMovement.SwimVerticalSpeed : Input.IsActionPressed("descend") ? -AuthoritativeMovement.SwimVerticalSpeed : Mathf.Clamp((floatY - GlobalPosition.Y) * 3f, -2f, 2f);
+            velocity.Y = Mathf.MoveToward(velocity.Y, verticalTarget, 14f * dt);
+            if (GlobalPosition.Y + velocity.Y * dt > floatY + AuthoritativeMovement.SwimSurfaceMargin) velocity.Y = Mathf.Min(velocity.Y, (floatY + AuthoritativeMovement.SwimSurfaceMargin - GlobalPosition.Y) / dt);
+        }
+        else if (_swimming)
         {
             _flying = false; velocity.X = SmoothHorizontal(velocity.X, direction.X * SwimSpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * SwimSpeed, dt);
             velocity.Y = Input.IsActionPressed("jump") ? SwimSpeed : Input.IsActionPressed("descend") ? -SwimSpeed : 0;
@@ -223,7 +242,7 @@ public partial class PlayerController : CharacterBody3D
         _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : Input.IsActionPressed("run") ? "Running" : "Walking");
     }
 
-    public void SetSwimming(bool value) => _swimming = value;
+    public void SetSwimming(bool value) => _volumeSwimming = value;
     public void Reconcile(Vector3 authoritativePosition, Vector3 authoritativeVelocity, uint acknowledgedInput)
     {
         var error = GlobalPosition.DistanceTo(authoritativePosition);

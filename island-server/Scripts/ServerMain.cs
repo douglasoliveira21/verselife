@@ -66,7 +66,7 @@ public partial class ServerMain : Node
         var dt = Math.Min((float)delta, 1f / 20f);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
         {
-            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight);
+            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, TerrainMap.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with
             {

@@ -165,15 +165,21 @@ void fragment() {
         _boundaryExtent = _map.HalfExtent;
     }
 
-    private void AddBoundaries(float extent)
+    /// Beyond the island lies open ocean down to a flat sea floor at the map's edge height, out to an invisible world limit.
+    private void AddBoundaries(float islandExtent)
     {
-        var walls = new[] { (new Vector3(0, 8, extent), new Vector3(extent * 2, 16, 1)), (new Vector3(0, 8, -extent), new Vector3(extent * 2, 16, 1)), (new Vector3(extent, 8, 0), new Vector3(1, 16, extent * 2)), (new Vector3(-extent, 8, 0), new Vector3(1, 16, extent * 2)) };
+        var extent = islandExtent + TerrainMap.OceanMargin;
+        const float wallHeight = 64f;
+        var walls = new[] { (new Vector3(0, 0, extent), new Vector3(extent * 2, wallHeight, 1)), (new Vector3(0, 0, -extent), new Vector3(extent * 2, wallHeight, 1)), (new Vector3(extent, 0, 0), new Vector3(1, wallHeight, extent * 2)), (new Vector3(-extent, 0, 0), new Vector3(1, wallHeight, extent * 2)) };
         for (var i = 0; i < walls.Length; i++)
         {
             var wall = new StaticBody3D { Name = $"GeographicBoundary{i}", Position = walls[i].Item1 };
             wall.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = walls[i].Item2 } });
             AddChild(wall);
         }
+        var floor = new StaticBody3D { Name = "GeographicBoundarySeaFloor", Position = new Vector3(0, TerrainMap.MinHeight - .5f, 0) };
+        floor.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(extent * 2 + 4, 1, extent * 2 + 4) } });
+        AddChild(floor);
     }
 
     /// Seamless procedural ground texture so the project needs no licensed art to look like ground.

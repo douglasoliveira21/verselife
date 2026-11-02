@@ -189,7 +189,7 @@ public partial class NetworkManager : Node
     {
         NetworkMotionState.Walk => AvatarMotionState.Walk, NetworkMotionState.Run => AvatarMotionState.Run, NetworkMotionState.Jump => AvatarMotionState.Jump,
         NetworkMotionState.Fall => AvatarMotionState.Fall, NetworkMotionState.Fly => AvatarMotionState.FlyMove, NetworkMotionState.Sit => AvatarMotionState.Sit,
-        NetworkMotionState.Wave => AvatarMotionState.Wave, NetworkMotionState.Dance => AvatarMotionState.Dance, _ => AvatarMotionState.Idle
+        NetworkMotionState.Wave => AvatarMotionState.Wave, NetworkMotionState.Dance => AvatarMotionState.Dance, NetworkMotionState.Swim => AvatarMotionState.Swim, _ => AvatarMotionState.Idle
     };
     private sealed class RemoteAvatar(Node3D node, AvatarRig rig, Vector3 target)
     {

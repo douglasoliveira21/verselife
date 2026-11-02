@@ -24,7 +24,17 @@ Se a revisão local divergir da recebida, o cliente pede o mapa completo.
 
 ## Limitações
 
-- Sem undo/redo de terreno, sem importação/exportação de heightmap e sem água; a ilha fica limitada a 256×256 m.
+- Sem undo/redo de terreno, sem importação/exportação de heightmap, sem rios, ondas na praia nem ajuste do nível do mar; a ilha fica limitada a 256×256 m.
 - A textura é procedural (sem arte licenciada); não há texturas customizadas por usuário.
 - Terreno não é editável fora de uma ilha conectada (nada seria persistido).
 - Não foi testado com dois clientes reais nem contra o servidor em produção.
+
+## Oceano
+
+- A borda do mapa vira praia (faixa de 24 m com areia que desce até o fundo do mar a -8 m) e, além dela, há oceano aberto por mais 192 m até um limite invisível. O nível do mar é -0,8 m; o terreno plano fica em 0 m. Rebaixar o terreno abaixo do nível do mar cria lagos.
+- A fileira de vértices da borda é o fundo do mar e não pode ser esculpida. Mapas salvos antes do oceano são normalizados ao carregar.
+- Visual (`OceanSurface`): plano animado que acompanha a câmera até o horizonte, com ondas, normais animadas, cor por profundidade, espuma na costa, reflexo do céu e filtro azul quando a câmera fica debaixo d'água. A câmera sobe um pouco ao nadar para não cortar a superfície.
+- Física (`AuthoritativeMovement`): o avatar nada quando a água sobre o chão tem pelo menos 1,1 m; flutua com a cabeça fora d'água, pula/espaço sobe, Ctrl desce até o fundo, Shift nada mais rápido (3,5 → 5 m/s). Voar sobre o mar não é nadar. O servidor também limita a posição ao limite do mundo.
+- Rede: novo estado de movimento `Swim` para os outros jogadores.
+
+Verificado: testes unitários (`OceanTests`) e `TerrainSmoke` no Godot (flutuar, mergulhar e voltar à superfície). Não verificado: dois clientes reais e o servidor em produção.

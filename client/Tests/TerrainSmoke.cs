@@ -20,6 +20,26 @@ public partial class TerrainSmoke : Node
             Require(player.IsOnFloor() && Mathf.Abs(player.GlobalPosition.Y) < .1f, $"player not standing on flat terrain: {player.GlobalPosition}");
             await Capture("flat");
 
+            // Walk-in shore, then open water: the avatar must float at the surface instead of sinking or standing.
+            player.GlobalPosition = new Vector3(0, 0, -96);
+            player.Velocity = Vector3.Zero;
+            await Frames(40);
+            await Capture("shore");
+            player.GlobalPosition = new Vector3(0, 0, -122);
+            player.Velocity = Vector3.Zero;
+            await Frames(150);
+            var floatY = TerrainMap.SeaLevel - LifeVerse.Shared.Networking.AuthoritativeMovement.SwimFloatDepth;
+            Require(!player.IsOnFloor() && Mathf.Abs(player.GlobalPosition.Y - floatY) < .6f, $"player is not floating at the surface: y={player.GlobalPosition.Y} expected~{floatY}");
+            GD.Print($"event=ocean_debug camera_y={GetViewport().GetCamera3D().GlobalPosition.Y:F2} underwater={world.GetNode<OceanSurface>("OceanSurface").IsUnderwater}");
+            await Capture("ocean");
+            Input.ActionPress("descend"); await Frames(120); Input.ActionRelease("descend");
+            Require(player.GlobalPosition.Y < floatY - 2f, $"player did not dive: y={player.GlobalPosition.Y}");
+            Input.ActionPress("jump"); await Frames(180); Input.ActionRelease("jump");
+            Require(player.GlobalPosition.Y > floatY - .3f && player.GlobalPosition.Y < floatY + .6f, $"player did not surface: y={player.GlobalPosition.Y}");
+            player.GlobalPosition = new Vector3(0, 1, 0);
+            player.Velocity = Vector3.Zero;
+            await Frames(40);
+
             // A hill and a painted dirt patch, applied the way server-accepted edits are replayed.
             var revision = terrain.Map.Revision;
             for (var i = 0; i < 12; i++) { revision++; terrain.ApplyEdit(TerrainTool.Raise, 14, -6, 9, .4f, 0, revision); }
