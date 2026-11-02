@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text;
 using LifeVerse.Api.Data;
 using Microsoft.EntityFrameworkCore;
@@ -27,7 +28,13 @@ public static class PlatformEndpoints
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", GetServerSnapshotAsync).WithTags("Platform");
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", SaveServerSnapshotAsync).WithTags("Platform");
         endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/build-operations", ApplyServerBuildOperationAsync).WithTags("Platform");
+        endpoints.MapGet("/api/v1/platform/metrics", MetricsAsync).RequireAuthorization().WithTags("Platform");
         return endpoints;
+    }
+
+    private static async Task<IResult> MetricsAsync(LifeVerseDbContext db, CancellationToken ct)
+    {
+        var started = Stopwatch.GetTimestamp(); var players = await db.Sessions.AsNoTracking().CountAsync(x => x.RevokedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow, ct); var islands = await db.Islands.AsNoTracking().CountAsync(x => x.DeletedAt == null, ct); var objects = await db.BuildObjects.AsNoTracking().CountAsync(x => x.DeletedAt == null, ct); var scripts = await db.ObjectScripts.AsNoTracking().CountAsync(x => x.Status == "active", ct); var instances = await db.ServerInstances.AsNoTracking().CountAsync(x => x.StoppedAt == null, ct); var elapsed = Stopwatch.GetElapsedTime(started); return Results.Ok(new { capturedAt = DateTimeOffset.UtcNow, players, islands, objects, activeScripts = scripts, activeInstances = instances, databaseQueryMilliseconds = elapsed.TotalMilliseconds });
     }
 
     private static async Task<IResult> ApplyServerBuildOperationAsync(Guid instanceId, ServerBuildOperationRequest request, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
