@@ -63,6 +63,16 @@ Run date: 2026-11-02.
 | Process isolation contract | Passed statically | Worker receives stdin envelope, clean environment, timeout and fail-closed unavailable state |
 | Lua execution with real worker | Blocked | Lua 5.4 executable is not installed in this environment; no user code is executed without it |
 
+## Phase 08
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Social migration | Passed | Versioned migration creates messages, friendships, blocks, groups, reports and radios |
+| Backend build | Passed | API compiles with 0 warnings/errors |
+| Client build | Passed | Godot C# client compiles with 0 warnings/errors |
+| Voice integration | Contract ready | Temporary five-minute room JWT is issued; LiveKit deployment credentials remain environment-specific |
+| Radio safety | Passed statically | HTTPS-only validation rejects loopback/private destinations |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |

@@ -36,6 +36,8 @@ Global inventory, validated asset uploads, versioned content, permissions, equip
 
 Sandboxed Lua scripts and the in-world HUD editor are documented in [docs/LUA_HUDS.md](docs/LUA_HUDS.md).
 
+Chat, friendships, groups, LiveKit room tokens, moderation and island radios are documented in [docs/SOCIAL.md](docs/SOCIAL.md).
+
 ## Phase 03 multiplayer
 
 The World scene now contains the Multiplayer panel. Enter an island UUID to request a short-lived entry ticket, connect through ENet, see nearby authenticated avatars, and use local chat. The authoritative protocol, admission flow, rate limits, reconnect behavior, and operational settings are documented in [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).

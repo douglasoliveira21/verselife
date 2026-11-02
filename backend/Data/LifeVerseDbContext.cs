@@ -26,6 +26,14 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<ScriptState> ScriptStates => Set<ScriptState>();
     public DbSet<ScriptExecution> ScriptExecutions => Set<ScriptExecution>();
     public DbSet<HudDefinition> HudDefinitions => Set<HudDefinition>();
+    public DbSet<SocialMessage> SocialMessages => Set<SocialMessage>();
+    public DbSet<Friendship> Friendships => Set<Friendship>();
+    public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
+    public DbSet<SocialGroup> SocialGroups => Set<SocialGroup>();
+    public DbSet<GroupMember> GroupMembers => Set<GroupMember>();
+    public DbSet<GroupInvite> GroupInvites => Set<GroupInvite>();
+    public DbSet<SocialReport> SocialReports => Set<SocialReport>();
+    public DbSet<RadioStation> RadioStations => Set<RadioStation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -141,6 +149,14 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<ScriptState>(b => { b.ToTable("script_state", "world"); b.HasKey(x => x.Id); b.Property(x => x.Key).HasMaxLength(64); b.Property(x => x.ValueJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.ScriptId, x.Key }).IsUnique(); b.HasOne<ObjectScript>().WithMany().HasForeignKey(x => x.ScriptId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ScriptExecution>(b => { b.ToTable("script_executions", "world"); b.HasKey(x => x.Id); b.Property(x => x.EventName).HasMaxLength(32); b.Property(x => x.Status).HasMaxLength(24); b.Property(x => x.Error).HasMaxLength(2000); b.HasIndex(x => new { x.ScriptId, x.CreatedAt }); b.HasOne<ObjectScript>().WithMany().HasForeignKey(x => x.ScriptId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<HudDefinition>(b => { b.ToTable("hud_definitions", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.LayoutJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<SocialMessage>(b => { b.ToTable("messages", "social"); b.HasKey(x => x.Id); b.Property(x => x.Channel).HasMaxLength(16); b.Property(x => x.Content).HasMaxLength(2000); b.HasIndex(x => new { x.Channel, x.CreatedAt }); b.HasIndex(x => new { x.RecipientUserId, x.CreatedAt }); b.HasIndex(x => new { x.GroupId, x.CreatedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.SenderUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<Friendship>(b => { b.ToTable("friendships", "social"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(16); b.HasIndex(x => new { x.UserId, x.FriendUserId }).IsUnique(); b.HasIndex(x => new { x.FriendUserId, x.Status }); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.FriendUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<UserBlock>(b => { b.ToTable("blocks", "social"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.UserId, x.BlockedUserId }).IsUnique(); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.BlockedUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<SocialGroup>(b => { b.ToTable("groups", "social"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.Description).HasMaxLength(2000); b.Property(x => x.ImageUrl).HasMaxLength(1024); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<GroupMember>(b => { b.ToTable("group_members", "social"); b.HasKey(x => x.Id); b.Property(x => x.Role).HasMaxLength(32); b.HasIndex(x => new { x.GroupId, x.UserId }).IsUnique(); b.HasOne<SocialGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<GroupInvite>(b => { b.ToTable("group_invites", "social"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(16); b.HasIndex(x => new { x.GroupId, x.InvitedUserId, x.Status }); b.HasOne<SocialGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<SocialReport>(b => { b.ToTable("reports", "social"); b.HasKey(x => x.Id); b.Property(x => x.Reason).HasMaxLength(1000); b.Property(x => x.Status).HasMaxLength(16); b.HasIndex(x => new { x.Status, x.CreatedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.ReporterUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<RadioStation>(b => { b.ToTable("radio_stations", "social"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.StreamUrl).HasMaxLength(2048); b.HasIndex(x => x.IslandId); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<ServerInstance>(b =>
         {
             b.ToTable("server_instances", "platform");
