@@ -42,6 +42,7 @@ builder.Services.AddSingleton(builder.Configuration.GetSection("ObjectStorage").
 builder.Services.AddSingleton<AssetStorageService>();
 builder.Services.AddSingleton(builder.Configuration.GetSection("LuaRuntime").Get<LuaRuntimeOptions>() ?? new LuaRuntimeOptions());
 builder.Services.AddSingleton<LuaSandboxService>();
+builder.Services.AddSingleton<ScriptMessagingService>();
 builder.Services.AddHostedService<WorldManagerHostedService>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();

@@ -20,7 +20,7 @@ public sealed record LuaExecutionResult(string Status, string Output, string? Er
 
 public static class LuaSafetyValidator
 {
-    private static readonly string[] Events = ["on_start", "on_touch", "on_collision", "on_enter", "on_leave", "on_timer", "on_chat", "on_message", "on_owner_changed", "on_object_rezzed", "on_object_removed"];
+    private static readonly string[] Events = ["on_start", "on_touch_start", "on_touch_end", "on_collision_enter", "on_collision_exit", "on_avatar_enter", "on_avatar_leave", "on_timer", "on_chat", "on_object_message", "on_inventory_changed", "on_owner_changed", "on_permission_changed", "on_script_reset", "on_object_rezzed", "on_object_removed", "on_region_restart", "on_touch", "on_collision", "on_enter", "on_leave", "on_message"];
     private static readonly string[] Forbidden = ["os.", "io.", "debug", "require", "dofile", "loadfile", "package", "socket", "http", "process", "ffi", "userdata", "collectgarbage"];
     public static IReadOnlyList<string> AllowedEvents => Events;
     public static LuaValidationResult Validate(string source, LuaRuntimeOptions options)
@@ -30,6 +30,22 @@ public static class LuaSafetyValidator
         var instructions = source.Count(c => c is '\n' or ';') + source.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Length; if (instructions > options.MaxInstructions) return new(false, "Instruction budget exceeded.", instructions); return new(true, null, instructions);
     }
     public static bool IsEvent(string value) => Events.Contains(value, StringComparer.Ordinal);
+}
+
+public sealed record ScriptMessage(Guid FromObjectId, Guid ToObjectId, string Channel, string PayloadJson, DateTimeOffset CreatedAt);
+
+public sealed class ScriptMessagingService
+{
+    private readonly ConcurrentDictionary<string, Queue<ScriptMessage>> _queues = new();
+    public bool TryEnqueue(ScriptMessage message)
+    {
+        var key = $"{message.ToObjectId:N}:{message.Channel}"; var queue = _queues.GetOrAdd(key, _ => new Queue<ScriptMessage>());
+        lock (queue) { while (queue.Count > 0 && DateTimeOffset.UtcNow - queue.Peek().CreatedAt > TimeSpan.FromMinutes(2)) queue.Dequeue(); if (queue.Count >= 100) return false; queue.Enqueue(message); return true; }
+    }
+    public IReadOnlyList<ScriptMessage> Drain(Guid objectId, string channel)
+    {
+        var key = $"{objectId:N}:{channel}"; if (!_queues.TryGetValue(key, out var queue)) return []; lock (queue) { var result = queue.ToArray(); queue.Clear(); return result; }
+    }
 }
 
 public sealed class LuaSandboxService(LuaRuntimeOptions options, ILogger<LuaSandboxService> logger)
