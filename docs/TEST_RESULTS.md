@@ -31,6 +31,17 @@ Run date: 2026-11-02.
 | World Manager | Passed | Per-island semaphore, healthy-instance selection and stale-heartbeat suspension compile and are wired as hosted sweep |
 | Runtime multi-island acceptance | Blocked | Docker/PostgreSQL unavailable in this environment; requires two or more registered island processes |
 
+## Phase 05
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Full solution build | Passed | API, shared, client, island-server and test assembly compile with 0 warnings/errors |
+| Build-object migration | Passed | `Phase05BuildObjects` creates UUID object and operation tables with island/user FKs, revision and indexes |
+| Primitive catalog | Passed | Nine allowlisted primitive types are shared by API and island-server validation |
+| Authoritative operation path | Passed statically | ENet command → server rate/shape validation → service-key API permission/revision/quota check → persistence → reliable peer broadcast |
+| Material/physics reconstruction | Passed statically | Client maps material JSON and collision/trigger settings to mesh and collision nodes |
+| 100/1,000 object load and two-client conflict test | Blocked | Requires Docker/PostgreSQL and running multi-process Godot instances, unavailable in this environment |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |

@@ -14,6 +14,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<IslandPermission> IslandPermissions => Set<IslandPermission>();
     public DbSet<IslandSnapshot> IslandSnapshots => Set<IslandSnapshot>();
     public DbSet<IslandChange> IslandChanges => Set<IslandChange>();
+    public DbSet<BuildObject> BuildObjects => Set<BuildObject>();
+    public DbSet<BuildOperation> BuildOperations => Set<BuildOperation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -108,6 +110,16 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         {
             b.ToTable("changes", "world"); b.HasKey(x => x.Id); b.Property(x => x.Operation).HasMaxLength(48); b.Property(x => x.PayloadJson).HasColumnType("jsonb"); b.Property(x => x.IntegrityHash).HasMaxLength(64);
             b.HasIndex(x => new { x.IslandId, x.Version }).IsUnique(); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<BuildObject>(b =>
+        {
+            b.ToTable("objects", "world"); b.HasKey(x => x.Id); b.Property(x => x.PrimitiveType).HasMaxLength(24); b.Property(x => x.MaterialJson).HasColumnType("jsonb"); b.Property(x => x.PhysicsJson).HasColumnType("jsonb");
+            b.HasIndex(x => new { x.IslandId, x.DeletedAt }); b.HasIndex(x => new { x.IslandId, x.OwnerUserId }); b.HasIndex(x => x.GroupId);
+            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<BuildOperation>(b =>
+        {
+            b.ToTable("build_operations", "world"); b.HasKey(x => x.Id); b.Property(x => x.Operation).HasMaxLength(24); b.Property(x => x.PayloadJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.IslandId, x.CreatedAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<ServerInstance>(b =>
         {

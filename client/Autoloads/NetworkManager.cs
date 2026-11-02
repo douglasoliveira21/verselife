@@ -12,6 +12,8 @@ public partial class NetworkManager : Node
 {
     [Signal] public delegate void ConnectionStateChangedEventHandler(string state, string detail);
     [Signal] public delegate void ChatReceivedEventHandler(string line);
+    [Signal] public delegate void BuildOperationReceivedEventHandler(string operationJson);
+    [Signal] public delegate void BuildOperationRejectedEventHandler(string code);
     private readonly Dictionary<int, RemoteAvatar> _remote = [];
     private HttpRequest _http = null!;
     private HttpRequest _snapshotHttp = null!;
@@ -24,6 +26,7 @@ public partial class NetworkManager : Node
     private int _reconnectAttempt;
     private bool _intentionalDisconnect;
     public bool IsAuthenticated { get; private set; }
+    public Guid CurrentIslandId => _islandId;
     public bool IsConnectedToIsland => Multiplayer.HasMultiplayerPeer() && Multiplayer.MultiplayerPeer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Connected;
 
     public override void _Ready()
@@ -115,6 +118,9 @@ public partial class NetworkManager : Node
     public void UnregisterLocalPlayer(PlayerController player) { if (_localPlayer == player) _localPlayer = null; }
     public void SendInput(uint sequence, Vector2 direction, InputFlags flags) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitInput, (long)sequence, direction.X, direction.Y, (int)flags); }
     public void SendChatMessage(string message) { if (IsAuthenticated && !string.IsNullOrWhiteSpace(message)) _bridge.RpcId(1, NetworkBridge.MethodName.SendChat, message[..Math.Min(message.Length, NetworkProtocol.MaxChatCharacters)]); }
+    public void SubmitBuildOperation(string operationJson) { if (IsAuthenticated && operationJson.Length <= 100_000) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitBuildOperation, operationJson); }
+    public void OnBuildOperationApplied(string operationJson) => EmitSignal(SignalName.BuildOperationReceived, operationJson);
+    public void OnBuildOperationRejected(string code) => EmitSignal(SignalName.BuildOperationRejected, code);
 
     public void OnSnapshot(byte[] payload)
     {

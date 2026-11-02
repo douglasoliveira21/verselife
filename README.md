@@ -30,6 +30,8 @@ The avatar creator is available after registration and through **Edit avatar** i
 
 Island persistence, permissions, terrain snapshots, official templates, and World Manager behavior are documented in [docs/ISLANDS.md](docs/ISLANDS.md).
 
+The in-world 3D construction editor, authoritative object operations, primitive catalog, revisions, quotas, and material/physics contract are documented in [docs/BUILD_EDITOR.md](docs/BUILD_EDITOR.md).
+
 ## Phase 03 multiplayer
 
 The World scene now contains the Multiplayer panel. Enter an island UUID to request a short-lived entry ticket, connect through ENet, see nearby authenticated avatars, and use local chat. The authoritative protocol, admission flow, rate limits, reconnect behavior, and operational settings are documented in [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).

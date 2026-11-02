@@ -40,6 +40,7 @@ interact={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":69)]}
 emote_wave={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":71)]}
 emote_dance={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":72)]}
 ui_cancel={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":4194305)]}
+build_mode={"deadzone":0.5,"events":[Object(InputEventKey,"physical_keycode":66)]}
 
 [rendering]
 renderer/rendering_method="forward_plus"

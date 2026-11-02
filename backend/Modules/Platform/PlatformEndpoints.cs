@@ -2,8 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using LifeVerse.Api.Data;
 using Microsoft.EntityFrameworkCore;
-using LifeVerse.Api.Modules.Worlds;
 using System.Text.Json;
+using LifeVerse.Api.Modules.Worlds;
 
 namespace LifeVerse.Api.Modules.Platform;
 
@@ -13,6 +13,7 @@ public sealed record ValidateEntryTokenRequest(string Token, Guid IslandId);
 public sealed record ValidateEntryTokenResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
     int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson);
 public sealed record ServerSnapshotRequest(long ExpectedVersion, string TerrainJson, string EnvironmentJson, string IntegrityHash);
+public sealed record ServerBuildOperationRequest(Guid UserId, string Operation, Guid? ObjectId, BuildObjectRequest? Object, int ExpectedRevision);
 
 public static class PlatformEndpoints
 {
@@ -25,8 +26,38 @@ public static class PlatformEndpoints
         endpoints.MapPost("/api/v1/platform/entry-tokens/validate", ValidateEntryAsync).WithTags("Platform");
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", GetServerSnapshotAsync).WithTags("Platform");
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", SaveServerSnapshotAsync).WithTags("Platform");
+        endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/build-operations", ApplyServerBuildOperationAsync).WithTags("Platform");
         return endpoints;
     }
+
+    private static async Task<IResult> ApplyServerBuildOperationAsync(Guid instanceId, ServerBuildOperationRequest request, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+        var server = await db.ServerInstances.AsNoTracking().SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct); if (server is null) return Results.NotFound();
+        var island = await db.Islands.SingleOrDefaultAsync(x => x.Id == server.IslandId && x.DeletedAt == null, ct); if (island is null) return Results.NotFound();
+        var userCanBuild = island.OwnerUserId == request.UserId || await db.IslandPermissions.AnyAsync(x => x.IslandId == island.Id && x.UserId == request.UserId && x.RevokedAt == null && (x.Permission == "build" || x.Permission == "edit" || x.Permission == "admin"), ct); if (!userCanBuild) return Results.Forbid();
+        var now = clock.GetUtcNow(); BuildObject? item = null;
+        if (request.Operation == "create")
+        {
+            if (request.Object is null || !ValidBuildRequest(request.Object)) return Results.BadRequest(); var quota = 5000; try { using var doc = JsonDocument.Parse(island.ResourceLimitsJson); if (doc.RootElement.TryGetProperty("objects", out var count)) quota = Math.Clamp(count.GetInt32(), 1, 100000); } catch { }
+            if (await db.BuildObjects.CountAsync(x => x.IslandId == island.Id && x.DeletedAt == null, ct) >= quota) return Results.Conflict(new { code = "object_quota" });
+            item = NewBuildObject(island.Id, request.UserId, request.Object, now); db.BuildObjects.Add(item);
+        }
+        else
+        {
+            if (request.ObjectId is null) return Results.BadRequest(); item = await db.BuildObjects.SingleOrDefaultAsync(x => x.Id == request.ObjectId && x.IslandId == island.Id && x.DeletedAt == null, ct); if (item is null) return Results.NotFound(); if (item.Revision != request.ExpectedRevision) return Results.Conflict(new { code = "revision_conflict", currentRevision = item.Revision });
+            if (request.Operation == "delete") { item.DeletedAt = now; item.Revision++; }
+            else if (request.Operation == "update" && request.Object is not null && ValidBuildRequest(request.Object)) { ApplyBuildObject(item, request.Object); item.Revision++; item.UpdatedAt = now; }
+            else return Results.BadRequest();
+        }
+        db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = item.Id, ActorUserId = request.UserId, Operation = request.Operation, PayloadJson = JsonSerializer.Serialize((object?)request.Object ?? new { }), Revision = item.Revision, CreatedAt = now }); await db.SaveChangesAsync(ct);
+        return Results.Ok(new { operation = request.Operation, objectState = item.DeletedAt is null ? BuildObjectResponse(item) : null, objectId = item.Id, revision = item.Revision });
+    }
+
+    private static BuildObject NewBuildObject(Guid islandId, Guid owner, BuildObjectRequest r, DateTimeOffset now) => new() { Id = Guid.NewGuid(), IslandId = islandId, OwnerUserId = owner, GroupId = r.GroupId, PrimitiveType = r.PrimitiveType.ToLowerInvariant(), PositionX = r.PositionX, PositionY = r.PositionY, PositionZ = r.PositionZ, RotationX = r.RotationX, RotationY = r.RotationY, RotationZ = r.RotationZ, ScaleX = r.ScaleX, ScaleY = r.ScaleY, ScaleZ = r.ScaleZ, MaterialJson = string.IsNullOrWhiteSpace(r.MaterialJson) ? "{}" : r.MaterialJson, PhysicsJson = string.IsNullOrWhiteSpace(r.PhysicsJson) ? "{}" : r.PhysicsJson, CreatedAt = now, UpdatedAt = now };
+    private static void ApplyBuildObject(BuildObject item, BuildObjectRequest r) { item.PrimitiveType = r.PrimitiveType.ToLowerInvariant(); item.GroupId = r.GroupId; item.PositionX = r.PositionX; item.PositionY = r.PositionY; item.PositionZ = r.PositionZ; item.RotationX = r.RotationX; item.RotationY = r.RotationY; item.RotationZ = r.RotationZ; item.ScaleX = r.ScaleX; item.ScaleY = r.ScaleY; item.ScaleZ = r.ScaleZ; if (!string.IsNullOrWhiteSpace(r.MaterialJson)) item.MaterialJson = r.MaterialJson; if (!string.IsNullOrWhiteSpace(r.PhysicsJson)) item.PhysicsJson = r.PhysicsJson; }
+    private static bool ValidBuildRequest(BuildObjectRequest r) { var values = new[] { r.PositionX, r.PositionY, r.PositionZ, r.RotationX, r.RotationY, r.RotationZ, r.ScaleX, r.ScaleY, r.ScaleZ }; return BuildCatalog.IsPrimitive(r.PrimitiveType) && values.All(float.IsFinite) && new[] { r.ScaleX, r.ScaleY, r.ScaleZ }.All(x => x is >= .01f and <= 64f) && (r.MaterialJson?.Length ?? 0) <= 32768 && (r.PhysicsJson?.Length ?? 0) <= 32768; }
+    private static BuildObjectResponse BuildObjectResponse(BuildObject x) => new(x.Id, x.IslandId, x.OwnerUserId, x.GroupId, x.PrimitiveType, x.PositionX, x.PositionY, x.PositionZ, x.RotationX, x.RotationY, x.RotationZ, x.ScaleX, x.ScaleY, x.ScaleZ, x.MaterialJson, x.PhysicsJson, x.Revision);
 
     private static async Task<IResult> GetServerSnapshotAsync(Guid instanceId, HttpContext context, IConfiguration config, LifeVerseDbContext db, CancellationToken ct)
     {

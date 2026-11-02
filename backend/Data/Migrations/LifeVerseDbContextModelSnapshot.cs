@@ -120,6 +120,151 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("avatar_appearances", "identity");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.BuildObject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("MaterialJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("material_json");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<string>("PhysicsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("physics_json");
+
+                    b.Property<float>("PositionX")
+                        .HasColumnType("real")
+                        .HasColumnName("position_x");
+
+                    b.Property<float>("PositionY")
+                        .HasColumnType("real")
+                        .HasColumnName("position_y");
+
+                    b.Property<float>("PositionZ")
+                        .HasColumnType("real")
+                        .HasColumnName("position_z");
+
+                    b.Property<string>("PrimitiveType")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("primitive_type");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<float>("RotationX")
+                        .HasColumnType("real")
+                        .HasColumnName("rotation_x");
+
+                    b.Property<float>("RotationY")
+                        .HasColumnType("real")
+                        .HasColumnName("rotation_y");
+
+                    b.Property<float>("RotationZ")
+                        .HasColumnType("real")
+                        .HasColumnName("rotation_z");
+
+                    b.Property<float>("ScaleX")
+                        .HasColumnType("real")
+                        .HasColumnName("scale_x");
+
+                    b.Property<float>("ScaleY")
+                        .HasColumnType("real")
+                        .HasColumnName("scale_y");
+
+                    b.Property<float>("ScaleZ")
+                        .HasColumnType("real")
+                        .HasColumnName("scale_z");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("IslandId", "DeletedAt");
+
+                    b.HasIndex("IslandId", "OwnerUserId");
+
+                    b.ToTable("objects", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.BuildOperation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<Guid?>("ObjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("object_id");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("operation");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload_json");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId", "CreatedAt");
+
+                    b.ToTable("build_operations", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.EquippedItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -608,6 +753,30 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Avatar");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.BuildObject", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.BuildOperation", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.EquippedItem", b =>

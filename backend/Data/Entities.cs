@@ -129,6 +129,42 @@ public sealed class IslandChange
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+public sealed class BuildObject
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public Guid? GroupId { get; set; }
+    public required string PrimitiveType { get; set; }
+    public float PositionX { get; set; }
+    public float PositionY { get; set; }
+    public float PositionZ { get; set; }
+    public float RotationX { get; set; }
+    public float RotationY { get; set; }
+    public float RotationZ { get; set; }
+    public float ScaleX { get; set; } = 1;
+    public float ScaleY { get; set; } = 1;
+    public float ScaleZ { get; set; } = 1;
+    public string MaterialJson { get; set; } = "{}";
+    public string PhysicsJson { get; set; } = "{}";
+    public int Revision { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public sealed class BuildOperation
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid? ObjectId { get; set; }
+    public Guid ActorUserId { get; set; }
+    public required string Operation { get; set; }
+    public required string PayloadJson { get; set; }
+    public int Revision { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public sealed class ServerInstance
 {
     public Guid Id { get; set; }

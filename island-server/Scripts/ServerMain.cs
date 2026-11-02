@@ -154,6 +154,23 @@ public partial class ServerMain : Node
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, peerId, sender.DisplayName, message, now.ToUnixTimeMilliseconds());
     }
 
+    public async void SubmitBuildOperation(int peerId, string operationJson)
+    {
+        if (!_players.TryGetValue(peerId, out var actor) || !actor.Authenticated || operationJson.Length > 100_000) return;
+        var now = DateTimeOffset.UtcNow; while (actor.BuildTimes.Count > 0 && now - actor.BuildTimes.Peek() > TimeSpan.FromSeconds(1)) actor.BuildTimes.Dequeue(); if (actor.BuildTimes.Count >= 20) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "rate_limit"); return; }
+        BuildCommand? command; try { command = JsonSerializer.Deserialize<BuildCommand>(operationJson, new JsonSerializerOptions(JsonSerializerDefaults.Web)); } catch { command = null; }
+        if (command is null || command.Operation is not ("create" or "update" or "delete") || (command.Object is not null && !ValidBuildCommand(command.Object))) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "invalid_operation"); return; }
+        actor.BuildTimes.Enqueue(now);
+        try
+        {
+            using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/build-operations", new { userId = actor.UserId, operation = command.Operation, objectId = command.ObjectId, @object = command.Object, expectedRevision = command.ExpectedRevision }, _shutdown.Token);
+            if (!response.IsSuccessStatusCode) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, response.StatusCode == System.Net.HttpStatusCode.Conflict ? "revision_conflict" : $"server_rejected_{(int)response.StatusCode}"); return; }
+            var accepted = await response.Content.ReadAsStringAsync(_shutdown.Token);
+            foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, accepted);
+        }
+        catch (Exception exception) { Log("build_operation_failed", new { peerId, error = exception.Message }); _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "service_unavailable"); }
+    }
+
     private void BroadcastSnapshots()
     {
         foreach (var target in _players.Values.Where(x => x.Authenticated))
@@ -171,6 +188,7 @@ public partial class ServerMain : Node
     private static float DistanceSquared(AuthoritativePlayerState a, AuthoritativePlayerState b) => (a.X-b.X)*(a.X-b.X)+(a.Y-b.Y)*(a.Y-b.Y)+(a.Z-b.Z)*(a.Z-b.Z);
     private static bool ContainsBlockedTerm(string message) => (System.Environment.GetEnvironmentVariable("LIFEVERSE_CHAT_BLOCKED_TERMS") ?? string.Empty)
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
+    private static bool ValidBuildCommand(BuildObjectCommand command) { var values = new[] { command.PositionX, command.PositionY, command.PositionZ, command.RotationX, command.RotationY, command.RotationZ, command.ScaleX, command.ScaleY, command.ScaleZ }; return new[] { "cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid" }.Contains(command.PrimitiveType, StringComparer.OrdinalIgnoreCase) && values.All(float.IsFinite) && new[] { command.ScaleX, command.ScaleY, command.ScaleZ }.All(x => x is >= .01f and <= 64f); }
 
     public override void _Notification(int what)
     {
@@ -277,10 +295,13 @@ public partial class ServerMain : Node
         public uint LastProcessedInput { get; set; }
         public NetworkMotionState Motion { get; set; }
         public Queue<DateTimeOffset> ChatTimes { get; } = new();
+        public Queue<DateTimeOffset> BuildTimes { get; } = new();
     }
     private sealed record SuspendedPlayer(ConnectedPlayer Player, DateTimeOffset ExpiresAt);
     private sealed record AdmissionResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
         int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson);
     private sealed record WorldSnapshotResponse(Guid IslandId, long Version, string TerrainJson, string EnvironmentJson, string IntegrityHash);
     private sealed record SnapshotWriteResponse(long Version);
+    private sealed record BuildCommand(string Operation, Guid? ObjectId, BuildObjectCommand? Object, int ExpectedRevision);
+    private sealed record BuildObjectCommand(string PrimitiveType, float PositionX, float PositionY, float PositionZ, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ, string? MaterialJson, string? PhysicsJson, Guid? GroupId, int ExpectedRevision = 0);
 }

@@ -21,6 +21,7 @@ Last updated: 2026-11-02.
 - Headless Godot lifecycle, central registration/heartbeat/deregistration, structured JSON logs, loopback health, configuration validation, and guarded ENet preparation.
 - Phase 03 authenticated ENet admission, authoritative tick simulation, snapshots, interpolation/reconciliation, local chat, interest management, and controlled reconnection.
 - Phase 04 persistent island metadata, official templates, user/group permissions, versioned terrain snapshots, audit changes, World Manager lifecycle states, procedural terrain/collision, day/night environment, and periodic server persistence.
+- Phase 05 in-world construction mode, nine primitive types, raycast selection/highlight, snap/material controls, persisted object revisions, quotas, grouping endpoints, server-authoritative ENet operations, and reliable replication.
 - Unit tests and end-to-end smoke script.
 
 ## Not complete / blocked
