@@ -2,7 +2,9 @@ namespace LifeVerse.Shared.Networking;
 
 public static class NetworkProtocol
 {
-    public const int Version = 1;
+    // v2 adds authoritative terrain editing (full map, edit replication, resync request).
+    public const int Version = 2;
+    public const int MaxTerrainEditsPerSecond = 20;
     public const int MaxSnapshotBytes = 32 * 1024;
     public const int MaxPlayersPerSnapshot = 256;
     public const int MaxChatCharacters = 256;

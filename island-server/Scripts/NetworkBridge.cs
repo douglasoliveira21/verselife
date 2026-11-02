@@ -18,6 +18,15 @@ public partial class NetworkBridge : Node
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
     public void SubmitBuildOperation(string operationJson) => Server.SubmitBuildOperation(Multiplayer.GetRemoteSenderId(), operationJson);
 
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void SubmitTerrainEdit(int tool, float x, float z, float radius, float strength, int layer) => Server.SubmitTerrainEdit(Multiplayer.GetRemoteSenderId(), tool, x, z, radius, strength, layer);
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void RequestTerrain() => Server.RequestTerrain(Multiplayer.GetRemoteSenderId());
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainFull(byte[] data, bool canEdit) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainEdited(int tool, float x, float z, float radius, float strength, int layer, long revision) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainEditRejected(string code) { }
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void AuthResult(bool success, string code, long serverTick) { }
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void SpawnPlayer(int peerId, string avatarId, string displayName, string appearanceJson, float x, float y, float z, int state) { }
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void DespawnPlayer(int peerId, bool suspended) { }

@@ -5,6 +5,7 @@ using LifeVerse.Client.Models;
 using LifeVerse.Client.Scripts;
 using LifeVerse.Shared.Gameplay;
 using LifeVerse.Shared.Networking;
+using LifeVerse.Shared.Terrain;
 
 namespace LifeVerse.Client.Autoloads;
 
@@ -14,6 +15,8 @@ public partial class NetworkManager : Node
     [Signal] public delegate void ChatReceivedEventHandler(string line);
     [Signal] public delegate void BuildOperationReceivedEventHandler(string operationJson);
     [Signal] public delegate void BuildOperationRejectedEventHandler(string code);
+    [Signal] public delegate void TerrainPermissionChangedEventHandler(bool canEdit);
+    [Signal] public delegate void TerrainEditRejectedEventHandler(string code);
     private readonly Dictionary<int, RemoteAvatar> _remote = [];
     private HttpRequest _http = null!;
     private HttpRequest _snapshotHttp = null!;
@@ -119,6 +122,22 @@ public partial class NetworkManager : Node
     public void SendInput(uint sequence, Vector2 direction, InputFlags flags) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitInput, (long)sequence, direction.X, direction.Y, (int)flags); }
     public void SendChatMessage(string message) { if (IsAuthenticated && !string.IsNullOrWhiteSpace(message)) _bridge.RpcId(1, NetworkBridge.MethodName.SendChat, message[..Math.Min(message.Length, NetworkProtocol.MaxChatCharacters)]); }
     public void SubmitBuildOperation(string operationJson) { if (IsAuthenticated && operationJson.Length <= 100_000) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitBuildOperation, operationJson); }
+    public bool CanEditTerrain { get; private set; }
+    public void SubmitTerrainEdit(TerrainTool tool, Vector3 point, float radius, float strength, int layer)
+    {
+        if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitTerrainEdit, (int)tool, point.X, point.Z, radius, strength, layer);
+    }
+    public void OnTerrainFull(byte[] data, bool canEdit)
+    {
+        if (GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain") is { } terrain && !terrain.ApplyFull(data)) GD.PushWarning("event=terrain_full_invalid");
+        CanEditTerrain = canEdit; EmitSignal(SignalName.TerrainPermissionChanged, canEdit);
+    }
+    public void OnTerrainEdited(int tool, float x, float z, float radius, float strength, int layer, long revision)
+    {
+        if (!Enum.IsDefined((TerrainTool)tool) || GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain") is not { } terrain) return;
+        if (!terrain.ApplyEdit((TerrainTool)tool, x, z, radius, strength, layer, revision)) _bridge.RpcId(1, NetworkBridge.MethodName.RequestTerrain);
+    }
+    public void OnTerrainEditRejected(string code) => EmitSignal(SignalName.TerrainEditRejected, code);
     public void OnBuildOperationApplied(string operationJson) => EmitSignal(SignalName.BuildOperationReceived, operationJson);
     public void OnBuildOperationRejected(string code) => EmitSignal(SignalName.BuildOperationRejected, code);
 
@@ -158,7 +177,7 @@ public partial class NetworkManager : Node
 
     private async void HandleConnectionLost(string reason)
     {
-        IsAuthenticated = false; foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear();
+        IsAuthenticated = false; CanEditTerrain = false; EmitSignal(SignalName.TerrainPermissionChanged, false); foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear();
         EmitSignal(SignalName.ConnectionStateChanged, "offline", reason);
         if (_intentionalDisconnect || _islandId == Guid.Empty || _reconnectAttempt >= 3) return;
         _reconnectAttempt++; await ToSignal(GetTree().CreateTimer(Math.Pow(2, _reconnectAttempt - 1)), SceneTreeTimer.SignalName.Timeout); JoinIsland(_islandId);

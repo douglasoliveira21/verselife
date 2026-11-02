@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Godot;
 using LifeVerse.Shared.Networking;
+using LifeVerse.Shared.Terrain;
 
 namespace LifeVerse.IslandServer.Scripts;
 
@@ -25,6 +26,8 @@ public partial class ServerMain : Node
     private double _snapshotAccumulator;
     private long _worldSnapshotVersion;
     private string _terrainJson = "{}";
+    private TerrainMap _terrain = new();
+    private bool _terrainDirty;
     private string _environmentJson = "{}";
     private double _worldSaveAccumulator;
 
@@ -63,7 +66,7 @@ public partial class ServerMain : Node
         var dt = Math.Min((float)delta, 1f / 20f);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
         {
-            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt);
+            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with
             {
@@ -121,7 +124,9 @@ public partial class ServerMain : Node
             {
                 var slot = _players.Values.Count(x => x.Authenticated);
                 player.State.X = slot % 8 * 2f; player.State.Z = slot / 8 * 2f;
+                player.State.Y = _terrain.SampleHeight(player.State.X, player.State.Z) + AuthoritativeMovement.GroundOffset;
             }
+            player.CanEditTerrain = admission.CanEditTerrain;
             player.Authenticated = true; player.UserId = admission.UserId; player.AvatarId = admission.AvatarId;
             player.SessionId = admission.SessionId; player.DisplayName = admission.DisplayName; player.AppearanceJson = admission.AppearanceJson;
             foreach (var existing in _players.Values.Where(x => x.Authenticated && x.PeerId != peerId))
@@ -131,6 +136,7 @@ public partial class ServerMain : Node
             }
             SendSpawn(peerId, player);
             _bridge.RpcId(peerId, NetworkBridge.MethodName.AuthResult, true, "ok", (long)_serverTick);
+            SendTerrain(player);
             Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
         }
         catch (Exception exception) { Log("admission_failed", new { peerId, error = exception.Message }); Reject(peerId, "admission_unavailable"); }
@@ -155,6 +161,36 @@ public partial class ServerMain : Node
         foreach (var target in _players.Values.Where(x => x.Authenticated && DistanceSquared(sender.State, x.State) <= 30f * 30f))
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, peerId, sender.DisplayName, message, now.ToUnixTimeMilliseconds());
     }
+
+    public void SubmitTerrainEdit(int peerId, int tool, float x, float z, float radius, float strength, int layer)
+    {
+        if (!_players.TryGetValue(peerId, out var actor) || !actor.Authenticated) return;
+        if (!actor.CanEditTerrain) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return; }
+        var now = DateTimeOffset.UtcNow;
+        while (actor.TerrainTimes.Count > 0 && now - actor.TerrainTimes.Peek() > TimeSpan.FromSeconds(1)) actor.TerrainTimes.Dequeue();
+        if (actor.TerrainTimes.Count >= NetworkProtocol.MaxTerrainEditsPerSecond) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "rate_limit"); return; }
+        if (!Enum.IsDefined((TerrainTool)tool) || layer is < 0 or >= TerrainMap.LayerCount || !float.IsFinite(x) || !float.IsFinite(z)
+            || Math.Abs(x) > _terrain.HalfExtent + TerrainMap.MaxBrushRadius || Math.Abs(z) > _terrain.HalfExtent + TerrainMap.MaxBrushRadius)
+        { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "invalid_edit"); return; }
+        actor.TerrainTimes.Enqueue(now);
+        // The accepted values are the clamped ones, so every client replays exactly what the server applied.
+        radius = Math.Clamp(radius, 1f, TerrainMap.MaxBrushRadius); strength = Math.Clamp(strength, 0f, 1f);
+        if (!_terrain.Apply((TerrainTool)tool, x, z, radius, strength, layer)) return;
+        _terrainDirty = true;
+        foreach (var target in _players.Values.Where(p => p.Authenticated))
+            _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.TerrainEdited, tool, x, z, radius, strength, layer, _terrain.Revision);
+    }
+
+    public void RequestTerrain(int peerId)
+    {
+        if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return;
+        var now = DateTimeOffset.UtcNow;
+        if (now - player.LastTerrainRequest < TimeSpan.FromSeconds(2)) return;
+        player.LastTerrainRequest = now;
+        SendTerrain(player);
+    }
+
+    private void SendTerrain(ConnectedPlayer player) => _bridge.RpcId(player.PeerId, NetworkBridge.MethodName.TerrainFull, _terrain.Serialize(), player.CanEditTerrain);
 
     public async void SubmitBuildOperation(int peerId, string operationJson)
     {
@@ -212,6 +248,7 @@ public partial class ServerMain : Node
         response.EnsureSuccessStatusCode();
         var snapshot = await response.Content.ReadFromJsonAsync<WorldSnapshotResponse>(cancellationToken: ct) ?? throw new InvalidOperationException("Island snapshot response was empty.");
         _worldSnapshotVersion = snapshot.Version; _terrainJson = snapshot.TerrainJson; _environmentJson = snapshot.EnvironmentJson;
+        _terrain = TerrainMap.FromJson(_terrainJson);
         Log("world_snapshot_loaded", new { snapshot.Version, snapshot.IntegrityHash });
     }
 
@@ -219,6 +256,7 @@ public partial class ServerMain : Node
     {
         try
         {
+            if (_terrainDirty) { _terrainJson = _terrain.ToJson(); _terrainDirty = false; }
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes($"{_config.IslandId}:{_worldSnapshotVersion}:{_terrainJson}:{_environmentJson}")));
             using var response = await _api.PutAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/island-snapshot", new { expectedVersion = _worldSnapshotVersion, terrainJson = _terrainJson, environmentJson = _environmentJson, integrityHash = hash }, ct);
             if (response.IsSuccessStatusCode) { var result = await response.Content.ReadFromJsonAsync<SnapshotWriteResponse>(cancellationToken: ct); if (result is not null) _worldSnapshotVersion = result.Version; Log("world_snapshot_saved", new { _worldSnapshotVersion }); }
@@ -299,10 +337,13 @@ public partial class ServerMain : Node
         public NetworkMotionState Motion { get; set; }
         public Queue<DateTimeOffset> ChatTimes { get; } = new();
         public Queue<DateTimeOffset> BuildTimes { get; } = new();
+        public Queue<DateTimeOffset> TerrainTimes { get; } = new();
+        public bool CanEditTerrain { get; set; }
+        public DateTimeOffset LastTerrainRequest { get; set; }
     }
     private sealed record SuspendedPlayer(ConnectedPlayer Player, DateTimeOffset ExpiresAt);
     private sealed record AdmissionResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
-        int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson);
+        int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false);
     private sealed record WorldSnapshotResponse(Guid IslandId, long Version, string TerrainJson, string EnvironmentJson, string IntegrityHash);
     private sealed record SnapshotWriteResponse(long Version);
     private sealed record BuildCommand(string Operation, Guid? ObjectId, BuildObjectCommand? Object, int ExpectedRevision);

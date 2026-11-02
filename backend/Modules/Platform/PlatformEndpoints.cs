@@ -12,7 +12,7 @@ public sealed record RegisterServerRequest(Guid InstanceId, Guid IslandId, strin
 public sealed record HeartbeatRequest(string Status);
 public sealed record ValidateEntryTokenRequest(string Token, Guid IslandId);
 public sealed record ValidateEntryTokenResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
-    int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson);
+    int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false);
 public sealed record ServerSnapshotRequest(long ExpectedVersion, string TerrainJson, string EnvironmentJson, string IntegrityHash);
 public sealed record ServerBuildOperationRequest(Guid UserId, string Operation, Guid? ObjectId, BuildObjectRequest? Object, int ExpectedRevision);
 
@@ -109,8 +109,10 @@ public static class PlatformEndpoints
             invertCameraY = avatar.Appearance?.InvertCameraY ?? false,
             equippedItems = avatar.EquippedItems.Select(x => new { slot = x.Slot, itemKey = x.ItemKey, tintColor = x.TintColor })
         });
+        var canEditTerrain = await db.Islands.AsNoTracking().AnyAsync(x => x.Id == identity.IslandId && x.DeletedAt == null &&
+            (x.OwnerUserId == identity.UserId || db.IslandPermissions.Any(p => p.IslandId == x.Id && p.UserId == identity.UserId && p.RevokedAt == null && (p.Permission == "edit_terrain" || p.Permission == "admin"))), ct);
         return Results.Ok(new ValidateEntryTokenResponse(identity.UserId, identity.AvatarId, identity.IslandId, identity.SessionId,
-            identity.TokenId, identity.ProtocolVersion, identity.ExpiresAt, avatar.DisplayName, appearance));
+            identity.TokenId, identity.ProtocolVersion, identity.ExpiresAt, avatar.DisplayName, appearance, canEditTerrain));
     }
 
     private static bool HasValidServiceKey(HttpContext context, IConfiguration config)

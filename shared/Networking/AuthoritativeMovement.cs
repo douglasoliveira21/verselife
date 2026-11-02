@@ -3,7 +3,7 @@ namespace LifeVerse.Shared.Networking;
 public sealed class AuthoritativePlayerState
 {
     public float X { get; set; }
-    public float Y { get; set; } = 1f;
+    public float Y { get; set; }
     public float Z { get; set; }
     public float VelocityX { get; set; }
     public float VelocityY { get; set; }
@@ -11,7 +11,8 @@ public sealed class AuthoritativePlayerState
     public bool Flying { get; set; }
     public bool Seated { get; set; }
     public bool CanFly { get; init; } = true;
-    public bool Grounded => Y <= 1.001f;
+    public float GroundY { get; set; }
+    public bool Grounded => Y <= GroundY + .001f;
 }
 
 public static class AuthoritativeMovement
@@ -22,10 +23,17 @@ public static class AuthoritativeMovement
     public const float Acceleration = 40f;
     public const float Deceleration = 60f;
     public const float JumpVelocity = 5.2f;
+    // The avatar origin is at its feet, so it rests exactly on the terrain surface; StepDown is the largest
+    // drop the avatar sticks to when walking downhill.
+    public const float GroundOffset = 0f;
+    public const float StepDown = .35f;
 
-    public static NetworkMotionState Step(AuthoritativePlayerState state, MovementInput input, float delta)
+    public static NetworkMotionState Step(AuthoritativePlayerState state, MovementInput input, float delta, Func<float, float, float>? terrainHeight = null)
     {
         delta = Math.Clamp(delta, 0.001f, 0.1f);
+        state.GroundY = terrainHeight is null ? GroundOffset : terrainHeight(state.X, state.Z) + GroundOffset;
+        var wasGrounded = state.Grounded;
+        var jumped = false;
         if (input.Flags.HasFlag(InputFlags.Sit)) state.Seated = !state.Seated;
         if (state.Seated) { state.VelocityX = 0; state.VelocityY = 0; state.VelocityZ = 0; return NetworkMotionState.Sit; }
         var length = MathF.Sqrt(input.X * input.X + input.Z * input.Z);
@@ -40,13 +48,16 @@ public static class AuthoritativeMovement
             state.VelocityY = input.Flags.HasFlag(InputFlags.Jump) ? FlySpeed : input.Flags.HasFlag(InputFlags.Descend) ? -FlySpeed : 0f;
         else
         {
-            if (input.Flags.HasFlag(InputFlags.Jump) && state.Grounded) state.VelocityY = JumpVelocity;
+            if (input.Flags.HasFlag(InputFlags.Jump) && state.Grounded) { state.VelocityY = JumpVelocity; jumped = true; }
             state.VelocityY -= 9.8f * delta;
         }
         state.X += state.VelocityX * delta;
         state.Y += state.VelocityY * delta;
         state.Z += state.VelocityZ * delta;
-        if (state.Y <= 1f) { state.Y = 1f; state.VelocityY = Math.Max(0f, state.VelocityY); if (state.Flying && input.Flags.HasFlag(InputFlags.Descend)) state.Flying = false; }
+        var ground = terrainHeight is null ? GroundOffset : terrainHeight(state.X, state.Z) + GroundOffset;
+        var followsGround = !state.Flying && wasGrounded && !jumped && state.Y - ground <= StepDown;
+        state.GroundY = ground;
+        if (state.Y <= ground || followsGround) { state.Y = ground; state.VelocityY = Math.Max(0f, state.VelocityY); if (state.Flying && input.Flags.HasFlag(InputFlags.Descend)) state.Flying = false; }
         if (input.Flags.HasFlag(InputFlags.Wave)) return NetworkMotionState.Wave;
         if (input.Flags.HasFlag(InputFlags.Dance)) return NetworkMotionState.Dance;
         if (state.Flying) return NetworkMotionState.Fly;
