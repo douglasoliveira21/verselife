@@ -26,6 +26,7 @@ Last updated: 2026-11-02.
 - Phase 07 isolated Lua worker contract, safety validator, script/event/state persistence, execution audit/quarantine, ten templates, and in-world Lua/HUD editors.
 - Phase 08 social messages, friendships, groups, blocks/reports, temporary LiveKit room tokens, and validated island radios.
 - Phase 09 paginated public island discovery, favorites, World Manager teleport reservations, landmarks, events, photos, and the client map/minimap panel.
+- Phase 10 integer LV Coins wallets, atomic/idempotent ledger purchases and transfers, marketplace publication/delivery, island rental contracts, and the client marketplace panel.
 - Unit tests and end-to-end smoke script.
 
 ## Not complete / blocked

@@ -52,4 +52,6 @@ The World scene now contains the Multiplayer panel. Enter an island UUID to requ
 - `tests`: automated tests and smoke-test scripts
 
 Global discovery, teleport reservations, landmarks, events, photos and minimap behavior are documented in [docs/DISCOVERY.md](docs/DISCOVERY.md).
+
+LV Coins, the ledger, marketplace purchases and island rentals are documented in [docs/ECONOMY.md](docs/ECONOMY.md).
 - `docs`: product, architecture, security, operations, and progress records

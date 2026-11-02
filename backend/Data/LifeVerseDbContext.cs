@@ -32,6 +32,14 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<EventAttendee> EventAttendees => Set<EventAttendee>();
     public DbSet<PhotoSnapshot> PhotoSnapshots => Set<PhotoSnapshot>();
     public DbSet<TeleportReservation> TeleportReservations => Set<TeleportReservation>();
+    public DbSet<Wallet> Wallets => Set<Wallet>();
+    public DbSet<LedgerAccount> LedgerAccounts => Set<LedgerAccount>();
+    public DbSet<LedgerTransaction> LedgerTransactions => Set<LedgerTransaction>();
+    public DbSet<LedgerEntry> LedgerEntries => Set<LedgerEntry>();
+    public DbSet<MarketplaceProduct> MarketplaceProducts => Set<MarketplaceProduct>();
+    public DbSet<MarketplaceOrder> MarketplaceOrders => Set<MarketplaceOrder>();
+    public DbSet<IslandRentalPlan> IslandRentalPlans => Set<IslandRentalPlan>();
+    public DbSet<IslandRental> IslandRentals => Set<IslandRental>();
     public DbSet<SocialMessage> SocialMessages => Set<SocialMessage>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
@@ -169,6 +177,14 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<EventAttendee>(b => { b.ToTable("event_attendees", "discovery"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.EventId, x.UserId }).IsUnique(); b.HasOne<DiscoveryEvent>().WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<PhotoSnapshot>(b => { b.ToTable("photos", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.StorageKey).HasMaxLength(512); b.Property(x => x.MetadataJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.OwnerUserId, x.CreatedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.SetNull); });
         modelBuilder.Entity<TeleportReservation>(b => { b.ToTable("teleport_reservations", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.UserId, x.ExpiresAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<Wallet>(b => { b.ToTable("wallets", "economy"); b.HasKey(x => x.Id); b.HasIndex(x => x.UserId).IsUnique(); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<LedgerAccount>(b => { b.ToTable("accounts", "economy"); b.HasKey(x => x.Id); b.Property(x => x.AccountType).HasMaxLength(32); b.HasIndex(x => new { x.UserId, x.AccountType }).IsUnique(); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<LedgerTransaction>(b => { b.ToTable("transactions", "economy"); b.HasKey(x => x.Id); b.Property(x => x.IdempotencyKey).HasMaxLength(128); b.Property(x => x.Type).HasMaxLength(32); b.Property(x => x.Status).HasMaxLength(24); b.Property(x => x.MetadataJson).HasColumnType("jsonb"); b.HasIndex(x => x.IdempotencyKey).IsUnique(); b.HasIndex(x => new { x.InitiatorUserId, x.CreatedAt }); });
+        modelBuilder.Entity<LedgerEntry>(b => { b.ToTable("ledger_entries", "economy"); b.HasKey(x => x.Id); b.HasIndex(x => x.TransactionId); b.HasOne<LedgerTransaction>().WithMany().HasForeignKey(x => x.TransactionId).OnDelete(DeleteBehavior.Cascade); b.HasOne<LedgerAccount>().WithMany().HasForeignKey(x => x.AccountId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<MarketplaceProduct>(b => { b.ToTable("products", "marketplace"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(160); b.Property(x => x.Description).HasMaxLength(4000); b.Property(x => x.Category).HasMaxLength(48); b.Property(x => x.PermissionsJson).HasColumnType("jsonb"); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.Status, x.Category, x.UpdatedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.SellerUserId).OnDelete(DeleteBehavior.Restrict); b.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<MarketplaceOrder>(b => { b.ToTable("orders", "marketplace"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(24); b.Property(x => x.IdempotencyKey).HasMaxLength(128); b.HasIndex(x => x.IdempotencyKey).IsUnique(); b.HasIndex(x => new { x.BuyerUserId, x.CreatedAt }); b.HasOne<MarketplaceProduct>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<IslandRentalPlan>(b => { b.ToTable("rental_plans", "economy"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(80); b.HasIndex(x => x.IsActive); });
+        modelBuilder.Entity<IslandRental>(b => { b.ToTable("rentals", "economy"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.IslandId, x.Status }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict); b.HasOne<IslandRentalPlan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<ServerInstance>(b =>
         {
             b.ToTable("server_instances", "platform");

@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource path="res://Scenes/Player.tscn" type="PackedScene" id="1"]
 [ext_resource path="res://Scripts/InteractableSeat.cs" type="Script" id="2"]
@@ -12,6 +12,7 @@
 [ext_resource path="res://Scripts/HudEditor.cs" type="Script" id="10"]
 [ext_resource path="res://Scripts/SocialPanel.cs" type="Script" id="11"]
 [ext_resource path="res://Scripts/DiscoveryPanel.cs" type="Script" id="12"]
+[ext_resource path="res://Scripts/MarketplacePanel.cs" type="Script" id="13"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMaterial"]
 sky_top_color = Color(0.08, 0.18, 0.36, 1)
@@ -92,6 +93,9 @@ script = ExtResource("11")
 
 [node name="DiscoveryPanel" type="Node3D" parent="."]
 script = ExtResource("12")
+
+[node name="MarketplacePanel" type="Node3D" parent="."]
+script = ExtResource("13")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment")

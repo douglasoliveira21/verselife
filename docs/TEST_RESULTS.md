@@ -83,6 +83,16 @@ Run date: 2026-11-02.
 | Client build | Passed | Map/minimap panel compiles with 0 warnings/errors |
 | Runtime island transfer | Environment-blocked | Docker/PostgreSQL and live island instances are unavailable in this environment |
 
+## Phase 10
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Economy migration | Passed | Versioned migration creates wallets, ledger, products, orders and rental tables |
+| Integer monetary values | Passed | Wallet and ledger amounts use `long`; no float monetary fields |
+| Purchase idempotency | Passed statically | Unique idempotency key and atomic debit/credit/delivery transaction |
+| Marketplace/client build | Passed | API, client, island-server and tests compile without warnings/errors |
+| Live financial smoke test | Environment-blocked | PostgreSQL/Docker is unavailable in this environment |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |
