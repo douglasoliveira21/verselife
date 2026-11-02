@@ -14,6 +14,7 @@ public sealed class User
     public string PresenceStatus { get; set; } = "offline";
     public DateTimeOffset PresenceUpdatedAt { get; set; }
     public string PrivacyJson { get; set; } = "{\"presence\":\"friends\"}";
+    public string VoiceSettingsJson { get; set; } = "{\"pushToTalk\":true,\"voiceActivation\":false,\"sensitivity\":0.5,\"outputVolume\":1}";
     public DateTimeOffset? DeletedAt { get; set; }
     public Avatar? Avatar { get; set; }
     public ICollection<Session> Sessions { get; set; } = [];

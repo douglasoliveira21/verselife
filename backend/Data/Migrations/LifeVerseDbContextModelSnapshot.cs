@@ -2443,6 +2443,11 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(32)")
                         .HasColumnName("username");
 
+                    b.Property<string>("VoiceSettingsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("voice_settings_json");
+
                     b.HasKey("Id");
 
                     b.HasIndex("NormalizedEmail")
