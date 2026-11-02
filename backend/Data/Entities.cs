@@ -10,6 +10,7 @@ public sealed class User
     public required string PasswordHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public string Status { get; set; } = "active";
     public DateTimeOffset? DeletedAt { get; set; }
     public Avatar? Avatar { get; set; }
     public ICollection<Session> Sessions { get; set; } = [];

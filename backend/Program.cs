@@ -76,6 +76,13 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 app.UseExceptionHandler();
+app.Use(async (context, next) =>
+{
+    var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault();
+    if (!Guid.TryParse(correlationId, out _)) correlationId = Guid.NewGuid().ToString("N");
+    context.Response.Headers["X-Correlation-ID"] = correlationId;
+    await next();
+});
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -98,6 +105,7 @@ app.MapScriptingEndpoints();
 app.MapSocialEndpoints();
 app.MapDiscoveryEndpoints();
 app.MapEconomyEndpoints();
+app.MapAdminEndpoints();
 
 if (!app.Environment.IsEnvironment("Testing"))
 {

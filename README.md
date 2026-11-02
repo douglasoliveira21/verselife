@@ -54,4 +54,6 @@ The World scene now contains the Multiplayer panel. Enter an island UUID to requ
 Global discovery, teleport reservations, landmarks, events, photos and minimap behavior are documented in [docs/DISCOVERY.md](docs/DISCOVERY.md).
 
 LV Coins, the ledger, marketplace purchases and island rentals are documented in [docs/ECONOMY.md](docs/ECONOMY.md).
+
+The administrative panel, RBAC/MFA contract, audit trail and backup runbook are documented in [docs/ADMINISTRATION.md](docs/ADMINISTRATION.md).
 - `docs`: product, architecture, security, operations, and progress records

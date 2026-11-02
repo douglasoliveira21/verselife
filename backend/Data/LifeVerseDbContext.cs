@@ -40,6 +40,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<MarketplaceOrder> MarketplaceOrders => Set<MarketplaceOrder>();
     public DbSet<IslandRentalPlan> IslandRentalPlans => Set<IslandRentalPlan>();
     public DbSet<IslandRental> IslandRentals => Set<IslandRental>();
+    public DbSet<AdminAudit> AdminAudits => Set<AdminAudit>();
+    public DbSet<ModerationCase> ModerationCases => Set<ModerationCase>();
     public DbSet<SocialMessage> SocialMessages => Set<SocialMessage>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
@@ -62,6 +64,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.Email).HasMaxLength(254);
             b.Property(x => x.NormalizedEmail).HasMaxLength(254);
             b.Property(x => x.PasswordHash).HasMaxLength(512);
+            b.Property(x => x.Status).HasMaxLength(24);
             b.HasIndex(x => x.NormalizedUsername).IsUnique().HasFilter("deleted_at IS NULL");
             b.HasIndex(x => x.NormalizedEmail).IsUnique().HasFilter("deleted_at IS NULL");
         });
@@ -185,6 +188,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<MarketplaceOrder>(b => { b.ToTable("orders", "marketplace"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(24); b.Property(x => x.IdempotencyKey).HasMaxLength(128); b.HasIndex(x => x.IdempotencyKey).IsUnique(); b.HasIndex(x => new { x.BuyerUserId, x.CreatedAt }); b.HasOne<MarketplaceProduct>().WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<IslandRentalPlan>(b => { b.ToTable("rental_plans", "economy"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(80); b.HasIndex(x => x.IsActive); });
         modelBuilder.Entity<IslandRental>(b => { b.ToTable("rentals", "economy"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.IslandId, x.Status }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict); b.HasOne<IslandRentalPlan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<AdminAudit>(b => { b.ToTable("admin_audits", "platform"); b.HasKey(x => x.Id); b.Property(x => x.Action).HasMaxLength(64); b.Property(x => x.TargetType).HasMaxLength(32); b.Property(x => x.MetadataJson).HasColumnType("jsonb"); b.HasIndex(x => x.CreatedAt); b.HasOne<User>().WithMany().HasForeignKey(x => x.AdminUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<ModerationCase>(b => { b.ToTable("moderation_cases", "platform"); b.HasKey(x => x.Id); b.Property(x => x.Decision).HasMaxLength(32); b.Property(x => x.EvidenceJson).HasColumnType("jsonb"); b.Property(x => x.Notes).HasMaxLength(4000); b.HasIndex(x => x.CreatedAt); b.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewerUserId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<ServerInstance>(b =>
         {
             b.ToTable("server_instances", "platform");

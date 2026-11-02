@@ -93,6 +93,17 @@ Run date: 2026-11-02.
 | Marketplace/client build | Passed | API, client, island-server and tests compile without warnings/errors |
 | Live financial smoke test | Environment-blocked | PostgreSQL/Docker is unavailable in this environment |
 
+## Phase 11
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Admin migration | Passed | Versioned migration creates admin audit and moderation case tables and User status |
+| Admin authorization | Passed statically | User UUID allowlist plus MFA header required; absent configuration fails closed |
+| Audit trail | Passed statically | User/island/moderation actions write platform audit records |
+| Correlation IDs | Passed | API middleware accepts or generates `X-Correlation-ID` |
+| Backup runbook | Documented | [docs/ADMINISTRATION.md](ADMINISTRATION.md) defines encrypted dump, MinIO export, checksums and restore drills |
+| Operational runtime | Environment-blocked | Docker/PostgreSQL/host metrics unavailable in this environment |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |
