@@ -14,6 +14,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<IslandPermission> IslandPermissions => Set<IslandPermission>();
     public DbSet<IslandSnapshot> IslandSnapshots => Set<IslandSnapshot>();
     public DbSet<IslandChange> IslandChanges => Set<IslandChange>();
+    public DbSet<IslandParcel> IslandParcels => Set<IslandParcel>();
+    public DbSet<ParcelChange> ParcelChanges => Set<ParcelChange>();
     public DbSet<BuildObject> BuildObjects => Set<BuildObject>();
     public DbSet<BuildOperation> BuildOperations => Set<BuildOperation>();
     public DbSet<Asset> Assets => Set<Asset>();
@@ -151,6 +153,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.ToTable("changes", "world"); b.HasKey(x => x.Id); b.Property(x => x.Operation).HasMaxLength(48); b.Property(x => x.PayloadJson).HasColumnType("jsonb"); b.Property(x => x.IntegrityHash).HasMaxLength(64);
             b.HasIndex(x => new { x.IslandId, x.Version }).IsUnique(); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
         });
+        modelBuilder.Entity<IslandParcel>(b => { b.ToTable("parcels", "world"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.Description).HasMaxLength(4000); b.Property(x => x.BoundsJson).HasColumnType("jsonb"); b.Property(x => x.PermissionsJson).HasColumnType("jsonb"); b.Property(x => x.EnvironmentJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.IslandId, x.DeletedAt }); b.HasIndex(x => new { x.IslandId, x.Name }).IsUnique().HasFilter("deleted_at IS NULL"); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<ParcelChange>(b => { b.ToTable("parcel_changes", "world"); b.HasKey(x => x.Id); b.Property(x => x.Operation).HasMaxLength(48); b.Property(x => x.PayloadJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.ParcelId, x.CreatedAt }); b.HasOne<IslandParcel>().WithMany().HasForeignKey(x => x.ParcelId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.ActorUserId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<BuildObject>(b =>
         {
             b.ToTable("objects", "world"); b.HasKey(x => x.Id); b.Property(x => x.CreatorUserId).IsRequired(); b.Property(x => x.Name).HasMaxLength(160); b.Property(x => x.Description).HasMaxLength(4000); b.Property(x => x.PrimitiveType).HasMaxLength(24); b.Property(x => x.MaterialJson).HasColumnType("jsonb"); b.Property(x => x.GeometryJson).HasColumnType("jsonb"); b.Property(x => x.PhysicsJson).HasColumnType("jsonb"); b.Property(x => x.PermissionsJson).HasColumnType("jsonb"); b.Property(x => x.ContentJson).HasColumnType("jsonb"); b.Property(x => x.OwnerHistoryJson).HasColumnType("jsonb");

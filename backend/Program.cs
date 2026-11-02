@@ -116,6 +116,7 @@ app.MapIdentityEndpoints();
 app.MapUserEndpoints();
 app.MapPlatformEndpoints();
 app.MapWorldEndpoints();
+app.MapParcelEndpoints();
 app.MapBuildEndpoints();
 app.MapAssetEndpoints();
 app.MapScriptingEndpoints();

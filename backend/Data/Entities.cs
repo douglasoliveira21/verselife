@@ -135,6 +135,39 @@ public sealed class IslandChange
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+public sealed class IslandParcel
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public Guid? GroupId { get; set; }
+    public required string Name { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public required string BoundsJson { get; set; }
+    public double Area { get; set; }
+    public int MaxObjects { get; set; } = 1000;
+    public string PermissionsJson { get; set; } = "{\"enter\":true,\"build\":false,\"run_scripts\":false,\"rezzing\":false}";
+    public string EnvironmentJson { get; set; } = "{}";
+    public float SpawnX { get; set; }
+    public float SpawnY { get; set; } = 1f;
+    public float SpawnZ { get; set; }
+    public int Revision { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public sealed class ParcelChange
+{
+    public Guid Id { get; set; }
+    public Guid ParcelId { get; set; }
+    public Guid ActorUserId { get; set; }
+    public required string Operation { get; set; }
+    public required string PayloadJson { get; set; }
+    public int Revision { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
 public sealed class BuildObject
 {
     public Guid Id { get; set; }
