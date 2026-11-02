@@ -130,16 +130,16 @@ public static class PlatformEndpoints
         var instance = await db.ServerInstances.SingleOrDefaultAsync(x => x.Id == request.InstanceId, ct);
         if (instance is null)
         {
-            instance = new ServerInstance { Id = request.InstanceId, IslandId = request.IslandId, Hostname = request.Hostname[..Math.Min(request.Hostname.Length, 255)], Port = request.Port, Status = "healthy", StartedAt = now, LastHeartbeatAt = now };
+            instance = new ServerInstance { Id = request.InstanceId, IslandId = request.IslandId, Hostname = request.Hostname[..Math.Min(request.Hostname.Length, 255)], Port = request.Port, Status = "starting", StartedAt = now, LastHeartbeatAt = now };
             db.ServerInstances.Add(instance);
         }
         else
         {
-            instance.Status = "healthy"; instance.LastHeartbeatAt = now; instance.StoppedAt = null;
+            instance.Status = "starting"; instance.LastHeartbeatAt = now; instance.StoppedAt = null;
         }
         await db.SaveChangesAsync(ct);
         await db.Islands.Where(x => x.Id == request.IslandId && x.DeletedAt == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.RuntimeState, "running").SetProperty(x => x.UpdatedAt, now), ct);
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.RuntimeState, "starting").SetProperty(x => x.UpdatedAt, now), ct);
         return Results.Ok(new { instance.Id, instance.LastHeartbeatAt });
     }
 
@@ -155,6 +155,7 @@ public static class PlatformEndpoints
         var islandId = await db.ServerInstances.AsNoTracking().Where(x => x.Id == instanceId).Select(x => (Guid?)x.IslandId).SingleOrDefaultAsync(ct);
         if (islandId is not null)
         {
+            if (status == "healthy") await db.Islands.Where(x => x.Id == islandId && x.DeletedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RuntimeState, "running").SetProperty(x => x.UpdatedAt, timeProvider.GetUtcNow()), ct);
             var hasHealthy = await db.ServerInstances.AnyAsync(x => x.IslandId == islandId && x.StoppedAt == null && x.Status == "healthy" && x.LastHeartbeatAt > timeProvider.GetUtcNow().AddSeconds(-45), ct);
             if (!hasHealthy) await db.Islands.Where(x => x.Id == islandId && x.DeletedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RuntimeState, "suspended").SetProperty(x => x.UpdatedAt, timeProvider.GetUtcNow()), ct);
         }

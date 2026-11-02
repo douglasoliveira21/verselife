@@ -15,6 +15,7 @@ public partial class ServerMain : Node
     private ServerConfiguration _config = null!;
     private TcpListener? _healthListener;
     private bool _registered;
+    private bool _ready;
     private bool _stopping;
     private NetworkBridge _bridge = null!;
     private readonly Dictionary<int, ConnectedPlayer> _players = [];
@@ -34,7 +35,7 @@ public partial class ServerMain : Node
             _config = ServerConfiguration.FromEnvironment();
             _bridge = GetNode<NetworkBridge>("/root/NetworkBridge");
             _api.DefaultRequestHeaders.Add("X-LifeVerse-Service-Key", _config.ServiceKey);
-            _healthListener = new TcpListener(IPAddress.Loopback, _config.HealthPort);
+            _healthListener = new TcpListener(IPAddress.Any, _config.HealthPort);
             _healthListener.Start();
             _ = ServeHealthAsync(_shutdown.Token);
             await RegisterAsync(_shutdown.Token);
@@ -46,6 +47,7 @@ public partial class ServerMain : Node
             Multiplayer.PeerConnected += OnPeerConnected;
             Multiplayer.PeerDisconnected += OnPeerDisconnected;
             _ = HeartbeatLoopAsync(_shutdown.Token);
+            _ready = true;
             Log("server_started", new { _config.InstanceId, _config.IslandId, _config.GamePort, _config.HealthPort, enet = "listening", _config.ProtocolVersion });
         }
         catch (Exception exception)
@@ -249,9 +251,10 @@ public partial class ServerMain : Node
             {
                 using var client = await _healthListener.AcceptTcpClientAsync(ct);
                 await using var stream = client.GetStream();
-                var body = JsonSerializer.Serialize(new { status = _registered ? "healthy" : "starting", instanceId = _config.InstanceId });
+                var ready = _registered && _ready;
+                var body = JsonSerializer.Serialize(new { status = ready ? "healthy" : "starting", ready, instanceId = _config.InstanceId });
                 var bytes = Encoding.UTF8.GetBytes(body);
-                var headers = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
+                var headers = Encoding.ASCII.GetBytes($"HTTP/1.1 {(ready ? "200 OK" : "503 Service Unavailable")}\r\nContent-Type: application/json\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\n\r\n");
                 await stream.WriteAsync(headers, ct);
                 await stream.WriteAsync(bytes, ct);
             }
