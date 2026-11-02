@@ -1,0 +1,14 @@
+.git
+.tools
+.artifacts
+artifacts
+**/bin
+**/obj
+**/.godot
+**/.mono
+**/export_templates
+*.user
+*.suo
+.env
+secrets
+logs
