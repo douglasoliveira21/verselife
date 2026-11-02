@@ -66,9 +66,33 @@ public partial class AvatarRig : Node3D
         Limb(hips, "LeftUpperLeg", "LeftLowerLeg", new Vector3(-0.17f, -0.18f, 0), new Vector3(0, -0.55f, 0), bottom, bottomItem == "pants_basic" ? bottom : skin, shoes, true);
         Limb(hips, "RightUpperLeg", "RightLowerLeg", new Vector3(0.17f, -0.18f, 0), new Vector3(0, -0.55f, 0), bottom, bottomItem == "pants_basic" ? bottom : skin, shoes, true);
 
-        var name = new Label3D { Name = "DisplayName", Text = data.DisplayName, Position = new Vector3(0, 2.55f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, FontSize = 32, OutlineSize = 6 };
+        AlignFeetToGround(hips);
+
+        var name = new Label3D { Name = "DisplayName", Text = data.DisplayName, Position = new Vector3(0, 2.8f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, FontSize = 32, OutlineSize = 6 };
         _visual.AddChild(name);
         if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(StateName(_state)); }
+    }
+
+    /// The rig origin is the avatar's feet. The procedural legs are longer than the leg length they were
+    /// laid out with, so the shoe soles hang below the origin and the avatar stands knee-deep in the ground.
+    /// Measure the lowest point of the body and lift the visual so the soles rest exactly on the origin.
+    private void AlignFeetToGround(Node3D hips)
+    {
+        _visual.Position = Vector3.Zero;
+        var lowest = float.MaxValue;
+        void Visit(Node3D node, Transform3D parent)
+        {
+            var current = parent * node.Transform;
+            if (node is MeshInstance3D { Mesh: not null } mesh)
+            {
+                var box = mesh.Mesh.GetAabb();
+                for (var corner = 0; corner < 8; corner++)
+                    lowest = Mathf.Min(lowest, (current * (box.Position + new Vector3((corner & 1) * box.Size.X, ((corner >> 1) & 1) * box.Size.Y, ((corner >> 2) & 1) * box.Size.Z))).Y);
+            }
+            foreach (var child in node.GetChildren()) if (child is Node3D childNode) Visit(childNode, current);
+        }
+        Visit(hips, new Transform3D(Basis.FromScale(_visual.Scale), Vector3.Zero));
+        if (lowest < float.MaxValue) _visual.Position = new Vector3(0, -lowest, 0);
     }
 
     public void SetMotionState(AvatarMotionState state, bool force = false)
@@ -136,7 +160,9 @@ public partial class AvatarRig : Node3D
         library.AddAnimation("Run", Gait(.62, .78f));
         library.AddAnimation("Jump", Pose(.45, ("Visual/Hips/LeftUpperLeg:rotation", V(-.45f)), ("Visual/Hips/RightUpperLeg:rotation", V(-.45f)), ("Visual/Hips/Torso/LeftUpperArm:rotation", V(-.6f)), ("Visual/Hips/Torso/RightUpperArm:rotation", V(-.6f))));
         library.AddAnimation("Fall", Pose(.6, ("Visual/Hips/LeftUpperLeg:rotation", V(.18f)), ("Visual/Hips/RightUpperLeg:rotation", V(.18f)), ("Visual/Hips/Torso/LeftUpperArm:rotation", new Vector3(0, 0, -.75f)), ("Visual/Hips/Torso/RightUpperArm:rotation", new Vector3(0, 0, .75f))));
-        library.AddAnimation("Landing", Clip(.35, false, ("Visual/Hips:position", new[] { new Vector3(0, .92f, 0), new Vector3(0, .72f, 0), new Vector3(0, .92f, 0) })));
+        // Landing flexes the legs instead of animating Hips:position. A position track on Hips makes the AnimationTree
+        // reset it to zero in every other state, which sinks the whole avatar into the ground up to the waist.
+        library.AddAnimation("Landing", Clip(.35, false, ("Visual/Hips/Torso:rotation", new[] { V(0), V(.22f), V(0) }), ("Visual/Hips/LeftUpperLeg:rotation", new[] { V(0), V(-.5f), V(0) }), ("Visual/Hips/RightUpperLeg:rotation", new[] { V(0), V(-.5f), V(0) })));
         library.AddAnimation("FlyIdle", Pose(1, ("Visual/Hips/Torso/LeftUpperArm:rotation", new Vector3(0, 0, -1.35f)), ("Visual/Hips/Torso/RightUpperArm:rotation", new Vector3(0, 0, 1.35f))));
         library.AddAnimation("FlyMove", Pose(.8, ("Visual/Hips/Torso:rotation", V(-.35f)), ("Visual/Hips/Torso/LeftUpperArm:rotation", V(-2.3f)), ("Visual/Hips/Torso/RightUpperArm:rotation", V(-2.3f))));
         library.AddAnimation("Sit", Pose(.45, ("Visual/Hips/LeftUpperLeg:rotation", V(-1.45f)), ("Visual/Hips/RightUpperLeg:rotation", V(-1.45f)), ("Visual/Hips/LeftUpperLeg/LeftLowerLeg:rotation", V(1.45f)), ("Visual/Hips/RightUpperLeg/RightLowerLeg:rotation", V(1.45f))));
