@@ -52,6 +52,8 @@ public partial class NetworkManager : Node
         }
     }
 
+    public IEnumerable<Vector3> RemotePositions => _remote.Values.Select(remote => remote.Node.GlobalPosition);
+
     public Error JoinIsland(Guid islandId)
     {
         if (islandId == Guid.Empty) return Error.InvalidParameter;

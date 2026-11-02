@@ -19,6 +19,16 @@ public partial class TerrainSmoke : Node
             Require(Mathf.Abs(terrain.Map.SampleHeight(0, 0)) < .001f, "new terrain is not flat");
             Require(player.IsOnFloor() && Mathf.Abs(player.GlobalPosition.Y) < .1f, $"player not standing on flat terrain: {player.GlobalPosition}");
             await Capture("flat");
+            // Open the main windows the way a player would, to inspect the interface.
+            PressButton(world, "Mover"); PressButton(world, "Gestos");
+            if (world.FindChild("Entrar_em_uma_ilha", true, false) is Control joinWindow) joinWindow.Visible = false;
+            await Frames(10);
+            await Capture("ui");
+            PressButton(world, "Inventário"); PressButton(world, "Construir"); PressButton(world, "Pessoas");
+            await Frames(10);
+            await Capture("ui2");
+            PressButton(world, "Inventário"); PressButton(world, "Pessoas");
+            PressButton(world, "Mover"); PressButton(world, "Gestos");
 
             // Raising the ground under a standing avatar must lift it, not bury it.
             player.GlobalPosition = new Vector3(0, 0, 8);
@@ -79,6 +89,13 @@ public partial class TerrainSmoke : Node
             GD.PushError($"event=terrain_smoke result=failed error={exception.Message}");
             GetTree().Quit(1);
         }
+    }
+
+    private static void PressButton(Node root, string text)
+    {
+        foreach (var node in root.FindChildren("*", "Button", true, false))
+            if (node is Button button && button.Text == text) { button.EmitSignal(BaseButton.SignalName.Pressed); return; }
+        throw new InvalidOperationException($"button not found: {text}");
     }
 
     private async Task Capture(string name)

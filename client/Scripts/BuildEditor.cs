@@ -37,7 +37,7 @@ public partial class BuildEditor : Node3D
 
     private void BuildPanel()
     {
-        _panel = new PanelContainer { Name = "BuildTools", Visible = false }; _panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft); _panel.OffsetLeft = 18; _panel.OffsetTop = 18; _panel.OffsetRight = 360; _panel.OffsetBottom = 430; var box = new VBoxContainer(); _panel.AddChild(box);
+        _panel = new PanelContainer { Name = "BuildTools", Visible = false }; _panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft); _panel.OffsetLeft = 18; _panel.OffsetTop = 44; _panel.OffsetRight = 360; _panel.OffsetBottom = 456; var box = new VBoxContainer(); _panel.AddChild(box);
         box.AddChild(new Label { Text = "CONSTRUÇÃO · servidor autoritativo" }); var toggle = new Button { Text = "Construir (B)" }; toggle.Pressed += () => SetActive(!_active); box.AddChild(toggle);
         _primitive = new OptionButton(); foreach (var primitive in new[] { "cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid" }) _primitive.AddItem(primitive); box.AddChild(_primitive);
         var create = new Button { Text = "Criar primitiva" }; create.Pressed += CreateObject; box.AddChild(create); var duplicate = new Button { Text = "Duplicar" }; duplicate.Pressed += Duplicate; box.AddChild(duplicate); var delete = new Button { Text = "Excluir" }; delete.Pressed += Delete; box.AddChild(delete);

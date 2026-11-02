@@ -29,6 +29,8 @@ public partial class PlayerController : CharacterBody3D
     private InteractableSeat? _seat;
     private bool _flying;
     private bool _volumeSwimming;
+    private bool _flyFlagPending;
+    private bool _alwaysRun;
     private bool _oceanSwimming;
     private IslandTerrain? _terrainNode;
     private bool _swimming => _volumeSwimming || _oceanSwimming;
@@ -114,11 +116,7 @@ public partial class PlayerController : CharacterBody3D
             _contextMenu.Visible = false; _rightDragging = false; SetCursorFree(true);
             GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
         }
-        if (input.IsActionPressed("fly_toggle") && _seat is null && !_volumeSwimming)
-        {
-            _flying = !_flying;
-            if (_flying) Velocity = new Vector3(Velocity.X, 2f, Velocity.Z);
-        }
+        if (input.IsActionPressed("fly_toggle")) ToggleFlight();
         if (input.IsActionPressed("interact")) InteractOrStand();
         if (input.IsActionPressed("emote_wave")) StartGesture(AvatarMotionState.Wave, 2.5f, InputFlags.Wave);
         if (input.IsActionPressed("emote_dance")) StartGesture(AvatarMotionState.Dance, 5f, InputFlags.Dance);
@@ -198,9 +196,10 @@ public partial class PlayerController : CharacterBody3D
         _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
         _oceanSwimming = !_flying && _terrainNode is not null && TerrainMap.WaterDepth(_terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z)) >= AuthoritativeMovement.WadeDepth;
         var flags = InputFlags.None;
-        if (Input.IsActionPressed("run")) flags |= InputFlags.Run;
+        if (RunHeld) flags |= InputFlags.Run;
         if (_flying || _swimming ? Input.IsActionPressed("jump") : Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
-        if (Input.IsActionJustPressed("fly_toggle")) flags |= InputFlags.Fly;
+        if (Input.IsActionJustPressed("fly_toggle") || _flyFlagPending) flags |= InputFlags.Fly;
+        _flyFlagPending = false;
         if (Input.IsActionPressed("descend")) flags |= InputFlags.Descend;
         _network.SendInput(++_inputSequence, new Vector2(direction.X, direction.Z), flags);
         var velocity = Velocity;
@@ -208,7 +207,7 @@ public partial class PlayerController : CharacterBody3D
         if (_oceanSwimming)
         {
             // Buoyancy keeps the avatar floating chest-deep; jump surfaces/rises, descend dives toward the sea floor.
-            var swimSpeed = Input.IsActionPressed("run") ? AuthoritativeMovement.SwimRunSpeed : AuthoritativeMovement.SwimSpeed;
+            var swimSpeed = RunHeld ? AuthoritativeMovement.SwimRunSpeed : AuthoritativeMovement.SwimSpeed;
             var floatY = TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth;
             velocity.X = SmoothHorizontal(velocity.X, direction.X * swimSpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * swimSpeed, dt);
             var verticalTarget = Input.IsActionPressed("jump") ? AuthoritativeMovement.SwimVerticalSpeed : Input.IsActionPressed("descend") ? -AuthoritativeMovement.SwimVerticalSpeed : Mathf.Clamp((floatY - GlobalPosition.Y) * 3f, -2f, 2f);
@@ -229,7 +228,7 @@ public partial class PlayerController : CharacterBody3D
         {
             if (!IsOnFloor()) velocity.Y -= 9.8f * dt;
             if (Input.IsActionJustPressed("jump") && IsOnFloor()) velocity.Y = JumpVelocity;
-            var speed = (Input.IsActionPressed("run") ? RunSpeed : WalkSpeed) * SurfaceSpeedMultiplier();
+            var speed = (RunHeld ? RunSpeed : WalkSpeed) * SurfaceSpeedMultiplier();
             velocity.X = SmoothHorizontal(velocity.X, direction.X * speed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * speed, dt);
         }
 
@@ -240,7 +239,7 @@ public partial class PlayerController : CharacterBody3D
         if (grounded && !_wasGrounded) _landingTime = .22f;
         _wasGrounded = grounded;
         UpdateAnimation(direction, direction.Length());
-        _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : Input.IsActionPressed("run") ? "Running" : "Walking");
+        _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : RunHeld ? "Running" : "Walking");
     }
 
     /// A heightmap shape does not push bodies out when the ground rises (terrain edit, reconcile, teleport),
@@ -253,6 +252,24 @@ public partial class PlayerController : CharacterBody3D
         if (GlobalPosition.Y >= ground - .25f) return; // tolerate the small bilinear-vs-triangle difference on slopes
         GlobalPosition = new Vector3(GlobalPosition.X, ground, GlobalPosition.Z);
         Velocity = new Vector3(Velocity.X, Mathf.Max(0f, Velocity.Y), Velocity.Z);
+    }
+
+    public bool IsFlying => _flying;
+    public bool IsSwimming => _swimming;
+    public bool IsRunning => RunHeld;
+    public bool AlwaysRun { get => _alwaysRun; set => _alwaysRun = value; }
+    /// Shift temporarily inverts the always-run setting, so Shift still means "run" when it is off.
+    private bool RunHeld => Input.IsActionPressed("run") ^ _alwaysRun;
+
+    /// Same logic as the F key, so the viewer's Fly button and the key behave identically (and the server is told).
+    public void RequestFlightToggle() { if (ToggleFlight()) _flyFlagPending = true; }
+
+    private bool ToggleFlight()
+    {
+        if (_seat is not null || _volumeSwimming) return false;
+        _flying = !_flying;
+        if (_flying) Velocity = new Vector3(Velocity.X, 2f, Velocity.Z);
+        return true;
     }
 
     public void SetSwimming(bool value) => _volumeSwimming = value;
@@ -289,7 +306,7 @@ public partial class PlayerController : CharacterBody3D
     private void UpdateAnimation(Vector3 direction, float inputAmount)
     {
         var snapshot = new MovementSnapshot(false, _swimming, _flying, IsOnFloor(), Velocity.Y > 0,
-            _landingTime > 0, direction.LengthSquared() > .01f && inputAmount >= .05f, Input.IsActionPressed("run"));
+            _landingTime > 0, direction.LengthSquared() > .01f && inputAmount >= .05f, RunHeld);
         _rig.SetMotionState(MovementStateResolver.Resolve(snapshot));
     }
 
@@ -372,7 +389,7 @@ public partial class PlayerController : CharacterBody3D
         var point = value.AsVector3(); var direction = point - GlobalPosition; direction.Y = 0;
         if (direction.LengthSquared() > .01f) _targetYaw = Mathf.Atan2(-direction.X, -direction.Z);
     }
-    private void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; }
+    public void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; }
     private void OnAvatarLoaded(bool success, string message)
     {
         if (!success) { _status.Text = message; return; }

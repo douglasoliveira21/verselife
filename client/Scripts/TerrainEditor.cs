@@ -88,7 +88,7 @@ public partial class TerrainEditor : Node3D
     {
         _panel = new PanelContainer { Name = "TerrainTools", Visible = false };
         _panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        _panel.OffsetLeft = 380; _panel.OffsetTop = 18; _panel.OffsetRight = 640; _panel.OffsetBottom = 400;
+        _panel.OffsetLeft = 380; _panel.OffsetTop = 44; _panel.OffsetRight = 640; _panel.OffsetBottom = 426;
         var box = new VBoxContainer(); _panel.AddChild(box);
         box.AddChild(new Label { Text = "TERRENO · servidor autoritativo (T)" });
         foreach (var (tool, text) in new[] { (TerrainTool.Raise, "Elevar"), (TerrainTool.Lower, "Rebaixar"), (TerrainTool.Flatten, "Nivelar"), (TerrainTool.Smooth, "Suavizar"), (TerrainTool.Noise, "Rugosidade"), (TerrainTool.Paint, "Pintar textura") })
