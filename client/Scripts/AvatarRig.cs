@@ -19,6 +19,9 @@ public partial class AvatarRig : Node3D
     private AnimationTree _tree = null!;
     private AnimationNodeStateMachinePlayback _playback = null!;
     private AvatarMotionState _state = AvatarMotionState.Idle;
+    private AvatarMotionState? _overrideState;
+    private double _overrideUntil;
+    private int _overridePriority;
 
     public override void _Ready()
     {
@@ -70,9 +73,19 @@ public partial class AvatarRig : Node3D
 
     public void SetMotionState(AvatarMotionState state, bool force = false)
     {
+        if (_overrideState is not null && Time.GetTicksMsec() / 1000.0 < _overrideUntil && !force) return;
+        if (_overrideState is not null && Time.GetTicksMsec() / 1000.0 >= _overrideUntil) { _overrideState = null; _overridePriority = 0; }
         if (!force && state == _state) return;
         _state = state;
         if (_playback is not null) _playback.Travel(StateName(state));
+    }
+
+    public bool SetAnimationOverride(AvatarMotionState state, float duration, int priority = 1)
+    {
+        if (duration <= 0 || priority < _overridePriority) return false;
+        _overrideState = state; _overridePriority = priority; _overrideUntil = Time.GetTicksMsec() / 1000.0 + Math.Clamp(duration, .05f, 30f);
+        _state = state; _playback?.Travel(StateName(state));
+        return true;
     }
 
     private void BuildSkeleton()
@@ -131,6 +144,11 @@ public partial class AvatarRig : Node3D
         library.AddAnimation("Swim", Clip(1.1, true, ("Visual/Hips/Torso/LeftUpperArm:rotation", new[] { V(-2.5f), V(.4f), V(-2.5f) }), ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { V(.4f), V(-2.5f), V(.4f) })));
         library.AddAnimation("Dance", Clip(1.0, true, ("Visual/Hips:rotation", new[] { new Vector3(0, 0, -.25f), new Vector3(0, 0, .25f), new Vector3(0, 0, -.25f) }), ("Visual/Hips/Torso/LeftUpperArm:rotation", new[] { V(-2.4f), V(-1.2f), V(-2.4f) }), ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { V(-1.2f), V(-2.4f), V(-1.2f) })));
         library.AddAnimation("Wave", Clip(1.0, true, ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { new Vector3(0, 0, 1.8f), new Vector3(0, 0, 1.8f), new Vector3(0, 0, 1.8f) }), ("Visual/Hips/Torso/RightUpperArm/RightLowerArm:rotation", new[] { V(-1.2f), V(-.35f), V(-1.2f) })));
+        library.AddAnimation("Applaud", Clip(.8, true, ("Visual/Hips/Torso/LeftUpperArm:rotation", new[] { V(-1.3f), V(-.8f), V(-1.3f) }), ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { V(-1.3f), V(-.8f), V(-1.3f) })));
+        library.AddAnimation("Point", Pose(.8, ("Visual/Hips/Torso/RightUpperArm:rotation", new Vector3(0, 0, -1.5f))));
+        library.AddAnimation("Greet", Clip(1.2, true, ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { V(1.1f), V(1.7f), V(1.1f) })));
+        library.AddAnimation("Laugh", Clip(1.0, true, ("Visual/Hips/Torso:rotation", new[] { V(.12f), V(-.12f), V(.12f) })));
+        library.AddAnimation("SitFloor", Pose(.5, ("Visual/Hips/LeftUpperLeg:rotation", V(-1.1f)), ("Visual/Hips/RightUpperLeg:rotation", V(-1.1f))));
     }
 
     private static Animation Gait(double length, float amount) => Clip(length, true,

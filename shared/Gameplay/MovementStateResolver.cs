@@ -2,7 +2,7 @@ namespace LifeVerse.Shared.Gameplay;
 
 public enum AvatarMotionState
 {
-    Idle, Walk, Run, Jump, Fall, Landing, FlyIdle, FlyMove, Sit, StandUp, Swim, Dance, Wave
+    Idle, Walk, Run, Jump, Fall, Landing, FlyIdle, FlyMove, Sit, StandUp, Swim, Dance, Wave, Applaud, Point, Greet, Laugh, SitFloor
 }
 
 public readonly record struct MovementSnapshot(

@@ -9,6 +9,7 @@ public sealed class AuthoritativePlayerState
     public float VelocityY { get; set; }
     public float VelocityZ { get; set; }
     public bool Flying { get; set; }
+    public bool Seated { get; set; }
     public bool CanFly { get; init; } = true;
     public bool Grounded => Y <= 1.001f;
 }
@@ -24,6 +25,8 @@ public static class AuthoritativeMovement
     public static NetworkMotionState Step(AuthoritativePlayerState state, MovementInput input, float delta)
     {
         delta = Math.Clamp(delta, 0.001f, 0.1f);
+        if (input.Flags.HasFlag(InputFlags.Sit)) state.Seated = !state.Seated;
+        if (state.Seated) { state.VelocityX = 0; state.VelocityY = 0; state.VelocityZ = 0; return NetworkMotionState.Sit; }
         var length = MathF.Sqrt(input.X * input.X + input.Z * input.Z);
         var x = length > 1f ? input.X / length : input.X;
         var z = length > 1f ? input.Z / length : input.Z;
@@ -43,7 +46,6 @@ public static class AuthoritativeMovement
         state.Y += state.VelocityY * delta;
         state.Z += state.VelocityZ * delta;
         if (state.Y <= 1f) { state.Y = 1f; state.VelocityY = Math.Max(0f, state.VelocityY); if (state.Flying && input.Flags.HasFlag(InputFlags.Descend)) state.Flying = false; }
-        if (input.Flags.HasFlag(InputFlags.Sit)) return NetworkMotionState.Sit;
         if (input.Flags.HasFlag(InputFlags.Wave)) return NetworkMotionState.Wave;
         if (input.Flags.HasFlag(InputFlags.Dance)) return NetworkMotionState.Dance;
         if (state.Flying) return NetworkMotionState.Fly;

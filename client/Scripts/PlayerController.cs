@@ -13,6 +13,7 @@ public partial class PlayerController : CharacterBody3D
     [Export] public float FlySpeed { get; set; } = 7.5f;
     [Export] public float SwimSpeed { get; set; } = 3.5f;
     [Export] public float JumpVelocity { get; set; } = 5.2f;
+    [Export] public float Acceleration { get; set; } = 18f;
     private AvatarRig _rig = null!;
     private Node3D _cameraPivot = null!;
     private SpringArm3D _springArm = null!;
@@ -41,6 +42,7 @@ public partial class PlayerController : CharacterBody3D
     private ulong _lastWorldClick;
     private NetworkManager _network = null!;
     private uint _inputSequence;
+    private InputFlags _pendingGesture;
 
     public override void _Ready()
     {
@@ -59,6 +61,7 @@ public partial class PlayerController : CharacterBody3D
         GetNode<Button>("HUD/ContextMenu/Sit").Pressed += ContextSit;
         GetNode<Button>("HUD/ContextMenu/Cancel").Pressed += () => _contextMenu.Visible = false;
         GetNode<Button>("HUD/EditAvatar").Pressed += () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator();
+        BuildGesturePanel();
         // Keep the pointer available for the world UI. Camera orbit is opt-in
         // while dragging with the right mouse button, like a desktop viewer.
         _cursorFree = true;
@@ -71,6 +74,8 @@ public partial class PlayerController : CharacterBody3D
 
     public override void _ExitTree()
     {
+        _seat?.Release(this);
+        _seat = null;
         Input.MouseMode = Input.MouseModeEnum.Visible;
         var avatars = GetNodeOrNull<AvatarManager>("/root/AvatarManager");
         if (avatars is not null) avatars.AvatarLoaded -= OnAvatarLoaded;
@@ -101,8 +106,8 @@ public partial class PlayerController : CharacterBody3D
             if (_flying) Velocity = new Vector3(Velocity.X, 2f, Velocity.Z);
         }
         if (input.IsActionPressed("interact")) InteractOrStand();
-        if (input.IsActionPressed("emote_wave")) StartEmote(AvatarMotionState.Wave, 2.5f);
-        if (input.IsActionPressed("emote_dance")) StartEmote(AvatarMotionState.Dance, 5f);
+        if (input.IsActionPressed("emote_wave")) StartGesture(AvatarMotionState.Wave, 2.5f, InputFlags.Wave);
+        if (input.IsActionPressed("emote_dance")) StartGesture(AvatarMotionState.Dance, 5f, InputFlags.Dance);
         if (input is InputEventMouseMotion motion && _rightDragging && !IsTyping())
         {
             if (motion.Relative.LengthSquared() > 0.01f) _rightDragMoved = true;
@@ -141,6 +146,7 @@ public partial class PlayerController : CharacterBody3D
             _emoteTime -= dt;
             Velocity = Vector3.Zero;
             _rig.SetMotionState(_emoteState);
+            if (_pendingGesture != InputFlags.None) { _network.SendInput(++_inputSequence, Vector2.Zero, _pendingGesture); _pendingGesture = InputFlags.None; }
             MoveAndSlide();
             return;
         }
@@ -166,12 +172,12 @@ public partial class PlayerController : CharacterBody3D
 
         if (_swimming)
         {
-            _flying = false; velocity = direction * SwimSpeed;
+            _flying = false; velocity.X = Mathf.MoveToward(velocity.X, direction.X * SwimSpeed, Acceleration * dt); velocity.Z = Mathf.MoveToward(velocity.Z, direction.Z * SwimSpeed, Acceleration * dt);
             velocity.Y = Input.IsActionPressed("jump") ? SwimSpeed : Input.IsActionPressed("descend") ? -SwimSpeed : 0;
         }
         else if (_flying)
         {
-            velocity = direction * FlySpeed;
+            velocity.X = Mathf.MoveToward(velocity.X, direction.X * FlySpeed, Acceleration * dt); velocity.Z = Mathf.MoveToward(velocity.Z, direction.Z * FlySpeed, Acceleration * dt);
             velocity.Y = Input.IsActionPressed("jump") ? FlySpeed : Input.IsActionPressed("descend") ? -FlySpeed : 0;
         }
         else
@@ -179,7 +185,7 @@ public partial class PlayerController : CharacterBody3D
             if (!IsOnFloor()) velocity.Y -= 9.8f * dt;
             if (Input.IsActionJustPressed("jump") && IsOnFloor()) velocity.Y = JumpVelocity;
             var speed = (Input.IsActionPressed("run") ? RunSpeed : WalkSpeed) * SurfaceSpeedMultiplier();
-            velocity.X = direction.X * speed; velocity.Z = direction.Z * speed;
+            velocity.X = Mathf.MoveToward(velocity.X, direction.X * speed, Acceleration * dt); velocity.Z = Mathf.MoveToward(velocity.Z, direction.Z * speed, Acceleration * dt);
         }
 
         Velocity = velocity;
@@ -202,21 +208,23 @@ public partial class PlayerController : CharacterBody3D
     }
     public void Sit(InteractableSeat seat)
     {
-        if (_flying || _swimming || _seat is not null) return;
+        if (_flying || _swimming || _seat is not null || !seat.TryOccupy(this)) return;
         _seat = seat; Velocity = Vector3.Zero; GlobalTransform = seat.SeatTransform;
-        _rig.SetMotionState(AvatarMotionState.Sit, true); _contextMenu.Visible = false;
+        _network.SendInput(++_inputSequence, Vector2.Zero, InputFlags.Sit);
+        _rig.SetAnimationOverride(AvatarMotionState.Sit, .45f, 3); _contextMenu.Visible = false;
     }
 
     private void Stand()
     {
         if (_seat is null) return;
-        var exit = _seat.ExitPosition; _seat = null; GlobalPosition = exit;
-        _emoteState = AvatarMotionState.StandUp; _emoteTime = .5f;
+        var seat = _seat; _seat = null; seat.Release(this); var exit = seat.ExitPosition; GlobalPosition = exit;
+        _network.SendInput(++_inputSequence, Vector2.Zero, InputFlags.Sit);
+        _emoteState = AvatarMotionState.StandUp; _emoteTime = .5f; _rig.SetAnimationOverride(AvatarMotionState.StandUp, .5f, 3);
     }
 
     private void UpdateSeated()
     {
-        if (_seat is null) return;
+        if (_seat is null || !IsInstanceValid(_seat) || !IsInstanceValid(_seat.GetNodeOrNull<Marker3D>("SeatAnchor"))) { _seat = null; Velocity = Vector3.Zero; return; }
         GlobalTransform = _seat.SeatTransform; Velocity = Vector3.Zero; _rig.SetMotionState(AvatarMotionState.Sit);
         if (Input.IsActionJustPressed("jump") || Input.IsActionJustPressed("interact")) Stand();
     }
@@ -256,7 +264,15 @@ public partial class PlayerController : CharacterBody3D
     }
 
     private void ContextSit() { _selectedSeat?.Interact(this); _selectedSeat = null; }
-    private void StartEmote(AvatarMotionState state, float duration) { if (_seat is not null || _flying || _swimming) return; _emoteState = state; _emoteTime = duration; }
+    private void StartGesture(AvatarMotionState state, float duration, InputFlags networkFlag = InputFlags.None) { if (_seat is not null || _flying || _swimming || IsTyping()) return; _emoteState = state; _emoteTime = duration; _pendingGesture = networkFlag; _rig.SetAnimationOverride(state, duration, 2); }
+    private void BuildGesturePanel()
+    {
+        var panel = new PanelContainer { Name = "GesturePanel", Position = new Vector2(20, 135), CustomMinimumSize = new Vector2(210, 0) };
+        var box = new VBoxContainer(); panel.AddChild(box); box.AddChild(new Label { Text = "Gestures" });
+        foreach (var item in new[] { ("Wave", AvatarMotionState.Wave), ("Dance", AvatarMotionState.Dance), ("Applaud", AvatarMotionState.Applaud), ("Point", AvatarMotionState.Point), ("Greet", AvatarMotionState.Greet), ("Laugh", AvatarMotionState.Laugh), ("Sit floor", AvatarMotionState.SitFloor) })
+        { var button = new Button { Text = item.Item1 }; box.AddChild(button); button.Pressed += () => StartGesture(item.Item2, item.Item2 == AvatarMotionState.Dance ? 5f : 2.5f, item.Item2 == AvatarMotionState.Wave ? InputFlags.Wave : item.Item2 == AvatarMotionState.Dance ? InputFlags.Dance : InputFlags.None); }
+        GetNode<CanvasLayer>("HUD").AddChild(panel);
+    }
     private void SetCursorFree(bool value)
     {
         _cursorFree = value;
