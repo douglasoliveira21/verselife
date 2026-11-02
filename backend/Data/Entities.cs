@@ -139,8 +139,12 @@ public sealed class BuildObject
 {
     public Guid Id { get; set; }
     public Guid IslandId { get; set; }
+    public Guid CreatorUserId { get; set; }
     public Guid OwnerUserId { get; set; }
     public Guid? GroupId { get; set; }
+    public Guid? ParentObjectId { get; set; }
+    public required string Name { get; set; }
+    public string Description { get; set; } = string.Empty;
     public required string PrimitiveType { get; set; }
     public float PositionX { get; set; }
     public float PositionY { get; set; }
@@ -154,6 +158,9 @@ public sealed class BuildObject
     public string MaterialJson { get; set; } = "{}";
     public string GeometryJson { get; set; } = "{}";
     public string PhysicsJson { get; set; } = "{}";
+    public string PermissionsJson { get; set; } = "{\"modify\":true,\"copy\":true,\"transfer\":false,\"use\":true,\"move\":true,\"delete\":true,\"return\":true}";
+    public string ContentJson { get; set; } = "[]";
+    public string OwnerHistoryJson { get; set; } = "[]";
     public int Revision { get; set; } = 1;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

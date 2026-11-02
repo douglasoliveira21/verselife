@@ -153,9 +153,9 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         });
         modelBuilder.Entity<BuildObject>(b =>
         {
-            b.ToTable("objects", "world"); b.HasKey(x => x.Id); b.Property(x => x.PrimitiveType).HasMaxLength(24); b.Property(x => x.MaterialJson).HasColumnType("jsonb"); b.Property(x => x.GeometryJson).HasColumnType("jsonb"); b.Property(x => x.PhysicsJson).HasColumnType("jsonb");
+            b.ToTable("objects", "world"); b.HasKey(x => x.Id); b.Property(x => x.CreatorUserId).IsRequired(); b.Property(x => x.Name).HasMaxLength(160); b.Property(x => x.Description).HasMaxLength(4000); b.Property(x => x.PrimitiveType).HasMaxLength(24); b.Property(x => x.MaterialJson).HasColumnType("jsonb"); b.Property(x => x.GeometryJson).HasColumnType("jsonb"); b.Property(x => x.PhysicsJson).HasColumnType("jsonb"); b.Property(x => x.PermissionsJson).HasColumnType("jsonb"); b.Property(x => x.ContentJson).HasColumnType("jsonb"); b.Property(x => x.OwnerHistoryJson).HasColumnType("jsonb");
             b.HasIndex(x => new { x.IslandId, x.DeletedAt }); b.HasIndex(x => new { x.IslandId, x.OwnerUserId }); b.HasIndex(x => x.GroupId);
-            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); b.HasOne<User>().WithMany().HasForeignKey(x => x.CreatorUserId).OnDelete(DeleteBehavior.Restrict); b.HasOne<BuildObject>().WithMany().HasForeignKey(x => x.ParentObjectId).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<BuildOperation>(b =>
         {

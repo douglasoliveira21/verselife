@@ -7,8 +7,12 @@ public sealed class BuildObjectState
 {
     public Guid Id { get; set; }
     public Guid IslandId { get; set; }
+    public Guid CreatorUserId { get; set; }
     public Guid OwnerUserId { get; set; }
     public Guid? GroupId { get; set; }
+    public Guid? ParentObjectId { get; set; }
+    public string Name { get; set; } = "Object";
+    public string Description { get; set; } = string.Empty;
     public string PrimitiveType { get; set; } = "cube";
     public float PositionX { get; set; }
     public float PositionY { get; set; }
@@ -22,6 +26,8 @@ public sealed class BuildObjectState
     public string MaterialJson { get; set; } = "{}";
     public string GeometryJson { get; set; } = "{}";
     public string PhysicsJson { get; set; } = "{}";
+    public string PermissionsJson { get; set; } = "{}";
+    public string ContentJson { get; set; } = "[]";
     public int Revision { get; set; }
 }
 
@@ -33,6 +39,7 @@ public partial class BuildObjectView : Node3D
         State = state; Position = new Vector3(state.PositionX, state.PositionY, state.PositionZ); Rotation = new Vector3(Mathf.DegToRad(state.RotationX), Mathf.DegToRad(state.RotationY), Mathf.DegToRad(state.RotationZ)); Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ);
         foreach (var child in GetChildren().ToArray()) { RemoveChild(child); child.QueueFree(); }
         var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var material = CreateMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = material }; AddChild(visual); ApplyFaceMaterials(visual, state.MaterialJson);
+        if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         if (!TryGetBool(state.PhysicsJson, "collision", true)) return;
         var body = new StaticBody3D { Name = TryGetBool(state.PhysicsJson, "trigger", false) ? "Trigger" : "CollisionBody" }; body.CollisionLayer = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.CollisionMask = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.AddChild(new CollisionShape3D { Shape = CreateShape(state.PrimitiveType) }); AddChild(body);
     }

@@ -387,13 +387,28 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("content_json");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid>("CreatorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("creator_user_id");
+
                     b.Property<DateTimeOffset?>("DeletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("description");
 
                     b.Property<string>("GeometryJson")
                         .IsRequired()
@@ -413,9 +428,29 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("material_json");
 
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("OwnerHistoryJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("owner_history_json");
+
                     b.Property<Guid>("OwnerUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("owner_user_id");
+
+                    b.Property<Guid?>("ParentObjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parent_object_id");
+
+                    b.Property<string>("PermissionsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("permissions_json");
 
                     b.Property<string>("PhysicsJson")
                         .IsRequired()
@@ -474,9 +509,13 @@ namespace LifeVerse.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatorUserId");
+
                     b.HasIndex("GroupId");
 
                     b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("ParentObjectId");
 
                     b.HasIndex("IslandId", "DeletedAt");
 
@@ -2449,6 +2488,12 @@ namespace LifeVerse.Api.Data.Migrations
 
             modelBuilder.Entity("LifeVerse.Api.Data.BuildObject", b =>
                 {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("LifeVerse.Api.Data.Island", null)
                         .WithMany()
                         .HasForeignKey("IslandId")
@@ -2460,6 +2505,11 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.BuildObject", null)
+                        .WithMany()
+                        .HasForeignKey("ParentObjectId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.BuildOperation", b =>
