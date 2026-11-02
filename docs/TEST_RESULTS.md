@@ -42,6 +42,17 @@ Run date: 2026-11-02.
 | Material/physics reconstruction | Passed statically | Client maps material JSON and collision/trigger settings to mesh and collision nodes |
 | 100/1,000 object load and two-client conflict test | Blocked | Requires Docker/PostgreSQL and running multi-process Godot instances, unavailable in this environment |
 
+## Phase 06
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Full solution build | Passed | API, shared, client, island-server and test assembly compile with 0 warnings/errors |
+| Inventory/assets migration | Passed | `Phase06InventoryAssets` creates asset versions, folders/items, permissions and placed-world instances with indexes/FKs |
+| Upload validation contracts | Passed | Unit coverage for GLB signature/script rejection and PNG dimension parsing; allowlist rejects unsupported formats |
+| Content deduplication | Passed statically | SHA-256 version hash reuses existing asset bytes and creates a new inventory reference |
+| Authorization | Passed statically | Download, copy, equip, placement and permission grants require authenticated owner/permission checks |
+| MinIO integration and interrupted downloads | Blocked | Docker/MinIO unavailable; development adapter uses a persistent local volume and documents production binding |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |

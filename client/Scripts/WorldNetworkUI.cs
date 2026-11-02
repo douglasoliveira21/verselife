@@ -22,7 +22,7 @@ public partial class WorldNetworkUI : Node3D
         box.AddChild(_island);
         var buttons = new HBoxContainer(); box.AddChild(buttons);
         var join = new Button { Text = "Entrar" }; var leave = new Button { Text = "Sair" }; buttons.AddChild(join); buttons.AddChild(leave);
-        var build = new Button { Text = "Construir (B)" }; buttons.AddChild(build); build.Pressed += () => GetTree().CurrentScene?.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true);
+        var build = new Button { Text = "Construir (B)" }; buttons.AddChild(build); build.Pressed += () => GetTree().CurrentScene?.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true); var inventory = new Button { Text = "Inventário" }; buttons.AddChild(inventory); inventory.Pressed += () => GetTree().CurrentScene?.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle();
         _status = new Label { Text = "Offline" }; box.AddChild(_status);
         _history = new RichTextLabel { CustomMinimumSize = new Vector2(380, 105), BbcodeEnabled = false }; box.AddChild(_history);
         _chat = new LineEdit { PlaceholderText = "Chat local (Enter para enviar)", MaxLength = 256 }; box.AddChild(_chat);

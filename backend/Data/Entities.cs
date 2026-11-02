@@ -165,6 +165,93 @@ public sealed class BuildOperation
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+public sealed class Asset
+{
+    public Guid Id { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public Guid CreatorUserId { get; set; }
+    public required string Name { get; set; }
+    public required string Category { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string LicenseJson { get; set; } = "{}";
+    public string Status { get; set; } = "ready";
+    public int CurrentVersion { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public sealed class AssetVersion
+{
+    public Guid Id { get; set; }
+    public Guid AssetId { get; set; }
+    public Asset Asset { get; set; } = null!;
+    public int Version { get; set; }
+    public required string ContentHash { get; set; }
+    public required string StorageKey { get; set; }
+    public string? ThumbnailKey { get; set; }
+    public required string MimeType { get; set; }
+    public long ByteSize { get; set; }
+    public int? Width { get; set; }
+    public int? Height { get; set; }
+    public double? DurationSeconds { get; set; }
+    public string ValidationJson { get; set; } = "{}";
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class InventoryFolder
+{
+    public Guid Id { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public Guid? ParentId { get; set; }
+    public required string Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public sealed class InventoryItem
+{
+    public Guid Id { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public Guid AssetId { get; set; }
+    public Guid? FolderId { get; set; }
+    public required string DisplayName { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public sealed class AssetPermission
+{
+    public Guid Id { get; set; }
+    public Guid AssetId { get; set; }
+    public Guid? UserId { get; set; }
+    public Guid? GroupId { get; set; }
+    public required string PrincipalType { get; set; }
+    public required string Flags { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
+public sealed class WorldAssetInstance
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid AssetId { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public float PositionX { get; set; }
+    public float PositionY { get; set; }
+    public float PositionZ { get; set; }
+    public float RotationX { get; set; }
+    public float RotationY { get; set; }
+    public float RotationZ { get; set; }
+    public int Revision { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
 public sealed class ServerInstance
 {
     public Guid Id { get; set; }

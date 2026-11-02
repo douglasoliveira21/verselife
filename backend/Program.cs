@@ -6,6 +6,7 @@ using LifeVerse.Api.Modules.Identity;
 using LifeVerse.Api.Modules.Platform;
 using LifeVerse.Api.Modules.Users;
 using LifeVerse.Api.Modules.Worlds;
+using LifeVerse.Api.Modules.Assets;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -31,6 +32,8 @@ builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<IslandEntryTokenService>();
 builder.Services.AddScoped<WorldManager>();
+builder.Services.AddSingleton(builder.Configuration.GetSection("ObjectStorage").Get<AssetStorageOptions>() ?? new AssetStorageOptions());
+builder.Services.AddSingleton<AssetStorageService>();
 builder.Services.AddHostedService<WorldManagerHostedService>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
@@ -84,6 +87,7 @@ app.MapUserEndpoints();
 app.MapPlatformEndpoints();
 app.MapWorldEndpoints();
 app.MapBuildEndpoints();
+app.MapAssetEndpoints();
 
 if (!app.Environment.IsEnvironment("Testing"))
 {

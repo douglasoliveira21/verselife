@@ -59,6 +59,8 @@ services:
       ObjectStorage__Endpoint: http://minio:9000
       ObjectStorage__AccessKey: ${MINIO_ROOT_USER}
       ObjectStorage__SecretKey: ${MINIO_ROOT_PASSWORD}
+      ObjectStorage__Bucket: ${MINIO_BUCKET:-lifeverse-assets}
+      ObjectStorage__LocalRoot: /app/asset-data
       Jwt__Issuer: ${JWT_ISSUER}
       Jwt__Audience: ${JWT_AUDIENCE}
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
@@ -75,11 +77,14 @@ services:
       timeout: 5s
       retries: 20
     networks: [internal, edge]
+    volumes:
+      - asset_data:/app/asset-data
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  asset_data:
 
 networks:
   internal:

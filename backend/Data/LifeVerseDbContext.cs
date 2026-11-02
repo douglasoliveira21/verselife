@@ -16,6 +16,12 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<IslandChange> IslandChanges => Set<IslandChange>();
     public DbSet<BuildObject> BuildObjects => Set<BuildObject>();
     public DbSet<BuildOperation> BuildOperations => Set<BuildOperation>();
+    public DbSet<Asset> Assets => Set<Asset>();
+    public DbSet<AssetVersion> AssetVersions => Set<AssetVersion>();
+    public DbSet<InventoryFolder> InventoryFolders => Set<InventoryFolder>();
+    public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+    public DbSet<AssetPermission> AssetPermissions => Set<AssetPermission>();
+    public DbSet<WorldAssetInstance> WorldAssetInstances => Set<WorldAssetInstance>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -121,6 +127,12 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         {
             b.ToTable("build_operations", "world"); b.HasKey(x => x.Id); b.Property(x => x.Operation).HasMaxLength(24); b.Property(x => x.PayloadJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.IslandId, x.CreatedAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
         });
+        modelBuilder.Entity<Asset>(b => { b.ToTable("assets", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(160); b.Property(x => x.Category).HasMaxLength(32); b.Property(x => x.Description).HasMaxLength(4000); b.Property(x => x.LicenseJson).HasColumnType("jsonb"); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasIndex(x => x.CreatorUserId); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); b.HasOne<User>().WithMany().HasForeignKey(x => x.CreatorUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<AssetVersion>(b => { b.ToTable("asset_versions", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.ContentHash).HasMaxLength(128); b.Property(x => x.StorageKey).HasMaxLength(512); b.Property(x => x.ThumbnailKey).HasMaxLength(512); b.Property(x => x.MimeType).HasMaxLength(128); b.Property(x => x.ValidationJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.AssetId, x.Version }).IsUnique(); b.HasIndex(x => x.ContentHash); b.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<InventoryFolder>(b => { b.ToTable("folders", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.HasIndex(x => new { x.OwnerUserId, x.ParentId, x.Name }).IsUnique().HasFilter("deleted_at IS NULL"); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<InventoryItem>(b => { b.ToTable("items", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.DisplayName).HasMaxLength(160); b.HasIndex(x => new { x.OwnerUserId, x.FolderId, x.DeletedAt }); b.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<AssetPermission>(b => { b.ToTable("asset_permissions", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.PrincipalType).HasMaxLength(16); b.Property(x => x.Flags).HasMaxLength(256); b.HasIndex(x => new { x.AssetId, x.UserId, x.RevokedAt }); b.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<WorldAssetInstance>(b => { b.ToTable("placed_assets", "world"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.IslandId, x.DeletedAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<ServerInstance>(b =>
         {
             b.ToTable("server_instances", "platform");
