@@ -66,6 +66,7 @@ services:
       Jwt__SigningKey: ${JWT_SIGNING_KEY}
       IslandServer__SharedKey: ${ISLAND_SERVER_SHARED_KEY}
       IslandEntry__SigningKey: ${ISLAND_ENTRY_SIGNING_KEY}
+      LuaRuntime__WorkerPath: ${LIFEVERSE_LUA_WORKER:-lua}
     ports: ["127.0.0.1:${API_HTTP_PORT:-8080}:8080"]
     depends_on:
       postgres: { condition: service_healthy }

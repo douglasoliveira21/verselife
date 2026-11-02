@@ -494,6 +494,55 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("equipped_items", "inventory");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.HudDefinition", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("LayoutJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("layout_json");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<Guid?>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId", "DeletedAt");
+
+                    b.ToTable("hud_definitions", "inventory");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.InventoryFolder", b =>
                 {
                     b.Property<Guid>("Id")
@@ -840,6 +889,146 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("snapshots", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ObjectScript", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("InstructionBudget")
+                        .HasColumnType("integer")
+                        .HasColumnName("instruction_budget");
+
+                    b.Property<int>("MemoryLimitKb")
+                        .HasColumnType("integer")
+                        .HasColumnName("memory_limit_kb");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("ObjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("object_id");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("source");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("ObjectId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("object_scripts", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptExecution", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Error")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("error");
+
+                    b.Property<string>("EventName")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("event_name");
+
+                    b.Property<int>("InstructionCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("instruction_count");
+
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScriptId", "CreatedAt");
+
+                    b.ToTable("script_executions", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptState", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("key");
+
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("ValueJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("value_json");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScriptId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("script_state", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ServerInstance", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1171,6 +1360,15 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Navigation("Avatar");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.HudDefinition", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.InventoryFolder", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.User", null)
@@ -1232,6 +1430,39 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasOne("LifeVerse.Api.Data.Island", null)
                         .WithMany()
                         .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ObjectScript", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.BuildObject", null)
+                        .WithMany()
+                        .HasForeignKey("ObjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptExecution", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
+                        .WithMany()
+                        .HasForeignKey("ScriptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptState", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
+                        .WithMany()
+                        .HasForeignKey("ScriptId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

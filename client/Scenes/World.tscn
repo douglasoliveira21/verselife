@@ -8,6 +8,8 @@
 [ext_resource path="res://Scripts/IslandEnvironmentController.cs" type="Script" id="6"]
 [ext_resource path="res://Scripts/BuildEditor.cs" type="Script" id="7"]
 [ext_resource path="res://Scripts/InventoryPanel.cs" type="Script" id="8"]
+[ext_resource path="res://Scripts/LuaScriptEditor.cs" type="Script" id="9"]
+[ext_resource path="res://Scripts/HudEditor.cs" type="Script" id="10"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMaterial"]
 sky_top_color = Color(0.08, 0.18, 0.36, 1)
@@ -76,6 +78,12 @@ script = ExtResource("7")
 
 [node name="InventoryPanel" type="Node3D" parent="."]
 script = ExtResource("8")
+
+[node name="LuaScriptEditor" type="Node3D" parent="."]
+script = ExtResource("9")
+
+[node name="HudEditor" type="Node3D" parent="."]
+script = ExtResource("10")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment")

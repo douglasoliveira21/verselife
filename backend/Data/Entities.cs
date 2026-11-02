@@ -252,6 +252,54 @@ public sealed class WorldAssetInstance
     public DateTimeOffset? DeletedAt { get; set; }
 }
 
+public sealed class ObjectScript
+{
+    public Guid Id { get; set; }
+    public Guid ObjectId { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public required string Name { get; set; }
+    public required string Source { get; set; }
+    public int Version { get; set; } = 1;
+    public string Status { get; set; } = "active";
+    public int InstructionBudget { get; set; } = 10000;
+    public int MemoryLimitKb { get; set; } = 256;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class ScriptState
+{
+    public Guid Id { get; set; }
+    public Guid ScriptId { get; set; }
+    public required string Key { get; set; }
+    public required string ValueJson { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public sealed class ScriptExecution
+{
+    public Guid Id { get; set; }
+    public Guid ScriptId { get; set; }
+    public required string EventName { get; set; }
+    public required string Status { get; set; }
+    public int InstructionCount { get; set; }
+    public string Error { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class HudDefinition
+{
+    public Guid Id { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public required string Name { get; set; }
+    public required string LayoutJson { get; set; }
+    public Guid? ScriptId { get; set; }
+    public int Version { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
 public sealed class ServerInstance
 {
     public Guid Id { get; set; }

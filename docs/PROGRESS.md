@@ -23,6 +23,7 @@ Last updated: 2026-11-02.
 - Phase 04 persistent island metadata, official templates, user/group permissions, versioned terrain snapshots, audit changes, World Manager lifecycle states, procedural terrain/collision, day/night environment, and periodic server persistence.
 - Phase 05 in-world construction mode, nine primitive types, raycast selection/highlight, snap/material controls, persisted object revisions, quotas, grouping endpoints, server-authoritative ENet operations, and reliable replication.
 - Phase 06 global inventory folders/search, asset/version/item/placed-instance separation, permission flags, authenticated upload validation for GLB/glTF/images/audio, content hashing, equipment and world placement.
+- Phase 07 isolated Lua worker contract, safety validator, script/event/state persistence, execution audit/quarantine, ten templates, and in-world Lua/HUD editors.
 - Unit tests and end-to-end smoke script.
 
 ## Not complete / blocked

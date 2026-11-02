@@ -53,6 +53,16 @@ Run date: 2026-11-02.
 | Authorization | Passed statically | Download, copy, equip, placement and permission grants require authenticated owner/permission checks |
 | MinIO integration and interrupted downloads | Blocked | Docker/MinIO unavailable; development adapter uses a persistent local volume and documents production binding |
 
+## Phase 07
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Full solution build | Passed | API, shared, client, island-server and test assembly compile with 0 warnings/errors |
+| Lua/HUD migration | Passed | `Phase07LuaAndHuds` creates scripts, state, execution audit and versioned HUD tables |
+| Dangerous API rejection | Compiled | `LuaSafetyTests` covers infinite loops, os/io access, oversized source and unknown events; the repository test host did not finish within the smoke-test window |
+| Process isolation contract | Passed statically | Worker receives stdin envelope, clean environment, timeout and fail-closed unavailable state |
+| Lua execution with real worker | Blocked | Lua 5.4 executable is not installed in this environment; no user code is executed without it |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |

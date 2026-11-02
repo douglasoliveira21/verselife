@@ -22,6 +22,10 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<AssetPermission> AssetPermissions => Set<AssetPermission>();
     public DbSet<WorldAssetInstance> WorldAssetInstances => Set<WorldAssetInstance>();
+    public DbSet<ObjectScript> ObjectScripts => Set<ObjectScript>();
+    public DbSet<ScriptState> ScriptStates => Set<ScriptState>();
+    public DbSet<ScriptExecution> ScriptExecutions => Set<ScriptExecution>();
+    public DbSet<HudDefinition> HudDefinitions => Set<HudDefinition>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -133,6 +137,10 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<InventoryItem>(b => { b.ToTable("items", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.DisplayName).HasMaxLength(160); b.HasIndex(x => new { x.OwnerUserId, x.FolderId, x.DeletedAt }); b.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<AssetPermission>(b => { b.ToTable("asset_permissions", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.PrincipalType).HasMaxLength(16); b.Property(x => x.Flags).HasMaxLength(256); b.HasIndex(x => new { x.AssetId, x.UserId, x.RevokedAt }); b.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<WorldAssetInstance>(b => { b.ToTable("placed_assets", "world"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.IslandId, x.DeletedAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<ObjectScript>(b => { b.ToTable("object_scripts", "world"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.Source).HasColumnType("text"); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.ObjectId, x.Version }).IsUnique(); b.HasOne<BuildObject>().WithMany().HasForeignKey(x => x.ObjectId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<ScriptState>(b => { b.ToTable("script_state", "world"); b.HasKey(x => x.Id); b.Property(x => x.Key).HasMaxLength(64); b.Property(x => x.ValueJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.ScriptId, x.Key }).IsUnique(); b.HasOne<ObjectScript>().WithMany().HasForeignKey(x => x.ScriptId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<ScriptExecution>(b => { b.ToTable("script_executions", "world"); b.HasKey(x => x.Id); b.Property(x => x.EventName).HasMaxLength(32); b.Property(x => x.Status).HasMaxLength(24); b.Property(x => x.Error).HasMaxLength(2000); b.HasIndex(x => new { x.ScriptId, x.CreatedAt }); b.HasOne<ObjectScript>().WithMany().HasForeignKey(x => x.ScriptId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<HudDefinition>(b => { b.ToTable("hud_definitions", "inventory"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.LayoutJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ServerInstance>(b =>
         {
             b.ToTable("server_instances", "platform");

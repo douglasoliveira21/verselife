@@ -7,6 +7,7 @@ using LifeVerse.Api.Modules.Platform;
 using LifeVerse.Api.Modules.Users;
 using LifeVerse.Api.Modules.Worlds;
 using LifeVerse.Api.Modules.Assets;
+using LifeVerse.Api.Modules.Scripting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -34,6 +35,8 @@ builder.Services.AddScoped<IslandEntryTokenService>();
 builder.Services.AddScoped<WorldManager>();
 builder.Services.AddSingleton(builder.Configuration.GetSection("ObjectStorage").Get<AssetStorageOptions>() ?? new AssetStorageOptions());
 builder.Services.AddSingleton<AssetStorageService>();
+builder.Services.AddSingleton(builder.Configuration.GetSection("LuaRuntime").Get<LuaRuntimeOptions>() ?? new LuaRuntimeOptions());
+builder.Services.AddSingleton<LuaSandboxService>();
 builder.Services.AddHostedService<WorldManagerHostedService>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
@@ -88,6 +91,7 @@ app.MapPlatformEndpoints();
 app.MapWorldEndpoints();
 app.MapBuildEndpoints();
 app.MapAssetEndpoints();
+app.MapScriptingEndpoints();
 
 if (!app.Environment.IsEnvironment("Testing"))
 {
