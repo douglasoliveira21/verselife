@@ -18,7 +18,7 @@ namespace LifeVerse.Api.Data.Migrations
                 type: "character varying(24)",
                 maxLength: 24,
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "active");
 
             migrationBuilder.CreateTable(
                 name: "admin_audits",

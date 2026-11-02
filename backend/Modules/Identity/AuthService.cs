@@ -76,7 +76,7 @@ public sealed class AuthService(
     public async Task<AuthResponse?> LoginAsync(LoginRequest request, HttpContext context, CancellationToken ct)
     {
         var normalized = request.Login.Trim().ToUpperInvariant();
-        var user = await db.Users.Include(x => x.Avatar).SingleOrDefaultAsync(x => x.DeletedAt == null &&
+        var user = await db.Users.Include(x => x.Avatar).SingleOrDefaultAsync(x => x.DeletedAt == null && x.Status == "active" &&
             (x.NormalizedUsername == normalized || x.NormalizedEmail == normalized), ct);
         if (user is null || _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
             return null;
@@ -90,7 +90,7 @@ public sealed class AuthService(
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var old = await db.Sessions.AsNoTracking().Include(x => x.User).ThenInclude(x => x.Avatar)
             .SingleOrDefaultAsync(x => x.RefreshTokenHash == hash, ct);
-        if (old is null || old.ExpiresAt <= now || old.User.DeletedAt != null) return null;
+        if (old is null || old.ExpiresAt <= now || old.User.DeletedAt != null || old.User.Status != "active") return null;
 
         if (old.RevokedAt != null)
         {

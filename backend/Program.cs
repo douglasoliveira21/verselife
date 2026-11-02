@@ -18,6 +18,8 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 var connectionString = builder.Configuration.GetConnectionString("Postgres")
     ?? throw new InvalidOperationException("ConnectionStrings:Postgres is required.");
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("ConnectionStrings:Postgres must be supplied by the deployment environment.");
 var jwt = builder.Configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("Jwt configuration is required.");
 jwt.Validate();
@@ -85,6 +87,20 @@ app.Use(async (context, next) =>
 });
 app.UseRateLimiter();
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true)
+    {
+        var sub = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value;
+        var sid = context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sid)?.Value;
+        if (!Guid.TryParse(sub, out var userId) || !Guid.TryParse(sid, out var sessionId)) { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return; }
+        await using var scope = context.RequestServices.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<LifeVerseDbContext>();
+        var valid = await db.Sessions.AsNoTracking().AnyAsync(x => x.Id == sessionId && x.UserId == userId && x.RevokedAt == null && x.ExpiresAt > DateTimeOffset.UtcNow && x.User.Status == "active" && x.User.DeletedAt == null, context.RequestAborted);
+        if (!valid) { context.Response.StatusCode = StatusCodes.Status401Unauthorized; return; }
+    }
+    await next();
+});
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
