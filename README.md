@@ -20,7 +20,10 @@ Use `./scripts/dev-logs.ps1`, `./scripts/dev-down.ps1`, and `./scripts/dev-updat
 
 ## Phase 02 controls
 
-- WASD: move relative to camera
+- W/S (or Up/Down): walk forward/back along the avatar's facing
+- A/D (or Left/Right): turn the avatar in place; the camera swings behind it while moving
+- Q/Z: sidestep left/right
+- Double-click the ground: walk there (any movement key cancels)
 - Shift: run; Space: jump/ascend; Ctrl: descend
 - F: toggle flight; C: first/third person; Alt: release/capture cursor
 - Mouse: camera orbit; wheel: zoom; E: interact/stand

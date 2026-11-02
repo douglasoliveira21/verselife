@@ -27,10 +27,12 @@ window/stretch/aspect="expand"
 project/assembly_name="LifeVerse.Client"
 
 [input]
-move_forward={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":87)]}
-move_back={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":83)]}
-move_left={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":65)]}
-move_right={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":68)]}
+move_forward={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":87), Object(InputEventKey,"physical_keycode":4194320)]}
+move_back={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":83), Object(InputEventKey,"physical_keycode":4194322)]}
+move_left={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":65), Object(InputEventKey,"physical_keycode":4194319)]}
+move_right={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":68), Object(InputEventKey,"physical_keycode":4194321)]}
+strafe_left={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":81)]}
+strafe_right={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":90)]}
 jump={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":32)]}
 run={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":4194325)]}
 fly_toggle={"deadzone":0.2,"events":[Object(InputEventKey,"physical_keycode":70)]}

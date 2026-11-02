@@ -13,7 +13,11 @@ public partial class PlayerController : CharacterBody3D
     [Export] public float FlySpeed { get; set; } = 7.5f;
     [Export] public float SwimSpeed { get; set; } = 3.5f;
     [Export] public float JumpVelocity { get; set; } = 5.2f;
-    [Export] public float Acceleration { get; set; } = 18f;
+    [Export] public float Acceleration { get; set; } = AuthoritativeMovement.Acceleration;
+    [Export] public float Deceleration { get; set; } = AuthoritativeMovement.Deceleration;
+    // A/D turn the avatar in place (radians per second); the camera swings behind it while moving.
+    [Export] public float TurnRate { get; set; } = 2.6f;
+    [Export] public float CameraFollowRate { get; set; } = 3.5f;
     private AvatarRig _rig = null!;
     private Node3D _cameraPivot = null!;
     private SpringArm3D _springArm = null!;
@@ -36,6 +40,8 @@ public partial class PlayerController : CharacterBody3D
     private bool _invertY;
     private float _cameraDistance = 5.2f;
     private float _targetYaw;
+    private float _cameraYaw;
+    private float _targetBodyYaw;
     private float _targetPitch;
     private CameraMode _cameraMode = CameraMode.ThirdPerson;
     private Vector3? _walkTarget;
@@ -55,7 +61,7 @@ public partial class PlayerController : CharacterBody3D
         _cameraPivot = GetNode<Node3D>("CameraPivot");
         _springArm = GetNode<SpringArm3D>("CameraPivot/SpringArm3D");
         _camera = GetNode<Camera3D>("CameraPivot/SpringArm3D/Camera3D");
-        _targetYaw = Rotation.Y; _targetPitch = _cameraPivot.Rotation.X;
+        _targetYaw = Rotation.Y; _cameraYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; _targetPitch = _cameraPivot.Rotation.X;
         _contextMenu = GetNode<Control>("HUD/ContextMenu");
         _status = GetNode<Label>("HUD/Status");
         GetNode<Button>("HUD/ContextMenu/Sit").Pressed += ContextSit;
@@ -85,8 +91,10 @@ public partial class PlayerController : CharacterBody3D
     public override void _Process(double delta)
     {
         var weight = 1f - Mathf.Exp(-14f * (float)delta);
-        Rotation = new Vector3(0, Mathf.LerpAngle(Rotation.Y, _targetYaw, weight), 0);
-        _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), _cameraPivot.Rotation.Y, _cameraPivot.Rotation.Z);
+        Rotation = new Vector3(0, Mathf.LerpAngle(Rotation.Y, _targetBodyYaw, weight), 0);
+        // The pivot is a child of the body, so its local yaw is the camera yaw relative to the avatar.
+        _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
+        _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
     }
 
     public override void _UnhandledInput(InputEvent input)
@@ -153,15 +161,32 @@ public partial class PlayerController : CharacterBody3D
         if (_landingTime > 0) _landingTime -= dt;
         var blocked = IsTyping() || _contextMenu.Visible;
         var input = blocked ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_back");
-        var forward = -GlobalTransform.Basis.Z; forward.Y = 0; forward = forward.Normalized();
-        var right = GlobalTransform.Basis.X; right.Y = 0; right = right.Normalized();
-        var direction = (right * input.X + forward * -input.Y).Normalized();
+        var strafe = blocked ? 0f : Input.GetAxis("strafe_left", "strafe_right");
+        var steering = Mathf.Abs(input.X) > .01f || Mathf.Abs(input.Y) > .01f || Mathf.Abs(strafe) > .01f;
+        // Viewer-style controls: A/D turn the avatar, W/S move along its facing, Q/Z sidestep.
+        if (steering) _walkTarget = null;
+        _targetBodyYaw = Mathf.Wrap(_targetBodyYaw - input.X * TurnRate * dt, -Mathf.Pi, Mathf.Pi);
+        var forward = new Vector3(-Mathf.Sin(_targetBodyYaw), 0, -Mathf.Cos(_targetBodyYaw));
+        var right = new Vector3(Mathf.Cos(_targetBodyYaw), 0, -Mathf.Sin(_targetBodyYaw));
+        var direction = forward * -input.Y + right * strafe;
+        if (direction.LengthSquared() > 1f) direction = direction.Normalized();
+        var moving = Mathf.Abs(input.Y) > .01f || Mathf.Abs(strafe) > .01f;
         if (_walkTarget is Vector3 target)
         {
             var toTarget = target - GlobalPosition; toTarget.Y = 0;
             if (toTarget.Length() < .35f) _walkTarget = null;
-            else if (!blocked && input.LengthSquared() < .01f) direction = toTarget.Normalized();
+            else if (!blocked)
+            {
+                var wanted = Mathf.Atan2(-toTarget.X, -toTarget.Z);
+                var offset = Mathf.Wrap(wanted - _targetBodyYaw, -Mathf.Pi, Mathf.Pi);
+                _targetBodyYaw += Mathf.Clamp(offset, -TurnRate * 2.5f * dt, TurnRate * 2.5f * dt);
+                direction = Mathf.Abs(offset) < 1f ? toTarget.Normalized() : Vector3.Zero;
+                moving = true;
+            }
         }
+        // Swing the camera behind the avatar while it walks or turns, unless the user is orbiting.
+        if ((moving || Mathf.Abs(input.X) > .01f) && !_rightDragging && _cameraMode is CameraMode.ThirdPerson or CameraMode.FirstPerson)
+            _targetYaw += Mathf.Wrap(_targetBodyYaw - _targetYaw, -Mathf.Pi, Mathf.Pi) * (1f - Mathf.Exp(-CameraFollowRate * dt));
         var flags = InputFlags.None;
         if (Input.IsActionPressed("run")) flags |= InputFlags.Run;
         if (Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
@@ -172,12 +197,12 @@ public partial class PlayerController : CharacterBody3D
 
         if (_swimming)
         {
-            _flying = false; velocity.X = Mathf.MoveToward(velocity.X, direction.X * SwimSpeed, Acceleration * dt); velocity.Z = Mathf.MoveToward(velocity.Z, direction.Z * SwimSpeed, Acceleration * dt);
+            _flying = false; velocity.X = SmoothHorizontal(velocity.X, direction.X * SwimSpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * SwimSpeed, dt);
             velocity.Y = Input.IsActionPressed("jump") ? SwimSpeed : Input.IsActionPressed("descend") ? -SwimSpeed : 0;
         }
         else if (_flying)
         {
-            velocity.X = Mathf.MoveToward(velocity.X, direction.X * FlySpeed, Acceleration * dt); velocity.Z = Mathf.MoveToward(velocity.Z, direction.Z * FlySpeed, Acceleration * dt);
+            velocity.X = SmoothHorizontal(velocity.X, direction.X * FlySpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * FlySpeed, dt);
             velocity.Y = Input.IsActionPressed("jump") ? FlySpeed : Input.IsActionPressed("descend") ? -FlySpeed : 0;
         }
         else
@@ -185,7 +210,7 @@ public partial class PlayerController : CharacterBody3D
             if (!IsOnFloor()) velocity.Y -= 9.8f * dt;
             if (Input.IsActionJustPressed("jump") && IsOnFloor()) velocity.Y = JumpVelocity;
             var speed = (Input.IsActionPressed("run") ? RunSpeed : WalkSpeed) * SurfaceSpeedMultiplier();
-            velocity.X = Mathf.MoveToward(velocity.X, direction.X * speed, Acceleration * dt); velocity.Z = Mathf.MoveToward(velocity.Z, direction.Z * speed, Acceleration * dt);
+            velocity.X = SmoothHorizontal(velocity.X, direction.X * speed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * speed, dt);
         }
 
         Velocity = velocity;
@@ -194,7 +219,7 @@ public partial class PlayerController : CharacterBody3D
         var grounded = IsOnFloor();
         if (grounded && !_wasGrounded) _landingTime = .22f;
         _wasGrounded = grounded;
-        UpdateAnimation(direction, input.Length());
+        UpdateAnimation(direction, direction.Length());
         _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : Input.IsActionPressed("run") ? "Running" : "Walking");
     }
 
@@ -234,6 +259,13 @@ public partial class PlayerController : CharacterBody3D
         var snapshot = new MovementSnapshot(false, _swimming, _flying, IsOnFloor(), Velocity.Y > 0,
             _landingTime > 0, direction.LengthSquared() > .01f && inputAmount >= .05f, Input.IsActionPressed("run"));
         _rig.SetMotionState(MovementStateResolver.Resolve(snapshot));
+    }
+
+    private float SmoothHorizontal(float current, float target, float dt)
+    {
+        var accelerating = Mathf.Abs(target) > Mathf.Abs(current) || Mathf.Sign(target) != Mathf.Sign(current);
+        var rate = accelerating ? Acceleration : Deceleration;
+        return Mathf.MoveToward(current, target, Mathf.Max(.01f, rate) * dt);
     }
 
     private float SurfaceSpeedMultiplier()
@@ -308,7 +340,7 @@ public partial class PlayerController : CharacterBody3D
         var point = value.AsVector3(); var direction = point - GlobalPosition; direction.Y = 0;
         if (direction.LengthSquared() > .01f) _targetYaw = Mathf.Atan2(-direction.X, -direction.Z);
     }
-    private void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; }
+    private void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; }
     private void OnAvatarLoaded(bool success, string message)
     {
         if (!success) { _status.Text = message; return; }

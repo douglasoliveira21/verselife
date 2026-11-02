@@ -19,7 +19,8 @@ public static class AuthoritativeMovement
     public const float WalkSpeed = 3.2f;
     public const float RunSpeed = 6.4f;
     public const float FlySpeed = 7.5f;
-    public const float Acceleration = 28f;
+    public const float Acceleration = 40f;
+    public const float Deceleration = 60f;
     public const float JumpVelocity = 5.2f;
 
     public static NetworkMotionState Step(AuthoritativePlayerState state, MovementInput input, float delta)
@@ -33,8 +34,8 @@ public static class AuthoritativeMovement
         if (input.Flags.HasFlag(InputFlags.Fly) && state.CanFly) state.Flying = !state.Flying;
         var speed = input.Flags.HasFlag(InputFlags.Run) ? RunSpeed : WalkSpeed;
         if (state.Flying) speed = FlySpeed;
-        state.VelocityX = MoveToward(state.VelocityX, x * speed, Acceleration * delta);
-        state.VelocityZ = MoveToward(state.VelocityZ, z * speed, Acceleration * delta);
+        state.VelocityX = SmoothHorizontal(state.VelocityX, x * speed, delta);
+        state.VelocityZ = SmoothHorizontal(state.VelocityZ, z * speed, delta);
         if (state.Flying)
             state.VelocityY = input.Flags.HasFlag(InputFlags.Jump) ? FlySpeed : input.Flags.HasFlag(InputFlags.Descend) ? -FlySpeed : 0f;
         else
@@ -55,4 +56,10 @@ public static class AuthoritativeMovement
     }
 
     private static float MoveToward(float from, float to, float amount) => from < to ? Math.Min(from + amount, to) : Math.Max(from - amount, to);
+
+    private static float SmoothHorizontal(float current, float target, float delta)
+    {
+        var accelerating = MathF.Abs(target) > MathF.Abs(current) || MathF.Sign(target) != MathF.Sign(current);
+        return MoveToward(current, target, (accelerating ? Acceleration : Deceleration) * delta);
+    }
 }

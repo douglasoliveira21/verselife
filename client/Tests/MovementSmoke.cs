@@ -32,7 +32,7 @@ public partial class MovementSmoke : Node
             player.Velocity = Vector3.Zero;
             await Frames(20);
             var slopeStart = player.GlobalPosition;
-            Input.ActionPress("move_left"); await Frames(55); Input.ActionRelease("move_left");
+            Input.ActionPress("strafe_left"); await Frames(55); Input.ActionRelease("strafe_left");
             Require(player.GlobalPosition.X < slopeStart.X - .5f && player.GlobalPosition.Y > slopeStart.Y + .15f,
                 $"slope ascent failed: from={slopeStart} to={player.GlobalPosition}");
 

@@ -44,4 +44,38 @@ public sealed class NetworkProtocolTests
         Assert.False(state.Flying);
         Assert.NotEqual(NetworkMotionState.Fly, motion);
     }
+
+    [Fact]
+    public void Movement_DeceleratesSmoothlyWhenInputStops()
+    {
+        var state = new AuthoritativePlayerState();
+        for (var i = 0; i < 60; i++)
+            AuthoritativeMovement.Step(state, new MovementInput((uint)i, 0, 1, InputFlags.Run), 1f / 60f);
+
+        var movingSpeed = MathF.Sqrt(state.VelocityX * state.VelocityX + state.VelocityZ * state.VelocityZ);
+        for (var i = 60; i < 180; i++)
+            AuthoritativeMovement.Step(state, new MovementInput((uint)i, 0, 0, InputFlags.None), 1f / 60f);
+
+        var stoppedSpeed = MathF.Sqrt(state.VelocityX * state.VelocityX + state.VelocityZ * state.VelocityZ);
+        Assert.True(movingSpeed > stoppedSpeed);
+        Assert.InRange(stoppedSpeed, 0f, .001f);
+    }
+
+    [Fact]
+    public void Movement_WalkAndRunUseDistinctTargetSpeeds()
+    {
+        var walking = new AuthoritativePlayerState();
+        var running = new AuthoritativePlayerState();
+        for (var i = 0; i < 120; i++)
+        {
+            AuthoritativeMovement.Step(walking, new MovementInput((uint)i, 0, 1, InputFlags.None), 1f / 60f);
+            AuthoritativeMovement.Step(running, new MovementInput((uint)i, 0, 1, InputFlags.Run), 1f / 60f);
+        }
+
+        var walkSpeed = MathF.Sqrt(walking.VelocityX * walking.VelocityX + walking.VelocityZ * walking.VelocityZ);
+        var runSpeed = MathF.Sqrt(running.VelocityX * running.VelocityX + running.VelocityZ * running.VelocityZ);
+        Assert.InRange(walkSpeed, AuthoritativeMovement.WalkSpeed - .001f, AuthoritativeMovement.WalkSpeed + .001f);
+        Assert.InRange(runSpeed, AuthoritativeMovement.RunSpeed - .001f, AuthoritativeMovement.RunSpeed + .001f);
+        Assert.True(runSpeed > walkSpeed);
+    }
 }
