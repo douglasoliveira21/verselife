@@ -9,7 +9,7 @@
 
 ## Correções aplicadas
 
-- Dockerfile agora instala `libfontconfig1`, restaura e compila `LifeVerse.IslandServer.csproj` em Release e executa `godot --headless --editor --build-solutions` verificando o DLL gerado.
+- Dockerfile agora instala `libfontconfig1`, restaura e compila `LifeVerse.IslandServer.csproj` em Release e Debug, grava explicitamente o DLL em `.godot/mono/temp/bin/Debug` e executa `godot --headless --editor --build-solutions` verificando o DLL gerado.
 - O health listener escuta `0.0.0.0` e retorna `503` até registro, snapshot e ENet estarem prontos; retorna `200` somente depois disso.
 - Registro de instância passa a estado `starting`; somente heartbeat `healthy` promove a ilha para `running`.
 - `NetworkBridge` e `ServerMain` já herdam de `Godot.Node`, e `Server.tscn` referencia `res://Scripts/ServerMain.cs` com a capitalização correta.
@@ -17,7 +17,8 @@
 ## Verificação local
 
 - Backend compilado: aprovado.
-- Island-server compilado: aprovado.
+- Island-server compilado: aprovado; DLL encontrado em `island-server/.godot/mono/temp/bin/Debug/LifeVerse.IslandServer.dll` (89.600 bytes nesta execução).
+- Godot 4.7.2 Mono `--headless --editor --build-solutions --quit`: aprovado localmente.
 - Build Docker: NÃO VERIFICADO, pois Docker CLI não está instalado neste ambiente.
 - Execução Godot headless Linux: NÃO VERIFICADO localmente; requer a imagem Godot Mono no host/CI.
 

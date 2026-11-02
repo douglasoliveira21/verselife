@@ -10,6 +10,9 @@ COPY island-server/ island-server/
 
 RUN dotnet restore /app/island-server/LifeVerse.IslandServer.csproj
 RUN dotnet build /app/island-server/LifeVerse.IslandServer.csproj -c Release --no-restore
+RUN mkdir -p /app/island-server/.godot/mono/temp/bin/Debug \
+    && dotnet build /app/island-server/LifeVerse.IslandServer.csproj -c Debug --no-restore -o /app/island-server/.godot/mono/temp/bin/Debug \
+    && test -f /app/island-server/.godot/mono/temp/bin/Debug/LifeVerse.IslandServer.dll
 
 WORKDIR /app/island-server
 RUN godot --headless --editor --path /app/island-server --build-solutions --quit --verbose \
