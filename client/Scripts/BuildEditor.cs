@@ -13,6 +13,10 @@ public partial class BuildEditor : Node3D
     private OptionButton _primitive = null!;
     private LineEdit _snap = null!;
     private LineEdit _color = null!;
+    private LineEdit _rotation = null!;
+    private LineEdit _geometry = null!;
+    private LineEdit _material = null!;
+    private string _clipboard = string.Empty;
     private Label _status = null!;
     private Node3D? _selected;
     private Guid _islandId;
@@ -36,7 +40,8 @@ public partial class BuildEditor : Node3D
         box.AddChild(new Label { Text = "CONSTRUÇÃO · servidor autoritativo" }); var toggle = new Button { Text = "Construir (B)" }; toggle.Pressed += () => SetActive(!_active); box.AddChild(toggle);
         _primitive = new OptionButton(); foreach (var primitive in new[] { "cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid" }) _primitive.AddItem(primitive); box.AddChild(_primitive);
         var create = new Button { Text = "Criar primitiva" }; create.Pressed += CreateObject; box.AddChild(create); var duplicate = new Button { Text = "Duplicar" }; duplicate.Pressed += Duplicate; box.AddChild(duplicate); var delete = new Button { Text = "Excluir" }; delete.Pressed += Delete; box.AddChild(delete);
-        _snap = new LineEdit { Text = "0.5", PlaceholderText = "Snap posição" }; box.AddChild(_snap); _color = new LineEdit { Text = "#A8C7D8", PlaceholderText = "Cor material" }; box.AddChild(_color); var apply = new Button { Text = "Aplicar transform/material" }; apply.Pressed += ApplySelected; box.AddChild(apply);
+        _snap = new LineEdit { Text = "0.5", PlaceholderText = "Snap posição" }; box.AddChild(_snap); _rotation = new LineEdit { Text = "0,0,0", PlaceholderText = "Rotação X,Y,Z" }; box.AddChild(_rotation); _color = new LineEdit { Text = "#A8C7D8", PlaceholderText = "Cor material" }; box.AddChild(_color); _material = new LineEdit { Text = "", PlaceholderText = "Material por face JSON (opcional)" }; box.AddChild(_material); _geometry = new LineEdit { Text = "{\"hollow\":0,\"taperX\":0,\"taperY\":0,\"twist\":0}", PlaceholderText = "Geometria: hollow/taper/twist/cut" }; box.AddChild(_geometry); var apply = new Button { Text = "Aplicar transform/material" }; apply.Pressed += ApplySelected; box.AddChild(apply);
+        var copy = new Button { Text = "Copiar propriedades" }; var paste = new Button { Text = "Colar propriedades" }; copy.Pressed += CopyProperties; paste.Pressed += PasteProperties; var tools = new HBoxContainer(); tools.AddChild(copy); tools.AddChild(paste); box.AddChild(tools);
         var history = new HBoxContainer(); var undo = new Button { Text = "Undo" }; undo.Pressed += Undo; var redo = new Button { Text = "Redo" }; redo.Pressed += Redo; history.AddChild(undo); history.AddChild(redo); box.AddChild(history); _status = new Label { Text = "Permissão: desconhecida" }; box.AddChild(_status); AddChild(_panel);
     }
     public void SetActive(bool active)
@@ -65,7 +70,7 @@ public partial class BuildEditor : Node3D
     private void Delete() { if (_selected is not BuildObjectView view) return; _network.SubmitBuildOperation(Command("delete", view.State.Id, view.State.Revision, null)); }
     private void ApplySelected()
     {
-        if (_selected is not BuildObjectView view) return; var snap = float.TryParse(_snap.Text, out var parsed) ? Math.Clamp(parsed, .01f, 100f) : .5f; var p = view.Position; p.X = Mathf.Snapped(p.X, snap); p.Y = Mathf.Snapped(p.Y, snap); p.Z = Mathf.Snapped(p.Z, snap); var material = string.IsNullOrWhiteSpace(_color.Text) ? view.State.MaterialJson : JsonSerializer.Serialize(new { color = _color.Text, roughness = .7f }); _network.SubmitBuildOperation(Command("update", view.State.Id, view.State.Revision, NewPayload(view.State.PrimitiveType, p, view.Scale, material)));
+        if (_selected is not BuildObjectView view) return; var snap = float.TryParse(_snap.Text, out var parsed) ? Math.Clamp(parsed, .01f, 100f) : .5f; var p = view.Position; p.X = Mathf.Snapped(p.X, snap); p.Y = Mathf.Snapped(p.Y, snap); p.Z = Mathf.Snapped(p.Z, snap); var rotation = ParseVector(_rotation.Text, view.RotationDegrees); view.RotationDegrees = rotation; var material = string.IsNullOrWhiteSpace(_material.Text) ? (string.IsNullOrWhiteSpace(_color.Text) ? view.State.MaterialJson : JsonSerializer.Serialize(new { color = _color.Text, roughness = .7f })) : _material.Text; _network.SubmitBuildOperation(Command("update", view.State.Id, view.State.Revision, NewPayload(view.State.PrimitiveType, p, view.Scale, material, _geometry.Text, rotation)));
     }
     private void Undo() { if (_undo.Count == 0) return; var command = _undo.Pop(); _redo.Push(command); _network.SubmitBuildOperation(command); _status.Text = "Undo enviado; a revisão será validada pelo servidor."; }
     private void Redo() { if (_redo.Count == 0) return; var command = _redo.Pop(); _undo.Push(command); _network.SubmitBuildOperation(command); }
@@ -73,6 +78,9 @@ public partial class BuildEditor : Node3D
     private void OnRejected(string code) => _status.Text = $"Construção rejeitada: {code}";
     private void AddOrUpdate(BuildObjectState state) { if (_objects.TryGetValue(state.Id, out var existing)) { existing.Apply(state); return; } var view = new BuildObjectView(); view.Apply(state); GetParent().AddChild(view); _objects[state.Id] = view; }
     private void ClearSelection() { if (_selected is BuildObjectView old) old.SetSelected(false); _selected = null; }
-    private static Dictionary<string, object?> NewPayload(string primitive, Vector3 p, Vector3 scale, string material) => new() { ["primitiveType"] = primitive, ["positionX"] = p.X, ["positionY"] = p.Y, ["positionZ"] = p.Z, ["rotationX"] = 0f, ["rotationY"] = 0f, ["rotationZ"] = 0f, ["scaleX"] = scale.X, ["scaleY"] = scale.Y, ["scaleZ"] = scale.Z, ["materialJson"] = material, ["physicsJson"] = "{\"collision\":true}", ["groupId"] = null, ["expectedRevision"] = 0 };
+    private void CopyProperties() { if (_selected is BuildObjectView view) _clipboard = JsonSerializer.Serialize(new { materialJson = view.State.MaterialJson, geometryJson = view.State.GeometryJson, scale = view.Scale, rotation = view.RotationDegrees }); }
+    private void PasteProperties() { if (_selected is not BuildObjectView view || string.IsNullOrWhiteSpace(_clipboard)) return; try { using var doc = JsonDocument.Parse(_clipboard); _material.Text = doc.RootElement.GetProperty("materialJson").GetString() ?? "{}"; _geometry.Text = doc.RootElement.GetProperty("geometryJson").GetString() ?? "{}"; } catch { _status.Text = "Propriedades inválidas no clipboard."; } }
+    private static Vector3 ParseVector(string text, Vector3 fallback) { var p = text.Split(',', StringSplitOptions.TrimEntries); return p.Length == 3 && p.All(x => float.TryParse(x, out _)) ? new Vector3(float.Parse(p[0]), float.Parse(p[1]), float.Parse(p[2])) : fallback; }
+    private static Dictionary<string, object?> NewPayload(string primitive, Vector3 p, Vector3 scale, string material, string geometry = "{}", Vector3? rotation = null) { var r = rotation ?? Vector3.Zero; return new() { ["primitiveType"] = primitive, ["positionX"] = p.X, ["positionY"] = p.Y, ["positionZ"] = p.Z, ["rotationX"] = r.X, ["rotationY"] = r.Y, ["rotationZ"] = r.Z, ["scaleX"] = scale.X, ["scaleY"] = scale.Y, ["scaleZ"] = scale.Z, ["materialJson"] = material, ["geometryJson"] = geometry, ["physicsJson"] = "{\"collision\":true}", ["groupId"] = null, ["expectedRevision"] = 0 }; }
     private static string Command(string operation, Guid? objectId, int revision, object? payload) => JsonSerializer.Serialize(new { operation, objectId, @object = payload, expectedRevision = revision });
 }

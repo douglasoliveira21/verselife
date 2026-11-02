@@ -152,6 +152,7 @@ public sealed class BuildObject
     public float ScaleY { get; set; } = 1;
     public float ScaleZ { get; set; } = 1;
     public string MaterialJson { get; set; } = "{}";
+    public string GeometryJson { get; set; } = "{}";
     public string PhysicsJson { get; set; } = "{}";
     public int Revision { get; set; } = 1;
     public DateTimeOffset CreatedAt { get; set; }

@@ -153,7 +153,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         });
         modelBuilder.Entity<BuildObject>(b =>
         {
-            b.ToTable("objects", "world"); b.HasKey(x => x.Id); b.Property(x => x.PrimitiveType).HasMaxLength(24); b.Property(x => x.MaterialJson).HasColumnType("jsonb"); b.Property(x => x.PhysicsJson).HasColumnType("jsonb");
+            b.ToTable("objects", "world"); b.HasKey(x => x.Id); b.Property(x => x.PrimitiveType).HasMaxLength(24); b.Property(x => x.MaterialJson).HasColumnType("jsonb"); b.Property(x => x.GeometryJson).HasColumnType("jsonb"); b.Property(x => x.PhysicsJson).HasColumnType("jsonb");
             b.HasIndex(x => new { x.IslandId, x.DeletedAt }); b.HasIndex(x => new { x.IslandId, x.OwnerUserId }); b.HasIndex(x => x.GroupId);
             b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
         });

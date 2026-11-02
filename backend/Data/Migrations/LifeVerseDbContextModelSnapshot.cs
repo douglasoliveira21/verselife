@@ -395,6 +395,11 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("GeometryJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("geometry_json");
+
                     b.Property<Guid?>("GroupId")
                         .HasColumnType("uuid")
                         .HasColumnName("group_id");
