@@ -2233,6 +2233,11 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("channel");
 
+                    b.Property<string>("ClientMessageId")
+                        .HasMaxLength(96)
+                        .HasColumnType("character varying(96)")
+                        .HasColumnName("client_message_id");
+
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasMaxLength(2000)
@@ -2255,6 +2260,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("island_id");
 
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
                     b.Property<Guid?>("RecipientUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("recipient_user_id");
@@ -2265,13 +2274,15 @@ namespace LifeVerse.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SenderUserId");
-
                     b.HasIndex("Channel", "CreatedAt");
 
                     b.HasIndex("GroupId", "CreatedAt");
 
                     b.HasIndex("RecipientUserId", "CreatedAt");
+
+                    b.HasIndex("SenderUserId", "ClientMessageId")
+                        .IsUnique()
+                        .HasFilter("client_message_id IS NOT NULL");
 
                     b.ToTable("messages", "social");
                 });
@@ -2401,6 +2412,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(512)")
                         .HasColumnName("password_hash");
 
+                    b.Property<string>("PresenceStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("presence_status");
+
+                    b.Property<DateTimeOffset>("PresenceUpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("presence_updated_at");
+
+                    b.Property<string>("PrivacyJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("privacy_json");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -2426,6 +2452,8 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("NormalizedUsername")
                         .IsUnique()
                         .HasFilter("deleted_at IS NULL");
+
+                    b.HasIndex("PresenceStatus");
 
                     b.ToTable("users", "identity");
                 });

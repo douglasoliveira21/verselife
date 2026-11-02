@@ -9,8 +9,10 @@ public sealed class SocialMessage
     public Guid? GroupId { get; set; }
     public Guid? IslandId { get; set; }
     public required string Content { get; set; }
+    public string? ClientMessageId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public DateTimeOffset? ReadAt { get; set; }
 }
 
 public sealed class Friendship

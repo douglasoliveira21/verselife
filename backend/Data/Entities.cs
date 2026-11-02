@@ -11,6 +11,9 @@ public sealed class User
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string Status { get; set; } = "active";
+    public string PresenceStatus { get; set; } = "offline";
+    public DateTimeOffset PresenceUpdatedAt { get; set; }
+    public string PrivacyJson { get; set; } = "{\"presence\":\"friends\"}";
     public DateTimeOffset? DeletedAt { get; set; }
     public Avatar? Avatar { get; set; }
     public ICollection<Session> Sessions { get; set; } = [];
