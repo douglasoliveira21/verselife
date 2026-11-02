@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Backend/">
+    <Project Path="backend/LifeVerse.Api.csproj" />
+  </Folder>
+  <Folder Name="/Client/">
+    <Project Path="client/LifeVerse.Client.csproj" />
+  </Folder>
+  <Folder Name="/Island Server/">
+    <Project Path="island-server/LifeVerse.IslandServer.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="tests/LifeVerse.Api.Tests/LifeVerse.Api.Tests.csproj" />
+  </Folder>
+</Solution>

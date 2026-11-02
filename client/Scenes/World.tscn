@@ -1,0 +1,52 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource path="res://Scenes/Player.tscn" type="PackedScene" id="1"]
+
+[sub_resource type="ProceduralSkyMaterial" id="SkyMaterial"]
+sky_top_color = Color(0.08, 0.18, 0.36, 1)
+sky_horizon_color = Color(0.55, 0.72, 0.8, 1)
+ground_bottom_color = Color(0.04, 0.05, 0.08, 1)
+ground_horizon_color = Color(0.45, 0.5, 0.52, 1)
+
+[sub_resource type="Sky" id="Sky"]
+sky_material = SubResource("SkyMaterial")
+
+[sub_resource type="Environment" id="Environment"]
+background_mode = 2
+sky = SubResource("Sky")
+ambient_light_source = 3
+ambient_light_energy = 0.55
+
+[sub_resource type="PlaneMesh" id="GroundMesh"]
+size = Vector2(80, 80)
+
+[sub_resource type="BoxShape3D" id="GroundShape"]
+size = Vector3(80, 0.2, 80)
+
+[node name="World" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-48, -28, 0)
+shadow_enabled = true
+
+[node name="Ground" type="StaticBody3D" parent="."]
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="Ground"]
+mesh = SubResource("GroundMesh")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Ground"]
+position = Vector3(0, -0.1, 0)
+shape = SubResource("GroundShape")
+
+[node name="Player" parent="." instance=ExtResource("1")]
+position = Vector3(0, 1, 0)
+
+[node name="Hint" type="Label" parent="."]
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 270.0
+offset_bottom = 55.0
+text = "WASD to move · Space to jump"

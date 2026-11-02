@@ -1,0 +1,21 @@
+# Architecture decisions
+
+## ADR-001 — Modular monolith first
+
+The central backend begins as one ASP.NET Core deployable with explicit module folders. This reduces operational cost while contracts and domains stabilize; modules can be extracted only with measured scaling or ownership pressure.
+
+## ADR-002 — Opaque rotating refresh tokens
+
+Access uses short JWTs. Refresh tokens are random opaque values whose SHA-256 hashes are persisted. Rotation and family revocation limit replay impact without placing long-lived authorization state in client-controlled tokens.
+
+## ADR-003 — No unauthenticated ENet listener
+
+The Phase 01 island server prepares ENet configuration but does not listen. Opening a player socket before temporary credential validation would violate the authoritative-server rule.
+
+## ADR-004 — Godot 4.7.2 .NET
+
+Godot 4.7.2 is pinned because it is the supported stable patch on 2026-11-02; 4.8 is still beta. C# is used for structural systems. The client uses Forward+; the headless project uses Compatibility because it renders no game view.
+
+## ADR-005 — Retain root placeholder during migration
+
+The pre-existing root Godot placeholder contains no gameplay but is retained to avoid destructive deletion without separate approval. Active projects are unambiguously `client/project.godot` and `island-server/project.godot`.

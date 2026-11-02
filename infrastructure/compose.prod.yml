@@ -1,0 +1,9 @@
+name: lifeverse-prod
+
+# Production overlay. Supply secrets through the deployment platform, terminate
+# TLS at a reverse proxy, and pin container images to digests before deployment.
+services:
+  api:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+    restart: always

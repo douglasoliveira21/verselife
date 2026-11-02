@@ -1,0 +1,19 @@
+; LifeVerse authoritative island server - Godot 4.7.2 .NET
+config_version=5
+
+[application]
+config/name="LifeVerse Island Server"
+run/main_scene="res://Scenes/Server.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[display]
+window/size/viewport_width=1
+window/size/viewport_height=1
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0, 0, 0, 1)
+
+[network]
+limits/debugger/max_queued_messages=1024
