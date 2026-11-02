@@ -12,6 +12,7 @@ public sealed record HeartbeatRequest(string Status);
 public sealed record ValidateEntryTokenRequest(string Token, Guid IslandId);
 public sealed record ValidateEntryTokenResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
     int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson);
+public sealed record ServerSnapshotRequest(long ExpectedVersion, string TerrainJson, string EnvironmentJson, string IntegrityHash);
 
 public static class PlatformEndpoints
 {
@@ -22,7 +23,28 @@ public static class PlatformEndpoints
         group.MapPut("/{instanceId:guid}/heartbeat", HeartbeatAsync);
         group.MapDelete("/{instanceId:guid}", StopAsync);
         endpoints.MapPost("/api/v1/platform/entry-tokens/validate", ValidateEntryAsync).WithTags("Platform");
+        endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", GetServerSnapshotAsync).WithTags("Platform");
+        endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", SaveServerSnapshotAsync).WithTags("Platform");
         return endpoints;
+    }
+
+    private static async Task<IResult> GetServerSnapshotAsync(Guid instanceId, HttpContext context, IConfiguration config, LifeVerseDbContext db, CancellationToken ct)
+    {
+        if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+        var server = await db.ServerInstances.AsNoTracking().SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct);
+        if (server is null) return Results.NotFound();
+        var snapshot = await db.IslandSnapshots.AsNoTracking().Where(x => x.IslandId == server.IslandId).OrderByDescending(x => x.Version).FirstOrDefaultAsync(ct);
+        var island = await db.Islands.AsNoTracking().SingleAsync(x => x.Id == server.IslandId, ct);
+        return Results.Ok(new { islandId = server.IslandId, version = snapshot?.Version ?? island.SnapshotVersion, terrainJson = snapshot?.TerrainJson ?? "{}", environmentJson = snapshot?.EnvironmentJson ?? island.EnvironmentJson, integrityHash = snapshot?.IntegrityHash ?? string.Empty });
+    }
+
+    private static async Task<IResult> SaveServerSnapshotAsync(Guid instanceId, ServerSnapshotRequest request, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+        var server = await db.ServerInstances.SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct); if (server is null) return Results.NotFound();
+        var island = await db.Islands.SingleAsync(x => x.Id == server.IslandId && x.DeletedAt == null, ct); if (request.ExpectedVersion != island.SnapshotVersion) return Results.Conflict(new { currentVersion = island.SnapshotVersion });
+        if (request.TerrainJson.Length > 4_000_000 || request.EnvironmentJson.Length > 256_000) return Results.BadRequest();
+        var now = clock.GetUtcNow(); var version = island.SnapshotVersion + 1; db.IslandSnapshots.Add(new IslandSnapshot { Id = Guid.NewGuid(), IslandId = island.Id, Version = version, TerrainJson = request.TerrainJson, EnvironmentJson = request.EnvironmentJson, IntegrityHash = request.IntegrityHash[..Math.Min(request.IntegrityHash.Length, 64)], CreatedAt = now }); db.IslandChanges.Add(new IslandChange { Id = Guid.NewGuid(), IslandId = island.Id, Version = version, ActorUserId = Guid.Empty, Operation = "server_periodic_snapshot", PayloadJson = request.TerrainJson, IntegrityHash = request.IntegrityHash[..Math.Min(request.IntegrityHash.Length, 64)], CreatedAt = now }); island.SnapshotVersion = version; island.EnvironmentJson = request.EnvironmentJson; island.UpdatedAt = now; await db.SaveChangesAsync(ct); return Results.Ok(new { version });
     }
 
     private static async Task<IResult> ValidateEntryAsync(ValidateEntryTokenRequest request, HttpContext context, IConfiguration config,
@@ -75,6 +97,8 @@ public static class PlatformEndpoints
             instance.Status = "healthy"; instance.LastHeartbeatAt = now; instance.StoppedAt = null;
         }
         await db.SaveChangesAsync(ct);
+        await db.Islands.Where(x => x.Id == request.IslandId && x.DeletedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.RuntimeState, "running").SetProperty(x => x.UpdatedAt, now), ct);
         return Results.Ok(new { instance.Id, instance.LastHeartbeatAt });
     }
 
@@ -86,7 +110,14 @@ public static class PlatformEndpoints
         var changed = await db.ServerInstances.Where(x => x.Id == instanceId && x.StoppedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, status)
                 .SetProperty(x => x.LastHeartbeatAt, timeProvider.GetUtcNow()), ct);
-        return changed == 0 ? Results.NotFound() : Results.NoContent();
+        if (changed == 0) return Results.NotFound();
+        var islandId = await db.ServerInstances.AsNoTracking().Where(x => x.Id == instanceId).Select(x => (Guid?)x.IslandId).SingleOrDefaultAsync(ct);
+        if (islandId is not null)
+        {
+            var hasHealthy = await db.ServerInstances.AnyAsync(x => x.IslandId == islandId && x.StoppedAt == null && x.Status == "healthy" && x.LastHeartbeatAt > timeProvider.GetUtcNow().AddSeconds(-45), ct);
+            if (!hasHealthy) await db.Islands.Where(x => x.Id == islandId && x.DeletedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RuntimeState, "suspended").SetProperty(x => x.UpdatedAt, timeProvider.GetUtcNow()), ct);
+        }
+        return Results.NoContent();
     }
 
     private static async Task<IResult> StopAsync(Guid instanceId, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider timeProvider, CancellationToken ct)

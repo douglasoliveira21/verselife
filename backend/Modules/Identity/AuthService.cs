@@ -50,6 +50,7 @@ public sealed class AuthService(
             new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = "shoes", ItemKey = "sneakers_basic", TintColor = "#E7E9EE", EquippedAt = now }
         ];
         db.Users.Add(user);
+        await EnsureOfficialIslandsAsync(user.Id, now, ct);
         var response = CreateSession(user, Guid.NewGuid(), context, now).Response;
         try
         {
@@ -61,6 +62,15 @@ public sealed class AuthService(
         }
         logger.LogInformation("User {UserId} registered", user.Id);
         return response;
+    }
+
+    private async Task EnsureOfficialIslandsAsync(Guid ownerId, DateTimeOffset now, CancellationToken ct)
+    {
+        if (await db.Islands.AnyAsync(x => x.DeletedAt == null && x.Slug == "lifeverse-plaza", ct)) return;
+        db.Islands.AddRange(
+            new Island { Id = Guid.NewGuid(), OwnerUserId = ownerId, Name = "LifeVerse Plaza", Slug = "lifeverse-plaza", Description = "Praça pública com caminhos, árvores, iluminação, bancos e áreas sociais.", Category = "social", IsPublic = true, Size = 256, MaxPlayers = 64, SpawnY = 1, EnvironmentJson = "{\"template\":\"plaza\",\"cycle\":true,\"hour\":12}", ResourceLimitsJson = "{\"objects\":5000,\"terrainEditsPerMinute\":120}", RuntimeState = "suspended", CreatedAt = now, UpdatedAt = now },
+            new Island { Id = Guid.NewGuid(), OwnerUserId = ownerId, Name = "Tropical Island", Slug = "tropical-island", Description = "Ilha tropical com praia, vegetação, água e relevo.", Category = "nature", IsPublic = true, Size = 512, MaxPlayers = 48, SpawnY = 1, EnvironmentJson = "{\"template\":\"tropical\",\"cycle\":true,\"hour\":10,\"water\":true}", ResourceLimitsJson = "{\"objects\":3500,\"terrainEditsPerMinute\":90}", RuntimeState = "suspended", CreatedAt = now, UpdatedAt = now },
+            new Island { Id = Guid.NewGuid(), OwnerUserId = ownerId, Name = "Sandbox Island", Slug = "sandbox-island", Description = "Terreno destinado à construção livre.", Category = "sandbox", IsPublic = true, Size = 1024, MaxPlayers = 32, SpawnY = 1, EnvironmentJson = "{\"template\":\"sandbox\",\"cycle\":false,\"hour\":12}", ResourceLimitsJson = "{\"objects\":15000,\"terrainEditsPerMinute\":300}", RuntimeState = "suspended", CreatedAt = now, UpdatedAt = now });
     }
 
     public async Task<AuthResponse?> LoginAsync(LoginRequest request, HttpContext context, CancellationToken ct)

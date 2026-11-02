@@ -30,6 +30,8 @@ builder.Services.AddDbContext<LifeVerseDbContext>(options => options.UseNpgsql(c
 builder.Services.AddScoped<TokenService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<IslandEntryTokenService>();
+builder.Services.AddScoped<WorldManager>();
+builder.Services.AddHostedService<WorldManagerHostedService>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();

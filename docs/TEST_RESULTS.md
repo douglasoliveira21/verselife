@@ -20,6 +20,17 @@ Run date: 2026-11-02.
 | Client persistence smoke | Passed | Actual `AvatarManager` loaded `Persistent Resident` / `human_b` / `mohawk` and applied it to a fresh rig process |
 | Runtime movement harness | Passed | Injected Godot actions validated walk 1.28 m, run 2.56 m, 1.42 m jump, slope ascent, wall collision, flight landing, swimming, seat alignment, and stand-up |
 
+## Phase 04
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Full solution build | Passed | API, shared, client, island-server and tests compile with 0 warnings/errors |
+| Persistent-island migration | Passed | `Phase04PersistentIslands` creates metadata, permissions, snapshots and change audit tables with UUID/FK/index constraints |
+| Terrain editing primitives | Passed | `TerrainEditBuffer` covers raise, lower, flatten and smooth with bounded dimensions |
+| Procedural terrain scene | Passed | Godot client assembly compiles generated height mesh, layer colors, concave collision and geographic boundaries |
+| World Manager | Passed | Per-island semaphore, healthy-instance selection and stale-heartbeat suspension compile and are wired as hosted sweep |
+| Runtime multi-island acceptance | Blocked | Docker/PostgreSQL unavailable in this environment; requires two or more registered island processes |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |

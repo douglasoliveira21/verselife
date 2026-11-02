@@ -75,10 +75,58 @@ public sealed class Island
     public Guid OwnerUserId { get; set; }
     public required string Name { get; set; }
     public required string Slug { get; set; }
+    public string Description { get; set; } = string.Empty;
+    public string? CoverImageUrl { get; set; }
+    public string Category { get; set; } = "social";
     public bool IsPublic { get; set; }
+    public int Size { get; set; } = 256;
+    public int MaxPlayers { get; set; } = 64;
+    public float SpawnX { get; set; }
+    public float SpawnY { get; set; } = 1f;
+    public float SpawnZ { get; set; }
+    public string EnvironmentJson { get; set; } = "{}";
+    public string ResourceLimitsJson { get; set; } = "{}";
+    public string RuntimeState { get; set; } = "suspended";
+    public long SnapshotVersion { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public sealed class IslandPermission
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid? UserId { get; set; }
+    public Guid? GroupId { get; set; }
+    public required string Permission { get; set; }
+    public required string PrincipalType { get; set; }
+    public Guid GrantedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
+public sealed class IslandSnapshot
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public long Version { get; set; }
+    public required string TerrainJson { get; set; }
+    public required string EnvironmentJson { get; set; }
+    public required string IntegrityHash { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+public sealed class IslandChange
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public long Version { get; set; }
+    public Guid ActorUserId { get; set; }
+    public required string Operation { get; set; }
+    public required string PayloadJson { get; set; }
+    public required string IntegrityHash { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public sealed class ServerInstance

@@ -19,13 +19,15 @@ Last updated: 2026-11-02.
 - Versioned PostgreSQL migration for users, sessions, avatars, islands, and server instances.
 - Responsive Godot login scene connected to the real API, in-memory session state, bootstrap/world/player scenes, input map, camera, environment, and provisional movement.
 - Headless Godot lifecycle, central registration/heartbeat/deregistration, structured JSON logs, loopback health, configuration validation, and guarded ENet preparation.
+- Phase 03 authenticated ENet admission, authoritative tick simulation, snapshots, interpolation/reconciliation, local chat, interest management, and controlled reconnection.
+- Phase 04 persistent island metadata, official templates, user/group permissions, versioned terrain snapshots, audit changes, World Manager lifecycle states, procedural terrain/collision, day/night environment, and periodic server persistence.
 - Unit tests and end-to-end smoke script.
 
 ## Not complete / blocked
 
 - Docker startup, actual migration application, PostgreSQL persistence/restart, and auth smoke test: Docker is not installed and local PostgreSQL is not running.
 - System-wide Godot remains absent, but the portable verified engine is available in ignored `.tools` for this checkout.
-- ENet player connections are intentionally disabled until authenticated island-entry tokens exist.
+- Docker startup and multi-process island acceptance remain environment-blocked because Docker is unavailable in this audit environment.
 - Password recovery is visibly disabled until an email provider and recovery workflow exist.
 
 Phase 01 is **not declared complete** because the mandatory runtime acceptance tests above remain blocked.

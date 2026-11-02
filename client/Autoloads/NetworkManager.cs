@@ -14,6 +14,7 @@ public partial class NetworkManager : Node
     [Signal] public delegate void ChatReceivedEventHandler(string line);
     private readonly Dictionary<int, RemoteAvatar> _remote = [];
     private HttpRequest _http = null!;
+    private HttpRequest _snapshotHttp = null!;
     private NetworkBridge _bridge = null!;
     private PlayerController? _localPlayer;
     private Guid _islandId;
@@ -29,6 +30,7 @@ public partial class NetworkManager : Node
     {
         _bridge = GetNode<NetworkBridge>("/root/NetworkBridge");
         _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnEntryResponse;
+        _snapshotHttp = new HttpRequest(); AddChild(_snapshotHttp); _snapshotHttp.RequestCompleted += OnSnapshotResponse;
         Multiplayer.ConnectedToServer += OnConnected;
         Multiplayer.ConnectionFailed += () => HandleConnectionLost("connection_failed");
         Multiplayer.ServerDisconnected += () => HandleConnectionLost("server_disconnected");
@@ -64,9 +66,27 @@ public partial class NetworkManager : Node
             _entryToken = root.GetProperty("token").GetString() ?? string.Empty; _host = root.GetProperty("host").GetString() ?? string.Empty;
             _port = root.GetProperty("port").GetInt32();
             if (root.GetProperty("protocolVersion").GetInt32() != NetworkProtocol.Version) { EmitSignal(SignalName.ConnectionStateChanged, "incompatible", "Versão do protocolo incompatível."); return; }
+            RequestIslandSnapshot();
             ConnectPeer();
         }
         catch (Exception exception) { GD.PushWarning($"event=entry_response_invalid error={exception.GetType().Name}"); EmitSignal(SignalName.ConnectionStateChanged, "failed", "Resposta de entrada inválida."); }
+    }
+
+    private void RequestIslandSnapshot()
+    {
+        var session = GetNode<SessionManager>("/root/SessionManager");
+        _snapshotHttp.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/islands/{_islandId}/snapshot", [$"Authorization: Bearer {session.AccessToken}"]);
+    }
+
+    private void OnSnapshotResponse(long result, long responseCode, string[] headers, byte[] body)
+    {
+        if (responseCode is < 200 or >= 300) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); var environment = doc.RootElement.GetProperty("environmentJson").GetString() ?? "{}";
+            var terrain = GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain"); terrain?.ApplySnapshot(doc.RootElement.GetProperty("terrainJson").GetString() ?? "{}", environment);
+        }
+        catch (Exception exception) { GD.PushWarning($"event=island_snapshot_invalid error={exception.GetType().Name}"); }
     }
 
     private void ConnectPeer()

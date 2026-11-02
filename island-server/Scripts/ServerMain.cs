@@ -22,6 +22,10 @@ public partial class ServerMain : Node
     private readonly HashSet<Guid> _usedTickets = [];
     private uint _serverTick;
     private double _snapshotAccumulator;
+    private long _worldSnapshotVersion;
+    private string _terrainJson = "{}";
+    private string _environmentJson = "{}";
+    private double _worldSaveAccumulator;
 
     public override async void _Ready()
     {
@@ -34,6 +38,7 @@ public partial class ServerMain : Node
             _healthListener.Start();
             _ = ServeHealthAsync(_shutdown.Token);
             await RegisterAsync(_shutdown.Token);
+            await LoadWorldSnapshotAsync(_shutdown.Token);
             var peer = new ENetMultiplayerPeer();
             var enetError = peer.CreateServer(_config.GamePort, _config.MaxPlayers, 3);
             if (enetError != Error.Ok) throw new InvalidOperationException($"ENet failed to listen: {enetError}");
@@ -64,6 +69,8 @@ public partial class ServerMain : Node
             };
         }
         _snapshotAccumulator += delta;
+        _worldSaveAccumulator += delta;
+        if (_worldSaveAccumulator >= 60) { _worldSaveAccumulator = 0; _ = SaveWorldSnapshotAsync(_shutdown.Token); }
         if (_snapshotAccumulator >= 1d / _config.SnapshotRate)
         {
             _snapshotAccumulator = 0;
@@ -179,6 +186,28 @@ public partial class ServerMain : Node
         Log("server_registered", new { _config.InstanceId });
     }
 
+    private async Task LoadWorldSnapshotAsync(CancellationToken ct)
+    {
+        using var response = await _api.GetAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/island-snapshot", ct);
+        response.EnsureSuccessStatusCode();
+        var snapshot = await response.Content.ReadFromJsonAsync<WorldSnapshotResponse>(cancellationToken: ct) ?? throw new InvalidOperationException("Island snapshot response was empty.");
+        _worldSnapshotVersion = snapshot.Version; _terrainJson = snapshot.TerrainJson; _environmentJson = snapshot.EnvironmentJson;
+        Log("world_snapshot_loaded", new { snapshot.Version, snapshot.IntegrityHash });
+    }
+
+    private async Task SaveWorldSnapshotAsync(CancellationToken ct)
+    {
+        try
+        {
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes($"{_config.IslandId}:{_worldSnapshotVersion}:{_terrainJson}:{_environmentJson}")));
+            using var response = await _api.PutAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/island-snapshot", new { expectedVersion = _worldSnapshotVersion, terrainJson = _terrainJson, environmentJson = _environmentJson, integrityHash = hash }, ct);
+            if (response.IsSuccessStatusCode) { var result = await response.Content.ReadFromJsonAsync<SnapshotWriteResponse>(cancellationToken: ct); if (result is not null) _worldSnapshotVersion = result.Version; Log("world_snapshot_saved", new { _worldSnapshotVersion }); }
+            else if ((int)response.StatusCode == 409) Log("world_snapshot_conflict", new { status = (int)response.StatusCode });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception exception) { Log("world_snapshot_save_failed", new { error = exception.Message }); }
+    }
+
     private async Task HeartbeatLoopAsync(CancellationToken ct)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
@@ -218,6 +247,7 @@ public partial class ServerMain : Node
         if (_stopping) return;
         _stopping = true;
         _shutdown.Cancel();
+        await SaveWorldSnapshotAsync(CancellationToken.None);
         Multiplayer.MultiplayerPeer?.Close();
         _healthListener?.Stop();
         if (_registered)
@@ -251,4 +281,6 @@ public partial class ServerMain : Node
     private sealed record SuspendedPlayer(ConnectedPlayer Player, DateTimeOffset ExpiresAt);
     private sealed record AdmissionResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
         int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson);
+    private sealed record WorldSnapshotResponse(Guid IslandId, long Version, string TerrainJson, string EnvironmentJson, string IntegrityHash);
+    private sealed record SnapshotWriteResponse(long Version);
 }

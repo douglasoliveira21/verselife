@@ -3,7 +3,8 @@
 ## Runtime boundaries
 
 - **Client** — Godot 4.7.2 .NET, C#, Forward+, Windows-first. It owns presentation and input, never authoritative permissions or persistence.
-- **Island server** — Godot 4.7.2 .NET headless process. It registers with the central API and exposes loopback health. ENet configuration is reserved but no player listener opens before temporary-entry-token validation exists.
+- **Island server** — Godot 4.7.2 .NET headless process. It registers with the central API, loads/saves versioned island snapshots, exposes loopback health, and accepts ENet peers only after central ticket validation.
+- **World Manager** — API service that serializes per-island startup decisions, selects healthy instances, and marks islands suspended after stale heartbeats.
 - **Backend** — ASP.NET Core 10 modular monolith. REST endpoints are grouped by Identity, Users, Worlds, Inventory, Social, Assets, and Platform boundaries.
 - **Data** — PostgreSQL is authoritative. Redis is reserved for temporary state/cache and MinIO for objects; neither substitutes for PostgreSQL business state.
 

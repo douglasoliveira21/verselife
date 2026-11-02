@@ -168,6 +168,17 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("CoverImageUrl")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("cover_image_url");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -176,9 +187,24 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("EnvironmentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("environment_json");
+
                     b.Property<bool>("IsPublic")
                         .HasColumnType("boolean")
                         .HasColumnName("is_public");
+
+                    b.Property<int>("MaxPlayers")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_players");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -190,11 +216,42 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("owner_user_id");
 
+                    b.Property<string>("ResourceLimitsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("resource_limits_json");
+
+                    b.Property<string>("RuntimeState")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("runtime_state");
+
+                    b.Property<int>("Size")
+                        .HasColumnType("integer")
+                        .HasColumnName("size");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(80)
                         .HasColumnType("character varying(80)")
                         .HasColumnName("slug");
+
+                    b.Property<long>("SnapshotVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("snapshot_version");
+
+                    b.Property<float>("SpawnX")
+                        .HasColumnType("real")
+                        .HasColumnName("spawn_x");
+
+                    b.Property<float>("SpawnY")
+                        .HasColumnType("real")
+                        .HasColumnName("spawn_y");
+
+                    b.Property<float>("SpawnZ")
+                        .HasColumnType("real")
+                        .HasColumnName("spawn_z");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -208,7 +265,158 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique()
                         .HasFilter("deleted_at IS NULL");
 
+                    b.HasIndex("IsPublic", "Category", "DeletedAt");
+
                     b.ToTable("islands", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandChange", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("IntegrityHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("integrity_hash");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)")
+                        .HasColumnName("operation");
+
+                    b.Property<string>("PayloadJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload_json");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("changes", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandPermission", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("GrantedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("granted_by_user_id");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Permission")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("permission");
+
+                    b.Property<string>("PrincipalType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("principal_type");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("IslandId", "GroupId", "Permission")
+                        .IsUnique()
+                        .HasFilter("revoked_at IS NULL AND group_id IS NOT NULL");
+
+                    b.HasIndex("IslandId", "UserId", "Permission")
+                        .IsUnique()
+                        .HasFilter("revoked_at IS NULL AND user_id IS NOT NULL");
+
+                    b.ToTable("permissions", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EnvironmentJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("environment_json");
+
+                    b.Property<string>("IntegrityHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("integrity_hash");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("TerrainJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("terrain_json");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("snapshots", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.ServerInstance", b =>
@@ -419,6 +627,38 @@ namespace LifeVerse.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandChange", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandPermission", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandSnapshot", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
