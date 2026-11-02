@@ -70,7 +70,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.NormalizedEmail).HasMaxLength(254);
             b.Property(x => x.PasswordHash).HasMaxLength(512);
             b.Property(x => x.Status).HasMaxLength(24);
-            b.Property(x => x.PresenceStatus).HasMaxLength(16); b.Property(x => x.PrivacyJson).HasColumnType("jsonb"); b.Property(x => x.VoiceSettingsJson).HasColumnType("jsonb"); b.HasIndex(x => x.PresenceStatus);
+            b.Property(x => x.PresenceStatus).HasMaxLength(16); b.Property(x => x.PrivacyJson).HasColumnType("jsonb"); b.Property(x => x.VoiceSettingsJson).HasColumnType("jsonb"); b.Property(x => x.Bio).HasMaxLength(2000); b.Property(x => x.ProfilePhotoUrl).HasMaxLength(1024); b.HasIndex(x => x.PresenceStatus);
             b.HasIndex(x => x.NormalizedUsername).IsUnique().HasFilter("deleted_at IS NULL");
             b.HasIndex(x => x.NormalizedEmail).IsUnique().HasFilter("deleted_at IS NULL");
         });

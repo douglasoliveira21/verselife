@@ -14,8 +14,13 @@ public static class UserEndpoints
             .Produces<UserSummary>().ProducesProblem(401).ProducesProblem(404);
         group.MapGet("/avatar", GetAvatarAsync).Produces<AvatarResponse>().ProducesProblem(404);
         group.MapPut("/avatar", SaveAvatarAsync).Produces<AvatarResponse>().ProducesValidationProblem().ProducesProblem(404);
+        group.MapPut("/profile", UpdateProfileAsync);
+        endpoints.MapGet("/api/v1/users/{userId:guid}/profile", PublicProfileAsync).RequireAuthorization().WithTags("Users");
         return endpoints;
     }
+
+    private static async Task<IResult> UpdateProfileAsync(ProfileRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) { if (!TryGetUserId(context, out var userId)) return Results.Unauthorized(); if (request.Bio?.Length > 2000 || request.ProfilePhotoUrl?.Length > 1024 || request.PrivacyJson?.Length > 4096) return Results.BadRequest(); var user = await db.Users.SingleOrDefaultAsync(x => x.Id == userId && x.DeletedAt == null, ct); if (user is null) return Results.NotFound(); user.Bio = request.Bio?.Trim() ?? user.Bio; user.ProfilePhotoUrl = request.ProfilePhotoUrl?.Trim(); if (request.PrivacyJson is not null) user.PrivacyJson = request.PrivacyJson; user.UpdatedAt = clock.GetUtcNow(); await db.SaveChangesAsync(ct); return Results.Ok(new { user.Id, user.Username, user.Bio, user.ProfilePhotoUrl, user.PrivacyJson }); }
+    private static async Task<IResult> PublicProfileAsync(Guid userId, HttpContext context, LifeVerseDbContext db, CancellationToken ct) { if (!TryGetUserId(context, out var viewer)) return Results.Unauthorized(); var user = await db.Users.AsNoTracking().Include(x => x.Avatar).SingleOrDefaultAsync(x => x.Id == userId && x.DeletedAt == null, ct); if (user is null) return Results.NotFound(); var isSelf = viewer == userId; var privacy = user.PrivacyJson; var showProfile = isSelf || !privacy.Contains("\"profile\":\"private\""); return Results.Ok(new { user.Id, user.Username, displayName = user.Avatar?.DisplayName ?? user.Username, bio = showProfile ? user.Bio : string.Empty, photoUrl = showProfile ? user.ProfilePhotoUrl : null, joinedAt = user.CreatedAt, presence = isSelf || !privacy.Contains("\"presence\":\"private\"") ? user.PresenceStatus : "offline" }); }
 
     private static async Task<IResult> GetMeAsync(HttpContext context, LifeVerseDbContext db, CancellationToken ct)
     {
@@ -96,3 +101,5 @@ public static class UserEndpoints
     }
     private static string ValidJsonOrDefault(string? value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value;
 }
+
+public sealed record ProfileRequest(string? Bio, string? ProfilePhotoUrl, string? PrivacyJson);
