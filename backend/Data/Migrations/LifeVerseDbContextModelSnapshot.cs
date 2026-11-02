@@ -453,6 +453,62 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("build_operations", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.DiscoveryEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer")
+                        .HasColumnName("capacity");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("description");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_public");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OrganizerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("organizer_user_id");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrganizerUserId");
+
+                    b.HasIndex("IslandId", "StartsAt");
+
+                    b.ToTable("events", "discovery");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.EquippedItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -492,6 +548,35 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("equipped_items", "inventory");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.EventAttendee", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("joined_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("EventId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("event_attendees", "discovery");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.Friendship", b =>
@@ -898,6 +983,35 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("changes", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandFavorite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId");
+
+                    b.HasIndex("UserId", "IslandId")
+                        .IsUnique();
+
+                    b.ToTable("island_favorites", "discovery");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.IslandPermission", b =>
                 {
                     b.Property<Guid>("Id")
@@ -999,6 +1113,64 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("snapshots", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.Landmark", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_public");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<float>("PositionX")
+                        .HasColumnType("real")
+                        .HasColumnName("position_x");
+
+                    b.Property<float>("PositionY")
+                        .HasColumnType("real")
+                        .HasColumnName("position_y");
+
+                    b.Property<float>("PositionZ")
+                        .HasColumnType("real")
+                        .HasColumnName("position_z");
+
+                    b.Property<float>("RotationY")
+                        .HasColumnType("real")
+                        .HasColumnName("rotation_y");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId");
+
+                    b.HasIndex("OwnerUserId", "DeletedAt");
+
+                    b.ToTable("landmarks", "discovery");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ObjectScript", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1059,6 +1231,49 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("object_scripts", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.PhotoSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsPublic")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_public");
+
+                    b.Property<Guid?>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("MetadataJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata_json");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("storage_key");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId");
+
+                    b.HasIndex("OwnerUserId", "CreatedAt");
+
+                    b.ToTable("photos", "discovery");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.RadioStation", b =>
@@ -1449,6 +1664,44 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("reports", "social");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.TeleportReservation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId");
+
+                    b.HasIndex("UserId", "ExpiresAt");
+
+                    b.ToTable("teleport_reservations", "discovery");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.User", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1691,6 +1944,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.DiscoveryEvent", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OrganizerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.EquippedItem", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.Avatar", "Avatar")
@@ -1700,6 +1968,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Avatar");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.EventAttendee", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.DiscoveryEvent", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.Friendship", b =>
@@ -1792,6 +2075,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandFavorite", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.IslandPermission", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.Island", null)
@@ -1815,6 +2113,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.Landmark", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ObjectScript", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.BuildObject", null)
@@ -1827,6 +2140,20 @@ namespace LifeVerse.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.PhotoSnapshot", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
@@ -1907,6 +2234,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ReporterUserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.TeleportReservation", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -26,6 +26,12 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<ScriptState> ScriptStates => Set<ScriptState>();
     public DbSet<ScriptExecution> ScriptExecutions => Set<ScriptExecution>();
     public DbSet<HudDefinition> HudDefinitions => Set<HudDefinition>();
+    public DbSet<IslandFavorite> IslandFavorites => Set<IslandFavorite>();
+    public DbSet<Landmark> Landmarks => Set<Landmark>();
+    public DbSet<DiscoveryEvent> DiscoveryEvents => Set<DiscoveryEvent>();
+    public DbSet<EventAttendee> EventAttendees => Set<EventAttendee>();
+    public DbSet<PhotoSnapshot> PhotoSnapshots => Set<PhotoSnapshot>();
+    public DbSet<TeleportReservation> TeleportReservations => Set<TeleportReservation>();
     public DbSet<SocialMessage> SocialMessages => Set<SocialMessage>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
@@ -157,6 +163,12 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<GroupInvite>(b => { b.ToTable("group_invites", "social"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(16); b.HasIndex(x => new { x.GroupId, x.InvitedUserId, x.Status }); b.HasOne<SocialGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<SocialReport>(b => { b.ToTable("reports", "social"); b.HasKey(x => x.Id); b.Property(x => x.Reason).HasMaxLength(1000); b.Property(x => x.Status).HasMaxLength(16); b.HasIndex(x => new { x.Status, x.CreatedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.ReporterUserId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<RadioStation>(b => { b.ToTable("radio_stations", "social"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.StreamUrl).HasMaxLength(2048); b.HasIndex(x => x.IslandId); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<IslandFavorite>(b => { b.ToTable("island_favorites", "discovery"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.UserId, x.IslandId }).IsUnique(); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<Landmark>(b => { b.ToTable("landmarks", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<DiscoveryEvent>(b => { b.ToTable("events", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(160); b.Property(x => x.Description).HasMaxLength(4000); b.HasIndex(x => new { x.IslandId, x.StartsAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OrganizerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<EventAttendee>(b => { b.ToTable("event_attendees", "discovery"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.EventId, x.UserId }).IsUnique(); b.HasOne<DiscoveryEvent>().WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<PhotoSnapshot>(b => { b.ToTable("photos", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.StorageKey).HasMaxLength(512); b.Property(x => x.MetadataJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.OwnerUserId, x.CreatedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.SetNull); });
+        modelBuilder.Entity<TeleportReservation>(b => { b.ToTable("teleport_reservations", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.UserId, x.ExpiresAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ServerInstance>(b =>
         {
             b.ToTable("server_instances", "platform");

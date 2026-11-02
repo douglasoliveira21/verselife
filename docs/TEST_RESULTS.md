@@ -73,6 +73,16 @@ Run date: 2026-11-02.
 | Voice integration | Contract ready | Temporary five-minute room JWT is issued; LiveKit deployment credentials remain environment-specific |
 | Radio safety | Passed statically | HTTPS-only validation rejects loopback/private destinations |
 
+## Phase 09
+
+| Check | Result | Evidence / blocker |
+|---|---|---|
+| Discovery migration | Passed | Versioned migration creates discovery tables and indexes |
+| Search/privacy contract | Passed statically | Query exposes public or own islands only, with pagination and category/sort filters |
+| Teleport reservation | Passed statically | World Manager is consulted; capacity and expiry are enforced |
+| Client build | Passed | Map/minimap panel compiles with 0 warnings/errors |
+| Runtime island transfer | Environment-blocked | Docker/PostgreSQL and live island instances are unavailable in this environment |
+
 ## Phase 01 baseline
 
 | Check | Result | Evidence / blocker |

@@ -25,6 +25,7 @@ Last updated: 2026-11-02.
 - Phase 06 global inventory folders/search, asset/version/item/placed-instance separation, permission flags, authenticated upload validation for GLB/glTF/images/audio, content hashing, equipment and world placement.
 - Phase 07 isolated Lua worker contract, safety validator, script/event/state persistence, execution audit/quarantine, ten templates, and in-world Lua/HUD editors.
 - Phase 08 social messages, friendships, groups, blocks/reports, temporary LiveKit room tokens, and validated island radios.
+- Phase 09 paginated public island discovery, favorites, World Manager teleport reservations, landmarks, events, photos, and the client map/minimap panel.
 - Unit tests and end-to-end smoke script.
 
 ## Not complete / blocked

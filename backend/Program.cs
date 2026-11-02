@@ -9,6 +9,7 @@ using LifeVerse.Api.Modules.Worlds;
 using LifeVerse.Api.Modules.Assets;
 using LifeVerse.Api.Modules.Scripting;
 using LifeVerse.Api.Modules.Social;
+using LifeVerse.Api.Modules.Discovery;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -94,6 +95,7 @@ app.MapBuildEndpoints();
 app.MapAssetEndpoints();
 app.MapScriptingEndpoints();
 app.MapSocialEndpoints();
+app.MapDiscoveryEndpoints();
 
 if (!app.Environment.IsEnvironment("Testing"))
 {
