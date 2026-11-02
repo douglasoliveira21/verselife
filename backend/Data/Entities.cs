@@ -172,6 +172,39 @@ public sealed class ParcelChange
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+public sealed class Vehicle
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public required string Name { get; set; }
+    public required string VehicleType { get; set; }
+    public float PositionX { get; set; }
+    public float PositionY { get; set; } = 1f;
+    public float PositionZ { get; set; }
+    public float RotationY { get; set; }
+    public float Speed { get; set; }
+    public float MaxSpeed { get; set; } = 20f;
+    public float Mass { get; set; } = 1000f;
+    public bool EngineOn { get; set; }
+    public int Revision { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+public sealed class VehicleSeat
+{
+    public Guid Id { get; set; }
+    public Guid VehicleId { get; set; }
+    public required string SeatType { get; set; }
+    public float OffsetX { get; set; }
+    public float OffsetY { get; set; }
+    public float OffsetZ { get; set; }
+    public Guid? OccupantUserId { get; set; }
+    public DateTimeOffset? OccupiedAt { get; set; }
+}
+
 public sealed class BuildObject
 {
     public Guid Id { get; set; }

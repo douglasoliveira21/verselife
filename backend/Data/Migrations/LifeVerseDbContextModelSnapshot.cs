@@ -2492,6 +2492,137 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("blocks", "social");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.Vehicle", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<bool>("EngineOn")
+                        .HasColumnType("boolean")
+                        .HasColumnName("engine_on");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<float>("Mass")
+                        .HasColumnType("real")
+                        .HasColumnName("mass");
+
+                    b.Property<float>("MaxSpeed")
+                        .HasColumnType("real")
+                        .HasColumnName("max_speed");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<float>("PositionX")
+                        .HasColumnType("real")
+                        .HasColumnName("position_x");
+
+                    b.Property<float>("PositionY")
+                        .HasColumnType("real")
+                        .HasColumnName("position_y");
+
+                    b.Property<float>("PositionZ")
+                        .HasColumnType("real")
+                        .HasColumnName("position_z");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<float>("RotationY")
+                        .HasColumnType("real")
+                        .HasColumnName("rotation_y");
+
+                    b.Property<float>("Speed")
+                        .HasColumnType("real")
+                        .HasColumnName("speed");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("VehicleType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("vehicle_type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("IslandId", "DeletedAt");
+
+                    b.ToTable("vehicles", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.VehicleSeat", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("OccupantUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("occupant_user_id");
+
+                    b.Property<DateTimeOffset?>("OccupiedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occupied_at");
+
+                    b.Property<float>("OffsetX")
+                        .HasColumnType("real")
+                        .HasColumnName("offset_x");
+
+                    b.Property<float>("OffsetY")
+                        .HasColumnType("real")
+                        .HasColumnName("offset_y");
+
+                    b.Property<float>("OffsetZ")
+                        .HasColumnType("real")
+                        .HasColumnName("offset_z");
+
+                    b.Property<string>("SeatType")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("seat_type");
+
+                    b.Property<Guid>("VehicleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("vehicle_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccupantUserId");
+
+                    b.HasIndex("VehicleId", "SeatType")
+                        .IsUnique();
+
+                    b.ToTable("vehicle_seats", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.Wallet", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3174,6 +3305,30 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasOne("LifeVerse.Api.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.Vehicle", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.VehicleSeat", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Vehicle", null)
+                        .WithMany()
+                        .HasForeignKey("VehicleId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
