@@ -24,6 +24,8 @@ public partial class PlayerController : CharacterBody3D
     private bool _swimming;
     private bool _firstPerson;
     private bool _cursorFree;
+    private bool _rightDragging;
+    private bool _rightDragMoved;
     private bool _wasGrounded;
     private float _landingTime;
     private float _emoteTime;
@@ -50,7 +52,10 @@ public partial class PlayerController : CharacterBody3D
         GetNode<Button>("HUD/ContextMenu/Sit").Pressed += ContextSit;
         GetNode<Button>("HUD/ContextMenu/Cancel").Pressed += () => _contextMenu.Visible = false;
         GetNode<Button>("HUD/EditAvatar").Pressed += () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator();
-        Input.MouseMode = Input.MouseModeEnum.Captured;
+        // Keep the pointer available for the world UI. Camera orbit is opt-in
+        // while dragging with the right mouse button, like a desktop viewer.
+        _cursorFree = true;
+        Input.MouseMode = Input.MouseModeEnum.Visible;
         var avatars = GetNode<AvatarManager>("/root/AvatarManager");
         avatars.AvatarLoaded += OnAvatarLoaded;
         var error = avatars.Load();
@@ -67,7 +72,7 @@ public partial class PlayerController : CharacterBody3D
 
     public override void _UnhandledInput(InputEvent input)
     {
-        if (input.IsActionPressed("cursor_toggle")) SetCursorFree(!_cursorFree);
+        if (input.IsActionPressed("cursor_toggle")) SetCursorFree(true);
         if (input.IsActionPressed("first_person")) ToggleFirstPerson();
         if (input.IsActionPressed("fly_toggle") && _seat is null && !_swimming)
         {
@@ -77,17 +82,30 @@ public partial class PlayerController : CharacterBody3D
         if (input.IsActionPressed("interact")) InteractOrStand();
         if (input.IsActionPressed("emote_wave")) StartEmote(AvatarMotionState.Wave, 2.5f);
         if (input.IsActionPressed("emote_dance")) StartEmote(AvatarMotionState.Dance, 5f);
-        if (input is InputEventMouseMotion motion && !_cursorFree)
+        if (input is InputEventMouseMotion motion && _rightDragging)
         {
+            if (motion.Relative.LengthSquared() > 0.01f) _rightDragMoved = true;
             RotateY(-motion.Relative.X * _cameraSensitivity);
             var direction = _invertY ? 1f : -1f;
             _cameraPivot.Rotation = new Vector3(Mathf.Clamp(_cameraPivot.Rotation.X + motion.Relative.Y * _cameraSensitivity * direction, -1.25f, .85f), 0, 0);
         }
-        if (input is InputEventMouseButton button && button.Pressed)
+        if (input is InputEventMouseButton button)
         {
-            if (button.ButtonIndex == MouseButton.WheelUp) SetZoom(_cameraDistance - .5f);
-            if (button.ButtonIndex == MouseButton.WheelDown) SetZoom(_cameraDistance + .5f);
-            if (button.ButtonIndex == MouseButton.Right && _cursorFree) OpenContextMenu(button.Position);
+            if (button.ButtonIndex == MouseButton.WheelUp && button.Pressed) SetZoom(_cameraDistance - .5f);
+            if (button.ButtonIndex == MouseButton.WheelDown && button.Pressed) SetZoom(_cameraDistance + .5f);
+            if (button.ButtonIndex == MouseButton.Right)
+            {
+                if (button.Pressed)
+                {
+                    _rightDragging = true;
+                    _rightDragMoved = false;
+                }
+                else if (_rightDragging)
+                {
+                    _rightDragging = false;
+                    if (!_rightDragMoved) OpenContextMenu(button.Position);
+                }
+            }
         }
     }
 
@@ -209,7 +227,12 @@ public partial class PlayerController : CharacterBody3D
 
     private void ContextSit() { _selectedSeat?.Interact(this); _selectedSeat = null; }
     private void StartEmote(AvatarMotionState state, float duration) { if (_seat is not null || _flying || _swimming) return; _emoteState = state; _emoteTime = duration; }
-    private void SetCursorFree(bool value) { _cursorFree = value; Input.MouseMode = value ? Input.MouseModeEnum.Visible : Input.MouseModeEnum.Captured; }
+    private void SetCursorFree(bool value)
+    {
+        _cursorFree = value;
+        _rightDragging = false;
+        Input.MouseMode = Input.MouseModeEnum.Visible;
+    }
     private void ToggleFirstPerson() { _firstPerson = !_firstPerson; _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance; _rig.Visible = !_firstPerson; }
     private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, 2f, 8f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     private void OnAvatarLoaded(bool success, string message)
