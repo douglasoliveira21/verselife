@@ -155,6 +155,7 @@ public partial class PlayerController : CharacterBody3D
     {
         var dt = (float)delta;
         if (_seat is not null) { UpdateSeated(); return; }
+        LiftOutOfTerrain();
         if (_emoteTime > 0)
         {
             _emoteTime -= dt;
@@ -240,6 +241,18 @@ public partial class PlayerController : CharacterBody3D
         _wasGrounded = grounded;
         UpdateAnimation(direction, direction.Length());
         _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : Input.IsActionPressed("run") ? "Running" : "Walking");
+    }
+
+    /// A heightmap shape does not push bodies out when the ground rises (terrain edit, reconcile, teleport),
+    /// so the avatar would end up buried to the waist. The server already lifts the avatar; mirror it here.
+    private void LiftOutOfTerrain()
+    {
+        _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
+        if (_terrainNode is null) return;
+        var ground = _terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z);
+        if (GlobalPosition.Y >= ground - .25f) return; // tolerate the small bilinear-vs-triangle difference on slopes
+        GlobalPosition = new Vector3(GlobalPosition.X, ground, GlobalPosition.Z);
+        Velocity = new Vector3(Velocity.X, Mathf.Max(0f, Velocity.Y), Velocity.Z);
     }
 
     public void SetSwimming(bool value) => _volumeSwimming = value;

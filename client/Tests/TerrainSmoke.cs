@@ -20,6 +20,17 @@ public partial class TerrainSmoke : Node
             Require(player.IsOnFloor() && Mathf.Abs(player.GlobalPosition.Y) < .1f, $"player not standing on flat terrain: {player.GlobalPosition}");
             await Capture("flat");
 
+            // Raising the ground under a standing avatar must lift it, not bury it.
+            player.GlobalPosition = new Vector3(0, 0, 8);
+            player.Velocity = Vector3.Zero;
+            await Frames(30);
+            var burialRevision = terrain.Map.Revision;
+            for (var i = 0; i < 10; i++) { burialRevision++; terrain.ApplyEdit(TerrainTool.Raise, 0, 8, 6, .4f, 0, burialRevision); }
+            await Frames(60);
+            var raised = terrain.Map.SampleHeight(0, 8);
+            Require(raised > 3f, $"raise did not take effect: {raised}");
+            Require(player.GlobalPosition.Y > raised - .3f, $"avatar buried in raised terrain: y={player.GlobalPosition.Y} ground={raised}");
+            Require(player.IsOnFloor(), "avatar is not standing on the raised terrain");
             // Walk-in shore, then open water: the avatar must float at the surface instead of sinking or standing.
             player.GlobalPosition = new Vector3(0, 0, -96);
             player.Velocity = Vector3.Zero;
