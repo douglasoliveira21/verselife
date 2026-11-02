@@ -39,6 +39,9 @@ public partial class ViewerUI : CanvasLayer
     private Label _joinStatus = null!;
     private VBoxContainer _toasts = null!;
     private HttpRequest _wallet = null!;
+    private HttpRequest _islands = null!;
+    private ItemList _islandList = null!;
+    private readonly List<Guid> _islandIds = [];
     private double _statusTimer;
     private double _walletTimer = 55;
     private bool _snapshotBusy;
@@ -67,6 +70,8 @@ public partial class ViewerUI : CanvasLayer
         BuildTopBar();
         BuildBottomBar();
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
+        _islands = new HttpRequest(); AddChild(_islands); _islands.RequestCompleted += OnIslands;
+        RefreshIslands();
         _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
         UpdateStatus();
@@ -284,9 +289,14 @@ public partial class ViewerUI : CanvasLayer
     private void BuildJoinWindow()
     {
         _joinWindow = new FloatingWindow("Entrar em uma ilha");
-        _joinWindow.Place(.5f, .5f, -200, -90, 200, 90);
+        _joinWindow.Place(.5f, .5f, -230, -170, 230, 170);
         _islandId = new LineEdit { PlaceholderText = "ID (UUID) da ilha", Text = OS.GetEnvironment("LIFEVERSE_ISLAND_ID") };
-        _joinWindow.Content.AddChild(new Label { Text = "Cole o ID da ilha ou use o Mapa para viajar." });
+        _joinWindow.Content.AddChild(new Label { Text = "Escolha uma ilha (duplo clique entra) ou cole o ID." });
+        _islandList = new ItemList { CustomMinimumSize = new Vector2(440, 120), TooltipText = "Ilhas públicas. \"sem servidor\" significa que ninguém pode entrar agora." };
+        _islandList.ItemSelected += index => { if (index >= 0 && index < _islandIds.Count) _islandId.Text = _islandIds[(int)index].ToString(); };
+        _islandList.ItemActivated += index => { if (index >= 0 && index < _islandIds.Count) { _islandId.Text = _islandIds[(int)index].ToString(); Join(); } };
+        _joinWindow.Content.AddChild(_islandList);
+        var refresh = new Button { Text = "Atualizar lista" }; refresh.Pressed += RefreshIslands; _joinWindow.Content.AddChild(refresh);
         _joinWindow.Content.AddChild(_islandId);
         var buttons = new HBoxContainer(); buttons.AddThemeConstantOverride("separation", 6);
         var join = new Button { Text = "Entrar", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; join.Pressed += Join;
@@ -344,6 +354,34 @@ public partial class ViewerUI : CanvasLayer
         else { _environment.DayNightCycle = true; Toast("Ciclo de dia e noite automático."); }
     }
 
+    private void RefreshIslands()
+    {
+        var session = GetNode<SessionManager>("/root/SessionManager");
+        if (_islands.GetHttpClientStatus() != Godot.HttpClient.Status.Disconnected) return;
+        var headers = session.IsAuthenticated ? new[] { $"Authorization: Bearer {session.AccessToken}" } : [];
+        _islands.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/islands", headers);
+    }
+
+    private void OnIslands(long result, long code, string[] headers, byte[] body)
+    {
+        if (code is < 200 or >= 300) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body));
+            _islandList.Clear(); _islandIds.Clear();
+            foreach (var island in doc.RootElement.EnumerateArray())
+            {
+                if (!Guid.TryParse(island.GetProperty("id").GetString(), out var id)) continue;
+                var active = island.TryGetProperty("runtimeState", out var state) && state.GetString() == "running";
+                _islandList.AddItem($"{island.GetProperty("name").GetString()}  ·  {(active ? "ativa" : "sem servidor")}");
+                _islandList.SetItemCustomFgColor(_islandList.ItemCount - 1, active ? ViewerTheme.Good : ViewerTheme.TextDim);
+                _islandIds.Add(id);
+                if (string.IsNullOrWhiteSpace(_islandId.Text) && active) _islandId.Text = id.ToString();
+            }
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
+    }
+
     private void Join()
     {
         if (!Guid.TryParse(_islandId.Text.Trim(), out var islandId)) { _joinStatus.Text = "UUID de ilha inválido."; return; }
@@ -371,6 +409,7 @@ public partial class ViewerUI : CanvasLayer
     private void OnConnectionState(string state, string detail)
     {
         _state = state; _joinStatus.Text = detail;
+        if (state is "failed" or "offline") RefreshIslands();
         if (state == "online") { Toast("Conectado à ilha."); _joinWindow.Visible = false; _walletTimer = 60; }
         else if (state is "failed" or "incompatible") { Toast(detail); _joinWindow.Visible = true; }
         else if (state == "offline") { Toast("Desconectado da ilha."); _joinWindow.Visible = true; }
