@@ -18,6 +18,16 @@ LifeVerse is an original persistent 3D social sandbox. This monorepository conta
 
 Use `./scripts/dev-logs.ps1`, `./scripts/dev-down.ps1`, and `./scripts/dev-update.ps1` to inspect, stop, or rebuild the stack.
 
+## Phase 02 controls
+
+- WASD: move relative to camera
+- Shift: run; Space: jump/ascend; Ctrl: descend
+- F: toggle flight; C: first/third person; Alt: release/capture cursor
+- Mouse: camera orbit; wheel: zoom; E: interact/stand
+- G: wave; H: dance
+
+The avatar creator is available after registration and through **Edit avatar** in the world HUD.
+
 ## Repository layout
 
 - `client`: Godot .NET desktop client

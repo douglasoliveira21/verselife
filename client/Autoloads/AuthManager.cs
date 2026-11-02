@@ -6,8 +6,9 @@ namespace LifeVerse.Client.Autoloads;
 
 public partial class AuthManager : Node
 {
-    [Signal] public delegate void RequestFinishedEventHandler(bool success, string message);
+    [Signal] public delegate void RequestFinishedEventHandler(bool success, bool newAccount, string message);
     private HttpRequest _http = null!;
+    private bool _registering;
 
     public override void _Ready()
     {
@@ -16,8 +17,8 @@ public partial class AuthManager : Node
         _http.RequestCompleted += OnRequestCompleted;
     }
 
-    public Error Login(string login, string password) => Send("/api/v1/auth/login", new { login, password });
-    public Error Register(string username, string email, string password) => Send("/api/v1/auth/register", new { username, email, password });
+    public Error Login(string login, string password) { _registering = false; return Send("/api/v1/auth/login", new { login, password }); }
+    public Error Register(string username, string email, string password) { _registering = true; return Send("/api/v1/auth/register", new { username, email, password }); }
 
     private Error Send(string path, object body)
     {
@@ -40,7 +41,7 @@ public partial class AuthManager : Node
                     root.GetProperty("accessToken").GetString() ?? string.Empty,
                     root.GetProperty("refreshToken").GetString() ?? string.Empty,
                     username);
-                EmitSignal(SignalName.RequestFinished, true, "Authenticated.");
+                EmitSignal(SignalName.RequestFinished, true, _registering, "Authenticated.");
                 return;
             }
             var message = "Authentication failed.";
@@ -49,12 +50,12 @@ public partial class AuthManager : Node
                 using var problem = JsonDocument.Parse(json);
                 if (problem.RootElement.TryGetProperty("title", out var title)) message = title.GetString() ?? message;
             }
-            EmitSignal(SignalName.RequestFinished, false, message);
+            EmitSignal(SignalName.RequestFinished, false, _registering, message);
         }
         catch (Exception exception)
         {
             GD.PushWarning($"event=auth_response_invalid error={exception.GetType().Name}");
-            EmitSignal(SignalName.RequestFinished, false, "The server returned an invalid response.");
+            EmitSignal(SignalName.RequestFinished, false, _registering, "The server returned an invalid response.");
         }
     }
 }

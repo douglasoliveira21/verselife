@@ -7,6 +7,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<User> Users => Set<User>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<Avatar> Avatars => Set<Avatar>();
+    public DbSet<AvatarAppearance> AvatarAppearances => Set<AvatarAppearance>();
+    public DbSet<EquippedItem> EquippedItems => Set<EquippedItem>();
     public DbSet<Island> Islands => Set<Island>();
     public DbSet<ServerInstance> ServerInstances => Set<ServerInstance>();
 
@@ -43,8 +45,30 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.ToTable("avatars", "identity");
             b.HasKey(x => x.Id);
             b.Property(x => x.DisplayName).HasMaxLength(64);
+            b.Property(x => x.BaseModel).HasMaxLength(32);
             b.HasIndex(x => x.UserId).IsUnique();
             b.HasOne(x => x.User).WithOne(x => x.Avatar).HasForeignKey<Avatar>(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<AvatarAppearance>(b =>
+        {
+            b.ToTable("avatar_appearances", "identity");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.SkinColor).HasMaxLength(9);
+            b.Property(x => x.HairColor).HasMaxLength(9);
+            b.Property(x => x.HairStyle).HasMaxLength(32);
+            b.Property(x => x.BodySettingsJson).HasColumnType("jsonb");
+            b.HasIndex(x => x.AvatarId).IsUnique();
+            b.HasOne(x => x.Avatar).WithOne(x => x.Appearance).HasForeignKey<AvatarAppearance>(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<EquippedItem>(b =>
+        {
+            b.ToTable("equipped_items", "inventory");
+            b.HasKey(x => x.Id);
+            b.Property(x => x.Slot).HasMaxLength(24);
+            b.Property(x => x.ItemKey).HasMaxLength(64);
+            b.Property(x => x.TintColor).HasMaxLength(9);
+            b.HasIndex(x => new { x.AvatarId, x.Slot }).IsUnique();
+            b.HasOne(x => x.Avatar).WithMany(x => x.EquippedItems).HasForeignKey(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<Island>(b =>
         {

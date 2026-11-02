@@ -2,6 +2,16 @@
 
 Last updated: 2026-11-02.
 
+## Phase 02 implemented
+
+- Original procedural humanoid placeholder with standardized skeleton names, customizable materials, display label, two bases, hair, starter clothing, shoes, and accessories.
+- Character creator with persisted preview, orbit/zoom, save/cancel, and camera preferences.
+- Camera-relative walk/run/jump, slopes, collision, flight/landing, swimming, slow surfaces, third/first person, SpringArm collision, free cursor, sensitivity, and inversion.
+- AnimationTree state machine for all 13 required states, separated from engine-independent movement-state logic.
+- Raycast/context menu, seat alignment, stand-up, movement-mode exclusions, wave, and dance.
+- Versioned appearance/equipment migration, allowlisted API, backfill, and post-login reload.
+- Portable Godot 4.7.2 scene execution and 1280×720 rendered creator inspection.
+
 ## Implemented
 
 - Monorepository directories, configuration, scripts, dev/prod Compose, and documentation.
@@ -14,8 +24,10 @@ Last updated: 2026-11-02.
 ## Not complete / blocked
 
 - Docker startup, actual migration application, PostgreSQL persistence/restart, and auth smoke test: Docker is not installed and local PostgreSQL is not running.
-- Godot editor client launch and headless process restart: Godot 4.7.2 .NET executable is not installed or not discoverable.
+- System-wide Godot remains absent, but the portable verified engine is available in ignored `.tools` for this checkout.
 - ENet player connections are intentionally disabled until authenticated island-entry tokens exist.
 - Password recovery is visibly disabled until an email provider and recovery workflow exist.
 
 Phase 01 is **not declared complete** because the mandatory runtime acceptance tests above remain blocked.
+
+Phase 02 acceptance is complete for the documented procedural placeholder: persistence was verified across API and Godot client process restarts, all animation states are connected, and runtime movement/interaction plus responsive visual harnesses passed. Replacing the placeholder with a production skinned GLTF remains a future art task, not an unimplemented Phase 02 behavior.

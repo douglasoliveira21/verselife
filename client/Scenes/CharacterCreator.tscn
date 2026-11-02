@@ -1,0 +1,149 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource path="res://Scripts/CharacterCreator.cs" type="Script" id="1"]
+[ext_resource path="res://Scenes/AvatarRig.tscn" type="PackedScene" id="2"]
+
+[sub_resource type="Environment" id="Environment"]
+background_mode = 1
+background_color = Color(0.025, 0.035, 0.07, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.72, 0.82, 1, 1)
+ambient_light_energy = 1.1
+
+[sub_resource type="StyleBoxFlat" id="Panel"]
+bg_color = Color(0.055, 0.071, 0.11, 0.96)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_left = 14
+corner_radius_bottom_right = 14
+
+[node name="CharacterCreator" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color(0.012, 0.018, 0.038, 1)
+
+[node name="Title" type="Label" parent="."]
+offset_left = 28.0
+offset_top = 18.0
+offset_right = 500.0
+offset_bottom = 62.0
+theme_override_font_sizes/font_size = 30
+text = "CREATE YOUR AVATAR"
+
+[node name="Layout" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 28.0
+offset_top = 76.0
+offset_right = -28.0
+offset_bottom = -28.0
+theme_override_constants/separation = 20
+
+[node name="Panel" type="PanelContainer" parent="Layout"]
+custom_minimum_size = Vector2(390, 0)
+layout_mode = 2
+theme_override_styles/panel = SubResource("Panel")
+
+[node name="Margin" type="MarginContainer" parent="Layout/Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="Fields" type="VBoxContainer" parent="Layout/Panel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NameLabel" type="Label" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+text = "Display name"
+[node name="DisplayName" type="LineEdit" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+max_length = 64
+[node name="BaseLabel" type="Label" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+text = "Avatar base"
+[node name="BaseModel" type="OptionButton" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+[node name="SkinLabel" type="Label" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+text = "Skin color"
+[node name="SkinColor" type="ColorPickerButton" parent="Layout/Panel/Margin/Fields"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+[node name="HairLabel" type="Label" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+text = "Hair style and color"
+[node name="HairStyle" type="OptionButton" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+[node name="HairColor" type="ColorPickerButton" parent="Layout/Panel/Margin/Fields"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+[node name="Top" type="OptionButton" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+[node name="Bottom" type="OptionButton" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+[node name="Shoes" type="OptionButton" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+[node name="Accessory" type="OptionButton" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+[node name="SensitivityLabel" type="Label" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+text = "Camera sensitivity"
+[node name="Sensitivity" type="HSlider" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+min_value = 0.001
+max_value = 0.01
+step = 0.0005
+value = 0.003
+[node name="InvertY" type="CheckBox" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+text = "Invert camera Y"
+[node name="Message" type="Label" parent="Layout/Panel/Margin/Fields"]
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+autowrap_mode = 2
+[node name="Buttons" type="HBoxContainer" parent="Layout/Panel/Margin/Fields"]
+layout_mode = 2
+[node name="Cancel" type="Button" parent="Layout/Panel/Margin/Fields/Buttons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Cancel"
+[node name="Save" type="Button" parent="Layout/Panel/Margin/Fields/Buttons"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Save avatar"
+
+[node name="Preview" type="SubViewportContainer" parent="Layout"]
+layout_mode = 2
+size_flags_horizontal = 3
+stretch = true
+
+[node name="SubViewport" type="SubViewport" parent="Layout/Preview"]
+handle_input_locally = false
+size = Vector2i(900, 900)
+render_target_update_mode = 4
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="Layout/Preview/SubViewport"]
+environment = SubResource("Environment")
+[node name="KeyLight" type="DirectionalLight3D" parent="Layout/Preview/SubViewport"]
+rotation_degrees = Vector3(-35, -30, 0)
+light_energy = 1.5
+[node name="AvatarRig" parent="Layout/Preview/SubViewport" instance=ExtResource("2")]
+[node name="Camera3D" type="Camera3D" parent="Layout/Preview/SubViewport"]
+position = Vector3(0, 1.25, 3.4)
+current = true

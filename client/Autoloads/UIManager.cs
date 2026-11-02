@@ -8,6 +8,7 @@ public partial class UIManager : Node
 
     public async void ShowLogin() => await ChangeScene("res://Scenes/Login.tscn");
     public async void ShowWorld() => await ChangeScene("res://Scenes/World.tscn");
+    public async void ShowCharacterCreator() => await ChangeScene("res://Scenes/CharacterCreator.tscn");
 
     private async Task ChangeScene(string path)
     {

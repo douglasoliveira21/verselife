@@ -30,6 +30,12 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("BaseModel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("base_model");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -54,6 +60,105 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("avatars", "identity");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarAppearance", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
+                    b.Property<string>("BodySettingsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("body_settings_json");
+
+                    b.Property<float>("CameraSensitivity")
+                        .HasColumnType("real")
+                        .HasColumnName("camera_sensitivity");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("HairColor")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)")
+                        .HasColumnName("hair_color");
+
+                    b.Property<string>("HairStyle")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("hair_style");
+
+                    b.Property<bool>("InvertCameraY")
+                        .HasColumnType("boolean")
+                        .HasColumnName("invert_camera_y");
+
+                    b.Property<string>("SkinColor")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)")
+                        .HasColumnName("skin_color");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AvatarId")
+                        .IsUnique();
+
+                    b.ToTable("avatar_appearances", "identity");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.EquippedItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
+                    b.Property<DateTimeOffset>("EquippedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("equipped_at");
+
+                    b.Property<string>("ItemKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("item_key");
+
+                    b.Property<string>("Slot")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("slot");
+
+                    b.Property<string>("TintColor")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)")
+                        .HasColumnName("tint_color");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AvatarId", "Slot")
+                        .IsUnique();
+
+                    b.ToTable("equipped_items", "inventory");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.Island", b =>
@@ -286,6 +391,28 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarAppearance", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Avatar", "Avatar")
+                        .WithOne("Appearance")
+                        .HasForeignKey("LifeVerse.Api.Data.AvatarAppearance", "AvatarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Avatar");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.EquippedItem", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Avatar", "Avatar")
+                        .WithMany("EquippedItems")
+                        .HasForeignKey("AvatarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Avatar");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.Island", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.User", null)
@@ -313,6 +440,13 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.Avatar", b =>
+                {
+                    b.Navigation("Appearance");
+
+                    b.Navigation("EquippedItems");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.User", b =>

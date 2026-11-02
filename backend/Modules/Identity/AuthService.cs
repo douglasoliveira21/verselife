@@ -36,8 +36,19 @@ public sealed class AuthService(
         user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
         user.Avatar = new Avatar
         {
-            Id = Guid.NewGuid(), UserId = user.Id, DisplayName = user.Username, CreatedAt = now, UpdatedAt = now
+            Id = Guid.NewGuid(), UserId = user.Id, DisplayName = user.Username, BaseModel = "human_a", CreatedAt = now, UpdatedAt = now
         };
+        user.Avatar.Appearance = new AvatarAppearance
+        {
+            Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, SkinColor = "#C98F65", HairColor = "#2B1B14",
+            HairStyle = "short", BodySettingsJson = "{}", CameraSensitivity = 0.003f, CreatedAt = now, UpdatedAt = now
+        };
+        user.Avatar.EquippedItems =
+        [
+            new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = "top", ItemKey = "tee_basic", TintColor = "#3AAFC1", EquippedAt = now },
+            new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = "bottom", ItemKey = "pants_basic", TintColor = "#263B56", EquippedAt = now },
+            new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = "shoes", ItemKey = "sneakers_basic", TintColor = "#E7E9EE", EquippedAt = now }
+        ];
         db.Users.Add(user);
         var response = CreateSession(user, Guid.NewGuid(), context, now).Response;
         try

@@ -5,6 +5,7 @@
 - Refresh tokens rotate on every use. Reuse of a revoked token revokes its entire session family.
 - Authentication endpoints are rate-limited by remote address. Request validation and RFC 7807-style problem responses are centralized.
 - User authorization and platform service authentication are separate trust domains.
+- Avatar appearance endpoints derive the avatar from the JWT subject. Equipment keys and slots are allowlisted by the server, preventing clients from equipping arbitrary or future paid catalog items.
 - Database, Redis, and MinIO ports are not published by development Compose. API is bound to host loopback only.
 - Secrets are injected by environment and `.env` is ignored. Production requires TLS termination and secret-manager injection.
 

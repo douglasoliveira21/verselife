@@ -37,7 +37,7 @@ public partial class LoginScreen : Control
     {
         SetBusy(true);
         var error = _auth.Login(_login.Text, _password.Text);
-        if (error != Error.Ok) OnRequestFinished(false, $"Could not start request: {error}");
+        if (error != Error.Ok) OnRequestFinished(false, false, $"Could not start request: {error}");
     }
 
     private void Register()
@@ -45,14 +45,19 @@ public partial class LoginScreen : Control
         if (string.IsNullOrWhiteSpace(_email.Text)) { _message.Text = "Email is required for registration."; return; }
         SetBusy(true);
         var error = _auth.Register(_login.Text, _email.Text, _password.Text);
-        if (error != Error.Ok) OnRequestFinished(false, $"Could not start request: {error}");
+        if (error != Error.Ok) OnRequestFinished(false, true, $"Could not start request: {error}");
     }
 
-    private void OnRequestFinished(bool success, string message)
+    private void OnRequestFinished(bool success, bool newAccount, string message)
     {
         SetBusy(false);
         _message.Text = message;
-        if (success) GetNode<UIManager>("/root/UIManager").ShowWorld();
+        if (success)
+        {
+            var ui = GetNode<UIManager>("/root/UIManager");
+            if (newAccount) ui.ShowCharacterCreator();
+            else ui.ShowWorld();
+        }
     }
 
     private void SetBusy(bool busy)

@@ -8,6 +8,9 @@
   <Folder Name="/Island Server/">
     <Project Path="island-server/LifeVerse.IslandServer.csproj" />
   </Folder>
+  <Folder Name="/Shared/">
+    <Project Path="shared/LifeVerse.Shared.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/LifeVerse.Api.Tests/LifeVerse.Api.Tests.csproj" />
   </Folder>

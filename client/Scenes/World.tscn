@@ -1,6 +1,8 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource path="res://Scenes/Player.tscn" type="PackedScene" id="1"]
+[ext_resource path="res://Scripts/InteractableSeat.cs" type="Script" id="2"]
+[ext_resource path="res://Scripts/WaterVolume.cs" type="Script" id="3"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMaterial"]
 sky_top_color = Color(0.08, 0.18, 0.36, 1)
@@ -23,6 +25,38 @@ size = Vector2(80, 80)
 [sub_resource type="BoxShape3D" id="GroundShape"]
 size = Vector3(80, 0.2, 80)
 
+[sub_resource type="BoxMesh" id="RampMesh"]
+size = Vector3(6, 0.35, 8)
+[sub_resource type="BoxShape3D" id="RampShape"]
+size = Vector3(6, 0.35, 8)
+[sub_resource type="BoxMesh" id="WallMesh"]
+size = Vector3(8, 3, 0.4)
+[sub_resource type="BoxShape3D" id="WallShape"]
+size = Vector3(8, 3, 0.4)
+[sub_resource type="BoxMesh" id="SeatMesh"]
+size = Vector3(1.4, 0.25, 1.1)
+[sub_resource type="BoxShape3D" id="SeatShape"]
+size = Vector3(1.4, 0.25, 1.1)
+[sub_resource type="BoxMesh" id="BackMesh"]
+size = Vector3(1.4, 1.3, 0.2)
+[sub_resource type="BoxShape3D" id="BackShape"]
+size = Vector3(1.4, 1.3, 0.2)
+[sub_resource type="BoxShape3D" id="WaterShape"]
+size = Vector3(10, 2.5, 10)
+[sub_resource type="BoxMesh" id="WaterMesh"]
+size = Vector3(10, 0.08, 10)
+[sub_resource type="StandardMaterial3D" id="WaterMaterial"]
+transparency = 1
+albedo_color = Color(0.08, 0.5, 0.75, 0.55)
+roughness = 0.18
+[sub_resource type="BoxMesh" id="MudMesh"]
+size = Vector3(6, 0.12, 6)
+[sub_resource type="BoxShape3D" id="MudShape"]
+size = Vector3(6, 0.12, 6)
+[sub_resource type="StandardMaterial3D" id="MudMaterial"]
+albedo_color = Color(0.25, 0.14, 0.07, 1)
+roughness = 1.0
+
 [node name="World" type="Node3D"]
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
@@ -43,6 +77,58 @@ shape = SubResource("GroundShape")
 
 [node name="Player" parent="." instance=ExtResource("1")]
 position = Vector3(0, 1, 0)
+
+[node name="Ramp" type="StaticBody3D" parent="."]
+position = Vector3(-8, 1.1, -5)
+rotation_degrees = Vector3(0, 0, -16)
+[node name="Mesh" type="MeshInstance3D" parent="Ramp"]
+mesh = SubResource("RampMesh")
+[node name="Collision" type="CollisionShape3D" parent="Ramp"]
+shape = SubResource("RampShape")
+
+[node name="CameraCollisionWall" type="StaticBody3D" parent="."]
+position = Vector3(0, 1.5, -8)
+[node name="Mesh" type="MeshInstance3D" parent="CameraCollisionWall"]
+mesh = SubResource("WallMesh")
+[node name="Collision" type="CollisionShape3D" parent="CameraCollisionWall"]
+shape = SubResource("WallShape")
+
+[node name="Seat" type="StaticBody3D" parent="."]
+position = Vector3(4, 0.55, -2)
+script = ExtResource("2")
+[node name="SeatMesh" type="MeshInstance3D" parent="Seat"]
+mesh = SubResource("SeatMesh")
+[node name="SeatCollision" type="CollisionShape3D" parent="Seat"]
+shape = SubResource("SeatShape")
+[node name="BackMesh" type="MeshInstance3D" parent="Seat"]
+position = Vector3(0, 0.7, 0.5)
+mesh = SubResource("BackMesh")
+[node name="BackCollision" type="CollisionShape3D" parent="Seat"]
+position = Vector3(0, 0.7, 0.5)
+shape = SubResource("BackShape")
+[node name="SeatAnchor" type="Marker3D" parent="Seat"]
+position = Vector3(0, 0.25, 0)
+[node name="ExitAnchor" type="Marker3D" parent="Seat"]
+position = Vector3(1.4, 0, 0)
+
+[node name="WaterVolume" type="Area3D" parent="."]
+position = Vector3(12, 0.7, 8)
+script = ExtResource("3")
+[node name="Collision" type="CollisionShape3D" parent="WaterVolume"]
+shape = SubResource("WaterShape")
+[node name="Surface" type="MeshInstance3D" parent="WaterVolume"]
+position = Vector3(0, 0.55, 0)
+mesh = SubResource("WaterMesh")
+material_override = SubResource("WaterMaterial")
+
+[node name="SlowSurface" type="StaticBody3D" parent="."]
+position = Vector3(-10, 0.02, 8)
+metadata/speed_multiplier = 0.55
+[node name="Mesh" type="MeshInstance3D" parent="SlowSurface"]
+mesh = SubResource("MudMesh")
+material_override = SubResource("MudMaterial")
+[node name="Collision" type="CollisionShape3D" parent="SlowSurface"]
+shape = SubResource("MudShape")
 
 [node name="Hint" type="Label" parent="."]
 offset_left = 20.0

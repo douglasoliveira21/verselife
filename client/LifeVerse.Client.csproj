@@ -4,4 +4,7 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <RootNamespace>LifeVerse.Client</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../shared/LifeVerse.Shared.csproj" />
+  </ItemGroup>
 </Project>

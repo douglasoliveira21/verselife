@@ -10,6 +10,9 @@ config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 window/size/viewport_width=1
 window/size/viewport_height=1
 
+[dotnet]
+project/assembly_name="LifeVerse.IslandServer"
+
 [rendering]
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"

@@ -13,6 +13,8 @@ The client autoloads have one-way responsibilities: `AppManager` owns immutable 
 
 Backend modules depend on the shared data and infrastructure layers. Platform service authentication is separate from user JWT authentication. Transport contracts are versioned under `/api/v1` and `shared/protocol/v1`.
 
+Movement-state selection lives in the engine-independent `LifeVerse.Shared.Gameplay` assembly. `PlayerController` owns physics and logical modes; `AvatarRig` owns the visible `AnimationTree`, procedural materials, and transitions. This prevents visual animation timing from becoming authoritative gameplay state.
+
 ## Configuration
 
 Development uses `.env` plus `appsettings.Development.json`. Production uses injected secrets and `appsettings.Production.json`; repository defaults are placeholders only. Compose publishes only API port 8080 to loopback. PostgreSQL, Redis, and MinIO remain on the internal network.
