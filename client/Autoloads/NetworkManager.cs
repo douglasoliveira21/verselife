@@ -67,7 +67,7 @@ public partial class NetworkManager : Node
 
     private void OnEntryResponse(long result, long responseCode, string[] headers, byte[] body)
     {
-        if (responseCode is < 200 or >= 300) { EmitSignal(SignalName.ConnectionStateChanged, "failed", $"Entrada recusada pela API ({responseCode})."); return; }
+        if (responseCode is < 200 or >= 300) { EmitSignal(SignalName.ConnectionStateChanged, "failed", EntryFailureMessage(responseCode)); return; }
         try
         {
             using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); var root = doc.RootElement;
@@ -79,6 +79,16 @@ public partial class NetworkManager : Node
         }
         catch (Exception exception) { GD.PushWarning($"event=entry_response_invalid error={exception.GetType().Name}"); EmitSignal(SignalName.ConnectionStateChanged, "failed", "Resposta de entrada inválida."); }
     }
+
+    private static string EntryFailureMessage(long code) => code switch
+    {
+        503 => "Esta ilha está sem servidor ativo no momento (503). Só ilhas com um servidor de ilha em execução aceitam jogadores; tente outra ilha ou avise o administrador.",
+        404 => "Ilha não encontrada (404). Confira o ID.",
+        403 => "Você não tem permissão para entrar nesta ilha (403).",
+        401 => "Sessão expirada (401). Entre novamente.",
+        409 => "Crie o avatar antes de entrar em uma ilha (409).",
+        _ => $"Entrada recusada pela API ({code})."
+    };
 
     private void RequestIslandSnapshot()
     {
