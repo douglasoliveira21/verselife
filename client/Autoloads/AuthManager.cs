@@ -49,6 +49,13 @@ public partial class AuthManager : Node
             {
                 using var problem = JsonDocument.Parse(json);
                 if (problem.RootElement.TryGetProperty("title", out var title)) message = title.GetString() ?? message;
+                if (problem.RootElement.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object)
+                {
+                    var details = errors.EnumerateObject().SelectMany(x => x.Value.ValueKind == JsonValueKind.Array
+                        ? x.Value.EnumerateArray().Select(v => v.GetString()).Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => $"{x.Name}: {v}")
+                        : []).Take(3).ToArray();
+                    if (details.Length > 0) message = string.Join(" ", details);
+                }
             }
             EmitSignal(SignalName.RequestFinished, false, _registering, message);
         }
