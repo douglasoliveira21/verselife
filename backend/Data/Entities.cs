@@ -231,6 +231,7 @@ public sealed class InventoryItem
     public Guid AssetId { get; set; }
     public Guid? FolderId { get; set; }
     public required string DisplayName { get; set; }
+    public bool IsFavorite { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }

@@ -925,6 +925,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("folder_id");
 
+                    b.Property<bool>("IsFavorite")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_favorite");
+
                     b.Property<Guid>("OwnerUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("owner_user_id");
@@ -938,6 +942,8 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("AssetId");
 
                     b.HasIndex("OwnerUserId", "FolderId", "DeletedAt");
+
+                    b.HasIndex("OwnerUserId", "IsFavorite", "CreatedAt");
 
                     b.ToTable("items", "inventory");
                 });
