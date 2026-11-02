@@ -7,6 +7,7 @@ namespace LifeVerse.Client.Scripts;
 
 public partial class PlayerController : CharacterBody3D
 {
+    private enum CameraMode { ThirdPerson, FirstPerson, FreeLook, Build, Photo }
     [Export] public float WalkSpeed { get; set; } = 3.2f;
     [Export] public float RunSpeed { get; set; } = 6.4f;
     [Export] public float FlySpeed { get; set; } = 7.5f;
@@ -33,6 +34,11 @@ public partial class PlayerController : CharacterBody3D
     private float _cameraSensitivity = .003f;
     private bool _invertY;
     private float _cameraDistance = 5.2f;
+    private float _targetYaw;
+    private float _targetPitch;
+    private CameraMode _cameraMode = CameraMode.ThirdPerson;
+    private Vector3? _walkTarget;
+    private ulong _lastWorldClick;
     private NetworkManager _network = null!;
     private uint _inputSequence;
 
@@ -47,6 +53,7 @@ public partial class PlayerController : CharacterBody3D
         _cameraPivot = GetNode<Node3D>("CameraPivot");
         _springArm = GetNode<SpringArm3D>("CameraPivot/SpringArm3D");
         _camera = GetNode<Camera3D>("CameraPivot/SpringArm3D/Camera3D");
+        _targetYaw = Rotation.Y; _targetPitch = _cameraPivot.Rotation.X;
         _contextMenu = GetNode<Control>("HUD/ContextMenu");
         _status = GetNode<Label>("HUD/Status");
         GetNode<Button>("HUD/ContextMenu/Sit").Pressed += ContextSit;
@@ -70,10 +77,24 @@ public partial class PlayerController : CharacterBody3D
         _network?.UnregisterLocalPlayer(this);
     }
 
+    public override void _Process(double delta)
+    {
+        var weight = 1f - Mathf.Exp(-14f * (float)delta);
+        Rotation = new Vector3(0, Mathf.LerpAngle(Rotation.Y, _targetYaw, weight), 0);
+        _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), _cameraPivot.Rotation.Y, _cameraPivot.Rotation.Z);
+    }
+
     public override void _UnhandledInput(InputEvent input)
     {
         if (input.IsActionPressed("cursor_toggle")) SetCursorFree(true);
         if (input.IsActionPressed("first_person")) ToggleFirstPerson();
+        if (input.IsActionPressed("camera_mode")) CycleCameraMode();
+        if (input.IsActionPressed("camera_reset")) ResetCamera();
+        if (input.IsActionPressed("ui_cancel"))
+        {
+            _contextMenu.Visible = false; _rightDragging = false; SetCursorFree(true);
+            GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
+        }
         if (input.IsActionPressed("fly_toggle") && _seat is null && !_swimming)
         {
             _flying = !_flying;
@@ -82,12 +103,12 @@ public partial class PlayerController : CharacterBody3D
         if (input.IsActionPressed("interact")) InteractOrStand();
         if (input.IsActionPressed("emote_wave")) StartEmote(AvatarMotionState.Wave, 2.5f);
         if (input.IsActionPressed("emote_dance")) StartEmote(AvatarMotionState.Dance, 5f);
-        if (input is InputEventMouseMotion motion && _rightDragging)
+        if (input is InputEventMouseMotion motion && _rightDragging && !IsTyping())
         {
             if (motion.Relative.LengthSquared() > 0.01f) _rightDragMoved = true;
-            RotateY(-motion.Relative.X * _cameraSensitivity);
+            _targetYaw -= motion.Relative.X * _cameraSensitivity;
             var direction = _invertY ? 1f : -1f;
-            _cameraPivot.Rotation = new Vector3(Mathf.Clamp(_cameraPivot.Rotation.X + motion.Relative.Y * _cameraSensitivity * direction, -1.25f, .85f), 0, 0);
+            _targetPitch = Mathf.Clamp(_targetPitch + motion.Relative.Y * _cameraSensitivity * direction, -1.25f, .85f);
         }
         if (input is InputEventMouseButton button)
         {
@@ -106,6 +127,8 @@ public partial class PlayerController : CharacterBody3D
                     if (!_rightDragMoved) OpenContextMenu(button.Position);
                 }
             }
+            if (button.ButtonIndex == MouseButton.Left && button.Pressed && button.DoubleClick && !IsTyping()) SetWalkTarget(button.Position);
+            if (button.ButtonIndex == MouseButton.Middle && button.Pressed && !IsTyping()) FocusRaycast(button.Position);
         }
     }
 
@@ -122,10 +145,17 @@ public partial class PlayerController : CharacterBody3D
             return;
         }
         if (_landingTime > 0) _landingTime -= dt;
-        var input = Input.GetVector("move_left", "move_right", "move_forward", "move_back");
+        var blocked = IsTyping() || _contextMenu.Visible;
+        var input = blocked ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_back");
         var forward = -GlobalTransform.Basis.Z; forward.Y = 0; forward = forward.Normalized();
         var right = GlobalTransform.Basis.X; right.Y = 0; right = right.Normalized();
         var direction = (right * input.X + forward * -input.Y).Normalized();
+        if (_walkTarget is Vector3 target)
+        {
+            var toTarget = target - GlobalPosition; toTarget.Y = 0;
+            if (toTarget.Length() < .35f) _walkTarget = null;
+            else if (!blocked && input.LengthSquared() < .01f) direction = toTarget.Normalized();
+        }
         var flags = InputFlags.None;
         if (Input.IsActionPressed("run")) flags |= InputFlags.Run;
         if (Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
@@ -159,7 +189,7 @@ public partial class PlayerController : CharacterBody3D
         if (grounded && !_wasGrounded) _landingTime = .22f;
         _wasGrounded = grounded;
         UpdateAnimation(direction, input.Length());
-        _status.Text = _swimming ? "Swimming" : _flying ? "Flying" : Input.IsActionPressed("run") ? "Running" : "Walking";
+        _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : Input.IsActionPressed("run") ? "Running" : "Walking");
     }
 
     public void SetSwimming(bool value) => _swimming = value;
@@ -233,8 +263,36 @@ public partial class PlayerController : CharacterBody3D
         _rightDragging = false;
         Input.MouseMode = Input.MouseModeEnum.Visible;
     }
-    private void ToggleFirstPerson() { _firstPerson = !_firstPerson; _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance; _rig.Visible = !_firstPerson; }
-    private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, 2f, 8f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
+    private void ToggleFirstPerson() => SetCameraMode(_cameraMode == CameraMode.FirstPerson ? CameraMode.ThirdPerson : CameraMode.FirstPerson);
+    private void CycleCameraMode() => SetCameraMode(_cameraMode switch { CameraMode.ThirdPerson => CameraMode.FirstPerson, CameraMode.FirstPerson => CameraMode.FreeLook, _ => CameraMode.ThirdPerson });
+    public void SetCameraMode(string mode)
+    {
+        if (!Enum.TryParse<CameraMode>(mode, true, out var parsed)) return;
+        SetCameraMode(parsed);
+    }
+    private void SetCameraMode(CameraMode mode)
+    {
+        _cameraMode = mode; _firstPerson = mode == CameraMode.FirstPerson;
+        _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance;
+        _rig.Visible = !_firstPerson;
+    }
+    private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, 1.5f, 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
+    private bool IsTyping() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
+    private void SetWalkTarget(Vector2 screenPosition)
+    {
+        var from = _camera.ProjectRayOrigin(screenPosition); var to = from + _camera.ProjectRayNormal(screenPosition) * 200f;
+        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(from, to));
+        if (hit.TryGetValue("position", out var value)) _walkTarget = value.AsVector3();
+    }
+    private void FocusRaycast(Vector2 screenPosition)
+    {
+        var from = _camera.ProjectRayOrigin(screenPosition); var to = from + _camera.ProjectRayNormal(screenPosition) * 200f;
+        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(from, to));
+        if (!hit.TryGetValue("position", out var value)) return;
+        var point = value.AsVector3(); var direction = point - GlobalPosition; direction.Y = 0;
+        if (direction.LengthSquared() > .01f) _targetYaw = Mathf.Atan2(-direction.X, -direction.Z);
+    }
+    private void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; }
     private void OnAvatarLoaded(bool success, string message)
     {
         if (!success) { _status.Text = message; return; }
