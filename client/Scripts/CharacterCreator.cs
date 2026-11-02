@@ -15,6 +15,10 @@ public partial class CharacterCreator : Control
     private OptionButton _accessory = null!;
     private ColorPickerButton _skin = null!;
     private ColorPickerButton _hair = null!;
+    private ColorPickerButton _eyes = null!;
+    private OptionButton _beard = null!;
+    private HSlider _height = null!;
+    private HSlider _shoulder = null!;
     private HSlider _sensitivity = null!;
     private CheckBox _invertY = null!;
     private Label _message = null!;
@@ -24,6 +28,8 @@ public partial class CharacterCreator : Control
     private AvatarManager _manager = null!;
     private bool _dragging;
     private float _cameraDistance = 3.4f;
+    private AvatarAppearanceData _lastSaved = AvatarManager.CreateDefault();
+    private AvatarAppearanceData _undoValue = AvatarManager.CreateDefault();
 
     public override void _Ready()
     {
@@ -56,6 +62,7 @@ public partial class CharacterCreator : Control
         GetNode<Button>("Layout/Panel/Margin/Fields/Buttons/Cancel").Pressed += () => GetNode<UIManager>("/root/UIManager").ShowWorld();
         GetNode<SubViewportContainer>("Layout/Preview").GuiInput += PreviewInput;
         _manager = GetNode<AvatarManager>("/root/AvatarManager");
+        AddAdvancedControls();
         _manager.AvatarLoaded += OnLoaded;
         _manager.AvatarSaved += OnSaved;
         InstallResponsiveScroll();
@@ -74,18 +81,20 @@ public partial class CharacterCreator : Control
     private void OnLoaded(bool success, string message)
     {
         SetBusy(false, success ? "" : message);
-        ApplyToForm(success ? _manager.Current : AvatarManager.CreateDefault());
+        var value = success ? _manager.Current : AvatarManager.CreateDefault();
+        _lastSaved = value.Copy(); _undoValue = value.Copy(); ApplyToForm(value);
     }
 
     private void OnSaved(bool success, string message)
     {
         SetBusy(false, message);
-        if (success) GetNode<UIManager>("/root/UIManager").ShowWorld();
+        if (success) { _lastSaved = _manager.Current.Copy(); GetNode<UIManager>("/root/UIManager").ShowWorld(); }
     }
 
     private void Save()
     {
         var value = ReadForm();
+        _undoValue = value.Copy();
         if (value.DisplayName.Trim().Length < 3) { _message.Text = "Display name must contain at least 3 characters."; return; }
         SetBusy(true, "Saving…");
         var error = _manager.Save(value);
@@ -99,6 +108,9 @@ public partial class CharacterCreator : Control
         Select(_top, value.Item("top", "tee_basic")); Select(_bottom, value.Item("bottom", "pants_basic"));
         Select(_shoes, value.Item("shoes", "sneakers_basic")); Select(_accessory, value.Item("accessory", "none"));
         _skin.Color = Color.FromHtml(value.SkinColor); _hair.Color = Color.FromHtml(value.HairColor);
+        if (IsInstanceValid(_eyes)) _eyes.Color = Color.FromHtml(value.EyeColor);
+        if (IsInstanceValid(_beard)) Select(_beard, value.BeardStyle);
+        var body = ParseBody(value.BodySettingsJson); if (IsInstanceValid(_height)) _height.Value = body.height; if (IsInstanceValid(_shoulder)) _shoulder.Value = body.shoulder;
         _sensitivity.Value = value.CameraSensitivity; _invertY.ButtonPressed = value.InvertCameraY;
         RefreshPreview();
     }
@@ -107,6 +119,9 @@ public partial class CharacterCreator : Control
     {
         DisplayName = _displayName.Text.Trim(), BaseModel = Value(_baseModel), HairStyle = Value(_hairStyle),
         SkinColor = "#" + _skin.Color.ToHtml(false), HairColor = "#" + _hair.Color.ToHtml(false),
+        EyeColor = IsInstanceValid(_eyes) ? "#" + _eyes.Color.ToHtml(false) : "#4A3326", BeardStyle = IsInstanceValid(_beard) ? Value(_beard) : "none",
+        BodySettingsJson = $"{{\"height\":{(_height?.Value ?? 1):0.###},\"shoulder\":{(_shoulder?.Value ?? 1):0.###}}}",
+        FaceSettingsJson = "{\"eyeScale\":1}", OutfitsJson = "[]", AttachmentsJson = "[]",
         CameraSensitivity = (float)_sensitivity.Value, InvertCameraY = _invertY.ButtonPressed,
         EquippedItems =
         [
@@ -120,6 +135,28 @@ public partial class CharacterCreator : Control
     private void RefreshPreview()
     {
         if (IsInstanceValid(_preview)) _preview.ApplyAppearance(ReadForm());
+    }
+
+    private void AddAdvancedControls()
+    {
+        var fields = GetNode<VBoxContainer>("Layout/Panel/Margin/Fields");
+        _eyes = new ColorPickerButton { Name = "EyeColorAdvanced", CustomMinimumSize = new Vector2(0, 34) };
+        _beard = new OptionButton { Name = "BeardStyleAdvanced" }; Fill(_beard, ("None", "none"), ("Stubble", "stubble"), ("Short beard", "short"), ("Full beard", "full"));
+        _height = Slider("Height", .85, 1.15, 1); _shoulder = Slider("Shoulders", .9, 1.1, 1);
+        fields.AddChild(new Label { Text = "Eye color" }); fields.AddChild(_eyes);
+        fields.AddChild(new Label { Text = "Beard" }); fields.AddChild(_beard);
+        fields.AddChild(new Label { Text = "Body proportions" }); fields.AddChild(_height); fields.AddChild(_shoulder);
+        _eyes.ColorChanged += _ => RefreshPreview(); _beard.ItemSelected += _ => RefreshPreview(); _height.ValueChanged += _ => RefreshPreview(); _shoulder.ValueChanged += _ => RefreshPreview();
+        var buttons = GetNode<HBoxContainer>("Layout/Panel/Margin/Fields/Buttons");
+        var undo = new Button { Text = "Undo" }; var restore = new Button { Text = "Restore" }; buttons.AddChild(undo); buttons.AddChild(restore);
+        undo.Pressed += () => ApplyToForm(_undoValue.Copy()); restore.Pressed += () => ApplyToForm(_lastSaved.Copy());
+    }
+
+    private static HSlider Slider(string name, double min, double max, double value) => new() { Name = name, MinValue = min, MaxValue = max, Step = .01, Value = value };
+    private static (double height, double shoulder) ParseBody(string json)
+    {
+        try { using var doc = System.Text.Json.JsonDocument.Parse(json); var root = doc.RootElement; return (root.TryGetProperty("height", out var h) ? h.GetDouble() : 1, root.TryGetProperty("shoulder", out var s) ? s.GetDouble() : 1); }
+        catch { return (1, 1); }
     }
 
     private void PreviewInput(InputEvent input)

@@ -10,6 +10,12 @@ public sealed class AvatarAppearanceData
     [JsonPropertyName("skinColor")] public string SkinColor { get; set; } = "#C98F65";
     [JsonPropertyName("hairColor")] public string HairColor { get; set; } = "#2B1B14";
     [JsonPropertyName("hairStyle")] public string HairStyle { get; set; } = "short";
+    [JsonPropertyName("eyeColor")] public string EyeColor { get; set; } = "#4A3326";
+    [JsonPropertyName("beardStyle")] public string BeardStyle { get; set; } = "none";
+    [JsonPropertyName("bodySettingsJson")] public string BodySettingsJson { get; set; } = "{}";
+    [JsonPropertyName("faceSettingsJson")] public string FaceSettingsJson { get; set; } = "{}";
+    [JsonPropertyName("outfitsJson")] public string OutfitsJson { get; set; } = "[]";
+    [JsonPropertyName("attachmentsJson")] public string AttachmentsJson { get; set; } = "[]";
     [JsonPropertyName("cameraSensitivity")] public float CameraSensitivity { get; set; } = 0.003f;
     [JsonPropertyName("invertCameraY")] public bool InvertCameraY { get; set; }
     [JsonPropertyName("equippedItems")] public List<EquippedItemData> EquippedItems { get; set; } = [];
@@ -20,8 +26,10 @@ public sealed class AvatarAppearanceData
     public AvatarAppearanceData Copy() => new()
     {
         Id = Id, DisplayName = DisplayName, BaseModel = BaseModel, SkinColor = SkinColor,
-        HairColor = HairColor, HairStyle = HairStyle, CameraSensitivity = CameraSensitivity,
-        InvertCameraY = InvertCameraY, EquippedItems = EquippedItems.Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.ItemKey, TintColor = x.TintColor }).ToList()
+        HairColor = HairColor, HairStyle = HairStyle, EyeColor = EyeColor, BeardStyle = BeardStyle,
+        BodySettingsJson = BodySettingsJson, FaceSettingsJson = FaceSettingsJson, OutfitsJson = OutfitsJson, AttachmentsJson = AttachmentsJson,
+        CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY,
+        EquippedItems = EquippedItems.Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.ItemKey, TintColor = x.TintColor }).ToList()
     };
 }
 

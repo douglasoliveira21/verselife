@@ -96,7 +96,12 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.SkinColor).HasMaxLength(9);
             b.Property(x => x.HairColor).HasMaxLength(9);
             b.Property(x => x.HairStyle).HasMaxLength(32);
+            b.Property(x => x.EyeColor).HasMaxLength(9);
+            b.Property(x => x.BeardStyle).HasMaxLength(32);
             b.Property(x => x.BodySettingsJson).HasColumnType("jsonb");
+            b.Property(x => x.FaceSettingsJson).HasColumnType("jsonb");
+            b.Property(x => x.OutfitsJson).HasColumnType("jsonb");
+            b.Property(x => x.AttachmentsJson).HasColumnType("jsonb");
             b.HasIndex(x => x.AvatarId).IsUnique();
             b.HasOne(x => x.Avatar).WithOne(x => x.Appearance).HasForeignKey<AvatarAppearance>(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade);
         });

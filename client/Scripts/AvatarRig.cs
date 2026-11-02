@@ -1,6 +1,7 @@
 using Godot;
 using LifeVerse.Client.Models;
 using LifeVerse.Shared.Gameplay;
+using System.Text.Json;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -35,7 +36,9 @@ public partial class AvatarRig : Node3D
         }
         _visual = new Node3D { Name = "Visual" };
         AddChild(_visual);
-        var scaleFactor = data.BaseModel == "human_b" ? new Vector3(1.06f, 1.04f, 1.06f) : Vector3.One;
+        var height = JsonNumber(data.BodySettingsJson, "height", 1f, .85f, 1.15f);
+        var shoulder = JsonNumber(data.BodySettingsJson, "shoulder", 1f, .9f, 1.1f);
+        var scaleFactor = (data.BaseModel == "human_b" ? new Vector3(1.06f, 1.04f, 1.06f) : Vector3.One) * new Vector3(shoulder, height, shoulder);
         _visual.Scale = scaleFactor;
         var skin = Material(data.SkinColor);
         var hair = Material(data.HairColor);
@@ -49,8 +52,11 @@ public partial class AvatarRig : Node3D
         var torso = Part(hips, "Torso", new Vector3(0, 0.48f, 0), new Vector3(0.62f, 0.72f, 0.32f), top);
         var neck = Part(torso, "Neck", new Vector3(0, 0.47f, 0), new Vector3(0.18f, 0.2f, 0.18f), skin);
         var head = Sphere(neck, "Head", new Vector3(0, 0.28f, 0), new Vector3(0.28f, 0.34f, 0.27f), skin);
+        AddFace(head, data);
         AddHair(head, data.HairStyle, hair);
+        AddBeard(head, data.BeardStyle, hair);
         AddAccessory(head, data.Item("accessory", "none"), data.Tint("accessory", "#FFFFFF"));
+        AddAttachments(_visual, data.AttachmentsJson);
 
         Limb(torso, "LeftUpperArm", "LeftLowerArm", new Vector3(-0.43f, 0.26f, 0), new Vector3(0, -0.42f, 0), top, topItem == "jacket_basic" ? top : skin, skin, false);
         Limb(torso, "RightUpperArm", "RightLowerArm", new Vector3(0.43f, 0.26f, 0), new Vector3(0, -0.42f, 0), top, topItem == "jacket_basic" ? top : skin, skin, false);
@@ -183,8 +189,49 @@ public partial class AvatarRig : Node3D
     private static void AddHair(Node3D head, string style, Material material)
     {
         if (style == "bald") return;
-        var size = style switch { "mohawk" => new Vector3(.12f, .24f, .42f), "bob" => new Vector3(.58f, .28f, .52f), _ => new Vector3(.5f, .14f, .48f) };
-        Part(head, "Hair", new Vector3(0, style == "mohawk" ? .3f : .24f, 0), size, material);
+        var size = style switch { "mohawk" => new Vector3(.12f, .24f, .42f), "bob" => new Vector3(.58f, .28f, .52f), "long" => new Vector3(.58f, .52f, .5f), "ponytail" => new Vector3(.5f, .18f, .5f), _ => new Vector3(.5f, .14f, .48f) };
+        Part(head, "Hair", new Vector3(0, style == "mohawk" ? .3f : .24f, style == "ponytail" ? .08f : 0), size, material);
+        if (style == "ponytail") Part(head, "Ponytail", new Vector3(0, -.08f, .26f), new Vector3(.18f, .42f, .18f), material);
+    }
+
+    private static void AddFace(Node3D head, AvatarAppearanceData data)
+    {
+        var eye = Material(data.EyeColor);
+        var eyeScale = JsonNumber(data.FaceSettingsJson, "eyeScale", 1f, .8f, 1.2f);
+        Sphere(head, "EyeLeft", new Vector3(-.105f, .05f, -.255f), new Vector3(.055f, .055f, .025f) * eyeScale, eye);
+        Sphere(head, "EyeRight", new Vector3(.105f, .05f, -.255f), new Vector3(.055f, .055f, .025f) * eyeScale, eye);
+    }
+
+    private static void AddBeard(Node3D head, string style, Material material)
+    {
+        if (style == "none") return;
+        var size = style switch { "full" => new Vector3(.32f, .24f, .16f), "short" => new Vector3(.27f, .16f, .12f), _ => new Vector3(.25f, .08f, .1f) };
+        Part(head, "Beard", new Vector3(0, -.16f, -.22f), size, material);
+    }
+
+    private static void AddAttachments(Node3D root, string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return;
+            foreach (var item in document.RootElement.EnumerateArray().Take(8))
+            {
+                var key = item.TryGetProperty("itemKey", out var value) ? value.GetString() : null;
+                if (string.IsNullOrWhiteSpace(key)) continue;
+                var slot = item.TryGetProperty("slot", out var slotValue) ? slotValue.GetString() : "chest";
+                var position = slot switch { "head" => new Vector3(0, 2.8f, 0), "back" => new Vector3(0, 1.35f, .3f), "hand" => new Vector3(.65f, .9f, 0), _ => new Vector3(0, 1.45f, 0) };
+                var tint = item.TryGetProperty("tintColor", out var tintValue) ? tintValue.GetString() ?? "#FFFFFF" : "#FFFFFF";
+                Part(root, $"Attachment_{key}", position, new Vector3(.16f, .16f, .16f), Material(tint));
+            }
+        }
+        catch (JsonException) { }
+    }
+
+    private static float JsonNumber(string json, string name, float fallback, float min, float max)
+    {
+        try { using var doc = JsonDocument.Parse(json); return doc.RootElement.TryGetProperty(name, out var value) && value.TryGetSingle(out var number) ? Mathf.Clamp(number, min, max) : fallback; }
+        catch (JsonException) { return fallback; }
     }
 
     private static void AddAccessory(Node3D head, string item, string tint)

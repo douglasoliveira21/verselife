@@ -302,9 +302,20 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("AttachmentsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("attachments_json");
+
                     b.Property<Guid>("AvatarId")
                         .HasColumnType("uuid")
                         .HasColumnName("avatar_id");
+
+                    b.Property<string>("BeardStyle")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("beard_style");
 
                     b.Property<string>("BodySettingsJson")
                         .IsRequired()
@@ -318,6 +329,17 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<string>("EyeColor")
+                        .IsRequired()
+                        .HasMaxLength(9)
+                        .HasColumnType("character varying(9)")
+                        .HasColumnName("eye_color");
+
+                    b.Property<string>("FaceSettingsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("face_settings_json");
 
                     b.Property<string>("HairColor")
                         .IsRequired()
@@ -334,6 +356,11 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Property<bool>("InvertCameraY")
                         .HasColumnType("boolean")
                         .HasColumnName("invert_camera_y");
+
+                    b.Property<string>("OutfitsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("outfits_json");
 
                     b.Property<string>("SkinColor")
                         .IsRequired()

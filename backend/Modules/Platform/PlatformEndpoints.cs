@@ -95,7 +95,10 @@ public static class PlatformEndpoints
         {
             id = avatar.Id, displayName = avatar.DisplayName, baseModel = avatar.BaseModel,
             skinColor = avatar.Appearance?.SkinColor ?? "#C98F65", hairColor = avatar.Appearance?.HairColor ?? "#2B1B14",
-            hairStyle = avatar.Appearance?.HairStyle ?? "short", cameraSensitivity = avatar.Appearance?.CameraSensitivity ?? .003f,
+            hairStyle = avatar.Appearance?.HairStyle ?? "short", eyeColor = avatar.Appearance?.EyeColor ?? "#4A3326",
+            beardStyle = avatar.Appearance?.BeardStyle ?? "none", bodySettingsJson = avatar.Appearance?.BodySettingsJson ?? "{}",
+            faceSettingsJson = avatar.Appearance?.FaceSettingsJson ?? "{}", outfitsJson = avatar.Appearance?.OutfitsJson ?? "[]",
+            attachmentsJson = avatar.Appearance?.AttachmentsJson ?? "[]", cameraSensitivity = avatar.Appearance?.CameraSensitivity ?? .003f,
             invertCameraY = avatar.Appearance?.InvertCameraY ?? false,
             equippedItems = avatar.EquippedItems.Select(x => new { slot = x.Slot, itemKey = x.ItemKey, tintColor = x.TintColor })
         });

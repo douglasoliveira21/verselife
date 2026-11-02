@@ -49,6 +49,12 @@ public static class UserEndpoints
         avatar.Appearance.SkinColor = request.SkinColor.ToUpperInvariant();
         avatar.Appearance.HairColor = request.HairColor.ToUpperInvariant();
         avatar.Appearance.HairStyle = request.HairStyle;
+        avatar.Appearance.EyeColor = string.IsNullOrWhiteSpace(request.EyeColor) ? avatar.Appearance.EyeColor : request.EyeColor.ToUpperInvariant();
+        avatar.Appearance.BeardStyle = string.IsNullOrWhiteSpace(request.BeardStyle) ? avatar.Appearance.BeardStyle : request.BeardStyle;
+        avatar.Appearance.BodySettingsJson = ValidJsonOrDefault(request.BodySettingsJson, avatar.Appearance.BodySettingsJson);
+        avatar.Appearance.FaceSettingsJson = ValidJsonOrDefault(request.FaceSettingsJson, avatar.Appearance.FaceSettingsJson);
+        avatar.Appearance.OutfitsJson = ValidJsonOrDefault(request.OutfitsJson, avatar.Appearance.OutfitsJson);
+        avatar.Appearance.AttachmentsJson = ValidJsonOrDefault(request.AttachmentsJson, avatar.Appearance.AttachmentsJson);
         avatar.Appearance.CameraSensitivity = request.CameraSensitivity;
         avatar.Appearance.InvertCameraY = request.InvertCameraY;
         avatar.Appearance.UpdatedAt = now;
@@ -83,7 +89,10 @@ public static class UserEndpoints
         var appearance = avatar.Appearance;
         return new AvatarResponse(avatar.Id, avatar.DisplayName, avatar.BaseModel,
             appearance?.SkinColor ?? "#C98F65", appearance?.HairColor ?? "#2B1B14", appearance?.HairStyle ?? "short",
+            appearance?.EyeColor ?? "#4A3326", appearance?.BeardStyle ?? "none", appearance?.BodySettingsJson ?? "{}",
+            appearance?.FaceSettingsJson ?? "{}", appearance?.OutfitsJson ?? "[]", appearance?.AttachmentsJson ?? "[]",
             appearance?.CameraSensitivity ?? 0.003f, appearance?.InvertCameraY ?? false,
             avatar.EquippedItems.OrderBy(x => x.Slot).Select(x => new EquippedItemRequest(x.Slot, x.ItemKey, x.TintColor)).ToList());
     }
+    private static string ValidJsonOrDefault(string? value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value;
 }

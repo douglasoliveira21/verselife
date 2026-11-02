@@ -52,7 +52,12 @@ public sealed class AvatarAppearance
     public required string SkinColor { get; set; }
     public required string HairColor { get; set; }
     public required string HairStyle { get; set; }
+    public string EyeColor { get; set; } = "#4A3326";
+    public string BeardStyle { get; set; } = "none";
     public string BodySettingsJson { get; set; } = "{}";
+    public string FaceSettingsJson { get; set; } = "{}";
+    public string OutfitsJson { get; set; } = "[]";
+    public string AttachmentsJson { get; set; } = "[]";
     public float CameraSensitivity { get; set; } = 0.003f;
     public bool InvertCameraY { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
