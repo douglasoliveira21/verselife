@@ -22,7 +22,7 @@ public sealed class AssetStorageService(AssetStorageOptions options, ILogger<Ass
     }
 }
 
-public sealed record AssetInspection(bool Valid, string? Error, string MimeType, int? Width, int? Height, double? DurationSeconds);
+public sealed record AssetInspection(bool Valid, string? Error, string MimeType, int? Width, int? Height, double? DurationSeconds, string MetadataJson = "{}");
 
 public static class AssetValidator
 {
@@ -35,20 +35,21 @@ public static class AssetValidator
             if (extension == ".glb" && (bytes.Length < 12 || bytes[0] != (byte)'g' || bytes[1] != (byte)'l' || bytes[2] != (byte)'T' || bytes[3] != (byte)'F')) return new(false, "Invalid GLB header.", contentType, null, null, null);
             if (extension == ".gltf" && !LooksLikeJson(bytes)) return new(false, "Invalid glTF JSON.", contentType, null, null, null);
             if (ContainsAscii(bytes, "script") || ContainsAscii(bytes, "javascript")) return new(false, "Embedded scripts are not permitted.", contentType, null, null, null);
-            if (CountAscii(bytes, "primitives") > 10000) return new(false, "Mesh complexity exceeds the primitive limit.", contentType, null, null, null);
-            return new(true, null, extension == ".glb" ? "model/gltf-binary" : "model/gltf+json", null, null, null);
+            if (ContainsAscii(bytes, "http://") || ContainsAscii(bytes, "https://") || ContainsAscii(bytes, "file://") || ContainsAscii(bytes, "../") || ContainsAscii(bytes, "..\\")) return new(false, "External or unsafe glTF references are not permitted.", contentType, null, null, null);
+            var primitives = CountAscii(bytes, "primitives"); if (primitives > 10000) return new(false, "Mesh complexity exceeds the primitive limit.", contentType, null, null, null);
+            return new(true, null, extension == ".glb" ? "model/gltf-binary" : "model/gltf+json", null, null, null, $"{{\"format\":\"{extension[1..]}\",\"primitiveTokens\":{primitives},\"previewAvailable\":false,\"thumbnailGenerated\":false}}");
         }
         if (extension is ".png" or ".jpg" or ".jpeg" or ".webp")
         {
             if (bytes.Length > 20 * 1024 * 1024) return new(false, "Image exceeds the 20 MB limit.", contentType, null, null, null);
             var dimensions = ImageDimensions(extension, bytes); if (dimensions is null) return new(false, "Invalid or unsupported image header.", contentType, null, null, null); if (dimensions.Value.Width > 8192 || dimensions.Value.Height > 8192) return new(false, "Image resolution exceeds 8192x8192.", contentType, dimensions.Value.Width, dimensions.Value.Height, null);
-            return new(true, null, extension == ".jpg" || extension == ".jpeg" ? "image/jpeg" : extension == ".webp" ? "image/webp" : "image/png", dimensions.Value.Width, dimensions.Value.Height, null);
+            return new(true, null, extension == ".jpg" || extension == ".jpeg" ? "image/jpeg" : extension == ".webp" ? "image/webp" : "image/png", dimensions.Value.Width, dimensions.Value.Height, null, $"{{\"format\":\"{extension[1..]}\",\"mipmapsGenerated\":false,\"thumbnailGenerated\":false}}");
         }
         if (extension is ".ogg" or ".wav")
         {
             if (bytes.Length > 50 * 1024 * 1024) return new(false, "Audio exceeds the 50 MB limit.", contentType, null, null, null);
             if (extension == ".ogg" && !Has(bytes, "OggS")) return new(false, "Invalid OGG header.", contentType, null, null, null); if (extension == ".wav" && (!Has(bytes, "RIFF") || !Has(bytes, "WAVE"))) return new(false, "Invalid WAV header.", contentType, null, null, null);
-            return new(true, null, extension == ".ogg" ? "audio/ogg" : "audio/wav", null, null, null);
+            return new(true, null, extension == ".ogg" ? "audio/ogg" : "audio/wav", null, null, null, $"{{\"format\":\"{extension[1..]}\",\"previewAvailable\":true,\"loop\":false,\"spatial\":false}}");
         }
         return new(false, "Only GLB/glTF, PNG/JPEG/WebP, OGG and WAV are accepted.", contentType, null, null, null);
     }
