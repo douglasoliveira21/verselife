@@ -1,0 +1,89 @@
+name: Release
+
+# Publishing a tag such as v0.7.0 builds the desktop client for Windows and Linux and attaches the files to a GitHub release.
+# Not verified on a runner yet: it depends on the godot-ci image having the export templates and on Inno Setup on the Windows runner.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    name: Export client
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    container: barichello/godot-ci:mono-4.7.2
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag must match the client version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(grep -oP 'Version = "\K[^"]+' client/Autoloads/AppManager.cs)
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then echo "Tag ${GITHUB_REF_NAME} does not match client version $version"; exit 1; fi
+      - name: Build and import
+        run: |
+          rm -f global.json
+          dotnet build client/LifeVerse.Client.csproj -c Release
+          # The image ships the templates under .../templates; the editor looks in .../export_templates.
+          mkdir -p ~/.local/share/godot/export_templates
+          for dir in ~/.local/share/godot/templates/*; do [ -d "$dir" ] && cp -rn "$dir" ~/.local/share/godot/export_templates/ ; done || true
+          godot --headless --path client --import || true
+      - name: Export Windows and Linux
+        run: |
+          mkdir -p build/windows build/linux
+          godot --headless --path client --export-release "Windows Desktop" ../build/windows/LifeVerse.exe
+          godot --headless --path client --export-release "Linux" ../build/linux/LifeVerse.x86_64
+          test -f build/windows/LifeVerse.exe && test -f build/linux/LifeVerse.x86_64
+      - name: Zip
+        run: |
+          version=$(grep -oP 'Version = "\K[^"]+' client/Autoloads/AppManager.cs)
+          (cd build/windows && zip -r ../LifeVerse-windows-$version.zip .)
+          (cd build/linux && tar -czf ../LifeVerse-linux-$version.tar.gz .)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-builds
+          path: |
+            build/windows
+            build/LifeVerse-windows-*.zip
+            build/LifeVerse-linux-*.tar.gz
+
+  installer:
+    name: Windows installer
+    needs: export
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: client-builds
+          path: build
+      - name: Build the installer
+        shell: bash
+        run: |
+          version=$(grep -oP 'Version = "\K[^"]+' client/Autoloads/AppManager.cs)
+          iscc //DAppVersion=$version //DSourceDir=..\build\windows installer/lifeverse.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: build/installer/*.exe
+
+  publish:
+    name: Publish release
+    needs: [export, installer]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/client-builds/LifeVerse-windows-*.zip
+            dist/client-builds/LifeVerse-linux-*.tar.gz
+            dist/windows-installer/*.exe
+          generate_release_notes: true

@@ -1,19 +1,39 @@
-#define AppName "LifeVerse"
-#define AppVersion "0.6.0"
+; Windows installer for the exported LifeVerse client. Built in CI by .github/workflows/release.yml:
+;   iscc /DAppVersion=0.6.0 /DSourceDir=..\build\windows installer\lifeverse.iss
+#ifndef AppVersion
+  #define AppVersion "0.0.0"
+#endif
+#ifndef SourceDir
+  #define SourceDir "..\build\windows"
+#endif
+
 [Setup]
-AppId={{D7FBBF89-2F5B-4B52-9FB7-8A7F5C38A9F1}
-AppName={#AppName}
+AppId={{6F1C2B7E-5D0A-4E7B-9C3A-1B2F4D8E9A10}
+AppName=LifeVerse
 AppVersion={#AppVersion}
+AppPublisher=LifeVerse
 DefaultDirName={autopf}\LifeVerse
 DefaultGroupName=LifeVerse
-OutputDir=..\artifacts\installer
-ArchitecturesInstallIn64BitMode=x64
-PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\LifeVerse.exe
+OutputDir=..\build\installer
+OutputBaseFilename=LifeVerse-Setup-{#AppVersion}
+Compression=lzma2
+SolidCompression=yes
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
+WizardStyle=modern
+
 [Files]
-Source: "..\artifacts\release\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+
 [Icons]
-Name: "{autodesktop}\LifeVerse"; Filename: "{app}\LifeVerse.exe"
 Name: "{group}\LifeVerse"; Filename: "{app}\LifeVerse.exe"
-[UninstallDelete]
-Type: filesandordirs; Name: "{localappdata}\LifeVerse\cache"
+Name: "{autodesktop}\LifeVerse"; Filename: "{app}\LifeVerse.exe"; Tasks: desktopicon
+
+[Tasks]
+Name: "desktopicon"; Description: "Criar um atalho na área de trabalho"; Flags: unchecked
+
+[Run]
+Filename: "{app}\LifeVerse.exe"; Description: "Abrir o LifeVerse"; Flags: nowait postinstall skipifsilent

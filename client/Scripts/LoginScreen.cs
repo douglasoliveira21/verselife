@@ -12,6 +12,9 @@ public partial class LoginScreen : Control
     private Button _loginButton = null!;
     private Button _registerButton = null!;
     private AuthManager _auth = null!;
+    private UpdateChecker? _updates;
+    private Button? _download;
+    private bool UpdateRequired => _updates?.Status == LifeVerse.Shared.Updates.UpdateStatus.Required;
 
     public override void _Ready()
     {
@@ -26,11 +29,14 @@ public partial class LoginScreen : Control
         _auth.RequestFinished += OnRequestFinished;
         _loginButton.Pressed += Login;
         _registerButton.Pressed += Register;
+        _updates = GetNode<AppManager>("/root/AppManager").Updates;
+        _updates.Checked += ShowUpdate; ShowUpdate();
     }
 
     public override void _ExitTree()
     {
         if (IsInstanceValid(_auth)) _auth.RequestFinished -= OnRequestFinished;
+        if (_updates is not null && IsInstanceValid(_updates)) _updates.Checked -= ShowUpdate;
     }
 
     private void Login()
@@ -62,8 +68,20 @@ public partial class LoginScreen : Control
 
     private void SetBusy(bool busy)
     {
-        _loginButton.Disabled = busy;
-        _registerButton.Disabled = busy;
-        _message.Text = busy ? "Connecting…" : string.Empty;
+        _loginButton.Disabled = busy || UpdateRequired;
+        _registerButton.Disabled = busy || UpdateRequired;
+        _message.Text = busy ? "Connecting…" : UpdateRequired ? _updates!.Describe() : string.Empty;
+    }
+
+    /// A newer client is only mentioned; one below the minimum blocks login until it is updated.
+    private void ShowUpdate()
+    {
+        if (_updates is null || _updates.Status is not (LifeVerse.Shared.Updates.UpdateStatus.Available or LifeVerse.Shared.Updates.UpdateStatus.Required)) return;
+        _message.Text = _updates.Describe();
+        _loginButton.Disabled = _registerButton.Disabled = UpdateRequired;
+        if (_download is not null || _updates.Release is not { HasSafeDownloadLink: true }) return;
+        _download = new Button { Text = "Baixar atualização" };
+        _download.Pressed += _updates.OpenDownload;
+        _message.GetParent().AddChild(_download);
     }
 }

@@ -50,6 +50,7 @@ builder.Services.AddSingleton<IObjectStore>(services =>
 });
 builder.Services.AddSingleton<AssetStorageService>();
 builder.Services.AddSingleton<NotificationHub>();
+builder.Services.AddSingleton(builder.Configuration.GetSection("ClientRelease").Get<LifeVerse.Api.Modules.Platform.ClientReleaseOptions>() ?? new LifeVerse.Api.Modules.Platform.ClientReleaseOptions());
 builder.Services.AddSingleton(builder.Configuration.GetSection("LuaRuntime").Get<LuaRuntimeOptions>() ?? new LuaRuntimeOptions());
 builder.Services.AddSingleton<LuaSandboxService>();
 builder.Services.AddSingleton<ScriptMessagingService>();
@@ -134,6 +135,7 @@ app.MapAssetEndpoints();
 app.MapScriptingEndpoints();
 app.MapSocialEndpoints();
 app.MapPeopleEndpoints();
+LifeVerse.Api.Modules.Platform.ClientReleaseEndpoints.MapClientReleaseEndpoints(app);
 app.MapNotificationEndpoints();
 app.MapDiscoveryEndpoints();
 app.MapEconomyEndpoints();

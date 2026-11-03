@@ -80,6 +80,7 @@ public partial class ViewerUI : CanvasLayer
         BuildJoinWindow();
         BuildToasts();
         var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text);
+        AnnounceUpdate();
         _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += Toast;
         BuildTopBar();
         BuildBottomBar();
@@ -182,6 +183,7 @@ public partial class ViewerUI : CanvasLayer
         AddMenu(menu, "Ajuda",
             ("Tutorial: primeiros passos", ShowTutorial, false),
             ("Controles", ShowControlsHelp, false),
+            ("Baixar atualização", () => GetNode<AppManager>("/root/AppManager").Updates.OpenDownload(), false),
             ("Sobre o LifeVerse", () => Toast($"LifeVerse · cliente {AppManager.Version}"), false));
         AddMenu(menu, "Desenvolver",
             ("Métricas de desempenho", () => _world.GetNodeOrNull<PerformanceOverlay>("PerformanceOverlay")?.Toggle(), false));
@@ -328,6 +330,16 @@ public partial class ViewerUI : CanvasLayer
         _joinWindow.Content.AddChild(_joinStatus);
         _islandId.TextSubmitted += _ => Join();
         _root.AddChild(_joinWindow);
+    }
+
+    /// Mentions a newer client once, as a toast, when the start-up check says one exists.
+    private void AnnounceUpdate()
+    {
+        var updates = GetNode<AppManager>("/root/AppManager").Updates;
+        void Show() { if (updates.Status is LifeVerse.Shared.Updates.UpdateStatus.Available or LifeVerse.Shared.Updates.UpdateStatus.Required) Toast(updates.Describe()); }
+        Show();
+        updates.Checked += Show;
+        TreeExiting += () => updates.Checked -= Show;
     }
 
     private void BuildToasts()
