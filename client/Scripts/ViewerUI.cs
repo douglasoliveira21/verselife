@@ -21,6 +21,7 @@ public partial class ViewerUI : CanvasLayer
     private FloatingWindow _miniMapWindow = null!;
     private FloatingWindow _moveWindow = null!;
     private FloatingWindow _joinWindow = null!;
+    private PeoplePanel? _people;
     private FloatingWindow? _helpWindow;
     private Control? _gestures;
     private Label _coords = null!;
@@ -79,6 +80,7 @@ public partial class ViewerUI : CanvasLayer
         BuildJoinWindow();
         BuildToasts();
         var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text);
+        _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += Toast;
         BuildTopBar();
         BuildBottomBar();
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
@@ -151,7 +153,8 @@ public partial class ViewerUI : CanvasLayer
         AddChoiceSubmenu(me, "Volume", ["Mudo", "25%", "50%", "75%", "100%"], index => SetVolume(Volumes[index]));
         AddMenu(menu, "Comunicar",
             ("Conversa local   Enter", () => _chat.GrabFocus(), false),
-            ("Pessoas, amigos e grupos…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
+            ("Pessoas, amigos e grupos…", () => _people?.Toggle(), false),
+            ("Mensagens privadas…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
             ("Gestos", ToggleGestures, false),
             ("-", null, false),
             ("Voz espacial (indisponível)", null, true));
@@ -244,7 +247,7 @@ public partial class ViewerUI : CanvasLayer
         row.AddChild(view);
         ToolButton(row, "Foto", "Capturar a tela sem a interface", TakeSnapshot);
         ToolButton(row, "Construir", "Ferramentas de construção (B)", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true));
-        ToolButton(row, "Pessoas", "Amigos, grupos e mensagens", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle());
+        ToolButton(row, "Pessoas", "Buscar pessoas, amigos e grupos", () => _people?.Toggle());
         ToolButton(row, "Mapa", "Mapa, busca e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle());
         ToolButton(row, "Inventário", "Seu inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle());
         _miniMapButton = ToolButton(row, "Mini-mapa", "Mostrar ou ocultar o mini-mapa", () => ToggleWindow(_miniMapWindow), toggle: true);

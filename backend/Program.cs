@@ -133,6 +133,7 @@ app.MapBuildEndpoints();
 app.MapAssetEndpoints();
 app.MapScriptingEndpoints();
 app.MapSocialEndpoints();
+app.MapPeopleEndpoints();
 app.MapNotificationEndpoints();
 app.MapDiscoveryEndpoints();
 app.MapEconomyEndpoints();
