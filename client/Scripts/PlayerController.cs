@@ -401,8 +401,11 @@ public partial class PlayerController : CharacterBody3D
     {
         _cameraMode = mode; _firstPerson = mode == CameraMode.FirstPerson;
         _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance;
-        _rig.Visible = !_firstPerson;
+        _rig.Visible = !_firstPerson && !_avatarHidden;
     }
+    private bool _avatarHidden;
+    /// Hides the avatar while the build camera is in use (and shows it again afterwards).
+    public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
     private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, 1.5f, 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     private bool IsTyping() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
     private void SetWalkTarget(Vector2 screenPosition)

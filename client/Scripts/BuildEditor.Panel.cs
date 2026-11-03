@@ -35,7 +35,7 @@ public partial class BuildEditor
     private void BuildPanel()
     {
         _window = new FloatingWindow("Construir", icon: "hammer", minimizable: true) { Name = "BuildTools", Visible = false };
-        _window.Place(0, 0, 18, 56, 458, 880);
+        _window.Place(0, 0, 18, 56, 458, 1010);
         _window.CloseRequested += () => SetActive(false);
         var content = _window.Content;
         content.AddThemeConstantOverride("separation", 10);
@@ -59,13 +59,21 @@ public partial class BuildEditor
             var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 22), TooltipText = tip, CustomMinimumSize = new Vector2(48, 44), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             UiStyle.StyleButton(button, UiStyle.ButtonKind.Tool, 8, 6); button.Pressed += action; actions.AddChild(button);
         }
+        var cameraRow = new HBoxContainer(); cameraRow.AddThemeConstantOverride("separation", 6); content.AddChild(cameraRow);
+        _cameraButton = new Button { Text = "Câmera de edição", ToggleMode = true, TooltipText = "Gira em volta da seleção: botão direito orbita, botão do meio desloca, roda dá zoom (End)", CustomMinimumSize = new Vector2(0, 40), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None };
+        UiStyle.StyleButton(_cameraButton, UiStyle.ButtonKind.Tool, 10, 6); _cameraButton.AddThemeFontSizeOverride("font_size", 16); _cameraButton.Pressed += ToggleEditCamera; cameraRow.AddChild(_cameraButton);
+        cameraRow.AddChild(TextButton("Focar", "Aponta a câmera para a seleção (Home)", FocusSelection));
+        cameraRow.AddChild(TextButton("Tutorial", "Mostra o passo a passo de construção", RestartTutorial));
         var groupRow = new HBoxContainer(); groupRow.AddThemeConstantOverride("separation", 6); content.AddChild(groupRow);
         groupRow.AddChild(TextButton("Vincular", "Junta os objetos selecionados em um conjunto (Ctrl+G)", GroupSelection));
         groupRow.AddChild(TextButton("Desvincular", "Separa o conjunto (Ctrl+Shift+G)", Ungroup));
 
-        _selectionLabel = new Label { Text = "Nada selecionado", TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
+        var selectionRow = new HBoxContainer(); selectionRow.AddThemeConstantOverride("separation", 8); content.AddChild(selectionRow);
+        _selectionLabel = new Label { Text = "Nada selecionado", TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _selectionLabel.AddThemeColorOverride("font_color", UiStyle.TextMuted); _selectionLabel.AddThemeFontSizeOverride("font_size", 16);
-        content.AddChild(_selectionLabel);
+        selectionRow.AddChild(_selectionLabel);
+        _saveLabel = new Label { Text = "✓ Salvo", TooltipText = "Mostra se o servidor já confirmou as suas alterações" }; _saveLabel.AddThemeFontSizeOverride("font_size", 15); selectionRow.AddChild(_saveLabel);
+        BuildTutorialCard(content);
 
         // tabs
         var tabs = new UiTabs { EqualWidth = true };
@@ -331,7 +339,7 @@ public partial class BuildEditor
             MaterialJson = MaterialFromFields("{}"), GeometryJson = "{}", PhysicsJson = "{\"collision\":true}"
         };
         var entry = new HistoryEntry("create", []);
-        CreateFrom(template, position, null, created => { var item = new HistoryItem(created.Id, null, Clone(created)); entry.Items.Add(item); SelectIds([created.Id]); });
+        CreateFrom(template, position, null, created => { var item = new HistoryItem(created.Id, null, Clone(created)); entry.Items.Add(item); SelectIds([created.Id]); Teach(TutorialStep.Create); });
         PushHistory(entry);
         _status.Text = $"{PrimitiveLabel(type)} criada; use Mover (2), Girar (3) ou Esticar (4).";
     }
@@ -374,6 +382,7 @@ public partial class BuildEditor
         ApplySelected();
     }
     public void SelectToolForTesting() => SelectTool();
+    public void ApplyRotationForTesting(Vector3 degrees) { for (var i = 0; i < 3; i++) _rotationFields[i].Text = Num(degrees[i]); ApplySelected(); }
     public string PrimitiveIdsForTesting => string.Join(",", Primitives.Select(x => x.Id));
     public Control WindowForTesting => _window;
 

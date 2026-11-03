@@ -12,11 +12,10 @@ namespace LifeVerse.Client.Scripts;
 public partial class BuildEditor
 {
     private const float RezInterval = .09f; // about 11 objects a second, under the island server's limit of 20
-    private sealed record RezStep(PlacedObject Object, int Index);
 
     private LineEdit _packageName = null!;
     private HttpRequest? _packageHttp;
-    private readonly Queue<RezStep> _rezQueue = new();
+    private readonly Queue<Action> _rezQueue = new();
     private double _rezClock;
     private bool _takeAfterSave;
     private List<BuildObjectView>? _takeViews;
@@ -39,7 +38,7 @@ public partial class BuildEditor
     {
         if (_rezQueue.Count == 0) return;
         _rezClock += delta;
-        while (_rezClock >= RezInterval && _rezQueue.Count > 0) { _rezClock -= RezInterval; CreatePlaced(_rezQueue.Dequeue()); }
+        while (_rezClock >= RezInterval && _rezQueue.Count > 0) { _rezClock -= RezInterval; _rezQueue.Dequeue()(); }
     }
 
     // ---- saving ----------------------------------------------------------------------------------------------
@@ -82,6 +81,7 @@ public partial class BuildEditor
     private void OnPackageSaved(string name, int count)
     {
         _status.Text = $"\"{name}\" guardada no inventário ({count} objeto(s)).";
+        Teach(TutorialStep.Save);
         if (_takeAfterSave && _takeViews is { Count: > 0 } views)
         {
             SelectIds(views.Where(IsInstanceValid).Select(v => v.State.Id));
@@ -121,19 +121,31 @@ public partial class BuildEditor
         var entry = new HistoryEntry("create", []);
         var total = placed.Count;
         var created = new List<Guid>();
-        for (var i = 0; i < placed.Count; i++)
+        var actions = new List<Action>();
+        foreach (var item in placed)
         {
-            var step = new RezStep(placed[i], i);
-            _rezQueue.Enqueue(step);
-            _rezCallbacks.Enqueue(state => { entry.Items.Add(new HistoryItem(state.Id, null, Clone(state))); created.Add(state.Id); if (created.Count == total) { SelectIds(created); _status.Text = $"Construção colocada ({total} objeto(s))."; } });
+            var template = TemplateOf(item.Source); var position = new Vector3(item.Position.X, item.Position.Y, item.Position.Z); var group = item.GroupId;
+            actions.Add(() => CreateFrom(template, position, group, state =>
+            {
+                entry.Items.Add(new HistoryItem(state.Id, null, Clone(state))); created.Add(state.Id);
+                if (created.Count == total) { SelectIds(created); _status.Text = $"Construção colocada ({total} objeto(s))."; }
+            }));
         }
         PushHistory(entry);
-        _status.Text = instant ? _status.Text : $"Colocando a construção: {total} objeto(s)…";
-        if (instant) while (_rezQueue.Count > 0) CreatePlaced(_rezQueue.Dequeue());
+        var paced = !instant && actions.Count > BurstLimit;
+        RunPaced(actions, instant);
+        if (paced) _status.Text = $"Colocando a construção: {total} objeto(s)…";
         return total;
     }
 
-    private readonly Queue<Action<BuildObjectState>> _rezCallbacks = new();
+    private const int BurstLimit = 10; // up to this many objects go out at once; more are spread out under the island's rate limit
+
+    /// Runs the actions now when there are few of them, otherwise a few per second, so a big paste or construction never trips the island's limit of 20 operations a second.
+    private void RunPaced(List<Action> actions, bool instant = false)
+    {
+        if (instant || actions.Count <= BurstLimit) { foreach (var action in actions) action(); return; }
+        foreach (var action in actions) _rezQueue.Enqueue(action);
+    }
 
     private static BuildObjectState TemplateOf(PackageObject o) => new()
     {
@@ -142,16 +154,10 @@ public partial class BuildEditor
         PhysicsJson = string.IsNullOrWhiteSpace(o.PhysicsJson) ? "{\"collision\":true}" : o.PhysicsJson, ContentJson = string.IsNullOrWhiteSpace(o.ContentJson) ? "[]" : o.ContentJson
     };
 
-    private void CreatePlaced(RezStep step)
-    {
-        var callback = _rezCallbacks.Dequeue();
-        CreateFrom(TemplateOf(step.Object.Source), new Vector3(step.Object.Position.X, step.Object.Position.Y, step.Object.Position.Z), step.Object.GroupId, callback);
-    }
-
     private void CancelRez(string why)
     {
-        if (_rezQueue.Count == 0 && _rezCallbacks.Count == 0) return;
-        _rezQueue.Clear(); _rezCallbacks.Clear();
+        if (_rezQueue.Count == 0) return;
+        _rezQueue.Clear();
         _status.Text = why;
     }
 

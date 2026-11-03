@@ -23,7 +23,8 @@ public sealed class BuildOperationsTests : IDisposable
         public Task<Stream?> OpenReadAsync(string key, CancellationToken ct) => Task.FromResult<Stream?>(Files.TryGetValue(key, out var b) ? new MemoryStream(b) : null);
     }
 
-    private readonly LifeVerseDbContext _db = new(new DbContextOptionsBuilder<LifeVerseDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    private readonly DbContextOptions<LifeVerseDbContext> _options = new DbContextOptionsBuilder<LifeVerseDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options;
+    private readonly LifeVerseDbContext _db;
     private readonly MemoryStore _store = new();
     private readonly AssetStorageService _storage;
     private readonly Island _island; private readonly Guid _instance = Guid.NewGuid();
@@ -31,6 +32,7 @@ public sealed class BuildOperationsTests : IDisposable
 
     public BuildOperationsTests()
     {
+        _db = new LifeVerseDbContext(_options);
         _storage = new AssetStorageService(_store, NullLogger<AssetStorageService>.Instance);
         _island = new Island { Id = Guid.NewGuid(), OwnerUserId = _owner, Name = "Ilha", Slug = "ilha", IsPublic = true, Size = 400 };
         _db.Islands.Add(_island);
@@ -271,6 +273,40 @@ public sealed class BuildOperationsTests : IDisposable
     }
 
     // ---- limits endpoint helpers and audit -----------------------------------------------------------------------
+
+    [Fact]
+    public void TheRevisionOfAnObjectIsAConcurrencyToken() =>
+        Assert.True(_db.Model.FindEntityType(typeof(BuildObject))!.FindProperty(nameof(BuildObject.Revision))!.IsConcurrencyToken);
+
+    [Fact]
+    public async Task TwoEditsThatOverlapInTimeCannotBothWin()
+    {
+        var id = await Create(_builder);
+        var interfered = false;
+        // right before the first edit is saved, someone else's edit lands on the same object
+        _db.SavingChanges += (_, _) =>
+        {
+            if (interfered) return; interfered = true;
+            using var other = new LifeVerseDbContext(_options);
+            var row = other.BuildObjects.Single(o => o.Id == id); row.Revision++; row.Name = "Do outro"; other.SaveChanges();
+        };
+        var (status, body) = await Send(_builder, "update", Cube(0, 0, 1, "Perdida"), id, 1);
+        Assert.Equal(409, status); Assert.Equal("revision_conflict", Code(body)); Assert.Equal(2, body.GetProperty("currentRevision").GetInt32());
+        var saved = await new LifeVerseDbContext(_options).BuildObjects.AsNoTracking().SingleAsync(o => o.Id == id);
+        Assert.Equal("Do outro", saved.Name); Assert.Equal(2, saved.Revision); // the other edit stands; the late one did not overwrite it
+    }
+
+    [Fact]
+    public async Task ManyObjectsKeepTheBudgetAccurateAndFast()
+    {
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        for (var i = 0; i < 300; i++) await Create(_builder, i % 40, i / 40);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(30), $"300 creations took {watch.Elapsed}");
+        var live = await _db.BuildObjects.AsNoTracking().Where(o => o.DeletedAt == null).ToListAsync();
+        Assert.Equal(300, live.Count);
+        Assert.Equal(live.Sum(o => o.Cost), await _db.BuildObjects.SumAsync(o => o.Cost));
+        Assert.All(live, o => Assert.Equal(BuildCost.Of(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.PhysicsJson, o.ContentJson), o.Cost));
+    }
 
     [Fact]
     public async Task EveryOperationLeavesAnAuditRow()

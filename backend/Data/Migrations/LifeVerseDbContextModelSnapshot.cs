@@ -480,6 +480,7 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnName("primitive_type");
 
                     b.Property<int>("Revision")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("revision");
 

@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using Godot;
 using LifeVerse.Client.Autoloads;
+using LifeVerse.Shared.Building;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -56,6 +57,7 @@ public partial class BuildEditor : Node3D
         _grid = new BuildGrid(); AddChild(_grid);
         BuildPanel();
         SetUpTextureCache();
+        SetUpCamera();
     }
 
     public override void _ExitTree()
@@ -68,7 +70,7 @@ public partial class BuildEditor : Node3D
     private void OnConnectionState(string state, string detail)
     {
         if (state == "online") { _islandId = _network.CurrentIslandId; LoadObjects(); }
-        else if (state is "offline" or "failed") { _lockedBy.Clear(); _myLocks.Clear(); CancelDrag(); ClearSelection(); foreach (var view in _objects.Values) if (IsInstanceValid(view)) view.QueueFree(); _objects.Clear(); }
+        else if (state is "offline" or "failed") { _lockedBy.Clear(); _myLocks.Clear(); SettleAll(); _loadQueue.Clear(); _cameraRig?.Exit(); CancelDrag(); ClearSelection(); foreach (var view in _objects.Values) if (IsInstanceValid(view)) view.QueueFree(); _objects.Clear(); }
     }
 
     // ---- activation and input --------------------------------------------------------------------------------
@@ -76,11 +78,11 @@ public partial class BuildEditor : Node3D
     public void SetActive(bool active)
     {
         _active = active; _window.Visible = active;
-        if (!active) { CancelDrag(); ClearSelection(); return; }
+        if (!active) { CancelDrag(); ClearSelection(); _cameraRig?.Exit(); return; }
         _islandId = _network.CurrentIslandId;
         if (_islandId == Guid.Empty && Guid.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_ID"), out var id)) _islandId = id;
         if (_islandId != Guid.Empty) LoadObjects();
-        _limitsClock = 0; RefreshLimits();
+        _limitsClock = 0; RefreshLimits(); StartTutorialIfNew();
         _status.Text = "Clique em um objeto para selecionar (Shift soma). Atalhos: 1 selecionar, 2 mover, 3 girar, 4 esticar.";
     }
 
@@ -95,8 +97,10 @@ public partial class BuildEditor : Node3D
 
     public override void _Process(double delta)
     {
+        PumpLoad();
         PumpRez(delta);
         PumpCollab(delta);
+        UpdateSaveLabel();
         if (!_active || !_dragging) return;
         if (!Input.IsMouseButtonPressed(MouseButton.Left)) { EndDrag(); return; }
         var camera = GetViewport().GetCamera3D();
@@ -115,6 +119,8 @@ public partial class BuildEditor : Node3D
             case Key.Key3: SetMode(GizmoMode.Rotate); return true;
             case Key.Key4: SetMode(GizmoMode.Scale); return true;
             case Key.Key5: FaceTool(); return true;
+            case Key.Home: FocusSelection(); return true;
+            case Key.End: ToggleEditCamera(); return true;
             case Key.Delete: DeleteSelection(); return true;
             case Key.C when ctrl: CopySelection(); return true;
             case Key.V when ctrl: Paste(); return true;
@@ -294,6 +300,7 @@ public partial class BuildEditor : Node3D
         {
             if (!_objects.TryGetValue(after.Id, out var view)) continue;
             entry.Items.Add(new HistoryItem(after.Id, Clone(view.State), Clone(after)));
+            TeachFromChange(view.State, after);
             Send(Command("update", after.Id, view.State.Revision, PayloadFrom(after)));
         }
         if (entry.Items.Count > 0) PushHistory(entry);
@@ -357,19 +364,21 @@ public partial class BuildEditor : Node3D
         var center = source.Aggregate(Vector3.Zero, (sum, s) => sum + new Vector3(s.PositionX, s.PositionY, s.PositionZ)) / source.Count;
         var lowest = source.Min(s => s.PositionY - s.ScaleY * .5f);
         var groups = source.Where(s => s.GroupId is not null).Select(s => s.GroupId!.Value).Distinct().ToDictionary(id => id, _ => Guid.NewGuid());
-        var created = new List<Guid>(); var entry = new HistoryEntry("create", []);
+        var created = new List<Guid>(); var entry = new HistoryEntry("create", []); var actions = new List<Action>();
         foreach (var state in source)
         {
             var offset = new Vector3(state.PositionX, state.PositionY, state.PositionZ) - center;
             var position = new Vector3(target.X + offset.X, snapToBase ? target.Y + (state.PositionY - lowest) : target.Y + offset.Y, target.Z + offset.Z);
-            var expected = source.Count;
-            CreateFrom(state, position, state.GroupId is { } g ? groups[g] : null, confirmed =>
+            var expected = source.Count; var template = state; var group = state.GroupId is { } g ? groups[g] : (Guid?)null;
+            actions.Add(() => CreateFrom(template, position, group, confirmed =>
             {
                 entry.Items.Add(new HistoryItem(confirmed.Id, null, Clone(confirmed))); created.Add(confirmed.Id);
                 if (created.Count == expected) SelectIds(created);
-            });
+            }));
         }
         PushHistory(entry);
+        RunPaced(actions);
+        Teach(TutorialStep.Duplicate);
     }
 
     private void DeleteSelection()
@@ -455,6 +464,7 @@ public partial class BuildEditor : Node3D
 
     private void Send(string commandJson)
     {
+        TrackPending(commandJson);
         if (OperationSink is not null && OperationSink(commandJson)) return;
         _network.SubmitBuildOperation(commandJson);
     }
@@ -469,7 +479,7 @@ public partial class BuildEditor : Node3D
     private void OnObjectsLoaded(long result, long responseCode, string[] headers, byte[] body)
     {
         if (responseCode is < 200 or >= 300) return;
-        try { using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); foreach (var element in doc.RootElement.EnumerateArray()) AddOrUpdate(JsonSerializer.Deserialize<BuildObjectState>(element.GetRawText(), Web)!); }
+        try { using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); foreach (var element in doc.RootElement.EnumerateArray()) _loadQueue.Enqueue(JsonSerializer.Deserialize<BuildObjectState>(element.GetRawText(), Web)!); }
         catch (Exception exception) { GD.PushWarning($"event=build_objects_invalid error={exception.GetType().Name}"); }
     }
 
@@ -485,13 +495,14 @@ public partial class BuildEditor : Node3D
             if (doc.RootElement.TryGetProperty("objectState", out var state) && state.ValueKind != JsonValueKind.Null)
             {
                 var objectState = JsonSerializer.Deserialize<BuildObjectState>(state.GetRawText(), Web)!;
-                AddOrUpdate(objectState);
+                AddOrUpdate(objectState); Settle(objectState.Id, objectState.Revision);
+                if (operation == "create") SettleCreate(objectState);
                 if (operation == "create" && IsMine(objectState) && _createCallbacks.Count > 0) _createCallbacks.Dequeue()(objectState);
                 if (_selection.Any(view => view.State.Id == objectState.Id) && !_dragging) AfterSelectionChanged();
             }
             else if (doc.RootElement.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var objectId) && _objects.Remove(objectId, out var removed))
             {
-                _selection.Remove(removed); _lockedBy.Remove(objectId); _myLocks.Remove(objectId); removed.QueueFree(); AfterSelectionChanged();
+                Settle(objectId, null); _selection.Remove(removed); _lockedBy.Remove(objectId); _myLocks.Remove(objectId); removed.QueueFree(); AfterSelectionChanged();
             }
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
@@ -501,7 +512,7 @@ public partial class BuildEditor : Node3D
 
     private void OnRejected(string code)
     {
-        _createCallbacks.Clear();
+        _createCallbacks.Clear(); SettleAll();
         CancelRez("Colocação interrompida: o servidor recusou um objeto (limite de objetos ou permissão).");
         foreach (var view in _selection) if (IsInstanceValid(view)) view.Apply(view.State);
         RefreshGizmo();

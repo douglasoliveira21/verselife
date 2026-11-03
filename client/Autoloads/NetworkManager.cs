@@ -159,6 +159,8 @@ public partial class NetworkManager : Node
         else EmitSignal(SignalName.ConnectionStateChanged, "failed", $"Autenticação recusada: {code}");
     }
 
+    /// The avatar this computer controls, once it exists (the editing camera hides it so it does not stand in the way).
+    public PlayerController? LocalPlayer => _localPlayer;
     public void RegisterLocalPlayer(PlayerController player) => _localPlayer = player;
     public void UnregisterLocalPlayer(PlayerController player) { if (_localPlayer == player) _localPlayer = null; }
     public void SendInput(uint sequence, Vector2 direction, InputFlags flags) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitInput, (long)sequence, direction.X, direction.Y, (int)flags); }

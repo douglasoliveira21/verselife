@@ -121,7 +121,7 @@ public static class BuildOperations
             item.DeletedAt = now; item.Revision++;
             db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = item.Id, ActorUserId = actor, Operation = "return", PayloadJson = JsonSerializer.Serialize(new { returnedTo = item.OwnerUserId, byOwner = item.OwnerUserId == actor }), Revision = item.Revision, CreatedAt = now });
         }
-        await db.SaveChangesAsync(ct);
+        if (await TrySaveAsync(db, items[0].Id, ct) is { } conflict) return conflict;
         return Results.Ok(new { operation = "return", objectIds = items.Select(x => x.Id).ToArray(), returned = items.Count, packages = itemIds.Count });
     }
 
@@ -149,10 +149,24 @@ public static class BuildOperations
         return null;
     }
 
+    /// <summary>
+    /// Saves, and turns "someone else changed this object between my reading it and my saving it" into an ordinary revision conflict.
+    /// The object's revision is a concurrency token, so two operations on the same object that overlap in time cannot both win.
+    /// </summary>
+    private static async Task<IResult?> TrySaveAsync(LifeVerseDbContext db, Guid objectId, CancellationToken ct)
+    {
+        try { await db.SaveChangesAsync(ct); return null; }
+        catch (DbUpdateConcurrencyException)
+        {
+            var current = await db.BuildObjects.AsNoTracking().Where(x => x.Id == objectId).Select(x => (int?)x.Revision).FirstOrDefaultAsync(ct);
+            return Results.Json(new { code = "revision_conflict", currentRevision = current ?? 0 }, statusCode: 409);
+        }
+    }
+
     private static async Task<IResult> FinishAsync(LifeVerseDbContext db, Island island, Guid actor, string operation, BuildObject item, BuildObjectRequest? payload, DateTimeOffset now, CancellationToken ct)
     {
         db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = item.Id, ActorUserId = actor, Operation = operation, PayloadJson = JsonSerializer.Serialize((object?)payload ?? new { }), Revision = item.Revision, CreatedAt = now });
-        await db.SaveChangesAsync(ct);
+        if (await TrySaveAsync(db, item.Id, ct) is { } conflict) return conflict;
         return Results.Ok(new { operation, objectState = item.DeletedAt is null ? BuildEndpoints.ToResponse(item) : null, objectId = item.Id, revision = item.Revision });
     }
 

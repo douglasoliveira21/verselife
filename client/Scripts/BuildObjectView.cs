@@ -38,6 +38,18 @@ public partial class BuildObjectView : Node3D
     public BuildObjectState State { get; private set; } = new();
     private int _applyId;
     private Guid? _modelAsset;
+    /// Objects that look the same share one mesh, one collision shape and one material per look, instead of each building its own.
+    private sealed record Shared(ArrayMesh Mesh, int[] FaceIds, int[] TriangleEnds) { public ConcavePolygonShape3D? Shape { get; set; } }
+    private static readonly Dictionary<string, Shared> MeshCache = [];
+    private static readonly Dictionary<string, Material> MaterialCache = [];
+    private const int MeshCacheLimit = 256, MaterialCacheLimit = 1024;
+    public static int CachedMeshesForTesting => MeshCache.Count;
+    public static int CachedMaterialsForTesting => MaterialCache.Count;
+    public static void ClearCachesForTesting() { MeshCache.Clear(); MaterialCache.Clear(); }
+
+    /// Objects farther than this many metres per metre of their own size are not drawn: a 1 m box disappears beyond 120 m, a 10 m wall beyond 600 m.
+    public const float RangePerMetre = 120f, MinRange = 40f, MaxRange = 600f;
+    private string _shapeKey = string.Empty;
     private readonly List<int> _faceIds = [];
     private readonly List<int> _faceTriangleEnd = [];
 
@@ -76,31 +88,54 @@ public partial class BuildObjectView : Node3D
     /// each face is its own surface (so it can have its own colour) and the collision follows the exact shape, holes included.
     private void BuildProcedural(BuildObjectState state)
     {
-        var data = PrimMesh.Build(state.PrimitiveType, PrimParams.Parse(state.GeometryJson));
-        var mesh = new ArrayMesh();
-        var triangles = 0;
-        foreach (var face in data.Faces)
+        var parameters = PrimParams.Parse(state.GeometryJson);
+        var meshKey = $"{state.PrimitiveType.ToLowerInvariant()}|{parameters.Hollow}|{parameters.TaperX}|{parameters.TaperY}|{parameters.Twist}|{parameters.CutStart}|{parameters.CutEnd}";
+        if (!MeshCache.TryGetValue(meshKey, out var shared))
         {
-            var arrays = new Godot.Collections.Array(); arrays.Resize((int)Mesh.ArrayType.Max);
-            arrays[(int)Mesh.ArrayType.Vertex] = face.Positions.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
-            arrays[(int)Mesh.ArrayType.Normal] = face.Normals.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
-            arrays[(int)Mesh.ArrayType.TexUV] = face.Uvs.Select(p => new Vector2(p.X, p.Y)).ToArray();
-            arrays[(int)Mesh.ArrayType.Index] = face.Indices;
-            mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-            _faceIds.Add(face.Id); triangles += face.Indices.Length / 3; _faceTriangleEnd.Add(triangles);
+            var data = PrimMesh.Build(state.PrimitiveType, parameters);
+            var built = new ArrayMesh(); var ids = new List<int>(); var ends = new List<int>(); var triangles = 0;
+            foreach (var face in data.Faces)
+            {
+                var arrays = new Godot.Collections.Array(); arrays.Resize((int)Mesh.ArrayType.Max);
+                arrays[(int)Mesh.ArrayType.Vertex] = face.Positions.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
+                arrays[(int)Mesh.ArrayType.Normal] = face.Normals.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
+                arrays[(int)Mesh.ArrayType.TexUV] = face.Uvs.Select(p => new Vector2(p.X, p.Y)).ToArray();
+                arrays[(int)Mesh.ArrayType.Index] = face.Indices;
+                built.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+                ids.Add(face.Id); triangles += face.Indices.Length / 3; ends.Add(triangles);
+            }
+            if (MeshCache.Count >= MeshCacheLimit) MeshCache.Clear();
+            MeshCache[meshKey] = shared = new Shared(built, [.. ids], [.. ends]);
         }
+        var mesh = shared.Mesh;
+        _faceIds.AddRange(shared.FaceIds); _faceTriangleEnd.AddRange(shared.TriangleEnds);
         var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh };
-        AddChild(visual);
+        AddChild(visual); ApplyRange(visual);
         var material = ParseMaterial(state.MaterialJson);
         var faces = FaceEntries(material);
-        for (var i = 0; i < _faceIds.Count; i++) visual.SetSurfaceOverrideMaterial(i, MaterialBuilder.Build(material, faces.GetValueOrDefault(_faceIds[i]), Textures));
+        for (var i = 0; i < _faceIds.Count; i++)
+        {
+            var entry = faces.GetValueOrDefault(_faceIds[i]);
+            var materialKey = state.MaterialJson + "#" + (entry?.ToJsonString() ?? "");
+            if (!MaterialCache.TryGetValue(materialKey, out var cached))
+            {
+                cached = MaterialBuilder.Build(material, entry, Textures);
+                // a textured material built before the texture cache exists would stay without its image for good: do not share it
+                if (Textures is not null || !MaterialBuilder.IsTextured(material, entry))
+                {
+                    if (MaterialCache.Count >= MaterialCacheLimit) MaterialCache.Clear();
+                    MaterialCache[materialKey] = cached;
+                }
+            }
+            visual.SetSurfaceOverrideMaterial(i, cached);
+        }
         AddObjectLight(material);
         for (var i = 0; i < _faceIds.Count; i++) _faceBase.Add(visual.GetSurfaceOverrideMaterial(i));
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         if (!TryGetBool(state.PhysicsJson, "collision", true) || mesh.GetSurfaceCount() == 0) return;
         var trigger = TryGetBool(state.PhysicsJson, "trigger", false);
         var body = new StaticBody3D { Name = trigger ? "Trigger" : "CollisionBody", CollisionLayer = trigger ? 0u : 1u, CollisionMask = trigger ? 0u : 1u };
-        body.AddChild(new CollisionShape3D { Shape = mesh.CreateTrimeshShape() });
+        body.AddChild(new CollisionShape3D { Shape = shared.Shape ??= mesh.CreateTrimeshShape() });
         AddChild(body);
     }
 
@@ -157,17 +192,31 @@ public partial class BuildObjectView : Node3D
     public void Apply(BuildObjectState state)
     {
         State = state; Position = new Vector3(state.PositionX, state.PositionY, state.PositionZ); Rotation = new Vector3(Mathf.DegToRad(state.RotationX), Mathf.DegToRad(state.RotationY), Mathf.DegToRad(state.RotationZ)); Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ);
+        // Moving, turning or resizing an object changes only its transform: the mesh, materials and collision stay as they are.
+        var shapeKey = string.Join('\u001f', state.PrimitiveType, state.GeometryJson, state.MaterialJson, state.PhysicsJson, state.Name);
+        if (shapeKey == _shapeKey && GetChildCount() > 0) { RefreshRange(); return; }
+        _shapeKey = shapeKey;
         foreach (var child in GetChildren().ToArray()) { RemoveChild(child); child.QueueFree(); }
         var keepTag = _lockedBy; _lockedBy = null; // rebuilding the children removes the tag; put it back right after
         if (keepTag is not null) Callable.From(() => { if (IsInstanceValid(this)) SetLockedBy(keepTag); }).CallDeferred();
         _applyId++; _modelAsset = null; _faceIds.Clear(); _faceTriangleEnd.Clear(); _faceBase.Clear();
         if (state.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase)) { BuildMeshObject(state); return; }
         if (PrimMesh.Supports(state.PrimitiveType)) { BuildProcedural(state); return; }
-        var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var materialJson = ParseMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = MaterialBuilder.Build(materialJson, null, Textures) }; AddChild(visual); AddObjectLight(materialJson);
+        var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var materialJson = ParseMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = MaterialBuilder.Build(materialJson, null, Textures) }; AddChild(visual); ApplyRange(visual); AddObjectLight(materialJson);
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         if (!TryGetBool(state.PhysicsJson, "collision", true)) return;
         var body = new StaticBody3D { Name = TryGetBool(state.PhysicsJson, "trigger", false) ? "Trigger" : "CollisionBody" }; body.CollisionLayer = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.CollisionMask = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.AddChild(new CollisionShape3D { Shape = CreateShape(state.PrimitiveType) }); AddChild(body);
     }
+    private void ApplyRange(MeshInstance3D visual)
+    {
+        var size = Mathf.Max(State.ScaleX, Mathf.Max(State.ScaleY, State.ScaleZ));
+        var end = Mathf.Clamp(size * RangePerMetre, MinRange, MaxRange);
+        visual.VisibilityRangeEnd = end; visual.VisibilityRangeEndMargin = end * .1f; visual.VisibilityRangeFadeMode = GeometryInstance3D.VisibilityRangeFadeModeEnum.Disabled;
+    }
+
+    private void RefreshRange() { if (GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is { } visual) ApplyRange(visual); }
+
+    public float VisibilityRangeForTesting => GetNodeOrNull<MeshInstance3D>("PrimitiveMesh")?.VisibilityRangeEnd ?? 0f;
     public void SetSelected(bool selected) { var mesh = GetNodeOrNull<MeshInstance3D>("PrimitiveMesh"); if (mesh is null) return; mesh.MaterialOverlay = selected ? new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(1, .8f, .15f, .35f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha } : null; }
     private static PrimitiveMesh CreateMesh(string type, string geometryJson)
     {

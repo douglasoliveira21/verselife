@@ -55,6 +55,21 @@ O modo Construir abre pelo botão **Construir** da barra inferior, por Conteúdo
 
 **Correções encontradas nesta etapa** (existiam desde antes): o caminho que os jogadores usam (ilha → API) não conferia o dono em alterações e exclusões, não gravava nome, descrição nem conteúdo ao atualizar, aplicava uma validação mais fraca que a do editor, e o servidor da ilha rejeitava toro e semiesfera. Tudo passa agora por um único caminho (`BuildOperations`).
 
+## Desempenho, câmera e acabamento (Etapa 6)
+
+**Desempenho** (medido com `BuildLoadSmoke`, uma ilha de 2.000 objetos, no Godot sem janela; os tempos variam com o computador, a comparação é o que importa):
+- **Objeto parado não é refeito.** Antes, toda confirmação do servidor reconstruía o objeto inteiro (malha, materiais, colisão, modelos baixados). Agora só muda a transformação quando forma, material, física e nome seguem iguais: mover os 2.000 objetos levou ~7 ms contra ~220 ms para refazê-los (cerca de 30 vezes menos).
+- **Objetos iguais compartilham** a malha, a forma de colisão e o material (2.000 objetos com ~100 formas diferentes usaram 94 malhas e 3 materiais). Materiais com textura só são compartilhados quando o cache de texturas já existe.
+- **Distância de desenho:** um objeto some além de 120 m por metro do seu tamanho (um metro some depois de 120 m, mínimo de 40 m e máximo de 600 m); a colisão continua. É corte por distância, não troca de malha por nível de detalhe.
+- **Carga em fatias:** ao entrar na ilha, os objetos são criados 40 por quadro, sem travar o jogo. Colar ou colocar uma construção com mais de 10 objetos sai em ritmo de cerca de 11 por segundo, abaixo do limite da ilha.
+- Construir 2.000 objetos levou ~260 ms; cada objeto tem ~6 nós.
+
+**Câmera de edição** (botão ou `End`): gira em volta da seleção. Botão direito orbita, botão do meio (ou Shift + direito) desloca, a roda dá zoom proporcional (0,6 a 160 m), `Home` ou **Focar** aponta para a seleção com a distância certa para o tamanho dela. O avatar fica escondido enquanto ela está ligada e a câmera do jogador volta ao sair do modo construção.
+
+**Acabamento:** o indicador "Salvando… / ✓ Salvo / ⚠ Sem resposta do servidor" acompanha as respostas do servidor (após 8 s sem resposta avisa); o tutorial de oito passos (criar, mover, esticar, girar, dar cor ou textura, duplicar, vincular, guardar) aparece na primeira vez, cada passo termina sozinho quando a pessoa realmente faz aquilo, pode ser pulado e repetido pelo botão **Tutorial**.
+
+**Correção de concorrência (importante):** a revisão do objeto não era protegida contra duas operações simultâneas: duas edições do mesmo objeto podiam passar pela conferência e a última apagava a primeira. Agora a revisão é um _concurrency token_ do banco (migration `Phase33BuildConcurrency`, sem mudança de tabelas) e a edição que perde recebe `revision_conflict`; há um teste que injeta uma edição no meio de outra.
+
 ## Garantias do servidor
 
 Cada alteração é enviada ao servidor da ilha com a revisão do objeto (`expectedRevision`); o servidor valida permissão, limites (escala `0.01..64`, cota de objetos, 20 operações por segundo por conexão) e responde com o estado oficial, que é replicado a todos. Se outra pessoa alterou o objeto antes, a edição é recusada (conflito de revisão) e o objeto volta ao estado oficial. Desfazer envia a alteração inversa com a revisão atual, então também está sujeito à autorização e aos conflitos. As operações ficam em `world.build_operations`.

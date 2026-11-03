@@ -260,11 +260,15 @@ public partial class BuildSmoke : Node
             _editor.CommandForTesting("undo");
             Require(_server.Count == beforeRez, "one undo must remove the whole placed construction");
 
-            var pacedBefore = _server.Count;
+            var smallBefore = _server.Count;
             _editor.RezPackageJson(savedJson!, new Vector3(300, 0, -6));
-            Require(_editor.RezPendingForTesting == 3 && _server.Count == pacedBefore, "placing is paced: nothing is created in the first instant");
-            await ToSignal(GetTree().CreateTimer(.7), SceneTreeTimer.SignalName.Timeout);
-            Require(_server.Count == pacedBefore + 3 && _editor.RezPendingForTesting == 0, $"the paced placing must finish: {_server.Count - pacedBefore}");
+            Require(_server.Count == smallBefore + 3 && _editor.RezPendingForTesting == 0, "a small construction goes out at once");
+            var bigJson = BuildPackages.Serialize(BuildPackages.Create("Grande", Enumerable.Range(0, 12).Select(i => new SourceObject("cube", "B", "", i, 1, 0, 0, 0, 0, 1, 1, 1, "{}", "{}", "{\"collision\":true}", "[]", null)).ToList()));
+            var pacedBefore = _server.Count;
+            _editor.RezPackageJson(bigJson, new Vector3(400, 0, -6));
+            Require(_editor.RezPendingForTesting == 12 && _server.Count == pacedBefore, "a big construction is paced: nothing is created in the first instant");
+            await ToSignal(GetTree().CreateTimer(1.6), SceneTreeTimer.SignalName.Timeout);
+            Require(_server.Count == pacedBefore + 12 && _editor.RezPendingForTesting == 0, $"the paced placing must finish: {_server.Count - pacedBefore}");
             Require(_editor.RezPackageJson("{\"not\":\"a package\"}", Vector3.Zero) == 0, "a damaged package must not place anything");
 
             // The Conteúdo tab.
@@ -327,6 +331,103 @@ public partial class BuildSmoke : Node
             Require(_editor.LimitsTextForTesting.Contains("Não foi possível"), "a broken answer must not leave stale numbers");
             _editor.ShowHistoryText($"[{{\"operation\":\"update\",\"actorUserId\":\"{Guid.NewGuid()}\",\"revision\":3,\"at\":\"2026-11-03T12:00:00Z\"}},{{\"operation\":\"create\",\"actorUserId\":\"{Guid.NewGuid()}\",\"revision\":1,\"at\":\"2026-11-03T11:00:00Z\"}}]");
             Require(_editor.HistoryTextForTesting.Contains("Alterado") && _editor.HistoryTextForTesting.Contains("Criado") && _editor.HistoryTextForTesting.Contains("revisão 3"), $"history text: {_editor.HistoryTextForTesting}");
+
+            // Polish: unchanged objects are left alone, look-alikes share their mesh, far objects fade out of range, big loads are paced.
+            var spare = Add(new Vector3(130, .5f, -6), "cube");
+            _editor.SelectIds([spare]);
+            _editor.ApplyFieldsForTesting(new Vector3(130, .5f, -6), Vector3.One, "Quieta", 0f); // settles the stored geometry text
+            await Frames(2);
+            var spareView = _editor.ViewForTesting(spare)!; var meshNode = spareView.GetNode("PrimitiveMesh");
+            _editor.ApplyFieldsForTesting(new Vector3(133, .5f, -6), Vector3.One, "Quieta", 0f);
+            await Frames(2);
+            Require(Mathf.Abs(spareView.Position.X - 133f) < .01f && ReferenceEquals(meshNode, spareView.GetNode("PrimitiveMesh")), "moving an object must not rebuild its mesh");
+            _editor.ApplyFieldsForTesting(new Vector3(133, .5f, -6), Vector3.One, "Quieta", .4f);
+            await Frames(2);
+            Require(!ReferenceEquals(meshNode, spareView.GetNode("PrimitiveMesh")), "changing the shape must rebuild it");
+
+            BuildObjectView.ClearCachesForTesting();
+            var twins = Enumerable.Range(0, 30).Select(i => Add(new Vector3(140 + i, .5f, -20), "cube")).ToList();
+            Require(BuildObjectView.CachedMeshesForTesting == 1, $"thirty identical boxes need one mesh, not {BuildObjectView.CachedMeshesForTesting}");
+            var firstMesh = _editor.ViewForTesting(twins[0])!.GetNode<MeshInstance3D>("PrimitiveMesh"); var lastMesh = _editor.ViewForTesting(twins[29])!.GetNode<MeshInstance3D>("PrimitiveMesh");
+            Require(ReferenceEquals(firstMesh.Mesh, lastMesh.Mesh) && ReferenceEquals(firstMesh.GetSurfaceOverrideMaterial(0), lastMesh.GetSurfaceOverrideMaterial(0)), "look-alikes must share mesh and material");
+            Require(ReferenceEquals(_editor.ViewForTesting(twins[0])!.GetNode<StaticBody3D>("CollisionBody").GetChild<CollisionShape3D>(0).Shape, _editor.ViewForTesting(twins[29])!.GetNode<StaticBody3D>("CollisionBody").GetChild<CollisionShape3D>(0).Shape), "look-alikes must share their collision shape");
+            Require(Mathf.Abs(_editor.ViewForTesting(twins[0])!.VisibilityRangeForTesting - BuildObjectView.RangePerMetre) < .01f, "a one-metre object is drawn up to 120 m");
+            var giant = Add(new Vector3(0, 5, -60), "cube"); _server[giant].ScaleX = 20; _editor.LoadStatesForTesting([_server[giant]]);
+            Require(Mathf.Abs(_editor.ViewForTesting(giant)!.VisibilityRangeForTesting - BuildObjectView.MaxRange) < .01f, "the range is capped for huge objects");
+
+            var backlog = Enumerable.Range(0, 100).Select(i => new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = $"Fila{i}", PositionX = i, PositionZ = -80, Revision = 1 }).ToList();
+            var countBefore = _editor.ObjectCountForTesting;
+            _editor.QueueStatesForTesting(backlog);
+            Require(_editor.LoadBacklogForTesting == 100 && _editor.ObjectCountForTesting == countBefore, "queued objects are not built yet");
+            _editor.PumpLoadForTesting();
+            Require(_editor.ObjectCountForTesting == countBefore + 40 && _editor.LoadBacklogForTesting == 60, "a frame builds a bounded number of objects");
+            _editor.PumpLoadForTesting(); _editor.PumpLoadForTesting();
+            Require(_editor.ObjectCountForTesting == countBefore + 100 && _editor.LoadBacklogForTesting == 0, "the whole backlog is eventually built");
+
+            // A big paste is paced so the island limit on operations is never hit.
+            var many = Enumerable.Range(0, 12).Select(i => Add(new Vector3(200 + i, .5f, -30), "cube")).ToList();
+            _editor.SelectIds(many); _editor.CommandForTesting("copy");
+            var serverBefore = _server.Count;
+            _editor.CommandForTesting("paste");
+            Require(_editor.RezPendingForTesting == 12 && _server.Count == serverBefore, "a paste of many objects is queued, not sent in one burst");
+            await ToSignal(GetTree().CreateTimer(1.6), SceneTreeTimer.SignalName.Timeout);
+            Require(_server.Count == serverBefore + 12 && _editor.RezPendingForTesting == 0, $"the queued paste must finish: {_server.Count - serverBefore}");
+
+            // The saving indicator follows the answers of the server.
+            Require(_editor.SaveTextForTesting.Contains("Salvo") && _editor.PendingForTesting == 0, "nothing pending: saved");
+            var realSink = _editor.OperationSink; _editor.OperationSink = _ => true; // a server that never answers
+            _editor.SelectIds([spare]);
+            _editor.ApplyFieldsForTesting(new Vector3(135, .5f, -6), Vector3.One, "Quieta", .4f);
+            Require(_editor.PendingForTesting == 1 && _editor.SaveTextForTesting.Contains("Salvando"), $"an unanswered change shows as saving: {_editor.SaveTextForTesting}");
+            _editor.ExpireSavingForTesting();
+            Require(_editor.SaveTextForTesting.Contains("Sem resposta"), "a change the server never answers must be flagged");
+            _editor.RejectForTesting("rate_limit");
+            Require(_editor.PendingForTesting == 0 && _editor.SaveTextForTesting.Contains("Salvo"), "a refusal ends the waiting");
+            _editor.OperationSink = realSink;
+            _editor.ApplyFieldsForTesting(new Vector3(135, .5f, -6), Vector3.One, "Quieta", .4f);
+            Require(_editor.PendingForTesting == 0 && _server[spare].PositionX == 135, "an answered change settles at once");
+
+            // The editing camera takes over, circles the selection, focuses and gives the view back.
+            var lookCamera = GetViewport().GetCamera3D();
+            _editor.SelectIds([spare]);
+            _editor.ToggleEditCameraForTesting();
+            var rig = _editor.EditCameraForTesting;
+            Require(_editor.EditCameraActive && GetViewport().GetCamera3D() == rig, "the editing camera must become the current camera");
+            Require(rig.Target.DistanceTo(new Vector3(135, .5f, -6)) < 1.5f, $"it must look at the selection: {rig.Target}");
+            var near = rig.Distance; rig.ZoomSteps(3);
+            Require(rig.Distance < near, "zooming in must bring it closer");
+            _editor.SelectIds([twins[5]]); _editor.FocusSelectionForTesting();
+            Require(rig.Target.DistanceTo(new Vector3(145, .5f, -20)) < 1.5f, $"focus must move to the new selection: {rig.Target}");
+            _editor.ToggleEditCameraForTesting();
+            Require(!_editor.EditCameraActive && GetViewport().GetCamera3D() == lookCamera, "leaving must give the camera of the player back");
+
+            // The tutorial moves on only when the person really does each thing, in order.
+            _editor.ForgetTutorialDoneForTesting(); _editor.RestartTutorialForTesting();
+            Require(_editor.TutorialCardVisibleForTesting && _editor.TutorialTextForTesting.StartsWith("1/8"), "the tutorial starts with step 1");
+            var lone = Add(new Vector3(300, .5f, -6), "cube");
+            _editor.SelectIds([lone]);
+            _editor.ApplyFieldsForTesting(new Vector3(300, .5f, -6), new Vector3(2, 2, 2), "Treino", 0f);
+            Require(_editor.TutorialStepForTesting == TutorialStep.Create, "doing step 3 before step 1 must not count");
+            _editor.CommandForTesting("create");
+            Require(_editor.TutorialStepForTesting == TutorialStep.Move && _editor.TutorialTextForTesting.StartsWith("2/8"), $"creating a box finishes step 1: {_editor.TutorialStepForTesting}");
+            var trained = _editor.Selection[0].State.Id;
+            var at = _editor.Selection[0].Position;
+            _editor.ApplyFieldsForTesting(at + new Vector3(2, 0, 0), _editor.Selection[0].Scale, "Treino", 0f);
+            Require(_editor.TutorialStepForTesting == TutorialStep.Resize, "moving finishes step 2");
+            _editor.ApplyFieldsForTesting(_editor.Selection[0].Position, new Vector3(3, 3, 3), "Treino", 0f);
+            Require(_editor.TutorialStepForTesting == TutorialStep.Rotate, "resizing finishes step 3");
+            _editor.ApplyRotationForTesting(new Vector3(0, 45, 0));
+            Require(_editor.TutorialStepForTesting == TutorialStep.Texture, "turning finishes step 4");
+            _editor.ApplyLightForTesting(true, 1f, 4f);
+            Require(_editor.TutorialStepForTesting == TutorialStep.Duplicate, "changing the look finishes step 5");
+            _editor.CommandForTesting("duplicate");
+            Require(_editor.TutorialStepForTesting == TutorialStep.Link, "duplicating finishes step 6");
+            _editor.SelectIds([trained, lone]); _editor.CommandForTesting("group");
+            Require(_editor.TutorialStepForTesting == TutorialStep.Save, "linking finishes step 7");
+            _editor.PackageSink = _ => true; _editor.SetPackageNameForTesting("Treino"); _editor.SaveSelectionForTesting(false);
+            Require(_editor.TutorialStepForTesting == TutorialStep.Done && _editor.TutorialTextForTesting.Contains("concluído"), "saving finishes the tutorial");
+            _editor.RestartTutorialForTesting(); _editor.SkipTutorialForTesting();
+            Require(!_editor.TutorialCardVisibleForTesting, "skipping hides the card");
 
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();
