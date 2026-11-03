@@ -78,7 +78,7 @@ public partial class BuildEditor : Node3D
     public void SetActive(bool active)
     {
         _active = active; _window.Visible = active;
-        if (!active) { CancelDrag(); ClearSelection(); _cameraRig?.Exit(); return; }
+        if (!active) { CancelDrag(); DisarmPlacement(null); ClearSelection(); _cameraRig?.Exit(); return; }
         _islandId = _network.CurrentIslandId;
         if (_islandId == Guid.Empty && Guid.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_ID"), out var id)) _islandId = id;
         if (_islandId != Guid.Empty) LoadObjects();
@@ -90,14 +90,19 @@ public partial class BuildEditor : Node3D
     {
         if (input.IsActionPressed("build_mode")) { SetActive(!_active); return; }
         if (!_active) return;
-        if (input.IsActionPressed("ui_cancel")) { if (_dragging) CancelDrag(); else SetActive(false); return; }
+        if (input.IsActionPressed("ui_cancel")) { if (_placeType is not null) DisarmPlacement("Colocação cancelada."); else if (_dragging) CancelDrag(); else SetActive(false); return; }
         if (input is InputEventKey { Pressed: true, Echo: false } key && GetViewport().GuiGetFocusOwner() is not (LineEdit or TextEdit)) { if (HandleKey(key)) GetViewport().SetInputAsHandled(); return; }
-        if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: false } click) { if (OnPress(click.Position, click.ShiftPressed)) GetViewport().SetInputAsHandled(); }
+        if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: false } click)
+        {
+            if (_placeType is not null) { TryPlaceClick(click.Position, click.ShiftPressed); GetViewport().SetInputAsHandled(); return; }
+            if (OnPress(click.Position, click.ShiftPressed)) GetViewport().SetInputAsHandled();
+        }
     }
 
     public override void _Process(double delta)
     {
         PumpLoad();
+        UpdateGhost();
         PumpRez(delta);
         PumpCollab(delta);
         UpdateSaveLabel();
@@ -203,14 +208,14 @@ public partial class BuildEditor : Node3D
 
     private void SetMode(GizmoMode mode)
     {
-        _mode = mode; _selectOnly = false; _faceTool = false; ClearFace();
+        _mode = mode; _selectOnly = false; _faceTool = false; ClearFace(); DisarmPlacement(null);
         UpdateToolButtons();
         RefreshGizmo();
     }
 
     private void SelectTool()
     {
-        CancelDrag(); _selectOnly = true; _faceTool = false; ClearFace();
+        CancelDrag(); _selectOnly = true; _faceTool = false; ClearFace(); DisarmPlacement(null);
         UpdateToolButtons();
         RefreshGizmo();
     }
@@ -229,8 +234,10 @@ public partial class BuildEditor : Node3D
     public void UpdateDrag(Vector3 rayOrigin, Vector3 rayDirection)
     {
         var snap = float.TryParse(_snap.Text, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? Mathf.Clamp(parsed, 0f, 100f) : .5f;
+        // The handles follow the mouse smoothly. Holding Ctrl snaps to the steps (movement step, turn step, 5 % of size); the grid option snaps positions too.
+        var steps = Input.IsKeyPressed(Key.Ctrl);
         var rotationStep = Mathf.Clamp(NumOr(_rotSnap, 5f), .5f, 90f);
-        if (_gizmo.Drag(rayOrigin, rayDirection, snap, Mathf.DegToRad(rotationStep)) is not { } drag) return;
+        if (_gizmo.Drag(rayOrigin, rayDirection, steps ? snap : 0f, steps ? Mathf.DegToRad(rotationStep) : 0f, steps ? .05f : 0f) is not { } drag) return;
         _dragMoved |= drag.Mode switch { GizmoMode.Move => !Mathf.IsZeroApprox(drag.Amount), GizmoMode.Rotate => !Mathf.IsZeroApprox(drag.Amount), _ => !Mathf.IsEqualApprox(drag.Amount, 1f) };
         switch (drag.Mode)
         {
@@ -266,7 +273,7 @@ public partial class BuildEditor : Node3D
     {
         if (!_dragging) return;
         _dragging = false; _gizmo.EndDrag();
-        if (_dragMoved) CommitUpdates(_dragStart.Select(start => FromView(start.View)).ToList());
+        if (_dragMoved) CommitUpdates(_dragStart.Select(start => Tidy(FromView(start.View))).ToList());
         _dragStart.Clear();
         RefreshGizmo();
     }
@@ -280,7 +287,16 @@ public partial class BuildEditor : Node3D
         RefreshGizmo();
     }
 
-    private static float ClampScale(float value) => Mathf.Clamp(Mathf.Snapped(value, .01f), .01f, 64f);
+    /// A drag leaves numbers like 2.3400001; stored values are rounded to a millimetre (a hundredth of a degree for turns).
+    private static BuildObjectState Tidy(BuildObjectState s)
+    {
+        s.PositionX = Mathf.Snapped(s.PositionX, .001f); s.PositionY = Mathf.Snapped(s.PositionY, .001f); s.PositionZ = Mathf.Snapped(s.PositionZ, .001f);
+        s.RotationX = Mathf.Snapped(s.RotationX, .01f); s.RotationY = Mathf.Snapped(s.RotationY, .01f); s.RotationZ = Mathf.Snapped(s.RotationZ, .01f);
+        s.ScaleX = ClampScale(s.ScaleX); s.ScaleY = ClampScale(s.ScaleY); s.ScaleZ = ClampScale(s.ScaleZ);
+        return s;
+    }
+
+    private static float ClampScale(float value) => Mathf.Clamp(Mathf.Snapped(value, .001f), .01f, 64f);
 
     private static BuildObjectState FromView(BuildObjectView view)
     {

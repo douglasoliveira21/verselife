@@ -94,8 +94,8 @@ public partial class BuildGizmo : Node3D
         return true;
     }
 
-    /// Current state of the drag. `moveSnap` is in metres, `rotateSnap` in radians (0 disables snapping).
-    public GizmoDrag? Drag(Vector3 rayOrigin, Vector3 rayDirection, float moveSnap, float rotateSnap)
+    /// Current state of the drag. `moveSnap` is in metres, `rotateSnap` in radians and `scaleSnap` a factor step; 0 means no snapping, the drag follows the mouse smoothly.
+    public GizmoDrag? Drag(Vector3 rayOrigin, Vector3 rayDirection, float moveSnap, float rotateSnap, float scaleSnap = 0f)
     {
         if (_active < 0) return null;
         var direction = AxisDirection(_active);
@@ -110,7 +110,7 @@ public partial class BuildGizmo : Node3D
             case GizmoMode.Scale:
             {
                 var current = GizmoMath.AxisParameter(ToN(_pivotAtStart), ToN(direction), ToN(rayOrigin), ToN(rayDirection));
-                return new GizmoDrag(Mode, _active, direction, GizmoMath.Snap(GizmoMath.ScaleFactor(_startParameter, current), .05f));
+                return new GizmoDrag(Mode, _active, direction, GizmoMath.Snap(GizmoMath.ScaleFactor(_startParameter, current), scaleSnap));
             }
             default:
             {

@@ -29,7 +29,7 @@ public sealed class BuildTutorial
 
     public static string Text(TutorialStep step) => step switch
     {
-        TutorialStep.Create => "1/8 · Crie uma caixa: na aba Geral escolha Caixa e clique no botão do cubo.",
+        TutorialStep.Create => "1/8 · Crie uma caixa: na aba Geral escolha Caixa, clique no botão do cubo e depois clique no chão onde quer colocá-la.",
         TutorialStep.Move => "2/8 · Mova a caixa: use Mover (2) e arraste uma seta, ou digite a posição na aba Objeto.",
         TutorialStep.Resize => "3/8 · Mude o tamanho: use Esticar (4) e arraste um cubo, ou digite o tamanho na aba Objeto.",
         TutorialStep.Rotate => "4/8 · Gire a caixa: use Girar (3) e arraste um anel, ou digite a rotação na aba Objeto.",

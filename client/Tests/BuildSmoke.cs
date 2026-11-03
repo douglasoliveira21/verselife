@@ -409,6 +409,12 @@ public partial class BuildSmoke : Node
             _editor.ApplyFieldsForTesting(new Vector3(300, .5f, -6), new Vector3(2, 2, 2), "Treino", 0f);
             Require(_editor.TutorialStepForTesting == TutorialStep.Create, "doing step 3 before step 1 must not count");
             _editor.CommandForTesting("create");
+            Require(_editor.IsPlacingForTesting && _editor.TutorialStepForTesting == TutorialStep.Create, "the cube button only starts choosing a spot: nothing is created before the click");
+            _editor.CommandForTesting("create");
+            Require(!_editor.IsPlacingForTesting, "pressing the button again cancels the placement");
+            _editor.CommandForTesting("create");
+            _editor.PlaceAtForTesting(new Vector3(310, .5f, -6));
+            Require(!_editor.IsPlacingForTesting, "one click places one shape and ends the placement");
             Require(_editor.TutorialStepForTesting == TutorialStep.Move && _editor.TutorialTextForTesting.StartsWith("2/8"), $"creating a box finishes step 1: {_editor.TutorialStepForTesting}");
             var trained = _editor.Selection[0].State.Id;
             var at = _editor.Selection[0].Position;
@@ -428,6 +434,36 @@ public partial class BuildSmoke : Node
             Require(_editor.TutorialStepForTesting == TutorialStep.Done && _editor.TutorialTextForTesting.Contains("concluído"), "saving finishes the tutorial");
             _editor.RestartTutorialForTesting(); _editor.SkipTutorialForTesting();
             Require(!_editor.TutorialCardVisibleForTesting, "skipping hides the card");
+
+            // Smooth handles: without Ctrl the drag follows the mouse exactly, instead of jumping from step to step.
+            var fluid = Add(new Vector3(150, .5f, -40), "cube");
+            _editor.SelectIds([fluid]); _editor.SetModeForTesting(GizmoMode.Move);
+            await Frames(2);
+            var fluidPivot = new Vector3(150, .5f, -40); var fluidEye = new Vector3(150, 4, -30);
+            Require(_editor.BeginDrag(0, fluidEye, (fluidPivot - fluidEye).Normalized()), "could not grab the handle for the smooth move");
+            _editor.UpdateDrag(fluidEye, (fluidPivot + new Vector3(.37f, 0, 0) - fluidEye).Normalized());
+            Require(Mathf.Abs(_editor.ViewForTesting(fluid)!.Position.X - 150.37f) < .005f, $"a move of 0.37 m must be followed exactly, not rounded to a step: {_editor.ViewForTesting(fluid)!.Position.X}");
+            _editor.UpdateDrag(fluidEye, (fluidPivot + new Vector3(.52f, 0, 0) - fluidEye).Normalized());
+            Require(Mathf.Abs(_editor.ViewForTesting(fluid)!.Position.X - 150.52f) < .005f, "and every in-between position as well");
+            _editor.EndDrag();
+            Require(Mathf.Abs(_server[fluid].PositionX - 150.52f) < .002f, $"the saved position is the dragged one, tidied to a millimetre: {_server[fluid].PositionX}");
+
+            _editor.SetModeForTesting(GizmoMode.Rotate); await Frames(2);
+            var fluidTop = new Vector3(150.52f, 6, -40); var fluidSpin = new Vector3(150.52f, .5f, -40);
+            Require(_editor.BeginDrag(1, fluidTop, (fluidSpin + new Vector3(1, 0, 0) - fluidTop).Normalized()), "could not grab the ring for the smooth turn");
+            var radians = Mathf.DegToRad(33f);
+            _editor.UpdateDrag(fluidTop, (fluidSpin + new Vector3(Mathf.Cos(radians), 0, -Mathf.Sin(radians)) - fluidTop).Normalized());
+            _editor.EndDrag();
+            Require(Mathf.Abs(Mathf.Abs(_server[fluid].RotationY) - 33f) < .3f, $"a turn of 33 degrees must stay 33, not become a multiple of 5: {_server[fluid].RotationY}");
+
+            _editor.SetModeForTesting(GizmoMode.Scale); await Frames(2);
+            var fluidLocal = _editor.ViewForTesting(fluid)!.GlobalTransform.Basis.X.Normalized();
+            var fluidViewer = new Vector3(158, 5, -40);
+            Require(_editor.BeginDrag(0, fluidViewer, (fluidSpin + fluidLocal - fluidViewer).Normalized()), "could not grab the handle for the smooth stretch");
+            _editor.UpdateDrag(fluidViewer, (fluidSpin + fluidLocal * 1.37f - fluidViewer).Normalized());
+            _editor.EndDrag();
+            Require(Mathf.Abs(_server[fluid].ScaleX - 1.37f) < .02f, $"a stretch to 1.37 must not jump to a 5 % step: {_server[fluid].ScaleX}");
+            _editor.SetModeForTesting(GizmoMode.Move);
 
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();

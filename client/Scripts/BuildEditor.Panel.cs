@@ -53,7 +53,7 @@ public partial class BuildEditor
         var actions = new HBoxContainer(); actions.AddThemeConstantOverride("separation", 8); content.AddChild(actions);
         foreach (var (icon, tip, action) in new (string, string, Action)[]
         {
-            ("cube", "Criar a primitiva escolhida onde você olha", CreateObject), ("copy", "Copiar (Ctrl+C)", CopySelection), ("paste", "Colar (Ctrl+V)", Paste), ("copy-plus", "Duplicar (Ctrl+D)", Duplicate),
+            ("cube", "Criar a forma escolhida em Geral: depois clique onde quer colocá-la", CreateObject), ("copy", "Copiar (Ctrl+C)", CopySelection), ("paste", "Colar (Ctrl+V)", Paste), ("copy-plus", "Duplicar (Ctrl+D)", Duplicate),
             ("trash", "Excluir (Delete)", DeleteSelection), ("undo", "Desfazer (Ctrl+Z)", Undo), ("redo", "Refazer (Ctrl+Y)", Redo)
         })
         {
@@ -315,27 +315,6 @@ public partial class BuildEditor
         return node.ToJsonString();
     }
 
-    private void CreateObject()
-    {
-        if (!_active || !_network.IsAuthenticated && OperationSink is null) { _status.Text = "Entre em uma ilha autenticada antes de construir."; return; }
-        var camera = GetViewport().GetCamera3D();
-        if (camera is null) return;
-        var center = GetViewport().GetVisibleRect().Size / 2;
-        var origin = camera.ProjectRayOrigin(center); var direction = camera.ProjectRayNormal(center);
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(origin, origin + direction * 30f, uint.MaxValue & ~BuildGizmo.PhysicsLayer));
-        var position = hit.Count > 0 ? hit["position"].AsVector3() + Vector3.Up * .5f : origin + direction * 5f;
-        var type = _primitive.GetItemMetadata(_primitive.Selected).AsString();
-        var template = new BuildObjectState
-        {
-            PrimitiveType = type, Name = PrimitiveLabel(type),
-            MaterialJson = MaterialFromFields("{}"), GeometryJson = "{}", PhysicsJson = "{\"collision\":true}"
-        };
-        var entry = new HistoryEntry("create", []);
-        CreateFrom(template, position, null, created => { var item = new HistoryItem(created.Id, null, Clone(created)); entry.Items.Add(item); SelectIds([created.Id]); Teach(TutorialStep.Create); });
-        PushHistory(entry);
-        _status.Text = $"{PrimitiveLabel(type)} criada; use Mover (2), Girar (3) ou Esticar (4).";
-    }
-
     private void CopyProperties()
     {
         if (_selection.Count == 0) { _status.Text = "Selecione um objeto para copiar as propriedades."; return; }
@@ -393,7 +372,7 @@ public partial class BuildEditor
 
     private void FaceTool()
     {
-        CancelDrag(); _faceTool = true; _selectOnly = false;
+        CancelDrag(); _faceTool = true; _selectOnly = false; DisarmPlacement(null);
         UpdateToolButtons(); RefreshGizmo();
         _status.Text = "Clique em uma face para selecioná-la; depois use a aba Textura.";
     }
