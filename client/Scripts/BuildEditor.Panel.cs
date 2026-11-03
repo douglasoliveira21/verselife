@@ -69,11 +69,11 @@ public partial class BuildEditor
 
         // tabs
         var tabs = new UiTabs { EqualWidth = true };
-        tabs.AddTab("Geral"); tabs.AddTab("Objeto"); tabs.AddTab("Textura"); tabs.AddTab("Alinhar");
+        tabs.AddTab("Geral"); tabs.AddTab("Objeto"); tabs.AddTab("Textura"); tabs.AddTab("Recursos"); tabs.AddTab("Alinhar");
         content.AddChild(tabs);
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 420) };
         content.AddChild(stack);
-        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildAlignTab()) };
+        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildAlignTab()) };
         tabs.TabChanged += index => { for (var i = 0; i < pages.Length; i++) pages[i].Visible = i == index; };
         pages[0].Visible = true;
 
@@ -169,27 +169,6 @@ public partial class BuildEditor
         return box;
     }
 
-    private Control BuildTextureTab()
-    {
-        var box = Section();
-        box.AddChild(FieldLabel("Cor"));
-        _colorPicker = new ColorPickerButton { Color = new Color("#A8C7D8"), CustomMinimumSize = new Vector2(0, 40), EditAlpha = false }; box.AddChild(_colorPicker);
-        _roughness = Slider(box, "Rugosidade", .7f); _metallic = Slider(box, "Metalicidade", 0f); _opacity = Slider(box, "Opacidade", 1f);
-        _glow = new CheckBox { Text = " Brilho (emissão luminosa)" }; box.AddChild(_glow);
-        _emissionPicker = new ColorPickerButton { Color = new Color("#FFFFFF"), CustomMinimumSize = new Vector2(0, 40), EditAlpha = false }; box.AddChild(_emissionPicker);
-        box.AddChild(TextButton("Aplicar material à seleção", "Aplica ao objeto inteiro; materiais por face são mantidos", ApplySelected, UiStyle.ButtonKind.Primary));
-        box.AddChild(FieldLabel("Face"));
-        _faceLabel = new Label { Text = "Use a ferramenta Face (5) e clique em uma face de uma primitiva." , AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _faceLabel.AddThemeColorOverride("font_color", UiStyle.TextMuted); _faceLabel.AddThemeFontSizeOverride("font_size", 15); box.AddChild(_faceLabel);
-        var faceRow = new HBoxContainer(); faceRow.AddThemeConstantOverride("separation", 6); box.AddChild(faceRow);
-        faceRow.AddChild(TextButton("Cor na face", "Pinta só a face selecionada com a cor acima", () => PaintFace(clear: false)));
-        faceRow.AddChild(TextButton("Limpar face", "Devolve a face à cor do objeto", () => PaintFace(clear: true)));
-        var props = new HBoxContainer(); props.AddThemeConstantOverride("separation", 6); box.AddChild(props);
-        props.AddChild(TextButton("Copiar propriedades", "Copia material e forma do objeto selecionado", CopyProperties));
-        props.AddChild(TextButton("Colar propriedades", "Aplica material e forma copiados à seleção", PasteProperties));
-        return box;
-    }
-
     private static VBoxContainer Section() { var box = new VBoxContainer(); box.AddThemeConstantOverride("separation", 8); return box; }
 
     private static Label FieldLabel(string text)
@@ -266,6 +245,7 @@ public partial class BuildEditor
             _info.Text = $"Criador: {Short(s.CreatorUserId)}\nProprietário: {Short(s.OwnerUserId)}\nIdentificador: {s.Id}\nPrimitiva: {PrimitiveLabel(s.PrimitiveType)}";
         }
         else _info.Text = _selection.Count == 0 ? "Selecione um objeto para ver criador, proprietário e identificador." : $"{_selection.Count} objetos: posição, rotação e tamanho próprios não são editados em conjunto; forma, material e física valem para todos.";
+        FillTextureFields();
         _filling = false;
         RefreshGizmo();
     }
@@ -321,7 +301,7 @@ public partial class BuildEditor
         node["color"] = "#" + _colorPicker.Color.ToHtml(false);
         node["roughness"] = Math.Round(_roughness.Value, 2); node["metallic"] = Math.Round(_metallic.Value, 2);
         if (_opacity.Value < .999) node["transparency"] = Math.Round(_opacity.Value, 2); else node.Remove("transparency");
-        if (_glow.ButtonPressed) node["emission"] = "#" + _emissionPicker.Color.ToHtml(false); else node.Remove("emission");
+        if (_glow.ButtonPressed) { node["emission"] = "#" + _emissionPicker.Color.ToHtml(false); node["emissionStrength"] = Math.Round(_glowStrength.Value * 8, 2); } else { node.Remove("emission"); node.Remove("emissionStrength"); }
         return node.ToJsonString();
     }
 
@@ -419,7 +399,7 @@ public partial class BuildEditor
         ClearFace();
         if (!view.IsProcedural || face < 0) { _faceLabel.Text = "Esta forma não tem faces separadas; use caixa, prisma, cilindro, tubo, cone ou pirâmide."; return; }
         _selectedFace = face; _faceView = view; view.HighlightFace(face);
-        _faceLabel.Text = $"Face selecionada: {face}"; _status.Text = "Face selecionada. Escolha a cor na aba Textura e use Cor na face.";
+        _faceLabel.Text = $"Face selecionada: {face}"; FillTextureFields(); _status.Text = "Face selecionada. Escolha a cor na aba Textura e use Cor na face.";
     }
 
     private BuildObjectView? _faceView;
@@ -428,7 +408,7 @@ public partial class BuildEditor
     {
         if (_faceView is not null && IsInstanceValid(_faceView)) _faceView.HighlightFace(-1);
         _faceView = null; _selectedFace = -1;
-        if (_faceLabel is not null) _faceLabel.Text = "Use a ferramenta Face (5) e clique em uma face de uma primitiva.";
+        if (_faceLabel is not null) { _faceLabel.Text = "Use a ferramenta Face (5) e clique em uma face de uma primitiva."; FillTextureFields(); }
     }
 
     private void PaintFace(bool clear)

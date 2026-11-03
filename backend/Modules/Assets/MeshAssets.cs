@@ -45,7 +45,7 @@ public static class MeshAssets
         return endpoints;
     }
 
-    /// <summary>Anyone who may enter an island can fetch the models its meshes use, so they can see them.</summary>
+    /// <summary>Anyone who may enter an island can fetch the models its meshes use and the images its materials use, so they can see them.</summary>
     private static async Task<IResult> IslandAssetAsync(Guid islandId, Guid assetId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
     {
         if (!Guid.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var user)) return Results.Unauthorized();
@@ -54,12 +54,13 @@ public static class MeshAssets
         var canEnter = island.IsPublic || island.OwnerUserId == user || await db.IslandPermissions.AnyAsync(x => x.IslandId == islandId && x.UserId == user && x.RevokedAt == null && (x.Permission == "enter" || x.Permission == "admin"), ct);
         if (!canEnter) return Results.Forbid();
         var needle = assetId.ToString().ToLowerInvariant();
-        var used = await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.PrimitiveType == PrimitiveType && o.GeometryJson.ToLower().Contains(needle), ct);
-        if (!used) return Results.NotFound();
+        var usedAsMesh = await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.PrimitiveType == PrimitiveType && o.GeometryJson.ToLower().Contains(needle), ct);
+        var usedAsTexture = !usedAsMesh && await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.MaterialJson.ToLower().Contains(needle), ct);
+        if (!usedAsMesh && !usedAsTexture) return Results.NotFound();
         var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == assetId && x.DeletedAt == null, ct);
         if (asset is null) return Results.NotFound();
         var version = await db.AssetVersions.AsNoTracking().SingleAsync(x => x.AssetId == assetId && x.Version == asset.CurrentVersion, ct);
-        if (!version.MimeType.StartsWith("model/", StringComparison.Ordinal)) return Results.NotFound();
+        if (usedAsMesh ? !version.MimeType.StartsWith("model/", StringComparison.Ordinal) : !MaterialAssets.IsImage(version.MimeType)) return Results.NotFound();
         var stream = await storage.OpenReadAsync(version.StorageKey, ct);
         return stream is null ? Results.NotFound() : Results.File(stream, version.MimeType);
     }

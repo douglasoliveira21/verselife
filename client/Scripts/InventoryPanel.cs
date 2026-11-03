@@ -55,6 +55,10 @@ public partial class InventoryPanel : Node3D
     }
 
     public bool IsOpen => _window.Visible;
+    /// Raised when the server accepted a change (upload, move, favourite…), so other windows can refresh what they list.
+    public event Action? ItemsChanged;
+    /// Sends an image to the inventory as a texture (used by the build window's Importar imagem).
+    public void ImportTexture(string path) => Upload(path);
     public void Toggle() { _window.Visible = !_window.Visible; if (_window.Visible) { _window.MoveToFront(); LoadItems(); } }
 
     public override void _Process(double delta)
@@ -203,9 +207,9 @@ public partial class InventoryPanel : Node3D
         {
             using var document = JsonDocument.Parse(body.Length == 0 ? "{}" : Encoding.UTF8.GetString(body));
             if (kind == Pending.List && document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("items", out var items)) ParseItems(items);
-            else { _status.Text = "Operação concluída."; LoadItems(); }
+            else { _status.Text = "Operação concluída."; LoadItems(); ItemsChanged?.Invoke(); }
         }
-        catch (JsonException) { _status.Text = body.Length == 0 ? "Operação concluída." : "Resposta de inventário inválida."; if (body.Length == 0) LoadItems(); }
+        catch (JsonException) { _status.Text = body.Length == 0 ? "Operação concluída." : "Resposta de inventário inválida."; if (body.Length == 0) { LoadItems(); ItemsChanged?.Invoke(); } }
         Pump();
     }
 

@@ -169,6 +169,64 @@ public partial class BuildSmoke : Node
             _editor.SetGridForTesting(false, false);
             Require(!_editor.GridVisibleForTesting, "the grid must hide");
 
+            // Textures, UV and light.
+            var textures = world.GetNode<TextureCache>("TextureCache");
+            var png = Image.CreateEmpty(8, 8, false, Image.Format.Rgba8); png.Fill(new Color("#336699"));
+            var assetId = Guid.NewGuid();
+            Require(textures.Preload(assetId, png.SavePngToBuffer()), "a PNG must decode into a texture");
+            Require(!textures.Preload(Guid.NewGuid(), new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0, 0, 0, 0, 0, 0, 0 }), "a GIF is not an accepted texture format");
+            Require(!textures.Preload(Guid.NewGuid(), new byte[] { 1, 2, 3 }), "garbage must not become a texture");
+            _editor.LoadLibraryForTesting($"{{\"items\":[{{\"assetId\":\"{assetId}\",\"name\":\"Azul\",\"mimeType\":\"image/png\",\"favorite\":true}},{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Grama\",\"mimeType\":\"image/jpeg\",\"favorite\":false}},{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Modelo\",\"mimeType\":\"model/gltf-binary\"}},{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Vetor\",\"mimeType\":\"image/svg+xml\"}}]}}");
+            Require(_editor.LibraryCountForTesting == 2, $"only the two raster images belong in the texture library: {_editor.LibraryCountForTesting}");
+            _editor.SelectLibraryForTesting(0, 1);
+            Require(_editor.LibraryCountForTesting == 1, "favourites must show only the favourite image");
+            _editor.SelectLibraryForTesting(0, 3);
+            Require(_editor.LibraryCountForTesting == 6, "the system library has six patterns");
+
+            var painted = Add(new Vector3(70, .5f, -6), "cube");
+            _editor.SelectIds([painted]);
+            _editor.SelectLibraryForTesting(0, 3); // checker
+            _editor.ApplyTextureForTesting(false);
+            Require(_server[painted].MaterialJson.Contains("\"builtin\":\"checker\""), $"built-in texture not saved: {_server[painted].MaterialJson}");
+            await Frames(2);
+            Require(_editor.ViewForTesting(painted)!.GetNode<MeshInstance3D>("PrimitiveMesh").GetSurfaceOverrideMaterial(0) is ShaderMaterial, "a textured object must use the texture shader");
+            _editor.ApplyUvForTesting(2, 3, .5f, 90, true);
+            Require(_server[painted].MaterialJson.Contains("\"uvRepeatX\":2") && _server[painted].MaterialJson.Contains("\"uvRotation\":90") && _server[painted].MaterialJson.Contains("\"flipU\":true"), $"uv not saved: {_server[painted].MaterialJson}");
+            await Frames(2);
+            var shader = (ShaderMaterial)_editor.ViewForTesting(painted)!.GetNode<MeshInstance3D>("PrimitiveMesh").GetSurfaceOverrideMaterial(0);
+            Require(shader.GetShaderParameter("uv_scale").AsVector2().IsEqualApprox(new Vector2(-2, 3)), $"flip and repeat must reach the shader: {shader.GetShaderParameter("uv_scale")}");
+            Require(Mathf.Abs(shader.GetShaderParameter("uv_rotation").AsSingle() - Mathf.DegToRad(90)) < .001f, "rotation must reach the shader");
+            _editor.RemoveTextureForTesting();
+            Require(!_server[painted].MaterialJson.Contains("builtin"), "removing the texture must clear it");
+
+            var faced = Add(new Vector3(74, .5f, -6), "cube");
+            _editor.SelectFaceForTesting(faced, 0);
+            _editor.SelectLibraryForTesting(1, 3); // bricks
+            _editor.ApplyTextureForTesting(false);
+            Require(_server[faced].MaterialJson.Contains("\"faces\"") && _server[faced].MaterialJson.Contains("\"builtin\":\"bricks\""), $"face texture not saved: {_server[faced].MaterialJson}");
+            await Frames(2);
+            var facedMesh = _editor.ViewForTesting(faced)!.GetNode<MeshInstance3D>("PrimitiveMesh");
+            Require(facedMesh.GetSurfaceOverrideMaterial(0) is ShaderMaterial && facedMesh.GetSurfaceOverrideMaterial(1) is StandardMaterial3D, "only the chosen face gets the texture");
+
+            var imaged = Add(new Vector3(78, .5f, -6), "cube");
+            _editor.SelectIds([imaged]);
+            _editor.SelectLibraryForTesting(0, 1); // the favourite image
+            _editor.ApplyTextureForTesting(false);
+            Require(_server[imaged].MaterialJson.Contains(assetId.ToString()), "the chosen image id must be saved");
+            await Frames(2);
+            var imagedMaterial = (ShaderMaterial)_editor.ViewForTesting(imaged)!.GetNode<MeshInstance3D>("PrimitiveMesh").GetSurfaceOverrideMaterial(0);
+            Require(imagedMaterial.GetShaderParameter("has_albedo").AsBool(), "the downloaded image must reach the material");
+
+            var lit = Add(new Vector3(82, .5f, -6), "cube");
+            _editor.SelectIds([lit]);
+            _editor.ApplyLightForTesting(true, 2f, 8f);
+            await Frames(2);
+            var light = _editor.ViewForTesting(lit)!.GetNodeOrNull<OmniLight3D>("ObjectLight");
+            Require(light is not null && Mathf.Abs(light.LightEnergy - 2f) < .01f && Mathf.Abs(light.OmniRange - 8f) < .01f && !light.ShadowEnabled, "the object must light its surroundings");
+            _editor.ApplyLightForTesting(false, 2f, 8f);
+            await Frames(2);
+            Require(_editor.ViewForTesting(lit)!.GetNodeOrNull<OmniLight3D>("ObjectLight") is null, "removing the light must remove it");
+
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();
         }

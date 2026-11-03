@@ -274,7 +274,7 @@ public partial class ViewerUI
         }
         if (view == "build" && _world.GetNodeOrNull<BuildEditor>("BuildEditor") is { } editor)
         {
-            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, MaterialJson = "{\"color\":\"#D8A8C7\",\"roughness\":0.4}" };
+            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, MaterialJson = "{\"color\":\"#FFFFFF\",\"builtin\":\"bricks\",\"uvRepeatX\":2,\"uvRepeatY\":3,\"uvRotation\":0,\"light\":{\"color\":\"#FFD9A0\",\"energy\":1.5,\"range\":8}}" };
             editor.SetActive(true); editor.LoadStatesForTesting([state]); editor.SelectIds([state.Id]);
         }
         if (view == "people" && _people is not null)

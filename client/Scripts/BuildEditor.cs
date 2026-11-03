@@ -55,6 +55,7 @@ public partial class BuildEditor : Node3D
         _gizmo = new BuildGizmo { Name = "BuildGizmo" }; AddChild(_gizmo);
         _grid = new BuildGrid(); AddChild(_grid);
         BuildPanel();
+        SetUpTextureCache();
     }
 
     public override void _ExitTree()
@@ -175,6 +176,7 @@ public partial class BuildEditor : Node3D
 
     private void AfterSelectionChanged()
     {
+        if (_faceView is not null && !_selection.Contains(_faceView)) ClearFace(); // a face belongs to the object it was picked on
         FillFields();
         RefreshGizmo();
     }
