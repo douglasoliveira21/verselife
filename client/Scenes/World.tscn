@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3]
+[gd_scene load_steps=26 format=3]
 
 [ext_resource path="res://Scenes/Player.tscn" type="PackedScene" id="1"]
 [ext_resource path="res://Scripts/InteractableSeat.cs" type="Script" id="2"]
@@ -19,6 +19,7 @@
 [ext_resource path="res://Scripts/OceanSurface.cs" type="Script" id="17"]
 [ext_resource path="res://Scripts/AmbientAudio.cs" type="Script" id="18"]
 [ext_resource path="res://Scripts/ObjectInteraction.cs" type="Script" id="19"]
+[ext_resource path="res://Scripts/ModelCache.cs" type="Script" id="20"]
 
 [sub_resource type="ProceduralSkyMaterial" id="SkyMaterial"]
 sky_top_color = Color(0.08, 0.18, 0.36, 1)
@@ -112,6 +113,9 @@ shadow_enabled = true
 
 [node name="TerrainEditor" type="Node3D" parent="."]
 script = ExtResource("16")
+
+[node name="ModelCache" type="Node" parent="."]
+script = ExtResource("20")
 
 [node name="ObjectInteraction" type="Node3D" parent="."]
 script = ExtResource("19")

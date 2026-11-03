@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Text;
 using LifeVerse.Api.Data;
+using LifeVerse.Api.Modules.Assets;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using LifeVerse.Api.Modules.Worlds;
@@ -47,7 +48,7 @@ public static class PlatformEndpoints
         var now = clock.GetUtcNow(); BuildObject? item = null;
         if (request.Operation == "create")
         {
-            if (request.Object is null || !ValidBuildRequest(request.Object)) return Results.BadRequest(); var quota = 5000; try { using var doc = JsonDocument.Parse(island.ResourceLimitsJson); if (doc.RootElement.TryGetProperty("objects", out var count)) quota = Math.Clamp(count.GetInt32(), 1, 100000); } catch { }
+            if (request.Object is null || !ValidBuildRequest(request.Object)) return Results.BadRequest(); if (await MeshAssets.ValidateAsync(db, request.UserId, request.Object.PrimitiveType, request.Object.GeometryJson, null, ct) is { } meshError) return Results.BadRequest(new { code = "invalid_mesh", error = meshError }); var quota = 5000; try { using var doc = JsonDocument.Parse(island.ResourceLimitsJson); if (doc.RootElement.TryGetProperty("objects", out var count)) quota = Math.Clamp(count.GetInt32(), 1, 100000); } catch { }
             if (await db.BuildObjects.CountAsync(x => x.IslandId == island.Id && x.DeletedAt == null, ct) >= quota) return Results.Conflict(new { code = "object_quota" });
             item = NewBuildObject(island.Id, request.UserId, request.Object, now); db.BuildObjects.Add(item);
         }
@@ -55,7 +56,7 @@ public static class PlatformEndpoints
         {
             if (request.ObjectId is null) return Results.BadRequest(); item = await db.BuildObjects.SingleOrDefaultAsync(x => x.Id == request.ObjectId && x.IslandId == island.Id && x.DeletedAt == null, ct); if (item is null) return Results.NotFound(); if (item.Revision != request.ExpectedRevision) return Results.Conflict(new { code = "revision_conflict", currentRevision = item.Revision });
             if (request.Operation == "delete") { item.DeletedAt = now; item.Revision++; }
-            else if (request.Operation == "update" && request.Object is not null && ValidBuildRequest(request.Object)) { ApplyBuildObject(item, request.Object); item.Revision++; item.UpdatedAt = now; }
+            else if (request.Operation == "update" && request.Object is not null && ValidBuildRequest(request.Object)) { if (await MeshAssets.ValidateAsync(db, request.UserId, request.Object.PrimitiveType, request.Object.GeometryJson, MeshAssets.AssetIdOf(item.GeometryJson), ct) is { } meshUpdateError) return Results.BadRequest(new { code = "invalid_mesh", error = meshUpdateError }); ApplyBuildObject(item, request.Object); item.Revision++; item.UpdatedAt = now; }
             else return Results.BadRequest();
         }
         db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = item.Id, ActorUserId = request.UserId, Operation = request.Operation, PayloadJson = JsonSerializer.Serialize((object?)request.Object ?? new { }), Revision = item.Revision, CreatedAt = now }); await db.SaveChangesAsync(ct);

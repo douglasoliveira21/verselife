@@ -34,10 +34,65 @@ public sealed class BuildObjectState
 public partial class BuildObjectView : Node3D
 {
     public BuildObjectState State { get; private set; } = new();
+    private int _applyId;
+    private Guid? _modelAsset;
+
+    public override void _EnterTree() { if (_modelAsset is not null && GetNodeOrNull("Model") is null) RequestModel(); }
+
+    /// A mesh object shows an imported 3D model. Until the model arrives a translucent box stands in for it; the
+    /// invisible "PrimitiveMesh" box afterwards only exists so selection highlighting works like on primitives.
+    private void BuildMeshObject(BuildObjectState state)
+    {
+        var proxy = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = new BoxMesh { Size = Vector3.One }, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, MaterialOverride = new StandardMaterial3D { Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(.6f, .7f, .8f, .35f) } };
+        AddChild(proxy);
+        if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, .8f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
+        if (TryGetBool(state.PhysicsJson, "collision", true))
+        {
+            var body = new StaticBody3D { Name = "CollisionBody", CollisionLayer = 1u, CollisionMask = 1u };
+            body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = Vector3.One } });
+            AddChild(body);
+        }
+        _modelAsset = AssetIdOf(state.GeometryJson);
+        RequestModel();
+    }
+
+    private void RequestModel()
+    {
+        if (_modelAsset is not { } asset || GetParent()?.GetNodeOrNull<ModelCache>("ModelCache") is not { } cache) return;
+        var id = _applyId;
+        cache.Request(asset, instance => OnModelReady(id, instance));
+    }
+
+    private void OnModelReady(int id, ModelInstance? instance)
+    {
+        if (id != _applyId || !IsInstanceValid(this) || !IsInsideTree()) { instance?.Node.QueueFree(); return; }
+        var proxy = GetNodeOrNull<MeshInstance3D>("PrimitiveMesh");
+        if (instance is not { } model)
+        {
+            if (proxy?.MaterialOverride is StandardMaterial3D missing) missing.AlbedoColor = new Color(.9f, .3f, .3f, .4f);
+            return;
+        }
+        AddChild(model.Node);
+        if (proxy is not null)
+        {
+            proxy.Mesh = new BoxMesh { Size = model.Size };
+            proxy.MaterialOverride = new StandardMaterial3D { Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(1, 1, 1, 0) };
+        }
+        if (GetNodeOrNull<StaticBody3D>("CollisionBody")?.GetChildOrNull<CollisionShape3D>(0) is { } shape) shape.Shape = new BoxShape3D { Size = model.Size };
+    }
+
+    private static Guid? AssetIdOf(string geometryJson)
+    {
+        try { using var doc = JsonDocument.Parse(geometryJson); return doc.RootElement.TryGetProperty("assetId", out var value) && Guid.TryParse(value.GetString(), out var id) ? id : null; }
+        catch (JsonException) { return null; }
+    }
+
     public void Apply(BuildObjectState state)
     {
         State = state; Position = new Vector3(state.PositionX, state.PositionY, state.PositionZ); Rotation = new Vector3(Mathf.DegToRad(state.RotationX), Mathf.DegToRad(state.RotationY), Mathf.DegToRad(state.RotationZ)); Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ);
         foreach (var child in GetChildren().ToArray()) { RemoveChild(child); child.QueueFree(); }
+        _applyId++; _modelAsset = null;
+        if (state.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase)) { BuildMeshObject(state); return; }
         var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var material = CreateMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = material }; AddChild(visual); ApplyFaceMaterials(visual, state.MaterialJson);
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         if (!TryGetBool(state.PhysicsJson, "collision", true)) return;

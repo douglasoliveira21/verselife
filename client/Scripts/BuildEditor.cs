@@ -315,6 +315,22 @@ public partial class BuildEditor : Node3D
         PushHistory(entry);
     }
 
+    /// Places an imported 3D model from the inventory as a "mesh" object, selects it and opens the move handles.
+    public void CreateMeshFromAsset(Guid assetId, string name, Vector3 position)
+    {
+        if (!_network.IsAuthenticated && OperationSink is null) { _status.Text = "Entre em uma ilha autenticada antes de colocar objetos."; return; }
+        if (!_active) SetActive(true);
+        var template = new BuildObjectState
+        {
+            PrimitiveType = "mesh", Name = string.IsNullOrWhiteSpace(name) ? "Modelo" : name.Trim(), MaterialJson = "{}", PhysicsJson = "{\"collision\":true}",
+            GeometryJson = JsonSerializer.Serialize(new { assetId = assetId.ToString().ToLowerInvariant() }), ScaleX = 2, ScaleY = 2, ScaleZ = 2
+        };
+        var entry = new HistoryEntry("create", []);
+        CreateFrom(template, position, null, created => { entry.Items.Add(new HistoryItem(created.Id, null, Clone(created))); SelectIds([created.Id]); });
+        PushHistory(entry);
+        _status.Text = $"Modelo \"{template.Name}\" colocado. Use as alças para mover, girar e escalar.";
+    }
+
     /// Creates a new object that looks like `template` at a position; `onCreated` runs when the server confirms it.
     private void CreateFrom(BuildObjectState template, Vector3 position, Guid? group, Action<BuildObjectState> onCreated)
     {
@@ -509,7 +525,7 @@ public partial class BuildEditor : Node3D
     private void AddOrUpdate(BuildObjectState state)
     {
         if (_objects.TryGetValue(state.Id, out var existing)) { existing.Apply(state); if (_selection.Contains(existing)) existing.SetSelected(true); return; }
-        var view = new BuildObjectView(); view.Apply(state); GetParent().AddChild(view); _objects[state.Id] = view;
+        var view = new BuildObjectView(); GetParent().AddChild(view); view.Apply(state); _objects[state.Id] = view;
     }
 
     public void SelectForTesting(Guid id, bool additive = false) { if (_objects.TryGetValue(Resolve(id), out var view)) SelectView(view, additive); }
