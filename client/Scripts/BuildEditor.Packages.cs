@@ -25,15 +25,6 @@ public partial class BuildEditor
     public Func<string, bool>? PackageSink { get; set; }
     public int RezPendingForTesting => _rezQueue.Count;
 
-    private void BuildPackageSection(VBoxContainer box)
-    {
-        box.AddChild(FieldLabel("Salvar construção no inventário"));
-        _packageName = Field("Nome da construção", 160); box.AddChild(_packageName);
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 6); box.AddChild(row);
-        row.AddChild(TextButton("Salvar cópia", "Guarda a seleção no inventário e deixa os objetos no mundo", () => SaveSelection(take: false)));
-        row.AddChild(TextButton("Retirar", "Guarda a seleção no inventário e tira os objetos do mundo", () => SaveSelection(take: true)));
-    }
-
     private void PumpRez(double delta)
     {
         if (_rezQueue.Count == 0) return;

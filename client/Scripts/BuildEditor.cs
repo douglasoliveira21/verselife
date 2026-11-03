@@ -83,7 +83,7 @@ public partial class BuildEditor : Node3D
         if (_islandId == Guid.Empty && Guid.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_ID"), out var id)) _islandId = id;
         if (_islandId != Guid.Empty) LoadObjects();
         _limitsClock = 0; RefreshLimits(); StartTutorialIfNew();
-        _status.Text = "Clique em um objeto para selecionar (Shift soma). Atalhos: 1 selecionar, 2 mover, 3 girar, 4 esticar.";
+        _status.Text = "Modo de construção ativo · Alterações são salvas automaticamente no servidor.";
     }
 
     public override void _UnhandledInput(InputEvent input)

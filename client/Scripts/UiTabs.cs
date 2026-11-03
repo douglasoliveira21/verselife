@@ -16,11 +16,14 @@ public partial class UiTabs : HBoxContainer
     /// Equal-width tabs fill the row (the people window); otherwise each tab is as wide as its label.
     public bool EqualWidth { get; set; }
 
+    /// Flat tabs as in the build window: no boxes, just the text, a neon line under the selected one and a thin line under the row.
+    public bool Flat { get; init; }
+
     public UiTabs() { AddThemeConstantOverride("separation", 4); }
 
     public Button AddTab(string text, string? icon = null, bool iconOnly = false)
     {
-        var tab = new TabButton { Text = iconOnly ? string.Empty : text, TooltipText = text, ToggleMode = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(iconOnly ? 48 : 0, 44) };
+        var tab = new TabButton(Flat) { Text = iconOnly ? string.Empty : text, TooltipText = text, ToggleMode = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(iconOnly ? 48 : 0, Flat ? 46 : 44) };
         if (icon is not null) tab.Icon = UiStyle.Icon(icon, UiStyle.Text, 20);
         tab.ExpandIcon = false;
         if (EqualWidth) tab.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -41,10 +44,29 @@ public partial class UiTabs : HBoxContainer
 
     public Button TabAt(int index) => _tabs[index];
 
+    public override void _Draw()
+    {
+        if (Flat) DrawRect(new Rect2(0, Size.Y - 1, Size.X, 1), new Color(UiStyle.Divider, .9f));
+    }
+
     public partial class TabButton : Button
     {
-        public TabButton()
+        private readonly bool _flat;
+
+        public TabButton(bool flat = false)
         {
+            _flat = flat;
+            if (flat)
+            {
+                var none = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 6, ContentMarginBottom = 8 };
+                var hover = new StyleBoxFlat { BgColor = new Color(1, 1, 1, .06f), ContentMarginLeft = 10, ContentMarginRight = 10, ContentMarginTop = 6, ContentMarginBottom = 8, CornerRadiusTopLeft = 8, CornerRadiusTopRight = 8 };
+                foreach (var state in new[] { "normal", "pressed" }) AddThemeStyleboxOverride(state, none);
+                foreach (var state in new[] { "hover", "hover_pressed" }) AddThemeStyleboxOverride(state, hover);
+                AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+                AddThemeFontOverride("font", UiStyle.Bold); AddThemeFontSizeOverride("font_size", 18);
+                foreach (var color in new[] { "font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color" }) AddThemeColorOverride(color, Colors.White);
+                return;
+            }
             const float marginX = 18, marginY = 6;
             AddThemeStyleboxOverride("normal", UiStyle.Box(new Color(UiStyle.ButtonFill, .55f), new Color(UiStyle.Border, .75f), UiStyle.RadiusSmall + 2, 1, marginX, marginY));
             AddThemeStyleboxOverride("hover", UiStyle.Box(new Color(UiStyle.AccentFill, .55f), UiStyle.BorderBright, UiStyle.RadiusSmall + 2, 1, marginX, marginY));
@@ -61,7 +83,7 @@ public partial class UiTabs : HBoxContainer
         public override void _Draw()
         {
             if (!ButtonPressed) return;
-            DrawRect(new Rect2(6, Size.Y - 4, Size.X - 12, 3), UiStyle.Accent);
+            DrawRect(_flat ? new Rect2(4, Size.Y - 3, Size.X - 8, 3) : new Rect2(6, Size.Y - 4, Size.X - 12, 3), UiStyle.Accent);
         }
     }
 }

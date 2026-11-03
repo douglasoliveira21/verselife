@@ -274,8 +274,11 @@ public partial class ViewerUI
         }
         if (view == "build" && _world.GetNodeOrNull<BuildEditor>("BuildEditor") is { } editor)
         {
-            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, MaterialJson = "{\"color\":\"#FFFFFF\",\"builtin\":\"bricks\",\"uvRepeatX\":2,\"uvRepeatY\":3,\"uvRotation\":0,\"light\":{\"color\":\"#FFD9A0\",\"energy\":1.5,\"range\":8}}" };
+            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", Description = "Torre de tijolos torcida e vazada, construção demonstrativa do LifeVerse.", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, MaterialJson = "{\"color\":\"#FFFFFF\",\"builtin\":\"bricks\",\"uvRepeatX\":2,\"uvRepeatY\":3,\"uvRotation\":0,\"light\":{\"color\":\"#FFD9A0\",\"energy\":1.5,\"range\":8}}" };
             editor.SetActive(true); editor.LoadStatesForTesting([state]); editor.SelectIds([state.Id]);
+            editor.SetPackageNameForTesting("Torre Torcida");
+            editor.ShowLimits("{\"objects\":1234,\"maxObjects\":5000,\"cost\":52000,\"maxCost\":200000,\"canBuildHere\":true,\"isAdmin\":false,\"parcel\":{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Praça\",\"mine\":true,\"publicBuild\":false,\"objects\":45,\"maxObjects\":100,\"cost\":300,\"maxCost\":2000}}");
+            editor.PreviewTutorialForTesting(2);
         }
         if (view == "people" && _people is not null)
         {

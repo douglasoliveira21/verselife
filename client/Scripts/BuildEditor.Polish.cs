@@ -131,12 +131,13 @@ public partial class BuildEditor
 
     private void BuildTutorialCard(VBoxContainer content)
     {
-        var card = new PanelContainer(); card.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.AccentFill, .6f), UiStyle.Accent, 12, 1, 10, 8));
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 8); card.AddChild(row);
+        var card = new PanelContainer(); card.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.AccentFill, .55f), UiStyle.Accent, 16, 2, 14, 8));
+        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10); card.AddChild(row);
+        var bulb = UiStyle.IconRect("bulb", UiStyle.Accent, 26); bulb.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter; row.AddChild(bulb);
         _tutorialText = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(300, 0) };
-        _tutorialText.AddThemeFontSizeOverride("font_size", 15); row.AddChild(_tutorialText);
-        var skip = new Button { Text = "Pular", TooltipText = "Fecha o tutorial; dá para repetir pelo botão Tutorial", FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(64, 36) };
-        UiStyle.StyleButton(skip, UiStyle.ButtonKind.Secondary, 8, 4); skip.Pressed += SkipTutorial; row.AddChild(skip);
+        _tutorialText.AddThemeFontSizeOverride("font_size", 17); row.AddChild(_tutorialText);
+        var skip = new Button { Text = "Pular", TooltipText = "Fecha o tutorial; dá para repetir pelo botão Tutorial", FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(76, 38) };
+        UiStyle.StyleButton(skip, UiStyle.ButtonKind.Primary, 8, 4); skip.Pressed += SkipTutorial; row.AddChild(skip);
         _tutorialCard = card; card.Visible = false; content.AddChild(card);
     }
 
@@ -188,6 +189,8 @@ public partial class BuildEditor
     public bool TutorialCardVisibleForTesting => _tutorialCard.Visible;
     public string TutorialTextForTesting => _tutorialText.Text;
     public void SkipTutorialForTesting() => SkipTutorial();
+    /// Shows the tutorial card at a given step (1 to 8), for screenshots.
+    public void PreviewTutorialForTesting(int step) { _tutorial.Restart(); for (var i = 1; i < step; i++) _tutorial.Notify((TutorialStep)(i - 1)); RefreshTutorial(); }
     public void RestartTutorialForTesting() => RestartTutorial();
     public void ForgetTutorialDoneForTesting() { var config = new ConfigFile(); config.Load(PrefsFile); config.SetValue("tutorial", "done", false); config.Save(PrefsFile); _tutorial.Restart(); }
 }

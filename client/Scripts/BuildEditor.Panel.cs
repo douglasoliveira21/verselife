@@ -19,13 +19,14 @@ public partial class BuildEditor
 
     private FloatingWindow _window = null!;
     private OptionButton _primitive = null!;
-    private LineEdit _snap = null!, _name = null!, _description = null!;
+    private LineEdit _snap = null!, _name = null!;
+    private TextEdit _description = null!;
     private readonly LineEdit[] _position = new LineEdit[3], _rotationFields = new LineEdit[3], _size = new LineEdit[3];
     private LineEdit _hollow = null!, _taperX = null!, _taperY = null!, _twist = null!;
     private ColorPickerButton _colorPicker = null!, _emissionPicker = null!;
     private CheckBox _glow = null!, _ghost = null!;
     private HSlider _roughness = null!, _metallic = null!, _opacity = null!;
-    private Label _status = null!, _selectionLabel = null!, _info = null!;
+    private Label _status = null!, _selectionLabel = null!;
     private Button _toolSelect = null!, _toolMove = null!, _toolRotate = null!, _toolScale = null!, _toolFace = null!;
     private CheckBox _gridSnap = null!, _showGrid = null!;
     private LineEdit _rotSnap = null!;
@@ -35,48 +36,53 @@ public partial class BuildEditor
     private void BuildPanel()
     {
         _window = new FloatingWindow("Construir", icon: "hammer", minimizable: true) { Name = "BuildTools", Visible = false };
-        _window.Place(0, 0, 18, 56, 458, 1010);
+        _window.Place(0, 0, 18, 56, 700, 1130);
         _window.CloseRequested += () => SetActive(false);
         var content = _window.Content;
-        content.AddThemeConstantOverride("separation", 10);
+        content.AddThemeConstantOverride("separation", 9);
 
-        // tools
-        var tools = new HBoxContainer(); tools.AddThemeConstantOverride("separation", 6); content.AddChild(tools);
-        _toolSelect = ToolToggle("Selecionar", "Selecionar objetos (1)", () => SelectTool());
-        _toolMove = ToolToggle("Mover", "Mover nos três eixos (2)", () => SetMode(GizmoMode.Move));
-        _toolRotate = ToolToggle("Girar", "Girar com os anéis (3)", () => SetMode(GizmoMode.Rotate));
-        _toolScale = ToolToggle("Esticar", "Redimensionar (4)", () => SetMode(GizmoMode.Scale));
-        _toolFace = ToolToggle("Face", "Selecionar uma face para colori-la (5)", () => FaceTool());
+        // tools: icon above the name
+        var tools = new HBoxContainer(); tools.AddThemeConstantOverride("separation", 8); content.AddChild(tools);
+        _toolSelect = StackedTool("pointer", "Selecionar", "Selecionar objetos (1)", () => SelectTool());
+        _toolMove = StackedTool("move", "Mover", "Mover nos três eixos (2)", () => SetMode(GizmoMode.Move));
+        _toolRotate = StackedTool("rotate", "Girar", "Girar com os anéis (3)", () => SetMode(GizmoMode.Rotate));
+        _toolScale = StackedTool("expand", "Esticar", "Redimensionar (4)", () => SetMode(GizmoMode.Scale));
+        _toolFace = StackedTool("cube", "Face", "Selecionar uma face para colori-la (5)", () => FaceTool());
         foreach (var button in new[] { _toolSelect, _toolMove, _toolRotate, _toolScale, _toolFace }) tools.AddChild(button);
 
-        var actions = new HBoxContainer(); actions.AddThemeConstantOverride("separation", 6); content.AddChild(actions);
+        var actions = new HBoxContainer(); actions.AddThemeConstantOverride("separation", 8); content.AddChild(actions);
         foreach (var (icon, tip, action) in new (string, string, Action)[]
         {
-            ("cube", "Criar a primitiva escolhida onde você olha", CreateObject), ("copy", "Copiar (Ctrl+C)", CopySelection), ("paste", "Colar (Ctrl+V)", Paste), ("layers", "Duplicar (Ctrl+D)", Duplicate),
+            ("cube", "Criar a primitiva escolhida onde você olha", CreateObject), ("copy", "Copiar (Ctrl+C)", CopySelection), ("paste", "Colar (Ctrl+V)", Paste), ("copy-plus", "Duplicar (Ctrl+D)", Duplicate),
             ("trash", "Excluir (Delete)", DeleteSelection), ("undo", "Desfazer (Ctrl+Z)", Undo), ("redo", "Refazer (Ctrl+Y)", Redo)
         })
         {
-            var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 22), TooltipText = tip, CustomMinimumSize = new Vector2(48, 44), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 24), TooltipText = tip, CustomMinimumSize = new Vector2(0, 46), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             UiStyle.StyleButton(button, UiStyle.ButtonKind.Tool, 8, 6); button.Pressed += action; actions.AddChild(button);
         }
-        var cameraRow = new HBoxContainer(); cameraRow.AddThemeConstantOverride("separation", 6); content.AddChild(cameraRow);
-        _cameraButton = new Button { Text = "Câmera de edição", ToggleMode = true, TooltipText = "Gira em volta da seleção: botão direito orbita, botão do meio desloca, roda dá zoom (End)", CustomMinimumSize = new Vector2(0, 40), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None };
-        UiStyle.StyleButton(_cameraButton, UiStyle.ButtonKind.Tool, 10, 6); _cameraButton.AddThemeFontSizeOverride("font_size", 16); _cameraButton.Pressed += ToggleEditCamera; cameraRow.AddChild(_cameraButton);
-        cameraRow.AddChild(TextButton("Focar", "Aponta a câmera para a seleção (Home)", FocusSelection));
-        cameraRow.AddChild(TextButton("Tutorial", "Mostra o passo a passo de construção", RestartTutorial));
-        var groupRow = new HBoxContainer(); groupRow.AddThemeConstantOverride("separation", 6); content.AddChild(groupRow);
-        groupRow.AddChild(TextButton("Vincular", "Junta os objetos selecionados em um conjunto (Ctrl+G)", GroupSelection));
-        groupRow.AddChild(TextButton("Desvincular", "Separa o conjunto (Ctrl+Shift+G)", Ungroup));
 
+        var cameraRow = new HBoxContainer(); cameraRow.AddThemeConstantOverride("separation", 8); content.AddChild(cameraRow);
+        _cameraButton = ToolToggle(" Câmera de edição", "Gira em volta da seleção: botão direito orbita, botão do meio desloca, roda dá zoom (End)", ToggleEditCamera);
+        _cameraButton.Icon = UiStyle.Icon("camera", UiStyle.Text, 24); _cameraButton.ExpandIcon = false; _cameraButton.CustomMinimumSize = new Vector2(0, 44); _cameraButton.AddThemeFontSizeOverride("font_size", 17);
+        cameraRow.AddChild(_cameraButton);
+        cameraRow.AddChild(IconButton("focus", "Focar", "Aponta a câmera para a seleção (Home)", FocusSelection, UiStyle.ButtonKind.Tool));
+        cameraRow.AddChild(IconButton("help", "Tutorial", "Mostra o passo a passo de construção", RestartTutorial, UiStyle.ButtonKind.Tool));
+
+        var groupRow = new HBoxContainer(); groupRow.AddThemeConstantOverride("separation", 10); content.AddChild(groupRow);
+        groupRow.AddChild(IconButton("link", "Vincular", "Junta os objetos selecionados em um conjunto (Ctrl+G)", GroupSelection, height: 42));
+        groupRow.AddChild(IconButton("unlink", "Desvincular", "Separa o conjunto (Ctrl+Shift+G)", Ungroup, height: 42));
+
+        content.AddChild(new HSeparator());
         var selectionRow = new HBoxContainer(); selectionRow.AddThemeConstantOverride("separation", 8); content.AddChild(selectionRow);
         _selectionLabel = new Label { Text = "Nada selecionado", TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        _selectionLabel.AddThemeColorOverride("font_color", UiStyle.TextMuted); _selectionLabel.AddThemeFontSizeOverride("font_size", 16);
+        _selectionLabel.AddThemeFontSizeOverride("font_size", 17);
         selectionRow.AddChild(_selectionLabel);
-        _saveLabel = new Label { Text = "✓ Salvo", TooltipText = "Mostra se o servidor já confirmou as suas alterações" }; _saveLabel.AddThemeFontSizeOverride("font_size", 15); selectionRow.AddChild(_saveLabel);
+        _saveLabel = new Label { Text = "✓ Salvo", TooltipText = "Mostra se o servidor já confirmou as suas alterações" }; _saveLabel.AddThemeFontOverride("font", UiStyle.Bold); _saveLabel.AddThemeFontSizeOverride("font_size", 18); selectionRow.AddChild(_saveLabel);
+        content.AddChild(new HSeparator());
         BuildTutorialCard(content);
 
         // tabs
-        var tabs = new UiTabs { EqualWidth = true };
+        var tabs = new UiTabs { EqualWidth = true, Flat = true };
         tabs.AddTab("Geral"); tabs.AddTab("Objeto"); tabs.AddTab("Textura"); tabs.AddTab("Recursos"); tabs.AddTab("Conteúdo"); tabs.AddTab("Alinhar");
         content.AddChild(tabs);
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 420) };
@@ -85,9 +91,12 @@ public partial class BuildEditor
         tabs.TabChanged += index => { for (var i = 0; i < pages.Length; i++) pages[i].Visible = i == index; };
         pages[0].Visible = true;
 
-        _status = new Label { Text = "Permissão de construção validada pelo servidor", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(380, 0) };
-        _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); _status.AddThemeFontSizeOverride("font_size", 15);
-        content.AddChild(_status);
+        content.AddChild(new HSeparator());
+        var footer = new HBoxContainer(); footer.AddThemeConstantOverride("separation", 10); content.AddChild(footer);
+        var infoIcon = UiStyle.IconRect("info", UiStyle.TextMuted, 22); infoIcon.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin; footer.AddChild(infoIcon);
+        _status = new Label { Text = "Modo de construção ativo · Alterações são salvas automaticamente no servidor.", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(420, 0) };
+        _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); _status.AddThemeFontSizeOverride("font_size", 16);
+        footer.AddChild(_status);
         AddChild(_window);
         UpdateToolButtons();
     }
@@ -134,26 +143,6 @@ public partial class BuildEditor
     }
 
     // ---- tabs ------------------------------------------------------------------------------------------------
-
-    private Control BuildGeneral()
-    {
-        var box = Section();
-        box.AddChild(FieldLabel("Nome"));
-        _name = Field("Nome do objeto", 160); _name.TextSubmitted += _ => ApplySelected(); box.AddChild(_name);
-        box.AddChild(FieldLabel("Descrição"));
-        _description = Field("Descrição (opcional)", 4000); _description.TextSubmitted += _ => ApplySelected(); box.AddChild(_description);
-        box.AddChild(TextButton("Aplicar nome e descrição", "Envia as alterações ao servidor", ApplySelected, UiStyle.ButtonKind.Primary));
-        _info = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, Text = "Selecione um objeto para ver criador, proprietário e identificador." };
-        _info.AddThemeColorOverride("font_color", UiStyle.TextMuted); _info.AddThemeFontSizeOverride("font_size", 15);
-        box.AddChild(_info);
-        box.AddChild(FieldLabel("Criar nova primitiva"));
-        _primitive = new OptionButton();
-        foreach (var (id, label) in Primitives) { _primitive.AddItem(label); _primitive.SetItemMetadata(_primitive.ItemCount - 1, id); }
-        box.AddChild(_primitive);
-        BuildPackageSection(box);
-        BuildCollabSection(box);
-        return box;
-    }
 
     private Control BuildObjectTab()
     {
@@ -252,15 +241,18 @@ public partial class BuildEditor
             _glow.ButtonPressed = material["emission"] is not null;
             if (material["emission"]?.GetValue<string>() is { } emission) _emissionPicker.Color = Color.FromHtml(emission);
             _ghost.ButtonPressed = physics["collision"] is JsonValue flag && flag.TryGetValue<bool>(out var solid) && !solid;
-            _info.Text = $"Criador: {Short(s.CreatorUserId)}\nProprietário: {Short(s.OwnerUserId)}\nIdentificador: {s.Id}\nPrimitiva: {PrimitiveLabel(s.PrimitiveType)}";
+            var parts = s.GroupId is { } group ? _objects.Values.Count(o => o.State.GroupId == group) : 1;
+            _infoLeft.Text = $"Criador: {Who(s.CreatorUserId)}\nProprietário: {Who(s.OwnerUserId)}";
+            _infoRight.Text = $"Identificador: {s.Id}\nPrimitiva: {s.Name}{(parts > 1 ? $" (composta por {parts} primitivas)" : $" ({PrimitiveLabel(s.PrimitiveType)})")}";
         }
-        else _info.Text = _selection.Count == 0 ? "Selecione um objeto para ver criador, proprietário e identificador." : $"{_selection.Count} objetos: posição, rotação e tamanho próprios não são editados em conjunto; forma, material e física valem para todos.";
+        else { _infoLeft.Text = _selection.Count == 0 ? "Selecione um objeto para ver criador, proprietário e identificador." : $"{_selection.Count} objetos: posição, rotação e tamanho próprios não são editados em conjunto; forma, material e física valem para todos."; _infoRight.Text = string.Empty; }
         FillTextureFields();
         FillContent();
         _filling = false;
         RefreshGizmo();
     }
 
+    private string Who(Guid id) => id == Guid.Empty ? "—" : id == _session.UserId ? "Você" : id.ToString()[..8];
     private string Short(Guid id) => id == Guid.Empty ? "—" : id == _session.UserId ? "você" : id.ToString()[..8];
     private static string PrimitiveLabel(string id) => Primitives.FirstOrDefault(x => x.Id == id).Label ?? id;
 

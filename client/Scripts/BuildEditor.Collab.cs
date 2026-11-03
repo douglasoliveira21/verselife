@@ -21,19 +21,6 @@ public partial class BuildEditor
     private AcceptDialog _historyDialog = null!;
     private Label _historyText = null!;
 
-    private void BuildCollabSection(VBoxContainer box)
-    {
-        box.AddChild(FieldLabel("Terreno e limites"));
-        _limitsLabel = new Label { Text = "Os limites aparecem quando você entra em uma ilha.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _limitsLabel.AddThemeColorOverride("font_color", UiStyle.TextMuted); _limitsLabel.AddThemeFontSizeOverride("font_size", 15); box.AddChild(_limitsLabel);
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 6); box.AddChild(row);
-        row.AddChild(TextButton("Devolver ao dono", "Manda os objetos selecionados para o inventário de quem os fez (dono do terreno ou administrador)", ReturnSelection));
-        row.AddChild(TextButton("Histórico", "Mostra quem mexeu no objeto selecionado", ShowHistory));
-        _historyDialog = new AcceptDialog { Title = "Histórico do objeto", OkButtonText = "Fechar", MinSize = new Vector2I(460, 320) };
-        _historyText = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(420, 240) };
-        _historyDialog.AddChild(_historyText); AddChild(_historyDialog);
-    }
-
     // ---- who is editing what ---------------------------------------------------------------------------------
 
     private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -157,10 +144,12 @@ public partial class BuildEditor
             var text = $"Ilha: {Short(r.GetProperty("objects").GetInt64())} de {Short(r.GetProperty("maxObjects").GetInt64())} objetos · custo {Short(r.GetProperty("cost").GetInt64())} de {Short(r.GetProperty("maxCost").GetInt64())}";
             if (r.TryGetProperty("parcel", out var parcel) && parcel.ValueKind == JsonValueKind.Object)
                 text += $"\nTerreno \"{parcel.GetProperty("name").GetString()}\"{(parcel.GetProperty("mine").GetBoolean() ? " (seu)" : "")}: {Short(parcel.GetProperty("objects").GetInt64())} de {Short(parcel.GetProperty("maxObjects").GetInt64())} objetos · custo {Short(parcel.GetProperty("cost").GetInt64())} de {Short(parcel.GetProperty("maxCost").GetInt64())}";
-            text += r.GetProperty("canBuildHere").GetBoolean() ? "\nVocê pode construir aqui." : "\nVocê não pode construir neste ponto.";
             _limitsLabel.Text = text;
+            var canBuild = r.GetProperty("canBuildHere").GetBoolean();
+            _buildHereLabel.Text = canBuild ? "✓ Você pode construir aqui." : "✕ Você não pode construir neste ponto.";
+            _buildHereLabel.AddThemeColorOverride("font_color", canBuild ? UiStyle.SuccessBright : UiStyle.Orange);
         }
-        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { _limitsLabel.Text = "Não foi possível ler os limites da ilha."; }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { _limitsLabel.Text = "Não foi possível ler os limites da ilha."; _buildHereLabel.Text = string.Empty; }
     }
 
     // ---- returning and history -----------------------------------------------------------------------------------
@@ -206,7 +195,7 @@ public partial class BuildEditor
     }
 
     public string HistoryTextForTesting => _historyText.Text;
-    public string LimitsTextForTesting => _limitsLabel.Text;
+    public string LimitsTextForTesting => _limitsLabel.Text + "\n" + _buildHereLabel.Text;
     public string StatusForTesting => _status.Text;
     public void RejectForTesting(string code) { OnRejected(code); }
     public void ReturnSelectionForTesting() => ReturnSelection();

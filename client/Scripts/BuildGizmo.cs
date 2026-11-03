@@ -135,6 +135,8 @@ public partial class BuildGizmo : Node3D
         root.AddChild(Visual(new CylinderMesh { TopRadius = .018f, BottomRadius = .018f, Height = .85f }, new Vector3(0, .425f, 0), axis));
         root.AddChild(cube ? Visual(new BoxMesh { Size = Vector3.One * .15f }, new Vector3(0, .95f, 0), axis) : Visual(new CylinderMesh { TopRadius = 0, BottomRadius = .075f, Height = .24f }, new Vector3(0, .97f, 0), axis));
         root.AddChild(Collider(new BoxShape3D { Size = new Vector3(.24f, 1.2f, .24f) }, new Vector3(0, .62f, 0), axis));
+        // the letter of the axis at its tip, in the axis colour, so X, Y and Z are never confused
+        root.AddChild(new Label3D { Text = "XYZ"[axis].ToString(), Position = new Vector3(0, 1.3f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FixedSize = false, PixelSize = .0035f, FontSize = 72, OutlineSize = 22, Modulate = Colors.White, OutlineModulate = AxisColors[axis], RenderPriority = 25, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
         return root;
     }
 
