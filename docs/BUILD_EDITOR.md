@@ -1,13 +1,31 @@
-# Editor de construção 3D — Fase 05
+# Editor de construção 3D
 
-O modo Construir é aberto pelo botão no painel World ou pela tecla `B`. A seleção usa raycast do cursor; o painel mostra a primitiva, snap de posição, cor, revisão e estado de permissão. O editor suporta cubo, esfera, cilindro, cone, plano, prisma, tubo, anel e pirâmide.
+O modo Construir abre pelo botão **Construir** da barra inferior, por Conteúdo > Construir ou pela tecla `B`. O editor suporta cubo, esfera, cilindro, cone, plano, prisma, tubo, anel e pirâmide.
 
-Cada objeto persistido tem UUID, ilha, proprietário, grupo, tipo, posição/rotação/escala, material JSON, física JSON, revisão e timestamps. A API limita escala a `0.01..64`, rejeita NaN/infinito, permite apenas primitivas catalogadas e aplica a cota `resource_limits.objects` da ilha. O island-server limita comandos de construção a 20 por segundo por conexão antes de encaminhá-los para o endpoint interno autenticado por chave de serviço.
+## Como usar
 
-Operações `create`, `update`, `delete`, `duplicate`, `group` e `ungroup` são registradas em `world.build_operations`. Atualizações exigem `expectedRevision`; conflitos retornam 409 e não sobrescrevem o estado oficial. O resultado aceito é replicado via RPC confiável aos clientes autenticados.
+- **Selecionar:** clique em um objeto; Shift soma ou tira da seleção. Objetos agrupados são selecionados juntos.
+- **Alças 3D** (constantes na tela e desenhadas por cima da cena): `1` Mover (setas X vermelho, Y verde, Z azul), `2` Girar (anéis) e `3` Escalar (cubos nos eixos). Arraste uma alça para mudar a seleção. Mover usa o snap do painel (metros) e girar usa passos de 5°. Com um objeto só, as alças de escala seguem os eixos locais dele; com vários, a escala é uniforme em torno do centro. `Esc` cancela um arrasto.
+- **Copiar / colar / duplicar** (`Ctrl+C`, `Ctrl+V`, `Ctrl+D`): colar põe a seleção copiada onde o cursor aponta, apoiada no chão; duplicar põe a cópia ao lado. Grupos copiados viram grupos novos e mantêm a disposição.
+- **Agrupar / desagrupar** (`Ctrl+G`, `Ctrl+Shift+G`): o grupo guarda um `group_id` comum; mover, girar ou escalar o grupo não o desfaz.
+- **Excluir** (`Delete`), **desfazer** (`Ctrl+Z`) e **refazer** (`Ctrl+Y`). O histórico (60 passos) cobre mover, girar, escalar, material, agrupar, criar, colar, duplicar e excluir.
+- O painel também edita nome, rotação em graus, cor, material por face e geometria (oco, afunilamento, torção) da seleção.
 
-Materiais aceitam cor, transparência, emissão, rugosidade e metallic. A física inicial aceita colisão, trigger e camadas; objetos são reconstruídos com mesh e forma de colisão no cliente. A estratégia atual é estática por padrão, com limites de tamanho e culling por interesse do servidor herdado do multiplayer.
+## Garantias do servidor
 
-O histórico local envia undo/redo ao servidor, portanto uma reversão continua sujeita à autorização e revisão. O snapshot de ilha e o histórico de operações sobrevivem à reinicialização pelo mesmo pipeline de persistência da Fase 04.
+Cada alteração é enviada ao servidor da ilha com a revisão do objeto (`expectedRevision`); o servidor valida permissão, limites (escala `0.01..64`, cota de objetos, 20 operações por segundo por conexão) e responde com o estado oficial, que é replicado a todos. Se outra pessoa alterou o objeto antes, a edição é recusada (conflito de revisão) e o objeto volta ao estado oficial. Desfazer envia a alteração inversa com a revisão atual, então também está sujeito à autorização e aos conflitos. As operações ficam em `world.build_operations`.
 
-Limitações conhecidas: seleção múltipla visual, gizmos tridimensionais avançados, texturas remotas/UV e simulação dinâmica completa ainda são extensões futuras; o contrato persistente já reserva essas propriedades em JSON e grupos por `group_id`.
+Materiais aceitam cor, transparência, emissão, rugosidade e metallic; a física aceita colisão, trigger e camadas.
+
+## Arquitetura
+
+- `BuildEditor` (cliente): seleção, histórico, copiar/colar, agrupamento e envio das operações.
+- `BuildGizmo` (cliente): alças 3D com camada de física própria; arrastar usa `GizmoMath`.
+- `shared/Building/GizmoMath.cs`: geometria dos arrastos (ponto mais próximo do eixo, plano de rotação, ângulo, snap), testada sem a engine.
+
+## Limitações
+
+- Não há seleção por retângulo, pivô personalizado nem alças em eixos locais para mover/girar (só para escalar um objeto).
+- Desfazer pode ser recusado se outra pessoa mexeu no mesmo objeto depois.
+- Texturas remotas, UV e simulação física dinâmica ainda não existem.
+- Verificado por testes unitários da geometria e por um teste no Godot com um "servidor" em memória que impõe revisões; não testado com dois jogadores reais.

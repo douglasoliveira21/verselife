@@ -1,4 +1,5 @@
 using LifeVerse.Shared.Audio;
+using LifeVerse.Shared.Building;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
 using Xunit;
@@ -412,4 +413,77 @@ public sealed class AmbientSynthTests
     [Fact]
     public void Rain_AddsEnergyOverAQuietBed()
         => Assert.True(Rms(Render(new AmbientMix(.2f, .2f, 1f)).AsSpan(22050)) > Rms(Render(new AmbientMix(.2f, .2f, 0f)).AsSpan(22050)) * 1.2f);
+}
+
+public sealed class GizmoMathTests
+{
+    private static readonly System.Numerics.Vector3 X = System.Numerics.Vector3.UnitX;
+    private static readonly System.Numerics.Vector3 Y = System.Numerics.Vector3.UnitY;
+    private static readonly System.Numerics.Vector3 Z = System.Numerics.Vector3.UnitZ;
+
+    [Fact]
+    public void AxisParameter_FollowsTheMouseAlongTheAxis()
+    {
+        // Camera 10 m in front of the pivot looking down -Z; a ray that passes through (3, 0, 0) hits the X axis at t=3.
+        var camera = new System.Numerics.Vector3(0, 0, 10);
+        var through = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(3, 0, 0) - camera);
+        Assert.Equal(3f, GizmoMath.AxisParameter(System.Numerics.Vector3.Zero, X, camera, through), .001f);
+        var other = System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(-2, 0, 0) - camera);
+        Assert.Equal(-2f, GizmoMath.AxisParameter(System.Numerics.Vector3.Zero, X, camera, other), .001f);
+    }
+
+    [Fact]
+    public void AxisParameter_RespectsTheAxisOrigin()
+    {
+        var pivot = new System.Numerics.Vector3(5, 2, -1);
+        var camera = pivot + new System.Numerics.Vector3(0, 0, 8);
+        var ray = System.Numerics.Vector3.Normalize(pivot + new System.Numerics.Vector3(0, 4, 0) - camera);
+        Assert.Equal(4f, GizmoMath.AxisParameter(pivot, Y, camera, ray), .001f);
+    }
+
+    [Fact]
+    public void AxisParameter_IsStableWhenTheRayRunsAlongTheAxis()
+        => Assert.Equal(0f, GizmoMath.AxisParameter(System.Numerics.Vector3.Zero, X, new System.Numerics.Vector3(-10, 0, 0), X));
+
+    [Fact]
+    public void SignedAngle_MeasuresRotationAboutTheAxis()
+    {
+        var zero = System.Numerics.Vector3.Zero;
+        Assert.Equal(MathF.PI / 2, GizmoMath.SignedAngle(zero, Y, Z, X), .001f);   // +Y rotates Z toward +X (right-handed)
+        Assert.Equal(-MathF.PI / 2, GizmoMath.SignedAngle(zero, Y, Z, -X), .001f);
+        Assert.Equal(0f, GizmoMath.SignedAngle(zero, Y, Z, Z * 4), .001f);
+        Assert.Equal(0f, GizmoMath.SignedAngle(zero, Y, zero, X)); // degenerate input
+    }
+
+    [Fact]
+    public void PlaneHit_FindsTheRayPlaneIntersection()
+    {
+        var hit = GizmoMath.PlaneHit(System.Numerics.Vector3.Zero, Y, new System.Numerics.Vector3(0, 5, 0), System.Numerics.Vector3.Normalize(new System.Numerics.Vector3(1, -1, 0)));
+        Assert.NotNull(hit);
+        Assert.Equal(5f, hit!.Value.X, .001f); Assert.Equal(0f, hit.Value.Y, .001f);
+        Assert.Null(GizmoMath.PlaneHit(System.Numerics.Vector3.Zero, Y, new System.Numerics.Vector3(0, 5, 0), X)); // parallel
+        Assert.Null(GizmoMath.PlaneHit(System.Numerics.Vector3.Zero, Y, new System.Numerics.Vector3(0, 5, 0), Y));  // behind the camera
+    }
+
+    [Theory]
+    [InlineData(1.26f, .5f, 1.5f)]
+    [InlineData(-0.24f, .5f, 0f)]
+    [InlineData(7.3f, 0f, 7.3f)]
+    public void Snap_RoundsToTheStep(float value, float step, float expected) => Assert.Equal(expected, GizmoMath.Snap(value, step), .0001f);
+
+    [Fact]
+    public void ScaleFactor_IsTheRatioOfDistancesAndNeverCollapses()
+    {
+        Assert.Equal(2f, GizmoMath.ScaleFactor(1.5f, 3f));
+        Assert.Equal(.05f, GizmoMath.ScaleFactor(2f, -4f));
+        Assert.Equal(1f, GizmoMath.ScaleFactor(0f, 3f));
+    }
+
+    [Fact]
+    public void RotateAround_KeepsTheDistanceFromTheCenter()
+    {
+        var center = new System.Numerics.Vector3(1, 0, 1);
+        var rotated = GizmoMath.RotateAround(new System.Numerics.Vector3(3, 0, 1), center, Y, MathF.PI);
+        Assert.Equal(-1f, rotated.X, .001f); Assert.Equal(1f, rotated.Z, .001f);
+    }
 }
