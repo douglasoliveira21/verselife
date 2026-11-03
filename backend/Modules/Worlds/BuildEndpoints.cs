@@ -8,7 +8,7 @@ namespace LifeVerse.Api.Modules.Worlds;
 
 public static class BuildCatalog
 {
-    public static readonly string[] PrimitiveTypes = ["cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid", "mesh"];
+    public static readonly string[] PrimitiveTypes = ["cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid", "torus", "hemisphere", "mesh"];
     public static bool IsPrimitive(string value) => PrimitiveTypes.Contains(value, StringComparer.OrdinalIgnoreCase);
 }
 

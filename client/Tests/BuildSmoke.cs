@@ -10,6 +10,7 @@ namespace LifeVerse.Client.Tests;
 /// </summary>
 public partial class BuildSmoke : Node
 {
+    private static class PrimMeshIds { public static int BoxInner => LifeVerse.Shared.Building.PrimMesh.InnerFace("cube"); }
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<Guid, BuildObjectState> _server = [];
     private BuildEditor _editor = null!;
@@ -114,6 +115,59 @@ public partial class BuildSmoke : Node
             _editor.CommandForTesting("undo");
             Require(_server.Count == count, "undo of delete must bring the object back");
             Require(_server.Values.Any(s => Mathf.Abs(s.ScaleX - 2f) < .06f && s.Name == "cube"), "the restored object lost its transform");
+
+            // The Portuguese build window: eleven primitives, numeric fields applied through revisioned updates.
+            Require(_editor.PrimitiveIdsForTesting.Contains("torus") && _editor.PrimitiveIdsForTesting.Contains("hemisphere"), "torus and hemisphere must be creatable");
+            var hemisphere = Add(new Vector3(-4, .5f, -6), "hemisphere"); var torus = Add(new Vector3(-6, .5f, -6), "torus");
+            Require(_editor.ViewForTesting(hemisphere)!.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh is SphereMesh { IsHemisphere: true }, "a hemisphere must render as half a sphere");
+            Require(_editor.ViewForTesting(torus)!.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh is TorusMesh, "a torus must render as a torus");
+            _editor.SelectIds([torus]);
+            _editor.ApplyFieldsForTesting(new Vector3(5, 1, -2), new Vector3(2, 3, 4), "Parede", .3f);
+            var edited = _server[torus];
+            Require(Mathf.Abs(edited.PositionX - 5f) < .01f && Mathf.Abs(edited.PositionY - 1f) < .01f && Mathf.Abs(edited.PositionZ + 2f) < .01f, $"typed position not applied: {edited.PositionX},{edited.PositionY},{edited.PositionZ}");
+            Require(Mathf.Abs(edited.ScaleX - 2f) < .01f && Mathf.Abs(edited.ScaleY - 3f) < .01f && Mathf.Abs(edited.ScaleZ - 4f) < .01f, "typed size not applied");
+            Require(edited.Name == "Parede" && edited.GeometryJson.Contains("0.3") && edited.Revision == 1, $"name/geometry/revision wrong: {edited.Name} {edited.GeometryJson} r{edited.Revision}");
+            _editor.ApplyFieldsForTesting(new Vector3(5, 1, -2), new Vector3(100, 0, 1), "Parede", 5f);
+            Require(_server[torus].ScaleX <= 64f && _server[torus].ScaleY >= .01f && _server[torus].GeometryJson.Contains("0.95"), $"typed values must be clamped: {_server[torus].ScaleX} {_server[torus].ScaleY} {_server[torus].GeometryJson}");
+            _editor.SelectToolForTesting();
+            Require(!_editor.BeginDrag(0, new Vector3(0, 4, 4), Vector3.Forward), "the select tool must not show manipulation handles");
+            Require(_editor.Selection.Count == 1, "the select tool keeps the selection");
+
+            // Procedural geometry: six surfaces for a box, a bored hole adds triangles, faces can be painted one at a time.
+            var solid = Add(new Vector3(20, .5f, -6), "cube");
+            var solidView = _editor.ViewForTesting(solid)!;
+            Require(solidView.IsProcedural && solidView.FaceIds.Count == 6 && solidView.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh.GetSurfaceCount() == 6, "a box must be six faces");
+            Require(solidView.GetNode<StaticBody3D>("CollisionBody").GetChild<CollisionShape3D>(0).Shape is ConcavePolygonShape3D, "collision must follow the exact mesh");
+            var solidTriangles = ((ArrayMesh)solidView.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh).GetFaces().Length / 3;
+            _editor.SelectIds([solid]);
+            _editor.ApplyFieldsForTesting(new Vector3(20, .5f, -6), Vector3.One, "Caixa oca", .5f);
+            await Frames(2);
+            var hollowTriangles = ((ArrayMesh)_editor.ViewForTesting(solid)!.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh).GetFaces().Length / 3;
+            Require(hollowTriangles > solidTriangles && _editor.ViewForTesting(solid)!.FaceIds.Contains(PrimMeshIds.BoxInner), $"hollow must change the mesh: {solidTriangles} -> {hollowTriangles}");
+            _editor.SelectFaceForTesting(solid, 0);
+            _editor.SetPaintColorForTesting(new Color("#FF0000"));
+            _editor.PaintFaceForTesting(false);
+            Require(_server[solid].MaterialJson.Contains("\"faces\"") && _server[solid].MaterialJson.Contains("#ff0000", StringComparison.OrdinalIgnoreCase), $"face colour not saved: {_server[solid].MaterialJson}");
+            _editor.PaintFaceForTesting(true);
+            Require(!_server[solid].MaterialJson.Contains("\"faces\""), "clearing the face must remove its colour");
+
+            // Align, distribute, ground and grid.
+            var p1 = Add(new Vector3(30, .5f, -6), "cube"); var p2 = Add(new Vector3(34, 2f, -6), "cube");
+            _editor.SelectIds([p1, p2]);
+            _editor.AlignForTesting(1, 0); // Y, lowest side
+            Require(Mathf.Abs(_server[p2].PositionY - .5f) < .02f && Mathf.Abs(_server[p1].PositionY - .5f) < .02f, $"align by base failed: {_server[p1].PositionY},{_server[p2].PositionY}");
+            var d1 = Add(new Vector3(40, .5f, -9), "cube"); var d2 = Add(new Vector3(41, .5f, -9), "cube"); var d3 = Add(new Vector3(50, .5f, -9), "cube");
+            _editor.SelectIds([d1, d2, d3]);
+            _editor.DistributeForTesting(0);
+            Require(Mathf.Abs(_server[d2].PositionX - 45f) < .02f && Mathf.Abs(_server[d1].PositionX - 40f) < .001f && Mathf.Abs(_server[d3].PositionX - 50f) < .001f, $"distribute failed: {_server[d2].PositionX}");
+            var air = Add(new Vector3(60, 8f, -6), "cube");
+            _editor.SelectIds([air]);
+            _editor.RestOnGroundForTesting();
+            Require(_server[air].PositionY < 7f, $"the object must come down to the ground: {_server[air].PositionY}");
+            _editor.SetGridForTesting(true, true);
+            Require(_editor.GridVisibleForTesting, "the grid must show under the selection");
+            _editor.SetGridForTesting(false, false);
+            Require(!_editor.GridVisibleForTesting, "the grid must hide");
 
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();

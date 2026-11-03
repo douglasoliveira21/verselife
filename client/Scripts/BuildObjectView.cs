@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Godot;
+using LifeVerse.Shared.Building;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -36,6 +37,59 @@ public partial class BuildObjectView : Node3D
     public BuildObjectState State { get; private set; } = new();
     private int _applyId;
     private Guid? _modelAsset;
+    private readonly List<int> _faceIds = [];
+    private readonly List<int> _faceTriangleEnd = [];
+
+    /// Face ids of the procedural mesh, one per surface in order (empty for the other shapes).
+    public IReadOnlyList<int> FaceIds => _faceIds;
+    public bool IsProcedural => _faceIds.Count > 0;
+    private readonly List<Material?> _faceBase = [];
+
+    /// Lights up one face of a procedural mesh (-1 clears it) so the person sees which face the texture tools will change.
+    public void HighlightFace(int faceId)
+    {
+        if (GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is not { } visual || _faceIds.Count == 0) return;
+        for (var i = 0; i < _faceIds.Count; i++)
+            visual.SetSurfaceOverrideMaterial(i, _faceIds[i] == faceId ? new StandardMaterial3D { AlbedoColor = new Color(1, .85f, .2f), EmissionEnabled = true, Emission = new Color(1, .75f, .1f), EmissionEnergyMultiplier = .6f } : _faceBase[i]);
+    }
+
+    /// The face id that owns a triangle of the collision mesh (what a ray reports as face_index), or -1.
+    public int FaceAtTriangle(int triangle)
+    {
+        for (var i = 0; i < _faceTriangleEnd.Count; i++) if (triangle < _faceTriangleEnd[i]) return _faceIds[i];
+        return -1;
+    }
+
+    /// Box, prism, cylinder, tube, cone and pyramid are built from real geometry: every setting of the shape changes the mesh,
+    /// each face is its own surface (so it can have its own colour) and the collision follows the exact shape, holes included.
+    private void BuildProcedural(BuildObjectState state)
+    {
+        var data = PrimMesh.Build(state.PrimitiveType, PrimParams.Parse(state.GeometryJson));
+        var mesh = new ArrayMesh();
+        var triangles = 0;
+        foreach (var face in data.Faces)
+        {
+            var arrays = new Godot.Collections.Array(); arrays.Resize((int)Mesh.ArrayType.Max);
+            arrays[(int)Mesh.ArrayType.Vertex] = face.Positions.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
+            arrays[(int)Mesh.ArrayType.Normal] = face.Normals.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
+            arrays[(int)Mesh.ArrayType.TexUV] = face.Uvs.Select(p => new Vector2(p.X, p.Y)).ToArray();
+            arrays[(int)Mesh.ArrayType.Index] = face.Indices;
+            mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+            _faceIds.Add(face.Id); triangles += face.Indices.Length / 3; _faceTriangleEnd.Add(triangles);
+        }
+        var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh };
+        AddChild(visual);
+        var baseMaterial = CreateMaterial(state.MaterialJson);
+        for (var i = 0; i < _faceIds.Count; i++) visual.SetSurfaceOverrideMaterial(i, baseMaterial);
+        ApplyFaceMaterials(visual, state.MaterialJson);
+        for (var i = 0; i < _faceIds.Count; i++) _faceBase.Add(visual.GetSurfaceOverrideMaterial(i));
+        if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
+        if (!TryGetBool(state.PhysicsJson, "collision", true) || mesh.GetSurfaceCount() == 0) return;
+        var trigger = TryGetBool(state.PhysicsJson, "trigger", false);
+        var body = new StaticBody3D { Name = trigger ? "Trigger" : "CollisionBody", CollisionLayer = trigger ? 0u : 1u, CollisionMask = trigger ? 0u : 1u };
+        body.AddChild(new CollisionShape3D { Shape = mesh.CreateTrimeshShape() });
+        AddChild(body);
+    }
 
     public override void _EnterTree() { if (_modelAsset is not null && GetNodeOrNull("Model") is null) RequestModel(); }
 
@@ -91,8 +145,9 @@ public partial class BuildObjectView : Node3D
     {
         State = state; Position = new Vector3(state.PositionX, state.PositionY, state.PositionZ); Rotation = new Vector3(Mathf.DegToRad(state.RotationX), Mathf.DegToRad(state.RotationY), Mathf.DegToRad(state.RotationZ)); Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ);
         foreach (var child in GetChildren().ToArray()) { RemoveChild(child); child.QueueFree(); }
-        _applyId++; _modelAsset = null;
+        _applyId++; _modelAsset = null; _faceIds.Clear(); _faceTriangleEnd.Clear(); _faceBase.Clear();
         if (state.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase)) { BuildMeshObject(state); return; }
+        if (PrimMesh.Supports(state.PrimitiveType)) { BuildProcedural(state); return; }
         var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var material = CreateMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = material }; AddChild(visual); ApplyFaceMaterials(visual, state.MaterialJson);
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         if (!TryGetBool(state.PhysicsJson, "collision", true)) return;
@@ -109,20 +164,23 @@ public partial class BuildObjectView : Node3D
             "cone" => new CylinderMesh { TopRadius = Mathf.Clamp(.05f * (1 - taperX), .01f, .5f), BottomRadius = .5f, Height = 1 },
             "plane" => new PlaneMesh { Size = new Vector2(1, 1) }, "tube" => new CylinderMesh { TopRadius = .5f, BottomRadius = .5f, Height = 1 },
             "ring" => new TorusMesh { InnerRadius = Mathf.Clamp(.28f - hollow * .2f, .05f, .45f), OuterRadius = .5f },
+            "torus" => new TorusMesh { InnerRadius = Mathf.Clamp(.2f - hollow * .15f, .03f, .45f), OuterRadius = .5f },
+            "hemisphere" => new SphereMesh { Radius = .5f, Height = .5f, IsHemisphere = true },
             "prism" => new BoxMesh { Size = new Vector3(1, .7f, 1) }, "pyramid" => new CylinderMesh { TopRadius = 0, BottomRadius = .6f, Height = 1 }, _ => new BoxMesh { Size = Vector3.One }
         };
     }
     private static float JsonNumber(string json, string key, float fallback) { try { using var doc = JsonDocument.Parse(json); return doc.RootElement.TryGetProperty(key, out var value) && value.TryGetSingle(out var number) ? number : fallback; } catch { return fallback; } }
-    private static Shape3D CreateShape(string type) => type.ToLowerInvariant() switch { "sphere" => new SphereShape3D { Radius = .5f }, "cylinder" or "cone" or "tube" or "pyramid" => new CylinderShape3D { Radius = .5f, Height = 1 }, "plane" => new BoxShape3D { Size = new Vector3(1, .05f, 1) }, _ => new BoxShape3D { Size = Vector3.One } };
+    private static Shape3D CreateShape(string type) => type.ToLowerInvariant() switch { "sphere" => new SphereShape3D { Radius = .5f }, "cylinder" or "cone" or "tube" or "pyramid" => new CylinderShape3D { Radius = .5f, Height = 1 }, "hemisphere" => new SphereShape3D { Radius = .5f }, "torus" or "ring" => new CylinderShape3D { Radius = .5f, Height = .3f }, "plane" => new BoxShape3D { Size = new Vector3(1, .05f, 1) }, _ => new BoxShape3D { Size = Vector3.One } };
     private static StandardMaterial3D CreateMaterial(string json) { var material = new StandardMaterial3D { AlbedoColor = new Color("#A8C7D8"), Roughness = .7f }; try { using var doc = JsonDocument.Parse(json); var root = doc.RootElement; if (root.TryGetProperty("color", out var color)) material.AlbedoColor = Color.FromHtml(color.GetString() ?? "#A8C7D8"); if (root.TryGetProperty("roughness", out var rough)) material.Roughness = Math.Clamp(rough.GetSingle(), 0, 1); if (root.TryGetProperty("metallic", out var metallic)) material.Metallic = Math.Clamp(metallic.GetSingle(), 0, 1); if (root.TryGetProperty("transparency", out var transparency)) { material.Transparency = BaseMaterial3D.TransparencyEnum.Alpha; material.AlbedoColor = new Color(material.AlbedoColor, Math.Clamp(transparency.GetSingle(), 0, 1)); } if (root.TryGetProperty("emission", out var emission)) { material.EmissionEnabled = true; material.Emission = Color.FromHtml(emission.GetString() ?? "#000000"); } } catch { } return material; }
-    private static void ApplyFaceMaterials(MeshInstance3D visual, string json)
+    private void ApplyFaceMaterials(MeshInstance3D visual, string json)
     {
         try
         {
             using var doc = JsonDocument.Parse(json); if (!doc.RootElement.TryGetProperty("faces", out var faces) || faces.ValueKind != JsonValueKind.Array) return;
-            foreach (var face in faces.EnumerateArray()) if (face.TryGetProperty("index", out var index) && face.TryGetProperty("color", out var color) && index.TryGetInt32(out var surface)) visual.SetSurfaceOverrideMaterial(surface, CreateMaterial($"{{\"color\":\"{color.GetString() ?? "#A8C7D8"}\"}}"));
+            foreach (var face in faces.EnumerateArray()) if (face.TryGetProperty("index", out var index) && face.TryGetProperty("color", out var color) && index.TryGetInt32(out var wanted) && SurfaceOf(wanted) is var surface and >= 0 && surface < visual.GetSurfaceOverrideMaterialCount()) visual.SetSurfaceOverrideMaterial(surface, CreateMaterial($"{{\"color\":\"{color.GetString() ?? "#A8C7D8"}\"}}"));
         }
         catch (JsonException) { }
     }
+    private int SurfaceOf(int index) => _faceIds.Count == 0 ? index : _faceIds.IndexOf(index);
     private static bool TryGetBool(string json, string property, bool fallback) { try { using var doc = JsonDocument.Parse(json); return doc.RootElement.TryGetProperty(property, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : fallback; } catch { return fallback; } }
 }

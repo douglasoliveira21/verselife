@@ -272,6 +272,11 @@ public partial class ViewerUI
             inventory.PopulateForTesting($"[{{\"id\":\"{a}\",\"name\":\"Construções\"}},{{\"id\":\"{b}\",\"name\":\"Móveis\"}}]",
                 "[" + string.Join(",", new[] { ("Casa Tropical", "models", "model/gltf-binary", 52428800), ("Quiosque", "models", "model/gltf-binary", 31457280), ("Palmeira", "models", "model/gltf-binary", 12582912), ("Textura Areia.jpg", "textures", "image/jpeg", 4194304), ("Textura Água.png", "textures", "image/png", 3145728), ("Som Ondas.ogg", "sounds", "audio/ogg", 6291456) }.Select(x => $"{{\"itemId\":\"{Guid.NewGuid()}\",\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"{x.Item1}\",\"category\":\"{x.Item2}\",\"mimeType\":\"{x.Item3}\",\"contentHash\":\"p{x.Item1}\",\"size\":{x.Item4},\"version\":1,\"favorite\":false,\"deleted\":false,\"folderId\":null}}")) + "]");
         }
+        if (view == "build" && _world.GetNodeOrNull<BuildEditor>("BuildEditor") is { } editor)
+        {
+            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, MaterialJson = "{\"color\":\"#D8A8C7\",\"roughness\":0.4}" };
+            editor.SetActive(true); editor.LoadStatesForTesting([state]); editor.SelectIds([state.Id]);
+        }
         if (view == "people" && _people is not null)
         {
             _people.RequestSink = (_, _, _) => true;

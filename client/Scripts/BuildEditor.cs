@@ -21,11 +21,10 @@ public partial class BuildEditor : Node3D
     private SessionManager _session = null!;
     private HttpRequest _http = null!;
     private BuildGizmo _gizmo = null!;
-    private PanelContainer _panel = null!;
-    private OptionButton _primitive = null!;
-    private LineEdit _snap = null!, _color = null!, _rotation = null!, _geometry = null!, _material = null!, _name = null!;
-    private Label _status = null!, _selectionLabel = null!;
-    private readonly Dictionary<GizmoMode, Button> _modeButtons = [];
+    private bool _selectOnly;
+    private bool _faceTool;
+    private int _selectedFace = -1;
+    private BuildGrid _grid = null!;
     private readonly Dictionary<Guid, BuildObjectView> _objects = [];
     private readonly List<BuildObjectView> _selection = [];
     private readonly List<BuildObjectState> _clipboard = [];
@@ -54,6 +53,7 @@ public partial class BuildEditor : Node3D
         _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnObjectsLoaded;
         _network.ConnectionStateChanged += OnConnectionState;
         _gizmo = new BuildGizmo { Name = "BuildGizmo" }; AddChild(_gizmo);
+        _grid = new BuildGrid(); AddChild(_grid);
         BuildPanel();
     }
 
@@ -74,12 +74,12 @@ public partial class BuildEditor : Node3D
 
     public void SetActive(bool active)
     {
-        _active = active; _panel.Visible = active;
+        _active = active; _window.Visible = active;
         if (!active) { CancelDrag(); ClearSelection(); return; }
         _islandId = _network.CurrentIslandId;
         if (_islandId == Guid.Empty && Guid.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_ID"), out var id)) _islandId = id;
         if (_islandId != Guid.Empty) LoadObjects();
-        _status.Text = "Clique em um objeto para selecionar (Shift soma). Atalhos: 1 mover, 2 girar, 3 escalar.";
+        _status.Text = "Clique em um objeto para selecionar (Shift soma). Atalhos: 1 selecionar, 2 mover, 3 girar, 4 esticar.";
     }
 
     public override void _UnhandledInput(InputEvent input)
@@ -106,9 +106,11 @@ public partial class BuildEditor : Node3D
         var ctrl = key.CtrlPressed || key.MetaPressed;
         switch (key.PhysicalKeycode)
         {
-            case Key.Key1: SetMode(GizmoMode.Move); return true;
-            case Key.Key2: SetMode(GizmoMode.Rotate); return true;
-            case Key.Key3: SetMode(GizmoMode.Scale); return true;
+            case Key.Key1: SelectTool(); return true;
+            case Key.Key2: SetMode(GizmoMode.Move); return true;
+            case Key.Key3: SetMode(GizmoMode.Rotate); return true;
+            case Key.Key4: SetMode(GizmoMode.Scale); return true;
+            case Key.Key5: FaceTool(); return true;
             case Key.Delete: DeleteSelection(); return true;
             case Key.C when ctrl: CopySelection(); return true;
             case Key.V when ctrl: Paste(); return true;
@@ -129,19 +131,24 @@ public partial class BuildEditor : Node3D
         var origin = camera.ProjectRayOrigin(screen); var direction = camera.ProjectRayNormal(screen);
         var axis = _gizmo.HandleAt(origin, direction);
         if (axis >= 0 && _selection.Count > 0) return BeginDrag(axis, origin, direction);
-        var picked = PickObject(origin, direction);
+        var picked = PickObject(origin, direction, out var face);
         if (picked is null) { if (!additive) ClearSelection(); return false; }
         SelectView(picked, additive);
+        if (_faceTool) SelectFace(picked, face);
         return false;
     }
 
-    private BuildObjectView? PickObject(Vector3 origin, Vector3 direction)
+    private BuildObjectView? PickObject(Vector3 origin, Vector3 direction) => PickObject(origin, direction, out _);
+
+    private BuildObjectView? PickObject(Vector3 origin, Vector3 direction, out int face)
     {
+        face = -1;
         var query = PhysicsRayQueryParameters3D.Create(origin, origin + direction * 150f, uint.MaxValue & ~BuildGizmo.PhysicsLayer);
         var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
         if (!hit.TryGetValue("collider", out var collider)) return null;
         var node = collider.AsGodotObject() as Node;
         while (node is not null and not BuildObjectView) node = node.GetParent();
+        if (node is BuildObjectView picked && hit.TryGetValue("face_index", out var index) && index.VariantType == Variant.Type.Int) face = picked.FaceAtTriangle((int)index);
         return node as BuildObjectView;
     }
 
@@ -168,19 +175,14 @@ public partial class BuildEditor : Node3D
 
     private void AfterSelectionChanged()
     {
-        _selectionLabel.Text = _selection.Count switch
-        {
-            0 => "Nada selecionado",
-            1 => $"Selecionado: {_selection[0].State.Name} · revisão {_selection[0].State.Revision}{(_selection[0].State.GroupId is null ? "" : " · em grupo")}",
-            _ => $"{_selection.Count} objetos selecionados"
-        };
-        if (_selection.Count == 1) { var s = _selection[0].State; _name.Text = s.Name; _rotation.Text = $"{s.RotationX:0.##},{s.RotationY:0.##},{s.RotationZ:0.##}"; _geometry.Text = s.GeometryJson; }
+        FillFields();
         RefreshGizmo();
     }
 
     private void RefreshGizmo()
     {
-        if (_selection.Count == 0 || !_active) { _gizmo.HideHandles(); return; }
+        UpdateGrid();
+        if (_selection.Count == 0 || !_active || _selectOnly || _faceTool) { _gizmo.HideHandles(); return; }
         var center = _selection.Aggregate(Vector3.Zero, (sum, view) => sum + view.Position) / _selection.Count;
         var axes = _mode == GizmoMode.Scale && _selection.Count == 1 ? Basis.FromEuler(_selection[0].Rotation) : Basis.Identity;
         _gizmo.ShowAt(center, _mode, axes);
@@ -188,8 +190,15 @@ public partial class BuildEditor : Node3D
 
     private void SetMode(GizmoMode mode)
     {
-        _mode = mode;
-        foreach (var (key, button) in _modeButtons) button.SetPressedNoSignal(key == mode);
+        _mode = mode; _selectOnly = false; _faceTool = false; ClearFace();
+        UpdateToolButtons();
+        RefreshGizmo();
+    }
+
+    private void SelectTool()
+    {
+        CancelDrag(); _selectOnly = true; _faceTool = false; ClearFace();
+        UpdateToolButtons();
         RefreshGizmo();
     }
 
@@ -207,12 +216,18 @@ public partial class BuildEditor : Node3D
     public void UpdateDrag(Vector3 rayOrigin, Vector3 rayDirection)
     {
         var snap = float.TryParse(_snap.Text, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? Mathf.Clamp(parsed, 0f, 100f) : .5f;
-        if (_gizmo.Drag(rayOrigin, rayDirection, snap, Mathf.DegToRad(5f)) is not { } drag) return;
+        var rotationStep = Mathf.Clamp(NumOr(_rotSnap, 5f), .5f, 90f);
+        if (_gizmo.Drag(rayOrigin, rayDirection, snap, Mathf.DegToRad(rotationStep)) is not { } drag) return;
         _dragMoved |= drag.Mode switch { GizmoMode.Move => !Mathf.IsZeroApprox(drag.Amount), GizmoMode.Rotate => !Mathf.IsZeroApprox(drag.Amount), _ => !Mathf.IsEqualApprox(drag.Amount, 1f) };
         switch (drag.Mode)
         {
             case GizmoMode.Move:
-                foreach (var start in _dragStart) start.View.Position = start.Position + drag.AxisDirection * drag.Amount;
+                foreach (var start in _dragStart)
+                {
+                    var moved = start.Position + drag.AxisDirection * drag.Amount;
+                    if (_gridSnap.ButtonPressed && snap > 0f) moved[drag.Axis] = LifeVerse.Shared.Building.AlignMath.SnapToGrid(moved[drag.Axis], snap);
+                    start.View.Position = moved;
+                }
                 _gizmo.GlobalPosition = _dragPivot + drag.AxisDirection * drag.Amount;
                 break;
             case GizmoMode.Rotate:
@@ -275,44 +290,6 @@ public partial class BuildEditor : Node3D
             Send(Command("update", after.Id, view.State.Revision, PayloadFrom(after)));
         }
         if (entry.Items.Count > 0) PushHistory(entry);
-    }
-
-    private void ApplySelected()
-    {
-        if (_selection.Count == 0) { _status.Text = "Selecione um objeto primeiro."; return; }
-        var snap = float.TryParse(_snap.Text, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? Mathf.Clamp(parsed, .01f, 100f) : .5f;
-        var afters = new List<BuildObjectState>();
-        foreach (var view in _selection)
-        {
-            var after = FromView(view);
-            after.PositionX = Mathf.Snapped(after.PositionX, snap); after.PositionY = Mathf.Snapped(after.PositionY, snap); after.PositionZ = Mathf.Snapped(after.PositionZ, snap);
-            if (_selection.Count == 1)
-            {
-                var rotation = ParseVector(_rotation.Text, new Vector3(after.RotationX, after.RotationY, after.RotationZ));
-                after.RotationX = rotation.X; after.RotationY = rotation.Y; after.RotationZ = rotation.Z;
-                if (!string.IsNullOrWhiteSpace(_name.Text)) after.Name = _name.Text.Trim();
-            }
-            if (!string.IsNullOrWhiteSpace(_material.Text)) after.MaterialJson = _material.Text;
-            else if (!string.IsNullOrWhiteSpace(_color.Text)) after.MaterialJson = JsonSerializer.Serialize(new { color = _color.Text, roughness = .7f });
-            if (!string.IsNullOrWhiteSpace(_geometry.Text)) after.GeometryJson = _geometry.Text;
-            afters.Add(after);
-        }
-        CommitUpdates(afters);
-    }
-
-    private void CreateObject()
-    {
-        if (!_active || !_network.IsAuthenticated && OperationSink is null) { _status.Text = "Entre em uma ilha autenticada antes de construir."; return; }
-        var camera = GetViewport().GetCamera3D();
-        if (camera is null) return;
-        var center = GetViewport().GetVisibleRect().Size / 2;
-        var origin = camera.ProjectRayOrigin(center); var direction = camera.ProjectRayNormal(center);
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(origin, origin + direction * 30f, uint.MaxValue & ~BuildGizmo.PhysicsLayer));
-        var position = hit.Count > 0 ? hit["position"].AsVector3() + Vector3.Up * .5f : origin + direction * 5f;
-        var template = new BuildObjectState { PrimitiveType = _primitive.GetItemText(_primitive.Selected), MaterialJson = JsonSerializer.Serialize(new { color = string.IsNullOrWhiteSpace(_color.Text) ? "#A8C7D8" : _color.Text, roughness = .7f }), GeometryJson = string.IsNullOrWhiteSpace(_geometry.Text) ? "{}" : _geometry.Text, PhysicsJson = "{\"collision\":true}", Name = string.IsNullOrWhiteSpace(_name.Text) ? "Object" : _name.Text.Trim() };
-        var entry = new HistoryEntry("create", []);
-        CreateFrom(template, position, null, created => { var item = new HistoryItem(created.Id, null, Clone(created)); entry.Items.Add(item); SelectIds([created.Id]); });
-        PushHistory(entry);
     }
 
     /// Places an imported 3D model from the inventory as a "mesh" object, selects it and opens the move handles.
@@ -551,63 +528,6 @@ public partial class BuildEditor : Node3D
 
     // ---- panel and payload helpers ---------------------------------------------------------------------------
 
-    private void BuildPanel()
-    {
-        _panel = new PanelContainer { Name = "BuildTools", Visible = false };
-        _panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        _panel.OffsetLeft = 18; _panel.OffsetTop = 44; _panel.OffsetRight = 372; _panel.OffsetBottom = 45;
-        var box = new VBoxContainer(); _panel.AddChild(box);
-        box.AddChild(new Label { Text = "CONSTRUÇÃO · servidor autoritativo (B)" });
-        var modes = new HBoxContainer();
-        foreach (var (mode, text) in new[] { (GizmoMode.Move, "Mover (1)"), (GizmoMode.Rotate, "Girar (2)"), (GizmoMode.Scale, "Escalar (3)") })
-        {
-            var button = new Button { Text = text, ToggleMode = true, ButtonPressed = mode == _mode, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            var captured = mode; button.Pressed += () => SetMode(captured);
-            _modeButtons[mode] = button; modes.AddChild(button);
-        }
-        box.AddChild(modes);
-        _selectionLabel = new Label { Text = "Nada selecionado" }; box.AddChild(_selectionLabel);
-        _primitive = new OptionButton();
-        foreach (var primitive in new[] { "cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid" }) _primitive.AddItem(primitive);
-        box.AddChild(_primitive);
-        box.AddChild(Row(("Criar primitiva", CreateObject)));
-        box.AddChild(Row(("Copiar", CopySelection), ("Colar", Paste), ("Duplicar", Duplicate), ("Excluir", DeleteSelection)));
-        box.AddChild(Row(("Agrupar", GroupSelection), ("Desagrupar", Ungroup)));
-        box.AddChild(Row(("Desfazer", Undo), ("Refazer", Redo)));
-        _snap = new LineEdit { Text = "0.5", PlaceholderText = "Snap de posição (m)", TooltipText = "Passo do movimento e da posição aplicada" }; box.AddChild(_snap);
-        _rotation = new LineEdit { Text = "0,0,0", PlaceholderText = "Rotação X,Y,Z (graus)" }; box.AddChild(_rotation);
-        _name = new LineEdit { Text = "Object", PlaceholderText = "Nome do objeto" }; box.AddChild(_name);
-        _color = new LineEdit { Text = "#A8C7D8", PlaceholderText = "Cor do material" }; box.AddChild(_color);
-        _material = new LineEdit { PlaceholderText = "Material por face JSON (opcional)" }; box.AddChild(_material);
-        _geometry = new LineEdit { Text = "{\"hollow\":0,\"taperX\":0,\"taperY\":0,\"twist\":0}", PlaceholderText = "Geometria: hollow/taper/twist/cut" }; box.AddChild(_geometry);
-        box.AddChild(Row(("Aplicar propriedades à seleção", ApplySelected)));
-        box.AddChild(Row(("Copiar propriedades", CopyProperties), ("Colar propriedades", PasteProperties)));
-        _status = new Label { Text = "Permissão: build/edit validada pelo servidor", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(320, 0) }; box.AddChild(_status);
-        AddChild(_panel);
-    }
-
-    private static HBoxContainer Row(params (string Text, Action Action)[] buttons)
-    {
-        var row = new HBoxContainer();
-        foreach (var (text, action) in buttons) { var button = new Button { Text = text, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; button.Pressed += action; row.AddChild(button); }
-        return row;
-    }
-
-    private void CopyProperties()
-    {
-        if (_selection.Count == 0) return;
-        var s = _selection[0].State;
-        _propertyClipboard = JsonSerializer.Serialize(new { materialJson = s.MaterialJson, geometryJson = s.GeometryJson });
-        _status.Text = "Propriedades copiadas.";
-    }
-
-    private void PasteProperties()
-    {
-        if (string.IsNullOrWhiteSpace(_propertyClipboard)) return;
-        try { using var doc = JsonDocument.Parse(_propertyClipboard); _material.Text = doc.RootElement.GetProperty("materialJson").GetString() ?? "{}"; _geometry.Text = doc.RootElement.GetProperty("geometryJson").GetString() ?? "{}"; _status.Text = "Propriedades coladas nos campos; use Aplicar."; }
-        catch (JsonException) { _status.Text = "Propriedades inválidas na área de transferência."; }
-    }
-
     private static Vector3 ParseVector(string text, Vector3 fallback)
     {
         var parts = text.Split(',', StringSplitOptions.TrimEntries);
@@ -623,7 +543,7 @@ public partial class BuildEditor : Node3D
         ["primitiveType"] = s.PrimitiveType, ["positionX"] = s.PositionX, ["positionY"] = s.PositionY, ["positionZ"] = s.PositionZ,
         ["rotationX"] = s.RotationX, ["rotationY"] = s.RotationY, ["rotationZ"] = s.RotationZ, ["scaleX"] = s.ScaleX, ["scaleY"] = s.ScaleY, ["scaleZ"] = s.ScaleZ,
         ["materialJson"] = s.MaterialJson, ["geometryJson"] = s.GeometryJson, ["physicsJson"] = string.IsNullOrWhiteSpace(s.PhysicsJson) ? "{\"collision\":true}" : s.PhysicsJson,
-        ["groupId"] = s.GroupId, ["expectedRevision"] = s.Revision, ["name"] = s.Name
+        ["groupId"] = s.GroupId, ["expectedRevision"] = s.Revision, ["name"] = s.Name, ["description"] = s.Description
     };
 
     private static string Command(string operation, Guid? objectId, int revision, object? payload) => JsonSerializer.Serialize(new { operation, objectId, @object = payload, expectedRevision = revision });

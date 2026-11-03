@@ -96,7 +96,7 @@ public partial class ViewerUI : CanvasLayer
         SetVolume((float)(double)_prefs.GetValue("audio", "volume", 1.0), save: false);
         UpdateStatus();
         foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditor", "TerrainEditor" })
-            foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; FloatingWindow.MakeDraggable(child); }
+            foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; if (child is not FloatingWindow) FloatingWindow.MakeDraggable(child); }
     }
 
     public override void _ExitTree()
