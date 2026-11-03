@@ -37,10 +37,18 @@ public static class AuthoritativeMovement
     public const float SwimVerticalSpeed = 2.5f;
 
     public static NetworkMotionState Step(AuthoritativePlayerState state, MovementInput input, float delta, Func<float, float, float>? terrainHeight = null,
-        float seaLevel = float.NegativeInfinity, float worldLimit = float.PositiveInfinity)
+        float seaLevel = float.NegativeInfinity, float worldLimit = float.PositiveInfinity, ObstacleField? obstacles = null)
     {
         delta = Math.Clamp(delta, 0.001f, 0.1f);
-        state.GroundY = terrainHeight is null ? GroundOffset : terrainHeight(state.X, state.Z) + GroundOffset;
+        // the ground is the terrain or, where something solid can be stood on, that thing's top surface
+        float GroundAt(float gx, float gz, float feetY)
+        {
+            var terrain = terrainHeight is null ? GroundOffset : terrainHeight(gx, gz) + GroundOffset;
+            if (obstacles is null) return terrain;
+            var support = obstacles.SupportHeight(gx, feetY, gz);
+            return float.IsNegativeInfinity(support) ? terrain : MathF.Max(terrain, support);
+        }
+        state.GroundY = GroundAt(state.X, state.Z, state.Y);
         var wasGrounded = state.Grounded;
         var jumped = false;
         if (input.Flags.HasFlag(InputFlags.Sit)) state.Seated = !state.Seated;
@@ -68,13 +76,16 @@ public static class AuthoritativeMovement
             if (input.Flags.HasFlag(InputFlags.Jump) && state.Grounded) { state.VelocityY = JumpVelocity; jumped = true; }
             state.VelocityY -= 9.8f * delta;
         }
-        state.X += state.VelocityX * delta;
+        var previousY = state.Y;
         state.Y += state.VelocityY * delta;
-        state.Z += state.VelocityZ * delta;
+        // horizontal movement goes in small pieces so a fast avatar can never jump over a thin wall between two checks
+        var moveX = state.VelocityX * delta; var moveZ = state.VelocityZ * delta;
+        var pieces = obstacles is null ? 1 : Math.Clamp((int)MathF.Ceiling(MathF.Max(MathF.Abs(moveX), MathF.Abs(moveZ)) / .15f), 1, 8);
+        for (var piece = 0; piece < pieces; piece++) { state.X += moveX / pieces; state.Z += moveZ / pieces; obstacles?.Resolve(state); }
         if (MathF.Abs(state.X) > worldLimit) { state.X = MathF.Sign(state.X) * worldLimit; state.VelocityX = 0; }
         if (MathF.Abs(state.Z) > worldLimit) { state.Z = MathF.Sign(state.Z) * worldLimit; state.VelocityZ = 0; }
         if (state.Swimming) state.Y = MathF.Min(state.Y, floatY + SwimSurfaceMargin);
-        var ground = terrainHeight is null ? GroundOffset : terrainHeight(state.X, state.Z) + GroundOffset;
+        var ground = GroundAt(state.X, state.Z, MathF.Max(previousY, state.Y));
         var followsGround = !state.Flying && wasGrounded && !jumped && state.VelocityY <= 0f && state.Y - ground <= StepDown;
         state.GroundY = ground;
         if (state.Y <= ground || followsGround) { state.Y = ground; state.VelocityY = Math.Max(0f, state.VelocityY); if (state.Flying && input.Flags.HasFlag(InputFlags.Descend)) state.Flying = false; }

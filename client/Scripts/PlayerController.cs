@@ -281,9 +281,16 @@ public partial class PlayerController : CharacterBody3D
     {
         if (_inVehicle) return;
         var error = GlobalPosition.DistanceTo(authoritativePosition);
-        if (error > 3f) GlobalPosition = authoritativePosition;
-        else if (error > .08f) GlobalPosition = GlobalPosition.Lerp(authoritativePosition, .18f);
-        if (error > .5f) Velocity = Velocity.Lerp(authoritativeVelocity, .35f);
+        if (error > 3f) GlobalPosition = authoritativePosition; // a real teleport
+        else if (error > .3f)
+        {
+            // The server's shapes are simpler than the ones the engine collides with, so small differences are normal and are left alone.
+            // A bigger one is closed gently, and with a collision-checked move: a correction must never carry the avatar through a wall.
+            var correction = (authoritativePosition - GlobalPosition) * .12f;
+            if (IsOnFloor() && Mathf.Abs(correction.Y) < .5f && new Vector2(correction.X, correction.Z).Length() < .05f) correction.Y = 0; // no tugging up and down while standing
+            MoveAndCollide(correction);
+        }
+        if (error > 1f) Velocity = Velocity.Lerp(authoritativeVelocity, .2f);
     }
     public void Sit(InteractableSeat seat)
     {

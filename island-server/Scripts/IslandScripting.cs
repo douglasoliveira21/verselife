@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
 using LifeVerse.Scripting;
+using LifeVerse.Shared.Networking;
 
 namespace LifeVerse.IslandServer.Scripts;
 
@@ -27,6 +28,12 @@ public sealed class IslandScripting : IScriptWorld
     private readonly Action<string, object> _log;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly Dictionary<Guid, CachedObject> _objects = [];
+
+    /// What stops walking avatars, kept in step with the objects (the movement simulation uses it so the server and the players agree on walls and floors).
+    public ObstacleField Obstacles { get; } = new();
+
+    private void UpdateObstacle(CachedObject o) =>
+        Obstacles.Set(o.Id, ObstacleField.Blocks(o.PhysicsJson) ? ObstacleField.For(o.PrimitiveType, new System.Numerics.Vector3(o.Position.X, o.Position.Y, o.Position.Z), new System.Numerics.Vector3(o.Rotation.X, o.Rotation.Y, o.Rotation.Z), new System.Numerics.Vector3(o.Scale.X, o.Scale.Y, o.Scale.Z)) : null);
     private readonly Dictionary<(Guid Object, Guid Avatar), bool> _inside = [];
     private readonly Dictionary<Guid, Queue<double>> _touches = [];
     private readonly Dictionary<Guid, Queue<double>> _changeTimes = [];
@@ -65,7 +72,7 @@ public sealed class IslandScripting : IScriptWorld
             foreach (var element in root.GetProperty("objects").EnumerateArray()) { var cached = Parse(element); fresh[cached.Id] = cached; }
             // Objects with a change in flight keep their newer local view until the server answers.
             foreach (var id in _inFlight) if (_objects.TryGetValue(id, out var local)) fresh[id] = local;
-            _objects.Clear(); foreach (var (id, cached) in fresh) _objects[id] = cached;
+            _objects.Clear(); Obstacles.Clear(); foreach (var (id, cached) in fresh) { _objects[id] = cached; UpdateObstacle(cached); }
             var definitions = root.GetProperty("scripts").EnumerateArray().Select(s => new ScriptDefinition(s.GetProperty("id").GetGuid(), s.GetProperty("objectId").GetGuid(), s.GetProperty("ownerUserId").GetGuid(), s.GetProperty("name").GetString() ?? "script", s.GetProperty("source").GetString() ?? "", s.GetProperty("version").GetInt32(), s.GetProperty("instructionBudget").GetInt32())).ToList();
             var state = new Dictionary<Guid, Dictionary<string, string>>();
             if (root.TryGetProperty("state", out var states))
@@ -92,8 +99,8 @@ public sealed class IslandScripting : IScriptWorld
         {
             using var document = JsonDocument.Parse(acceptedJson);
             var root = document.RootElement;
-            if (root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object) { var cached = Parse(state); _objects[cached.Id] = cached; }
-            else if (root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) _objects.Remove(removed);
+            if (root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object) { var cached = Parse(state); _objects[cached.Id] = cached; UpdateObstacle(cached); }
+            else if (root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) { _objects.Remove(removed); Obstacles.Remove(removed); }
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
     }
