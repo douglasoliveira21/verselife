@@ -134,6 +134,7 @@ app.MapVehicleEndpoints();
 app.MapBuildEndpoints();
 app.MapAssetEndpoints();
 app.MapBuildPackageEndpoints();
+app.MapBuildLimitEndpoints();
 app.MapScriptingEndpoints();
 app.MapSocialEndpoints();
 app.MapPeopleEndpoints();
@@ -148,6 +149,7 @@ if (!app.Environment.IsEnvironment("Testing"))
     await using var scope = app.Services.CreateAsyncScope();
     var db = scope.ServiceProvider.GetRequiredService<LifeVerseDbContext>();
     await db.Database.MigrateAsync();
+    await BuildCostBackfill.RunAsync(db);
 }
 
 await app.RunAsync();

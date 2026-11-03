@@ -8,6 +8,12 @@ public sealed record PackageObjectDto(
     float X, float Y, float Z, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ,
     string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, int? Group);
 
+/// <summary>An object of the world as the package builder reads it (absolute position, real group id).</summary>
+public sealed record PackageSourceDto(
+    string PrimitiveType, string Name, string Description,
+    float X, float Y, float Z, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ,
+    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, Guid? GroupId);
+
 public sealed record PackageDto(string Format, int Version, string Name, float BaseOffset, PackageObjectDto[] Objects);
 
 /// <summary>
@@ -21,6 +27,20 @@ public static class PackageDocument
     public const int MaxObjects = 500;
     public const int MaxBytes = 4 * 1024 * 1024;
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
+
+    /// <summary>Builds a package from objects of the world, exactly as the client does (a test compares the two).</summary>
+    public static PackageDto Create(string name, IReadOnlyList<PackageSourceDto> sources)
+    {
+        if (sources.Count == 0 || sources.Count > MaxObjects) throw new ArgumentException("A construction needs 1 to 500 objects.", nameof(sources));
+        var centerX = (sources.Min(s => s.X) + sources.Max(s => s.X)) / 2f; var centerZ = (sources.Min(s => s.Z) + sources.Max(s => s.Z)) / 2f;
+        var lowest = sources.OrderBy(s => s.Y - s.ScaleY / 2f).First();
+        var groups = sources.Where(s => s.GroupId is not null).Select(s => s.GroupId!.Value).Distinct().ToList();
+        var objects = sources.Select(s => new PackageObjectDto(s.PrimitiveType, s.Name, s.Description, s.X - centerX, s.Y - lowest.Y, s.Z - centerZ,
+            s.RotationX, s.RotationY, s.RotationZ, s.ScaleX, s.ScaleY, s.ScaleZ, s.MaterialJson, s.GeometryJson, s.PhysicsJson, s.ContentJson,
+            s.GroupId is { } id ? groups.IndexOf(id) : null)).ToArray();
+        name = (name ?? string.Empty).Trim();
+        return new PackageDto(FormatName, CurrentVersion, name.Length == 0 ? "Construção" : name[..Math.Min(name.Length, 160)], lowest.ScaleY / 2f, objects);
+    }
 
     public static string Serialize(PackageDto package) => JsonSerializer.Serialize(package, Options);
 

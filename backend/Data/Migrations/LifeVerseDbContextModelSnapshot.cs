@@ -392,6 +392,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("content_json");
 
+                    b.Property<int>("Cost")
+                        .HasColumnType("integer")
+                        .HasColumnName("cost");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");

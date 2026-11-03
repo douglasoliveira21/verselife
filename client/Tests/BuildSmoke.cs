@@ -15,6 +15,7 @@ public partial class BuildSmoke : Node
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<Guid, BuildObjectState> _server = [];
     private BuildEditor _editor = null!;
+    private readonly List<string> _sentLocks = [], _sentReturns = [];
 
     public override async void _Ready()
     {
@@ -281,6 +282,52 @@ public partial class BuildSmoke : Node
             _editor.FillPicker($"{{\"items\":[{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Som\",\"category\":\"sounds\"}},{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Lixo\",\"category\":\"sounds\",\"deleted\":true}},{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Estranho\",\"category\":\"malware\"}}]}}");
             Require(_editor.PickerCountForTesting == 1, "the picker lists only kept items of kinds an object can hold");
 
+            // Building together: leases, refusals, limits, returning and history.
+            var shared = Add(new Vector3(120, .5f, -6), "cube");
+            _sentLocks.Clear();
+            _editor.SelectIds([shared]);
+            Require(_sentLocks.Any(j => j.Contains("\"lock\"") && j.Contains(shared.ToString())) && _editor.MyLockCountForTesting == 1, "selecting an object must take a lease on it");
+            _sentLocks.Clear(); _editor.RenewLocksForTesting();
+            Require(_sentLocks.Count == 1 && _sentLocks[0].Contains("\"lock\""), "the lease must be renewed while the selection stays");
+            _sentLocks.Clear(); _editor.SelectIds([]);
+            Require(_sentLocks.Any(j => j.Contains("\"unlock\"") && j.Contains(shared.ToString())) && _editor.MyLockCountForTesting == 0, "letting go of the selection must give the lease back");
+
+            var maria = Guid.NewGuid();
+            string LockMessage(string operation) => $"{{\"operation\":\"{operation}\",\"objectIds\":[\"{shared}\"],\"userId\":\"{maria}\",\"userName\":\"Maria\",\"expiresAtMs\":{DateTimeOffset.UtcNow.AddSeconds(20).ToUnixTimeMilliseconds()}}}";
+            _editor.ApplyOperationForTesting(LockMessage("lock"));
+            Require(_editor.LockedByForTesting(shared) == "Maria", "someone else's lease must be known");
+            await Frames(2);
+            Require(_editor.ViewForTesting(shared)!.GetNodeOrNull<Label3D>("LockTag") is { } tag && tag.Text.Contains("Maria"), "a locked object must show who is editing it");
+            _sentLocks.Clear(); _editor.SelectIds([shared]);
+            Require(!_sentLocks.Any(j => j.Contains("\"lock\"")), "a lease held by someone else must not be requested");
+            Require(!_editor.BeginDrag(0, new Vector3(0, 4, 4), Vector3.Forward) && _editor.StatusForTesting.Contains("Maria"), "no handles on an object someone else is editing, and the person is told why");
+            _editor.ApplyOperationForTesting(LockMessage("unlock"));
+            Require(_editor.LockedByForTesting(shared) is null, "an unlock must free the object");
+            _editor.ApplyOperationForTesting($"{{\"operation\":\"lock\",\"objectIds\":[\"{shared}\"],\"userId\":\"{maria}\",\"userName\":\"Maria\",\"expiresAtMs\":{DateTimeOffset.UtcNow.AddSeconds(-5).ToUnixTimeMilliseconds()}}}");
+            Require(_editor.LockedByForTesting(shared) is null, "an expired lease must be ignored even if the unlock never arrived");
+
+            foreach (var (code, expected) in new[] { ("locked:Maria", "Maria"), ("parcel_forbidden", "terreno"), ("forbidden", "permissão"), ("not_owner", "não é seu"), ("cost_limit", "custo"), ("parcel_object_limit", "terreno"), ("not_allowed_to_return", "devolver"), ("invalid_object", "recusou"), ("object_quota", "limite de objetos") })
+            {
+                _editor.RejectForTesting(code);
+                Require(_editor.StatusForTesting.Contains(expected, StringComparison.OrdinalIgnoreCase), $"refusal '{code}' must be explained in Portuguese: '{_editor.StatusForTesting}'");
+            }
+
+            _sentReturns.Clear(); _editor.SelectIds([shared]);
+            _editor.ReturnSelectionForTesting();
+            Require(_sentReturns.Count == 1 && _sentReturns[0].Contains("\"return\"") && _sentReturns[0].Contains(shared.ToString()), "returning must ask the island to return the selection");
+            var objectsBefore = _editor.ObjectCountForTesting;
+            _editor.ApplyOperationForTesting($"{{\"operation\":\"delete\",\"objectId\":\"{shared}\",\"returned\":true}}");
+            Require(_editor.ObjectCountForTesting == objectsBefore - 1, "a returned object must leave the world for everyone");
+
+            _editor.ShowLimits("{\"objects\":1234,\"maxObjects\":5000,\"cost\":52000,\"maxCost\":200000,\"canBuildHere\":true,\"isAdmin\":false,\"parcel\":{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Praça\",\"mine\":true,\"publicBuild\":false,\"objects\":45,\"maxObjects\":100,\"cost\":300,\"maxCost\":2000}}");
+            Require(_editor.LimitsTextForTesting.Contains("1.234") && _editor.LimitsTextForTesting.Contains("52 mil") && _editor.LimitsTextForTesting.Contains("Praça") && _editor.LimitsTextForTesting.Contains("(seu)") && _editor.LimitsTextForTesting.Contains("pode construir aqui"), $"limits text: {_editor.LimitsTextForTesting}");
+            _editor.ShowLimits("{\"objects\":1,\"maxObjects\":5000,\"cost\":1,\"maxCost\":200000,\"canBuildHere\":false,\"parcel\":null}");
+            Require(_editor.LimitsTextForTesting.Contains("não pode construir"), "a spot where building is not allowed must say so");
+            _editor.ShowLimits("garbage");
+            Require(_editor.LimitsTextForTesting.Contains("Não foi possível"), "a broken answer must not leave stale numbers");
+            _editor.ShowHistoryText($"[{{\"operation\":\"update\",\"actorUserId\":\"{Guid.NewGuid()}\",\"revision\":3,\"at\":\"2026-11-03T12:00:00Z\"}},{{\"operation\":\"create\",\"actorUserId\":\"{Guid.NewGuid()}\",\"revision\":1,\"at\":\"2026-11-03T11:00:00Z\"}}]");
+            Require(_editor.HistoryTextForTesting.Contains("Alterado") && _editor.HistoryTextForTesting.Contains("Criado") && _editor.HistoryTextForTesting.Contains("revisão 3"), $"history text: {_editor.HistoryTextForTesting}");
+
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();
         }
@@ -305,6 +352,8 @@ public partial class BuildSmoke : Node
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         var operation = root.GetProperty("operation").GetString();
+        if (operation is "lock" or "unlock") { _sentLocks.Add(json); return true; }
+        if (operation == "return") { _sentReturns.Add(json); return true; }
         if (operation == "delete")
         {
             var id = Guid.Parse(root.GetProperty("objectId").GetString()!);

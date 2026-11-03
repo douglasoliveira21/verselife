@@ -55,16 +55,9 @@ public static class BuildPackageEndpoints
         var error = await ValidateAsync(db, owner, package, ct);
         if (error is not null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["package"] = [error] });
 
-        var bytes = Encoding.UTF8.GetBytes(PackageDocument.Serialize(package));
-        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        var now = clock.GetUtcNow();
-        var asset = new Asset { Id = Guid.NewGuid(), OwnerUserId = owner, CreatorUserId = owner, Name = package.Name, Category = Category, LicenseJson = "{\"source\":\"build-package\"}", Status = "ready", CreatedAt = now, UpdatedAt = now };
-        var key = await storage.PutAsync(owner, hash, bytes, ct);
-        var version = new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = hash, StorageKey = key, MimeType = MimeType, ByteSize = bytes.Length, ValidationJson = JsonSerializer.Serialize(new { objects = package.Objects.Length }), CreatedAt = now };
-        var item = new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = owner, AssetId = asset.Id, DisplayName = package.Name, CreatedAt = now, UpdatedAt = now };
-        db.Assets.Add(asset); db.AssetVersions.Add(version); db.InventoryItems.Add(item);
+        var item = await BuildPackageStore.SaveAsync(db, storage, owner, package, clock.GetUtcNow(), ct);
         await db.SaveChangesAsync(ct);
-        return Results.Created($"/api/v1/inventory/build-packages/{item.Id}", new { itemId = item.Id, assetId = asset.Id, name = package.Name, objects = package.Objects.Length });
+        return Results.Created($"/api/v1/inventory/build-packages/{item.Id}", new { itemId = item.Id, assetId = item.AssetId, name = package.Name, objects = package.Objects.Length });
     }
 
     private static async Task<IResult> ReadAsync(Guid itemId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
@@ -78,5 +71,21 @@ public static class BuildPackageEndpoints
         if (version is null || version.MimeType != MimeType) return Results.NotFound();
         var stream = await storage.OpenReadAsync(version.StorageKey, ct);
         return stream is null ? Results.NotFound() : Results.Stream(stream, "application/json");
+    }
+}
+
+/// <summary>Writes a construction into someone's inventory (the asset, its stored bytes and the item). The caller saves the changes.</summary>
+public static class BuildPackageStore
+{
+    public static async Task<InventoryItem> SaveAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, PackageDto package, DateTimeOffset now, CancellationToken ct)
+    {
+        var bytes = Encoding.UTF8.GetBytes(PackageDocument.Serialize(package));
+        var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+        var asset = new Asset { Id = Guid.NewGuid(), OwnerUserId = owner, CreatorUserId = owner, Name = package.Name, Category = BuildPackageEndpoints.Category, LicenseJson = "{\"source\":\"build-package\"}", Status = "ready", CreatedAt = now, UpdatedAt = now };
+        var key = await storage.PutAsync(owner, hash, bytes, ct);
+        var version = new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = hash, StorageKey = key, MimeType = BuildPackageEndpoints.MimeType, ByteSize = bytes.Length, ValidationJson = JsonSerializer.Serialize(new { objects = package.Objects.Length }), CreatedAt = now };
+        var item = new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = owner, AssetId = asset.Id, DisplayName = package.Name, CreatedAt = now, UpdatedAt = now };
+        db.Assets.Add(asset); db.AssetVersions.Add(version); db.InventoryItems.Add(item);
+        return item;
     }
 }

@@ -233,6 +233,8 @@ public sealed class BuildObject
     public string PermissionsJson { get; set; } = "{\"modify\":true,\"copy\":true,\"transfer\":false,\"use\":true,\"move\":true,\"delete\":true,\"return\":true}";
     public string ContentJson { get; set; } = "[]";
     public string OwnerHistoryJson { get; set; } = "[]";
+    /// <summary>What this object costs the island's and parcel's budget (see BuildCost).</summary>
+    public int Cost { get; set; }
     public int Revision { get; set; } = 1;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }

@@ -68,7 +68,7 @@ public partial class BuildEditor : Node3D
     private void OnConnectionState(string state, string detail)
     {
         if (state == "online") { _islandId = _network.CurrentIslandId; LoadObjects(); }
-        else if (state is "offline" or "failed") { CancelDrag(); ClearSelection(); foreach (var view in _objects.Values) if (IsInstanceValid(view)) view.QueueFree(); _objects.Clear(); }
+        else if (state is "offline" or "failed") { _lockedBy.Clear(); _myLocks.Clear(); CancelDrag(); ClearSelection(); foreach (var view in _objects.Values) if (IsInstanceValid(view)) view.QueueFree(); _objects.Clear(); }
     }
 
     // ---- activation and input --------------------------------------------------------------------------------
@@ -80,6 +80,7 @@ public partial class BuildEditor : Node3D
         _islandId = _network.CurrentIslandId;
         if (_islandId == Guid.Empty && Guid.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_ID"), out var id)) _islandId = id;
         if (_islandId != Guid.Empty) LoadObjects();
+        _limitsClock = 0; RefreshLimits();
         _status.Text = "Clique em um objeto para selecionar (Shift soma). Atalhos: 1 selecionar, 2 mover, 3 girar, 4 esticar.";
     }
 
@@ -95,6 +96,7 @@ public partial class BuildEditor : Node3D
     public override void _Process(double delta)
     {
         PumpRez(delta);
+        PumpCollab(delta);
         if (!_active || !_dragging) return;
         if (!Input.IsMouseButtonPressed(MouseButton.Left)) { EndDrag(); return; }
         var camera = GetViewport().GetCamera3D();
@@ -180,12 +182,14 @@ public partial class BuildEditor : Node3D
         if (_faceView is not null && !_selection.Contains(_faceView)) ClearFace(); // a face belongs to the object it was picked on
         FillFields();
         RefreshGizmo();
+        SyncLocks();
+        if (_selection.Count > 0 && SelectionLockedByOther(out var who)) _status.Text = $"{who} está editando este objeto: você pode olhar, mas não alterar.";
     }
 
     private void RefreshGizmo()
     {
         UpdateGrid();
-        if (_selection.Count == 0 || !_active || _selectOnly || _faceTool) { _gizmo.HideHandles(); return; }
+        if (_selection.Count == 0 || !_active || _selectOnly || _faceTool || SelectionLockedByOther(out _)) { _gizmo.HideHandles(); return; }
         var center = _selection.Aggregate(Vector3.Zero, (sum, view) => sum + view.Position) / _selection.Count;
         var axes = _mode == GizmoMode.Scale && _selection.Count == 1 ? Basis.FromEuler(_selection[0].Rotation) : Basis.Identity;
         _gizmo.ShowAt(center, _mode, axes);
@@ -477,6 +481,7 @@ public partial class BuildEditor : Node3D
         {
             using var doc = JsonDocument.Parse(json);
             var operation = doc.RootElement.GetProperty("operation").GetString();
+            if (operation is "lock" or "unlock") { HandleLockMessage(doc.RootElement, operation); return; }
             if (doc.RootElement.TryGetProperty("objectState", out var state) && state.ValueKind != JsonValueKind.Null)
             {
                 var objectState = JsonSerializer.Deserialize<BuildObjectState>(state.GetRawText(), Web)!;
@@ -486,7 +491,7 @@ public partial class BuildEditor : Node3D
             }
             else if (doc.RootElement.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var objectId) && _objects.Remove(objectId, out var removed))
             {
-                _selection.Remove(removed); removed.QueueFree(); AfterSelectionChanged();
+                _selection.Remove(removed); _lockedBy.Remove(objectId); _myLocks.Remove(objectId); removed.QueueFree(); AfterSelectionChanged();
             }
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
@@ -500,13 +505,13 @@ public partial class BuildEditor : Node3D
         CancelRez("Colocação interrompida: o servidor recusou um objeto (limite de objetos ou permissão).");
         foreach (var view in _selection) if (IsInstanceValid(view)) view.Apply(view.State);
         RefreshGizmo();
-        _status.Text = code switch { "revision_conflict" => "Outra pessoa alterou este objeto antes; a edição foi recusada.", "rate_limit" => "Muitas alterações seguidas; aguarde um instante.", "object_quota" or "server_rejected_409" => "A ilha atingiu o limite de objetos.", _ => $"Construção rejeitada: {code}" };
+        RejectCodeText(code);
     }
 
     private void AddOrUpdate(BuildObjectState state)
     {
-        if (_objects.TryGetValue(state.Id, out var existing)) { existing.Apply(state); if (_selection.Contains(existing)) existing.SetSelected(true); return; }
-        var view = new BuildObjectView(); GetParent().AddChild(view); view.Apply(state); _objects[state.Id] = view;
+        if (_objects.TryGetValue(state.Id, out var existing)) { existing.Apply(state); if (_selection.Contains(existing)) existing.SetSelected(true); RefreshLockTag(existing); return; }
+        var view = new BuildObjectView(); GetParent().AddChild(view); view.Apply(state); _objects[state.Id] = view; RefreshLockTag(view);
     }
 
     public void SelectForTesting(Guid id, bool additive = false) { if (_objects.TryGetValue(Resolve(id), out var view)) SelectView(view, additive); }

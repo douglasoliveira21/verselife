@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Godot;
+using LifeVerse.Shared.Building;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
 using LifeVerse.Shared.Vehicles;
@@ -21,6 +22,8 @@ public partial class ServerMain : Node
     private bool _stopping;
     private NetworkBridge _bridge = null!;
     private readonly Dictionary<int, ConnectedPlayer> _players = [];
+    private readonly EditLocks _locks = new();
+    private DateTimeOffset _lastLockSweep = DateTimeOffset.UtcNow;
     private readonly Dictionary<Guid, SuspendedPlayer> _suspended = [];
     private readonly HashSet<Guid> _usedTickets = [];
     private uint _serverTick;
@@ -72,6 +75,7 @@ public partial class ServerMain : Node
         _serverTick++;
         _scripting?.Update(_players.Values.Where(x => x.Authenticated).Select(PresenceOf).ToList());
         CheckIdle();
+        SweepLocks();
         var dt = Math.Min((float)delta, 1f / 20f);
         TickVehicles(dt);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
@@ -123,6 +127,7 @@ public partial class ServerMain : Node
         if (!_players.Remove((int)peerId, out var player)) return;
         if (player.Authenticated)
         {
+            BroadcastUnlock(_locks.ReleaseAll(player.UserId), player.UserId);
             _suspended[player.AvatarId] = new SuspendedPlayer(player, DateTimeOffset.UtcNow.AddSeconds(10));
             foreach (var other in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(other.PeerId, NetworkBridge.MethodName.DespawnPlayer, player.PeerId, true);
         }
@@ -163,6 +168,7 @@ public partial class ServerMain : Node
             _bridge.RpcId(peerId, NetworkBridge.MethodName.AuthResult, true, "ok", (long)_serverTick);
             SendTerrain(player);
             SendAllVehicles(peerId);
+            SendLocks(peerId);
             Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
         }
         catch (Exception exception) { Log("admission_failed", new { peerId, error = exception.Message }); Reject(peerId, "admission_unavailable"); }
@@ -344,17 +350,89 @@ public partial class ServerMain : Node
         if (!_players.TryGetValue(peerId, out var actor) || !actor.Authenticated || operationJson.Length > 100_000) return;
         var now = DateTimeOffset.UtcNow; while (actor.BuildTimes.Count > 0 && now - actor.BuildTimes.Peek() > TimeSpan.FromSeconds(1)) actor.BuildTimes.Dequeue(); if (actor.BuildTimes.Count >= 20) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "rate_limit"); return; }
         BuildCommand? command; try { command = JsonSerializer.Deserialize<BuildCommand>(operationJson, new JsonSerializerOptions(JsonSerializerDefaults.Web)); } catch { command = null; }
-        if (command is null || command.Operation is not ("create" or "update" or "delete") || (command.Object is not null && !ValidBuildCommand(command.Object))) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "invalid_operation"); return; }
+        if (command is null || command.Operation is not ("create" or "update" or "delete" or "return" or "lock" or "unlock") || (command.Object is not null && !ValidBuildCommand(command.Object)) || (command.ObjectIds?.Length ?? 0) > 500) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "invalid_operation"); return; }
         actor.BuildTimes.Enqueue(now);
+        if (command.Operation is "lock" or "unlock") { HandleLock(actor, command, now); return; }
+
+        // someone else is editing it: the island refuses before the API is even asked
+        var targets = command.Operation == "create" ? [] : (command.ObjectIds ?? (command.ObjectId is { } one ? [one] : []));
+        if (_locks.FirstHeldByOther(targets, actor.UserId, now) is { } held) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, $"locked:{NameOf(held.Holder)}"); return; }
         try
         {
-            using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/build-operations", new { userId = actor.UserId, operation = command.Operation, objectId = command.ObjectId, @object = command.Object, expectedRevision = command.ExpectedRevision }, _shutdown.Token);
-            if (!response.IsSuccessStatusCode) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, response.StatusCode == System.Net.HttpStatusCode.Conflict ? "revision_conflict" : $"server_rejected_{(int)response.StatusCode}"); return; }
+            using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/build-operations", new { userId = actor.UserId, operation = command.Operation, objectId = command.ObjectId, @object = command.Object, expectedRevision = command.ExpectedRevision, objectIds = command.ObjectIds }, _shutdown.Token);
             var accepted = await response.Content.ReadAsStringAsync(_shutdown.Token);
+            if (!response.IsSuccessStatusCode) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, ErrorCodeOf(accepted) ?? (response.StatusCode == System.Net.HttpStatusCode.Conflict ? "revision_conflict" : $"server_rejected_{(int)response.StatusCode}")); return; }
+            if (command.Operation == "return") { AnnounceReturned(accepted); return; }
             _scripting?.OnObjectApplied(accepted);
             foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, accepted);
+            if (command.Operation == "delete") BroadcastUnlock(_locks.Release(targets, actor.UserId), actor.UserId);
+            else if (targets.Length > 0 && _locks.HolderOf(targets[0], now) == actor.UserId) _locks.TryAcquire(targets, actor.UserId, now, out _); // working on it keeps the lease alive
         }
         catch (Exception exception) { Log("build_operation_failed", new { peerId, error = exception.Message }); _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "service_unavailable"); }
+    }
+
+    /// <summary>The short "code" the API puts in a refusal, so the player gets a precise message instead of a status number.</summary>
+    private static string? ErrorCodeOf(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.String && code.GetString() is { Length: > 0 and <= 40 } text && text.All(c => char.IsLetterOrDigit(c) || c == '_') ? text : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private string NameOf(Guid userId) => _players.Values.FirstOrDefault(x => x.Authenticated && x.UserId == userId)?.DisplayName is { Length: > 0 } name ? name : "outro jogador";
+
+    private void Broadcast(object message) { var json = JsonSerializer.Serialize(message); foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, json); }
+
+    private void HandleLock(ConnectedPlayer actor, BuildCommand command, DateTimeOffset now)
+    {
+        var ids = (command.ObjectIds ?? []).Distinct().ToArray();
+        if (ids.Length == 0) return;
+        if (command.Operation == "unlock") { BroadcastUnlock(_locks.Release(ids, actor.UserId), actor.UserId); return; }
+        if (!_locks.TryAcquire(ids, actor.UserId, now, out var holder)) { _bridge.RpcId(actor.PeerId, NetworkBridge.MethodName.BuildOperationRejected, holder == actor.UserId ? "lock_limit" : $"locked:{NameOf(holder)}"); return; }
+        Broadcast(new { operation = "lock", objectIds = ids, userId = actor.UserId, userName = actor.DisplayName, expiresAtMs = (now + EditLocks.Lease).ToUnixTimeMilliseconds() });
+    }
+
+    private void BroadcastUnlock(IReadOnlyList<Guid> freed, Guid userId)
+    {
+        if (freed.Count > 0) Broadcast(new { operation = "unlock", objectIds = freed, userId });
+    }
+
+    private void SweepLocks()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - _lastLockSweep < TimeSpan.FromSeconds(1)) return;
+        _lastLockSweep = now;
+        foreach (var byUser in _locks.Expire(now).GroupBy(x => x.User)) BroadcastUnlock(byUser.Select(x => x.Object).ToList(), byUser.Key);
+    }
+
+    /// <summary>A newcomer learns which objects are being edited right now.</summary>
+    private void SendLocks(int peerId)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var byUser in _locks.Snapshot(now).GroupBy(x => x.User))
+            _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, JsonSerializer.Serialize(new { operation = "lock", objectIds = byUser.Select(x => x.Object).ToArray(), userId = byUser.Key, userName = NameOf(byUser.Key), expiresAtMs = byUser.Max(x => x.Expires).ToUnixTimeMilliseconds() }));
+    }
+
+    /// <summary>The API returned objects to their owners' inventories: everyone sees them leave, as an ordinary delete.</summary>
+    private void AnnounceReturned(string accepted)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(accepted);
+            if (!document.RootElement.TryGetProperty("objectIds", out var ids)) return;
+            foreach (var id in ids.EnumerateArray())
+            {
+                if (!Guid.TryParse(id.GetString(), out var objectId)) continue;
+                var message = JsonSerializer.Serialize(new { operation = "delete", objectId, returned = true });
+                _scripting?.OnObjectApplied(message);
+                foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message);
+                foreach (var holder in _locks.Snapshot(DateTimeOffset.UtcNow).Where(x => x.Object == objectId)) BroadcastUnlock(_locks.Release([objectId], holder.User), holder.User);
+            }
+        }
+        catch (JsonException) { }
     }
 
     private void BroadcastSnapshots()
@@ -375,7 +453,7 @@ public partial class ServerMain : Node
     private static float DistanceSquared(AuthoritativePlayerState a, AuthoritativePlayerState b) => (a.X-b.X)*(a.X-b.X)+(a.Y-b.Y)*(a.Y-b.Y)+(a.Z-b.Z)*(a.Z-b.Z);
     private static bool ContainsBlockedTerm(string message) => (System.Environment.GetEnvironmentVariable("LIFEVERSE_CHAT_BLOCKED_TERMS") ?? string.Empty)
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Any(x => message.Contains(x, StringComparison.OrdinalIgnoreCase));
-    private static bool ValidBuildCommand(BuildObjectCommand command) { var values = new[] { command.PositionX, command.PositionY, command.PositionZ, command.RotationX, command.RotationY, command.RotationZ, command.ScaleX, command.ScaleY, command.ScaleZ }; return new[] { "cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid", "mesh" }.Contains(command.PrimitiveType, StringComparer.OrdinalIgnoreCase) && values.All(float.IsFinite) && new[] { command.ScaleX, command.ScaleY, command.ScaleZ }.All(x => x is >= .01f and <= 64f) && (command.GeometryJson?.Length ?? 0) <= 16384 && (command.MaterialJson?.Length ?? 0) <= 32768; }
+    private static bool ValidBuildCommand(BuildObjectCommand command) { var values = new[] { command.PositionX, command.PositionY, command.PositionZ, command.RotationX, command.RotationY, command.RotationZ, command.ScaleX, command.ScaleY, command.ScaleZ }; return PrimitiveCatalog.IsKnown(command.PrimitiveType) && values.All(float.IsFinite) && new[] { command.ScaleX, command.ScaleY, command.ScaleZ }.All(x => x is >= .01f and <= 64f) && (command.GeometryJson?.Length ?? 0) <= 16384 && (command.MaterialJson?.Length ?? 0) <= 32768; }
 
     public override void _Notification(int what)
     {
@@ -500,6 +578,6 @@ public partial class ServerMain : Node
         int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false);
     private sealed record WorldSnapshotResponse(Guid IslandId, long Version, string TerrainJson, string EnvironmentJson, string IntegrityHash);
     private sealed record SnapshotWriteResponse(long Version);
-    private sealed record BuildCommand(string Operation, Guid? ObjectId, BuildObjectCommand? Object, int ExpectedRevision);
+    private sealed record BuildCommand(string Operation, Guid? ObjectId, BuildObjectCommand? Object, int ExpectedRevision, Guid[]? ObjectIds = null);
     private sealed record BuildObjectCommand(string PrimitiveType, float PositionX, float PositionY, float PositionZ, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ, string? MaterialJson, string? PhysicsJson, Guid? GroupId, int ExpectedRevision = 0, string? GeometryJson = null, string? Name = null, string? Description = null, Guid? ParentObjectId = null, string? PermissionsJson = null, string? ContentJson = null);
 }

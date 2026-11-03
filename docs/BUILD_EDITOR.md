@@ -37,6 +37,24 @@ O modo Construir abre pelo botão **Construir** da barra inferior, por Conteúdo
 - **Aba Conteúdo:** lista o que o objeto carrega (scripts, texturas, sons, animações, modelos, outras construções). **Adicionar do inventário**, **Renomear** e **Remover** editam o `contentJson` do objeto, com revisão e desfazer como qualquer edição. O objeto guarda só referências (até 64, sem repetir o mesmo item); o servidor confere que quem adiciona tem o item.
 - **API:** `POST /api/v1/inventory/build-packages` (valida cada objeto com as mesmas regras do editor, as texturas, os modelos e o conteúdo, e grava o item) e `GET /api/v1/inventory/build-packages/{itemId}` (só o dono lê). O formato é `lifeverse.build` versão 1; o cliente (`shared/Building/BuildPackage.cs`) e a API (`PackageDocument`) seguem as mesmas regras, e um teste confere que concordam.
 
+## Construir em conjunto: terrenos, bloqueio, limites e devolução (Etapa 5)
+
+**Quem pode o quê** (`BuildRules`, aplicado pela API em toda operação que a ilha envia; a interface só reflete isso):
+- O dono da ilha e quem tem permissão `admin` fazem tudo na ilha.
+- O dono de um terreno constrói nele e pode alterar ou devolver qualquer objeto que esteja dentro dele.
+- Em um terreno, os outros só constroem se a permissão `build` do terreno estiver ligada (aí qualquer um constrói, mas só mexe no que é seu); permissão de construir na ilha **não** vale dentro de um terreno privado. Fora de terrenos vale a permissão `build`/`edit` da ilha.
+- Alterar ou excluir um objeto exige ser o dono dele, administrador ou dono do terreno onde ele está; só o dono ou um administrador mudam o que os outros podem fazer com ele. Mover um objeto para dentro de outro terreno exige poder construir lá.
+
+**Limites por custo** (`BuildCost`): cada objeto custa pontos — geometria (1 ponto por 20 triângulos estimados; oco, torção e corte contam), física, texturas e luz, conteúdo — guardados em `world.objects.cost` (migration `Phase32BuildLimits`; objetos antigos são calculados uma vez na inicialização). A ilha tem limite de objetos (`objects`, 5.000 por padrão) e de custo (`cost`, 200.000 por padrão) nas suas configurações de recursos; cada terreno tem o limite de objetos (`MaxObjects`) e um orçamento de 20 pontos por vaga. O que estourar volta com um código (`cost_limit`, `object_quota`, `parcel_object_limit`, `parcel_cost_limit`) que a janela explica; a aba Geral mostra o uso da ilha e do terreno que você está olhando, e se pode construir ali.
+
+**Bloqueio de edição:** ao selecionar, você pega uma reserva de 20 s sobre os objetos (renovada a cada 8 s enquanto a seleção continua; liberada ao soltar a seleção, sair do modo construção ou da ilha). Quem tenta mexer em um objeto reservado por outra pessoa vê "Em edição por …", o objeto mostra uma etiqueta e as alças não aparecem; a ilha recusa as alterações dele antes mesmo de falar com a API. Quem entra depois recebe a lista de reservas. Elas ficam na memória do servidor da ilha (duram segundos por desenho; reiniciar o servidor as limpa).
+
+**Devolver ao dono:** `Devolver ao dono` (aba Geral) manda os objetos selecionados para o inventário de quem os fez, como construção salva (um item por dono), e os tira do mundo para todos. Vale para o dono do terreno, administradores e para o próprio dono; é tudo ou nada (se um objeto não puder ser devolvido, nenhum é) e não dá para desfazer pelo `Ctrl+Z` (o dono recebe de volta).
+
+**Auditoria:** toda criação, alteração, exclusão e devolução grava uma linha em `world.build_operations` (quem, o quê, revisão, quando). O botão **Histórico** mostra as últimas 100 do objeto selecionado, para o dono, o dono do terreno e administradores (`GET /api/v1/worlds/islands/{id}/objects/{objectId}/audit`); `GET .../build-limits?x=&z=` informa o uso e se você pode construir no ponto.
+
+**Correções encontradas nesta etapa** (existiam desde antes): o caminho que os jogadores usam (ilha → API) não conferia o dono em alterações e exclusões, não gravava nome, descrição nem conteúdo ao atualizar, aplicava uma validação mais fraca que a do editor, e o servidor da ilha rejeitava toro e semiesfera. Tudo passa agora por um único caminho (`BuildOperations`).
+
 ## Garantias do servidor
 
 Cada alteração é enviada ao servidor da ilha com a revisão do objeto (`expectedRevision`); o servidor valida permissão, limites (escala `0.01..64`, cota de objetos, 20 operações por segundo por conexão) e responde com o estado oficial, que é replicado a todos. Se outra pessoa alterou o objeto antes, a edição é recusada (conflito de revisão) e o objeto volta ao estado oficial. Desfazer envia a alteração inversa com a revisão atual, então também está sujeito à autorização e aos conflitos. As operações ficam em `world.build_operations`.
@@ -51,7 +69,7 @@ Materiais aceitam cor, transparência, emissão, rugosidade e metallic; a físic
 
 ## Limitações
 
-- Ainda não existem (etapas seguintes do plano): geometria procedural para esfera, toro e semiesfera (cortes e torção), encaixe por vértice, aresta ou superfície, duplicar arrastando e em sequência, texturas gratuitas compartilhadas, flexibilidade, partículas e animação de textura, miniatura própria para construções salvas, compartilhar ou transferir construções entre jogadores (copiar, retirar e devolver com permissões), executar scripts guardados no conteúdo, atalhos personalizáveis, bloqueio de edição por objeto e limites de terreno por custo.
+- Ainda não existem: geometria procedural para esfera, toro e semiesfera (cortes e torção), encaixe por vértice, aresta ou superfície, duplicar arrastando e em sequência, texturas gratuitas compartilhadas, flexibilidade, partículas e animação de textura, miniatura própria para construções salvas, compartilhar ou transferir construções entre jogadores (copiar, retirar e devolver com permissões por item), executar scripts guardados no conteúdo, atalhos personalizáveis, permissões de objeto por grupo social (hoje: dono, dono do terreno e administradores) e testes com dois jogadores reais.
 - Nome e descrição passam a ser gravados: o servidor da ilha descartava esses campos (e permissões, conteúdo e pai) antes de enviar a operação à API.
 
 - Não há seleção por retângulo, pivô personalizado nem alças em eixos locais para mover/girar (só para escalar um objeto). A coloração por face só vale para as formas procedurais.

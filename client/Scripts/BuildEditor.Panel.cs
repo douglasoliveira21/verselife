@@ -143,6 +143,7 @@ public partial class BuildEditor
         foreach (var (id, label) in Primitives) { _primitive.AddItem(label); _primitive.SetItemMetadata(_primitive.ItemCount - 1, id); }
         box.AddChild(_primitive);
         BuildPackageSection(box);
+        BuildCollabSection(box);
         return box;
     }
 

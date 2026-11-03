@@ -44,6 +44,17 @@ public partial class BuildObjectView : Node3D
     /// Face ids of the procedural mesh, one per surface in order (empty for the other shapes).
     public IReadOnlyList<int> FaceIds => _faceIds;
     public bool IsProcedural => _faceIds.Count > 0;
+    private string? _lockedBy;
+    public string? LockedBy => _lockedBy;
+
+    /// Marks the object as being edited by someone else (null clears it): a floating tag, so nobody is surprised by a refused edit.
+    public void SetLockedBy(string? name)
+    {
+        _lockedBy = name;
+        GetNodeOrNull<Label3D>("LockTag")?.QueueFree();
+        if (name is null) return;
+        AddChild(new Label3D { Name = "LockTag", Text = $"Em edição: {name}", Position = new Vector3(0, 1.5f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FontSize = 40, OutlineSize = 8, Modulate = new Color(1, .8f, .3f) });
+    }
     private readonly List<Material?> _faceBase = [];
 
     /// Lights up one face of a procedural mesh (-1 clears it) so the person sees which face the texture tools will change.
@@ -147,6 +158,8 @@ public partial class BuildObjectView : Node3D
     {
         State = state; Position = new Vector3(state.PositionX, state.PositionY, state.PositionZ); Rotation = new Vector3(Mathf.DegToRad(state.RotationX), Mathf.DegToRad(state.RotationY), Mathf.DegToRad(state.RotationZ)); Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ);
         foreach (var child in GetChildren().ToArray()) { RemoveChild(child); child.QueueFree(); }
+        var keepTag = _lockedBy; _lockedBy = null; // rebuilding the children removes the tag; put it back right after
+        if (keepTag is not null) Callable.From(() => { if (IsInstanceValid(this)) SetLockedBy(keepTag); }).CallDeferred();
         _applyId++; _modelAsset = null; _faceIds.Clear(); _faceTriangleEnd.Clear(); _faceBase.Clear();
         if (state.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase)) { BuildMeshObject(state); return; }
         if (PrimMesh.Supports(state.PrimitiveType)) { BuildProcedural(state); return; }
