@@ -55,7 +55,27 @@ public partial class RadialSmoke : Node
             var edit = own.Single(x => x.Label == "Editar").Children!;
             Require(edit.Select(x => x.Label).SequenceEqual(["Mover", "Girar", "Esticar", "Textura", "Duplicar", "Excluir"]), "the edit circle has the editing tools");
             Require(InteractionRegistry.Build(new GroundTarget(Vector3.Zero), services).Select(x => x.Label).SequenceEqual(["Ir até aqui", "Construir", "Criar objeto", "Copiar local", "Fechar"]), "the ground offers walking, building and its location");
-            Require(InteractionRegistry.Build(new AvatarTarget(2, "Lucas", Vector3.Zero), services).Any(x => x.Label == "Interagir" && x.Children!.Count > 0), "another avatar offers interactions");
+            var avatar = InteractionRegistry.Build(new AvatarTarget(2, "Lucas", Vector3.Zero), services);
+            Require(avatar.Any(x => x.Label == "Interagir" && x.Children!.Count > 0) && avatar.Any(x => x.Label == "Mensagem") && avatar.Single(x => x.Label == "Mais opções").Children!.Select(x => x.Label).SequenceEqual(["Buscar na lista", "Bloquear", "Denunciar"]), "another avatar offers talking, gestures and moderation");
+
+            // the actions on a person: find the account by name, then ask the API
+            var person = new PersonActions(); AddChild(person);
+            var lucas = Guid.NewGuid(); var calls = new List<string>(); var said = new List<string>(); person.Said += said.Add;
+            person.Transport = (method, path, body) =>
+            {
+                calls.Add($"{method} {path} {body}");
+                if (path.StartsWith("/api/v1/social/people")) return (200, $"[{{\"id\":\"{lucas}\",\"username\":\"lucas\",\"displayName\":\"Lucas Ferreira\",\"relation\":\"none\"}},{{\"id\":\"{Guid.NewGuid()}\",\"username\":\"lucasf2\",\"displayName\":\"Outro\",\"relation\":\"none\"}}]");
+                return (200, "{}");
+            };
+            person.AddFriend("Lucas Ferreira");
+            Require(calls.Count == 2 && calls[1].StartsWith("Post /api/v1/social/friends/requests") && calls[1].Contains(lucas.ToString()) && said[^1].Contains("Pedido de amizade"), $"a friend request goes to the account found by name: {string.Join(" | ", calls)} / {string.Join(" | ", said)}");
+            person.SendMessage("Lucas Ferreira", "Oi!");
+            Require(calls.Count == 3 && calls[2].Contains("/social/messages") && calls[2].Contains("Oi!") && calls[2].Contains(lucas.ToString()), "the second action reuses the account already found: no second search");
+            person.Block("Lucas Ferreira"); person.Report("Lucas Ferreira", "spam");
+            Require(calls[3].Contains($"/social/blocks/{lucas}") && calls[4].Contains("/social/reports") && calls[4].Contains("spam"), "blocking and reporting use the account id");
+            person.Block("Ninguém Assim");
+            Require(said[^1].Contains("Não encontrei"), "an unknown name is said plainly and nothing is sent");
+            Require(!calls[^1].Contains("/blocks/"), "no block was sent for an unknown name");
             Require(InteractionRegistry.Build(new SelfTarget("Eu"), services).Any(x => x.Label == "Inventário"), "your own avatar offers your things");
             var car = new VehicleView(); AddChild(car); car.Setup(7, "Carro do Rafa", "car");
             var carFree = InteractionRegistry.Build(new VehicleTarget(car), new ContextServices { IsDriving = _ => false }); var carDriven = InteractionRegistry.Build(new VehicleTarget(car), new ContextServices { IsDriving = id => id == 7 });

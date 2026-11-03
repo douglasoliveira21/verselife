@@ -270,8 +270,10 @@ public partial class ViewerUI
     {
         var menu = new RadialMenu(); _root.AddChild(menu);
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
+        var people = new PersonActions { Name = "PersonActions" }; AddChild(people); people.Setup(_root); people.Said += text => Toast(text);
         var services = new ContextServices
         {
+            AddFriend = people.AddFriend, Message = people.AskMessage, Block = people.Block, Report = people.AskReport,
             ToggleInventory = () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(),
             ToggleGestures = ToggleGestures,
             TogglePeople = () => _people?.Toggle(),

@@ -5,7 +5,7 @@
 `## O que cada alvo oferece (só o que funciona hoje)
 `
 `- **Você:** Inventário, Animações (Acenar, Dançar, Mais gestos), Pessoas e grupos, Construir, Configurações, Fechar.
-`- **Outra pessoa:** Adicionar amigo (abre Pessoas já buscando o nome), Interagir (Acenar, Dançar), Ir até lá, Fechar. Como os avatares não têm colisão, o clique é associado à pessoa pelo raio do cursor contra o corpo (pés à cabeça).
+`- **Outra pessoa:** Adicionar amigo (envia o pedido), Mensagem (abre uma janelinha para escrever e envia), Interagir (Acenar, Dançar), Ir até lá, Mais opções (Buscar na lista, Bloquear, Denunciar, que pede o motivo), Fechar. O jogo só conhece o nome do outro avatar, então a conta é achada pela mesma busca por nome da janela Pessoas ("PersonActions"); se duas pessoas tiverem o mesmo nome nada é enviado e o jogador é mandado para a janela Pessoas. Os avatares não têm colisão: o clique é associado à pessoa pelo raio do cursor contra o corpo (pés à cabeça).
 `- **Objeto:** Interagir (toque, ativa o script Lua), Inspecionar, e só se for seu: Editar (Mover, Girar, Esticar, Textura, Duplicar, Excluir), Copiar. O servidor confere a permissão de qualquer jeito.
 `- **Assento:** Sentar.
 - **Veículo:** Entrar (ou Sair, se você o dirige; o servidor exige estar a até 4 m), Inspecionar (livre ou em uso). Como o carro não tem colisão própria, o clique é associado a ele pelo raio do cursor contra o centro da carroceria.
@@ -17,4 +17,4 @@
 `
 `## Ainda não existe (do pedido original)
 `
-`Ver perfil, mensagem direta a partir do menu, teleporte, enviar item, transferir dinheiro, abraçar e animações conjuntas com consentimento, seguir, silenciar, bloquear, denunciar, convidar para grupo; comprar, vender, permissões, devolver e abrir conteúdo pelo menu; portas, passageiros e televisão, e ações registradas por scripts de criadores; terrenos (propriedade, aluguel, regras); sons do menu. Cada uma depende de um sistema que ainda não existe ou de protocolo de rede novo, e o menu só mostra o que funciona.
+`Ver perfil, teleporte, enviar item, transferir dinheiro, abraçar e animações conjuntas com consentimento, seguir, silenciar, convidar para grupo; comprar, vender, permissões, devolver e abrir conteúdo pelo menu; portas, passageiros e televisão, e ações registradas por scripts de criadores; terrenos (propriedade, aluguel, regras); sons do menu. Cada uma depende de um sistema que ainda não existe ou de protocolo de rede novo, e o menu só mostra o que funciona.

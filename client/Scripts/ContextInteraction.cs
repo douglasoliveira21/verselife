@@ -21,6 +21,10 @@ public sealed class ContextServices
     public Action TogglePeople { get; init; } = () => { };
     public Action OpenSettings { get; init; } = () => { };
     public Action<string> SearchPerson { get; init; } = _ => { };
+    public Action<string> AddFriend { get; init; } = _ => { };
+    public Action<string> Message { get; init; } = _ => { };
+    public Action<string> Block { get; init; } = _ => { };
+    public Action<string> Report { get; init; } = _ => { };
     public Action<string> Tell { get; init; } = _ => { };
     public Action<Vector3> WalkTo { get; init; } = _ => { };
     public Action<string> Gesture { get; init; } = _ => { };
@@ -74,9 +78,16 @@ public static class InteractionRegistry
 
     private static List<RadialItem> ForAvatar(AvatarTarget avatar, ContextServices s) =>
     [
-        new() { Label = "Adicionar amigo", Icon = "user-add", Run = () => { s.SearchPerson(avatar.Name); s.Tell($"Procurando “{avatar.Name}”: use Adicionar amigo no resultado."); }, Tooltip = "Procura a pessoa na janela Pessoas para enviar o pedido" },
+        new() { Label = "Adicionar amigo", Icon = "user-add", Run = () => s.AddFriend(avatar.Name), Tooltip = "Envia um pedido de amizade" },
+        new() { Label = "Mensagem", Icon = "chat", Run = () => s.Message(avatar.Name), Tooltip = "Escreve uma mensagem privada" },
         new() { Label = "Interagir", Icon = "hand", Children = Gestures(s), Tooltip = "Gestos para quem está por perto" },
         new() { Label = "Ir até lá", Icon = "run", Run = () => s.WalkTo(avatar.Position), Tooltip = "Caminha até esta pessoa" },
+        new() { Label = "Mais opções", Icon = "dots", Tooltip = "Bloquear ou denunciar", Children =
+        [
+            new() { Label = "Buscar na lista", Icon = "search", Run = () => s.SearchPerson(avatar.Name), Tooltip = "Abre a janela Pessoas com este nome" },
+            new() { Label = "Bloquear", Icon = "alert", Accent = true, Run = () => s.Block(avatar.Name), Tooltip = "Impede que esta pessoa fale com você" },
+            new() { Label = "Denunciar", Icon = "error", Accent = true, Run = () => s.Report(avatar.Name), Tooltip = "Conta à moderação o que aconteceu" }
+        ] },
         Close
     ];
 
