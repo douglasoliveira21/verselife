@@ -119,11 +119,13 @@ public static class ViewerTheme
         theme.SetFont("font", "MenuBar", UiStyle.Regular); theme.SetFontSize("font_size", "MenuBar", 16);
 
         // sliders, progress, scroll bars
-        theme.SetStylebox("slider", "HSlider", UiStyle.Box(new Color("#46525A"), new Color(0, 0, 0, 0), 4, 0, 0, 0)); ((StyleBoxFlat)theme.GetStylebox("slider", "HSlider")).SetContentMarginAll(0);
+        theme.SetStylebox("slider", "HSlider", UiStyle.Box(new Color("#46525A"), new Color(0, 0, 0, 0), 4, 0, 0, 0));
         theme.SetStylebox("grabber_area", "HSlider", UiStyle.Box(UiStyle.Accent, new Color(0, 0, 0, 0), 4, 0, 0, 0));
         theme.SetStylebox("grabber_area_highlight", "HSlider", UiStyle.Box(UiStyle.Accent, new Color(0, 0, 0, 0), 4, 0, 0, 0));
         theme.SetIcon("grabber", "HSlider", SliderKnob(false)); theme.SetIcon("grabber_highlight", "HSlider", SliderKnob(true));
         theme.SetConstant("center_grabber", "HSlider", 0);
+        // a track needs some height of its own or it is not drawn at all
+foreach (var part in new[] { "slider", "grabber_area", "grabber_area_highlight" }) { var track = (StyleBoxFlat)theme.GetStylebox(part, "HSlider"); track.ContentMarginTop = track.ContentMarginBottom = 3.5f; }
         theme.SetStylebox("background", "ProgressBar", UiStyle.Box(new Color("#5F656A"), new Color(0, 0, 0, 0), 5, 0, 0, 0));
         theme.SetStylebox("fill", "ProgressBar", UiStyle.Box(UiStyle.Accent, new Color(0, 0, 0, 0), 5, 0, 0, 0));
         theme.SetColor("font_color", "ProgressBar", UiStyle.Text);

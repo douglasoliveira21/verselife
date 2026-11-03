@@ -189,6 +189,8 @@ public partial class BuildEditor
     public bool TutorialCardVisibleForTesting => _tutorialCard.Visible;
     public string TutorialTextForTesting => _tutorialText.Text;
     public void SkipTutorialForTesting() => SkipTutorial();
+    /// Screenshots of the other tabs: hides the card without saving that the tutorial was done.
+    public void HideTutorialForTesting() => _tutorialCard.Visible = false;
     /// Shows the tutorial card at a given step (1 to 8), for screenshots.
     public void PreviewTutorialForTesting(int step) { _tutorial.Restart(); for (var i = 1; i < step; i++) _tutorial.Notify((TutorialStep)(i - 1)); RefreshTutorial(); }
     public void RestartTutorialForTesting() => RestartTutorial();

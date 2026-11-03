@@ -312,13 +312,16 @@ public partial class ViewerUI
             inventory.PopulateForTesting($"[{{\"id\":\"{a}\",\"name\":\"Construções\"}},{{\"id\":\"{b}\",\"name\":\"Móveis\"}}]",
                 "[" + string.Join(",", new[] { ("Casa Tropical", "models", "model/gltf-binary", 52428800), ("Quiosque", "models", "model/gltf-binary", 31457280), ("Palmeira", "models", "model/gltf-binary", 12582912), ("Textura Areia.jpg", "textures", "image/jpeg", 4194304), ("Textura Água.png", "textures", "image/png", 3145728), ("Som Ondas.ogg", "sounds", "audio/ogg", 6291456) }.Select(x => $"{{\"itemId\":\"{Guid.NewGuid()}\",\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"{x.Item1}\",\"category\":\"{x.Item2}\",\"mimeType\":\"{x.Item3}\",\"contentHash\":\"p{x.Item1}\",\"size\":{x.Item4},\"version\":1,\"favorite\":false,\"deleted\":false,\"folderId\":null}}")) + "]");
         }
-        if (view == "build" && _world.GetNodeOrNull<BuildEditor>("BuildEditor") is { } editor)
+        if (view.StartsWith("build", StringComparison.Ordinal) && _world.GetNodeOrNull<BuildEditor>("BuildEditor") is { } editor)
         {
-            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", Description = "Torre de tijolos torcida e vazada, construção demonstrativa do LifeVerse.", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, MaterialJson = "{\"color\":\"#FFFFFF\",\"builtin\":\"bricks\",\"uvRepeatX\":2,\"uvRepeatY\":3,\"uvRotation\":0,\"light\":{\"color\":\"#FFD9A0\",\"energy\":1.5,\"range\":8}}" };
+            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", Description = "Torre de tijolos torcida e vazada, construção demonstrativa do LifeVerse.", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, ContentJson = "[{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Campainha\",\"category\":\"sounds\"},{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Madeira\",\"category\":\"textures\"},{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Porta\",\"category\":\"models\"}]", MaterialJson = "{\"color\":\"#FFFFFF\",\"builtin\":\"bricks\",\"uvRepeatX\":2,\"uvRepeatY\":3,\"uvRotation\":0,\"light\":{\"color\":\"#FFD9A0\",\"energy\":1.5,\"range\":8}}" };
             editor.SetActive(true); editor.LoadStatesForTesting([state]); editor.SelectIds([state.Id]);
             editor.SetPackageNameForTesting("Torre Torcida");
             editor.ShowLimits("{\"objects\":1234,\"maxObjects\":5000,\"cost\":52000,\"maxCost\":200000,\"canBuildHere\":true,\"isAdmin\":false,\"parcel\":{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Praça\",\"mine\":true,\"publicBuild\":false,\"objects\":45,\"maxObjects\":100,\"cost\":300,\"maxCost\":2000}}");
             editor.PreviewTutorialForTesting(2);
+            var tab = Array.IndexOf(new[] { "geral", "objeto", "textura", "recursos", "conteudo", "alinhar" }, view.Contains('-') ? view[(view.IndexOf('-') + 1)..] : "objeto");
+            editor.ShowTabForTesting(Math.Max(tab, 0));
+            if (tab > 0) editor.HideTutorialForTesting();
         }
         if (view == "people" && _people is not null)
         {

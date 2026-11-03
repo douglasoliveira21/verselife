@@ -19,11 +19,14 @@ public partial class UiTabs : HBoxContainer
     /// Flat tabs as in the build window: no boxes, just the text, a neon line under the selected one and a thin line under the row.
     public bool Flat { get; init; }
 
+    /// Size of the labels of flat tabs.
+    public int FontSize { get; init; } = 18;
+
     public UiTabs() { AddThemeConstantOverride("separation", 4); }
 
     public Button AddTab(string text, string? icon = null, bool iconOnly = false)
     {
-        var tab = new TabButton(Flat) { Text = iconOnly ? string.Empty : text, TooltipText = text, ToggleMode = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(iconOnly ? 48 : 0, Flat ? 46 : 44) };
+        var tab = new TabButton(Flat, FontSize) { Text = iconOnly ? string.Empty : text, TooltipText = text, ToggleMode = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(iconOnly ? 48 : 0, Flat ? 46 : 44) };
         if (icon is not null) tab.Icon = UiStyle.Icon(icon, UiStyle.Text, 20);
         tab.ExpandIcon = false;
         if (EqualWidth) tab.SizeFlagsHorizontal = SizeFlags.ExpandFill;
@@ -53,7 +56,7 @@ public partial class UiTabs : HBoxContainer
     {
         private readonly bool _flat;
 
-        public TabButton(bool flat = false)
+        public TabButton(bool flat = false, int fontSize = 18)
         {
             _flat = flat;
             if (flat)
@@ -63,7 +66,8 @@ public partial class UiTabs : HBoxContainer
                 foreach (var state in new[] { "normal", "pressed" }) AddThemeStyleboxOverride(state, none);
                 foreach (var state in new[] { "hover", "hover_pressed" }) AddThemeStyleboxOverride(state, hover);
                 AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-                AddThemeFontOverride("font", UiStyle.Bold); AddThemeFontSizeOverride("font_size", 18);
+                AddThemeFontOverride("font", UiStyle.Bold); AddThemeFontSizeOverride("font_size", fontSize);
+                AddThemeConstantOverride("icon_max_width", 26); AddThemeConstantOverride("h_separation", 10);
                 foreach (var color in new[] { "font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color" }) AddThemeColorOverride(color, Colors.White);
                 return;
             }

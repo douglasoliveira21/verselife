@@ -233,10 +233,10 @@ public partial class BuildEditor : Node3D
 
     public void UpdateDrag(Vector3 rayOrigin, Vector3 rayDirection)
     {
-        var snap = float.TryParse(_snap.Text, System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? Mathf.Clamp(parsed, 0f, 100f) : .5f;
+        var snap = GridStep();
         // The handles follow the mouse smoothly. Holding Ctrl snaps to the steps (movement step, turn step, 5 % of size); the grid option snaps positions too.
         var steps = Input.IsKeyPressed(Key.Ctrl);
-        var rotationStep = Mathf.Clamp(NumOr(_rotSnap, 5f), .5f, 90f);
+        var rotationStep = RotationStep();
         if (_gizmo.Drag(rayOrigin, rayDirection, steps ? snap : 0f, steps ? Mathf.DegToRad(rotationStep) : 0f, steps ? .05f : 0f) is not { } drag) return;
         _dragMoved |= drag.Mode switch { GizmoMode.Move => !Mathf.IsZeroApprox(drag.Amount), GizmoMode.Rotate => !Mathf.IsZeroApprox(drag.Amount), _ => !Mathf.IsEqualApprox(drag.Amount, 1f) };
         switch (drag.Mode)

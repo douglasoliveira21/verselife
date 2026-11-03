@@ -13,7 +13,6 @@ public partial class BuildEditor
     private sealed record LibraryEntry(Guid? Asset, string? Builtin, string Name, bool Favorite);
 
     private const string PrefsPath = "user://build_prefs.cfg";
-    private OptionButton _librarySource = null!;
     private ItemList _library = null!;
     private TextureRect _preview = null!;
     private Label _libraryStatus = null!, _target = null!;
@@ -36,85 +35,6 @@ public partial class BuildEditor
         if (parent.GetNodeOrNull<TextureCache>("TextureCache") is { } existing) { _textureCache = existing; return; }
         _textureCache = new TextureCache { Name = "TextureCache" };
         parent.CallDeferred(Node.MethodName.AddChild, _textureCache);
-    }
-
-    // ---- the Textura tab -------------------------------------------------------------------------------------
-
-    private Control BuildTextureTab()
-    {
-        var box = Section();
-        box.AddChild(FieldLabel("Cor"));
-        _colorPicker = new ColorPickerButton { Color = new Color("#A8C7D8"), CustomMinimumSize = new Vector2(0, 40), EditAlpha = false }; box.AddChild(_colorPicker);
-        _roughness = Slider(box, "Rugosidade", .7f); _metallic = Slider(box, "Metalicidade", 0f); _opacity = Slider(box, "Opacidade", 1f);
-        _glow = new CheckBox { Text = " Brilho (emissão luminosa)" }; box.AddChild(_glow);
-        _emissionPicker = new ColorPickerButton { Color = new Color("#FFFFFF"), CustomMinimumSize = new Vector2(0, 40), EditAlpha = false }; box.AddChild(_emissionPicker);
-        _glowStrength = Slider(box, "Intensidade", .125f);
-        box.AddChild(TextButton("Aplicar material à seleção", "Aplica ao objeto inteiro; texturas e cores por face são mantidas", ApplySelected, UiStyle.ButtonKind.Primary));
-
-        box.AddChild(FieldLabel("Biblioteca de texturas"));
-        _librarySource = new OptionButton();
-        foreach (var name in new[] { "Minhas texturas", "Favoritas", "Recentes", "Texturas do sistema" }) _librarySource.AddItem(name);
-        _librarySource.ItemSelected += _ => RefreshLibrary();
-        box.AddChild(_librarySource);
-        var libraryRow = new HBoxContainer(); libraryRow.AddThemeConstantOverride("separation", 8); box.AddChild(libraryRow);
-        _library = new ItemList { CustomMinimumSize = new Vector2(0, 150), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SelectMode = ItemList.SelectModeEnum.Single };
-        _library.ItemSelected += index => ShowPreview((int)index);
-        libraryRow.AddChild(_library);
-        _preview = new TextureRect { CustomMinimumSize = new Vector2(96, 96), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, SizeFlagsVertical = Control.SizeFlags.ShrinkBegin };
-        libraryRow.AddChild(_preview);
-        _libraryStatus = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; _libraryStatus.AddThemeColorOverride("font_color", UiStyle.TextMuted); _libraryStatus.AddThemeFontSizeOverride("font_size", 15);
-        box.AddChild(_libraryStatus);
-        box.AddChild(TextButton("Importar imagem (PNG, JPG, WebP)…", "Envia uma imagem ao seu inventário como textura", () => _imageDialog.PopupCentered(new Vector2I(800, 500))));
-
-        box.AddChild(FieldLabel("Alvo"));
-        _target = new Label { Text = "Objeto inteiro" }; _target.AddThemeColorOverride("font_color", UiStyle.AccentText); box.AddChild(_target);
-        var apply = new HBoxContainer(); apply.AddThemeConstantOverride("separation", 6); box.AddChild(apply);
-        apply.AddChild(TextButton("Aplicar textura", "Usa a textura escolhida no alvo (objeto ou face selecionada)", () => ApplyTexture(normal: false), UiStyle.ButtonKind.Primary));
-        apply.AddChild(TextButton("Como mapa normal", "Usa a imagem escolhida como relevo", () => ApplyTexture(normal: true)));
-        apply.AddChild(TextButton("Remover", "Tira a textura do alvo", RemoveTexture));
-
-        box.AddChild(FieldLabel("Repetição, deslocamento e rotação (UV)"));
-        var uv = new GridContainer { Columns = 2 }; uv.AddThemeConstantOverride("h_separation", 8); uv.AddThemeConstantOverride("v_separation", 6); box.AddChild(uv);
-        _repeatX = Labeled(uv, "Repetição horizontal", "1"); _repeatY = Labeled(uv, "Repetição vertical", "1");
-        _offsetX = Labeled(uv, "Deslocamento horizontal", "0"); _offsetY = Labeled(uv, "Deslocamento vertical", "0");
-        _uvRotation = Labeled(uv, "Rotação (graus)", "0");
-        _flipU = new CheckBox { Text = " Espelhar horizontal" }; _flipV = new CheckBox { Text = " Espelhar vertical" };
-        box.AddChild(_flipU); box.AddChild(_flipV);
-        box.AddChild(TextButton("Aplicar UV ao alvo", "Aplica repetição, deslocamento, rotação e espelhamento", ApplyUv, UiStyle.ButtonKind.Primary));
-
-        box.AddChild(FieldLabel("Face"));
-        _faceLabel = new Label { Text = "Use a ferramenta Face (5) e clique em uma face de uma primitiva.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _faceLabel.AddThemeColorOverride("font_color", UiStyle.TextMuted); _faceLabel.AddThemeFontSizeOverride("font_size", 15); box.AddChild(_faceLabel);
-        var faceRow = new HBoxContainer(); faceRow.AddThemeConstantOverride("separation", 6); box.AddChild(faceRow);
-        faceRow.AddChild(TextButton("Cor na face", "Pinta só a face selecionada com a cor acima", () => PaintFace(clear: false)));
-        faceRow.AddChild(TextButton("Limpar face", "Devolve a face ao material do objeto", () => PaintFace(clear: true)));
-        var props = new HBoxContainer(); props.AddThemeConstantOverride("separation", 6); box.AddChild(props);
-        props.AddChild(TextButton("Copiar propriedades", "Copia material e forma do objeto selecionado", CopyProperties));
-        props.AddChild(TextButton("Colar propriedades", "Aplica material e forma copiados à seleção", PasteProperties));
-
-        _imageDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.png,*.jpg,*.jpeg,*.webp ; Imagens"], Title = "Importar textura" };
-        _imageDialog.FileSelected += ImportImage;
-        AddChild(_imageDialog);
-        RefreshLibrary();
-        return box;
-    }
-
-    // ---- the Recursos tab ------------------------------------------------------------------------------------
-
-    private Control BuildResourcesTab()
-    {
-        var box = Section();
-        box.AddChild(FieldLabel("Iluminação"));
-        _lightOn = new CheckBox { Text = " Emitir luz", TooltipText = "O objeto passa a iluminar o que está perto (até 16 luzes acesas por vez no seu jogo)" }; box.AddChild(_lightOn);
-        _lightColor = new ColorPickerButton { Color = new Color("#FFE0A8"), CustomMinimumSize = new Vector2(0, 40), EditAlpha = false }; box.AddChild(_lightColor);
-        _lightEnergy = new HSlider { MinValue = 0, MaxValue = 8, Step = .1, Value = 1.5, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 28) };
-        _lightRange = new HSlider { MinValue = .5, MaxValue = 30, Step = .5, Value = 8, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 28) };
-        box.AddChild(FieldLabel("Intensidade (0 a 8)")); box.AddChild(_lightEnergy);
-        box.AddChild(FieldLabel("Alcance (0,5 a 30 metros)")); box.AddChild(_lightRange);
-        box.AddChild(TextButton("Aplicar luz à seleção", "Envia a luz ao servidor; desmarque Emitir luz para remover", ApplyLight, UiStyle.ButtonKind.Primary));
-        var note = new Label { Text = "O brilho do material fica na aba Textura. Flexibilidade, partículas e animação de textura ainda não existem.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        note.AddThemeColorOverride("font_color", UiStyle.TextMuted); note.AddThemeFontSizeOverride("font_size", 15); box.AddChild(note);
-        return box;
     }
 
     private void ApplyLight()
@@ -171,20 +91,25 @@ public partial class BuildEditor
     {
         if (_library is null) return;
         _shown.Clear(); _library.Clear();
-        switch (_librarySource.Selected)
+        switch (_source)
         {
             case 1: _shown.AddRange(_mine.Where(x => x.Favorite)); break;
             case 2: _shown.AddRange(ReadRecent()); break;
             case 3: _shown.AddRange(BuiltInTextures.All.Select(x => new LibraryEntry(null, x.Id, x.Label, false))); break;
-            default: _shown.AddRange(_mine); if (_mine.Count == 0 && _librarySource.Selected == 0) LoadLibrary(); break;
+            default: _shown.AddRange(_mine); if (_mine.Count == 0 && _source == 0) LoadLibrary(); break;
         }
-        foreach (var entry in _shown) _library.AddItem(entry.Name);
-        _libraryStatus.Text = _shown.Count == 0 ? (_librarySource.Selected switch { 0 => "Nenhuma textura ainda. Use Importar imagem.", 1 => "Nenhuma favorita. Favorite itens no inventário.", 2 => "Nada usado recentemente.", _ => "" }) : $"{_shown.Count} textura(s). Escolha uma e use Aplicar textura.";
-        _preview.Texture = null;
+        for (var i = 0; i < _shown.Count; i++)
+        {
+            var entry = _shown[i]; var slot = _library.AddItem(string.Empty, entry.Builtin is { } builtin ? BuiltInTextures.Get(builtin) ?? Placeholder : Placeholder, true);
+            _library.SetItemTooltip(slot, entry.Name);
+            if (entry.Asset is { } asset) Textures.Request(asset, texture => { if (texture is not null && IsInstanceValid(_library) && slot < _library.ItemCount && slot < _shown.Count && _shown[slot] == entry) _library.SetItemIcon(slot, texture); });
+        }
+        _libraryStatus.Text = _shown.Count == 0 ? (_source switch { 0 => "Nenhuma textura ainda. Use Importar imagem.", 1 => "Nenhuma favorita. Favorite itens no inventário.", 2 => "Nada usado recentemente.", _ => "" }) : $"{_shown.Count} textura(s). Escolha uma e use Aplicar textura.";
+        _preview.Texture = null; _previewName.Text = "—"; _previewInfo.Text = string.Empty;
     }
 
     public int LibraryCountForTesting => _shown.Count;
-    public void SelectLibraryForTesting(int index, int source = -1) { if (source >= 0) { _librarySource.Select(source); RefreshLibrary(); } _library.Select(index); ShowPreview(index); }
+    public void SelectLibraryForTesting(int index, int source = -1) { if (source >= 0) SelectSource(source); _library.Select(index); ShowPreview(index); }
     public void ApplyTextureForTesting(bool normal) => ApplyTexture(normal);
     public void RemoveTextureForTesting() => RemoveTexture();
     public void ApplyUvForTesting(float repeatX, float repeatY, float offsetX, float rotation, bool flipU) { _repeatX.Text = Num(repeatX); _repeatY.Text = Num(repeatY); _offsetX.Text = Num(offsetX); _uvRotation.Text = Num(rotation); _flipU.ButtonPressed = flipU; ApplyUv(); }
@@ -200,9 +125,10 @@ public partial class BuildEditor
     {
         if (index < 0 || index >= _shown.Count) return;
         var entry = _shown[index];
-        _preview.Texture = null;
-        if (entry.Builtin is { } builtin) _preview.Texture = BuiltInTextures.Get(builtin);
-        else if (entry.Asset is { } asset) Textures.Request(asset, texture => { if (IsInstanceValid(_preview) && Chosen() == entry) _preview.Texture = texture; });
+        _preview.Texture = null; _previewName.Text = entry.Name; _previewInfo.Text = string.Empty;
+        void Shown(Texture2D? texture) { if (texture is null || !IsInstanceValid(_preview) || Chosen() != entry) return; _preview.Texture = texture; _previewInfo.Text = $"{texture.GetWidth()} × {texture.GetHeight()}"; }
+        if (entry.Builtin is { } builtin) Shown(BuiltInTextures.Get(builtin));
+        else if (entry.Asset is { } asset) Textures.Request(asset, Shown);
     }
 
     private void ImportImage(string path)
@@ -212,7 +138,7 @@ public partial class BuildEditor
         if (size > 8L * 1024 * 1024) { _libraryStatus.Text = "A imagem passa de 8 MB; reduza o tamanho antes de importar."; return; }
         var inventory = GetParent()?.GetNodeOrNull<InventoryPanel>("InventoryPanel");
         if (inventory is null) { _libraryStatus.Text = "O inventário não está disponível."; return; }
-        if (!_watchingInventory) { inventory.ItemsChanged += () => { if (_librarySource.Selected == 0) LoadLibrary(); }; _watchingInventory = true; }
+        if (!_watchingInventory) { inventory.ItemsChanged += () => { if (_source == 0) LoadLibrary(); }; _watchingInventory = true; }
         inventory.ImportTexture(path);
         _libraryStatus.Text = "Enviando a imagem… ela aparece em Minhas texturas quando terminar.";
     }
@@ -312,8 +238,9 @@ public partial class BuildEditor
         var layer = material;
         if (_selectedFace >= 0 && material["faces"] is JsonArray faces) foreach (var node in faces) if (node is JsonObject entry && entry["index"]?.GetValue<int>() == _selectedFace) layer = entry;
         _target.Text = _selectedFace >= 0 ? $"Face {_selectedFace}" : "Objeto inteiro";
-        _repeatX.Text = Num(Read(layer, "uvRepeatX", 1)); _repeatY.Text = Num(Read(layer, "uvRepeatY", 1));
-        _offsetX.Text = Num(Read(layer, "uvOffsetX", 0)); _offsetY.Text = Num(Read(layer, "uvOffsetY", 0)); _uvRotation.Text = Num(Read(layer, "uvRotation", 0));
+        _appliedLabel.Text = layer["texture"]?.GetValue<string>() is { } applied ? (_mine.FirstOrDefault(x => x.Asset?.ToString() == applied)?.Name ?? "imagem") : layer["builtin"]?.GetValue<string>() is { } builtinId ? (BuiltInTextures.All.FirstOrDefault(x => x.Id == builtinId).Label ?? builtinId) : "nenhuma";
+        _repeatX.Text = Disp(Read(layer, "uvRepeatX", 1), 2); _repeatY.Text = Disp(Read(layer, "uvRepeatY", 1), 2);
+        _offsetX.Text = Disp(Read(layer, "uvOffsetX", 0), 2); _offsetY.Text = Disp(Read(layer, "uvOffsetY", 0), 2); _uvRotation.Text = Disp(Read(layer, "uvRotation", 0), 2);
         _flipU.ButtonPressed = layer["flipU"] is JsonValue u && u.TryGetValue<bool>(out var fu) && fu; _flipV.ButtonPressed = layer["flipV"] is JsonValue v && v.TryGetValue<bool>(out var fv) && fv;
         _glowStrength.Value = Mathf.Clamp(Read(material, "emissionStrength", 1f) / 8f, 0, 1);
         var light = material["light"] as JsonObject;

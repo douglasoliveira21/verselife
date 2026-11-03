@@ -10,37 +10,12 @@ namespace LifeVerse.Client.Scripts;
 /// and the server checks that the person adding an item really has it.
 public partial class BuildEditor
 {
-    private ItemList _contents = null!;
     private LineEdit _contentName = null!;
     private Label _contentInfo = null!;
     private ItemList _picker = null!;
     private AcceptDialog _pickerDialog = null!;
     private HttpRequest? _pickerHttp;
     private readonly List<(Guid Asset, string Name, string Category)> _pickerItems = [];
-
-    private Control BuildContentTab()
-    {
-        var box = Section();
-        var note = new Label { Text = "Itens guardados dentro do objeto. Só referências: os arquivos continuam no seu inventário.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        note.AddThemeColorOverride("font_color", UiStyle.TextMuted); note.AddThemeFontSizeOverride("font_size", 15); box.AddChild(note);
-        _contents = new ItemList { CustomMinimumSize = new Vector2(0, 170), SelectMode = ItemList.SelectModeEnum.Single };
-        _contents.ItemSelected += index => { if (index >= 0 && index < Entries().Count) _contentName.Text = Entries()[(int)index]["name"]?.GetValue<string>() ?? ""; };
-        box.AddChild(_contents);
-        _contentInfo = new Label { Text = "Selecione um objeto." }; _contentInfo.AddThemeColorOverride("font_color", UiStyle.TextMuted); _contentInfo.AddThemeFontSizeOverride("font_size", 15); box.AddChild(_contentInfo);
-        box.AddChild(TextButton("Adicionar do inventário…", "Escolhe um item do seu inventário para guardar no objeto", OpenPicker, UiStyle.ButtonKind.Primary));
-        box.AddChild(FieldLabel("Renomear item"));
-        _contentName = Field("Novo nome", 120); _contentName.TextSubmitted += _ => RenameContent(); box.AddChild(_contentName);
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 6); box.AddChild(row);
-        row.AddChild(TextButton("Renomear", "Muda o nome do item selecionado dentro do objeto", RenameContent));
-        row.AddChild(TextButton("Remover", "Tira o item do objeto (ele continua no seu inventário)", RemoveContent));
-
-        _pickerDialog = new AcceptDialog { Title = "Adicionar ao objeto", OkButtonText = "Adicionar", Exclusive = true, MinSize = new Vector2I(420, 420) };
-        _picker = new ItemList { CustomMinimumSize = new Vector2(380, 320), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-        _pickerDialog.AddChild(_picker);
-        _pickerDialog.Confirmed += () => { var chosen = _picker.GetSelectedItems(); if (chosen.Length == 1) AddContent(_pickerItems[chosen[0]].Asset, _pickerItems[chosen[0]].Name, _pickerItems[chosen[0]].Category); };
-        AddChild(_pickerDialog);
-        return box;
-    }
 
     private List<JsonObject> Entries()
     {
@@ -51,11 +26,18 @@ public partial class BuildEditor
 
     private void FillContent()
     {
-        if (_contents is null) return;
-        _contents.Clear();
-        if (_selection.Count != 1) { _contentInfo.Text = _selection.Count == 0 ? "Selecione um objeto." : "Selecione um só objeto para ver o conteúdo."; return; }
-        foreach (var entry in Entries()) _contents.AddItem($"{entry["name"]?.GetValue<string>()}  ·  {CategoryLabel(entry["category"]?.GetValue<string>() ?? "")}");
-        _contentInfo.Text = _contents.ItemCount == 0 ? "Este objeto está vazio." : $"{_contents.ItemCount} item(ns) de até 64.";
+        if (_contentRows is null) return;
+        foreach (var node in _contentRowNodes) { _contentRows.RemoveChild(node); node.QueueFree(); }
+        _contentRowNodes.Clear(); _contentTexts.Clear(); _contentSelected = -1;
+        if (_selection.Count != 1) { _contentCount.Text = "0 itens"; _contentInfo.Text = _selection.Count == 0 ? "Selecione um objeto." : "Selecione um só objeto para ver o conteúdo."; return; }
+        var entries = Entries();
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var name = entries[i]["name"]?.GetValue<string>() ?? "Item"; var category = entries[i]["category"]?.GetValue<string>() ?? "";
+            _contentTexts.Add($"{name}  ·  {CategoryLabel(category)}"); AddContentRow(i, name, category);
+        }
+        _contentCount.Text = entries.Count == 1 ? "1 item" : $"{entries.Count} itens";
+        _contentInfo.Text = entries.Count == 0 ? "Este objeto está vazio." : $"{entries.Count} item(ns) de até 64.";
     }
 
     private static string CategoryLabel(string category) => category switch
@@ -90,18 +72,17 @@ public partial class BuildEditor
 
     private void RemoveContent()
     {
-        var picked = _contents.GetSelectedItems();
-        if (picked.Length != 1) { _status.Text = "Escolha um item da lista para remover."; return; }
-        var index = picked[0];
+        var index = _contentSelected;
+        if (index < 0) { _status.Text = "Escolha um item da lista para remover."; return; }
         EditContent(array => { if (index >= array.Count) return false; array.RemoveAt(index); return true; }, "Item removido do objeto.");
     }
 
     private void RenameContent()
     {
-        var picked = _contents.GetSelectedItems(); var name = _contentName.Text.Trim();
-        if (picked.Length != 1) { _status.Text = "Escolha um item da lista para renomear."; return; }
+        var name = _contentName.Text.Trim();
+        if (_contentSelected < 0) { _status.Text = "Escolha um item da lista para renomear."; return; }
         if (name.Length is 0 or > 120) { _status.Text = "O nome deve ter de 1 a 120 letras."; return; }
-        var index = picked[0];
+        var index = _contentSelected;
         EditContent(array => { if (index >= array.Count || array[index] is not JsonObject entry) return false; entry["name"] = name; return true; }, "Item renomeado.");
     }
 
@@ -140,9 +121,10 @@ public partial class BuildEditor
     }
 
     public int ContentCountForTesting => Entries().Count;
+    public int ContentRowsForTesting => _contentRowNodes.Count;
     public int PickerCountForTesting => _pickerItems.Count;
     public void AddContentForTesting(Guid asset, string name, string category) => AddContent(asset, name, category);
-    public void RenameContentForTesting(int index, string name) { _contents.Select(index); _contentName.Text = name; RenameContent(); }
-    public void RemoveContentForTesting(int index) { _contents.Select(index); RemoveContent(); }
-    public string ContentTextForTesting(int index) => _contents.GetItemText(index);
+    public void RenameContentForTesting(int index, string name) { SelectContent(index); _contentName.Text = name; RenameContent(); }
+    public void RemoveContentForTesting(int index) { SelectContent(index); RemoveContent(); }
+    public string ContentTextForTesting(int index) => _contentTexts[index];
 }

@@ -23,11 +23,12 @@ public partial class UiCapture : Node
             AddChild(world);
             for (var i = 0; i < 20; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             var ui = world.GetNode<ViewerUI>("ViewerUI");
-            if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "import")
+            if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") is "import" or "import-error")
             {
                 var sample = new Node3D(); sample.AddChild(new MeshInstance3D { Mesh = new CylinderMesh { TopRadius = .2f, BottomRadius = .5f, Height = 1.6f }, MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color("#C98B5A") } });
                 var document = new GltfDocument(); var state = new GltfState(); document.AppendFromScene(sample, state);
                 world.GetNode<InventoryPanel>("InventoryPanel").ImportDialogForTesting.ShowForTesting("vaso.glb", document.GenerateBuffer(state));
+                if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "import-error") world.GetNode<InventoryPanel>("InventoryPanel").ImportDialogForTesting.ShowRefusalForTesting("O modelo tem 350.000 triângulos; o limite é 300.000.", 350000);
             }
             if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") is "radial" or "radial2")
             {

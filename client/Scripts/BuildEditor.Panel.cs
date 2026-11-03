@@ -22,84 +22,16 @@ public partial class BuildEditor
     private LineEdit _snap = null!, _name = null!;
     private TextEdit _description = null!;
     private readonly LineEdit[] _position = new LineEdit[3], _rotationFields = new LineEdit[3], _size = new LineEdit[3];
-    private LineEdit _hollow = null!, _taperX = null!, _taperY = null!, _twist = null!;
+    private HSlider _hollow = null!, _taperX = null!, _taperY = null!, _twist = null!;
     private ColorPickerButton _colorPicker = null!, _emissionPicker = null!;
     private CheckBox _glow = null!, _ghost = null!;
     private HSlider _roughness = null!, _metallic = null!, _opacity = null!;
     private Label _status = null!, _selectionLabel = null!;
     private Button _toolSelect = null!, _toolMove = null!, _toolRotate = null!, _toolScale = null!, _toolFace = null!;
     private CheckBox _gridSnap = null!, _showGrid = null!;
-    private LineEdit _rotSnap = null!;
+    private OptionButton _rotSnap = null!;
     private Label _faceLabel = null!;
     private bool _filling;
-
-    private void BuildPanel()
-    {
-        _window = new FloatingWindow("Construir", icon: "hammer", minimizable: true) { Name = "BuildTools", Visible = false };
-        _window.Place(0, 0, 18, 56, 700, 1130);
-        _window.CloseRequested += () => SetActive(false);
-        var content = _window.Content;
-        content.AddThemeConstantOverride("separation", 9);
-
-        // tools: icon above the name
-        var tools = new HBoxContainer(); tools.AddThemeConstantOverride("separation", 8); content.AddChild(tools);
-        _toolSelect = StackedTool("pointer", "Selecionar", "Selecionar objetos (1)", () => SelectTool());
-        _toolMove = StackedTool("move", "Mover", "Mover nos três eixos (2)", () => SetMode(GizmoMode.Move));
-        _toolRotate = StackedTool("rotate", "Girar", "Girar com os anéis (3)", () => SetMode(GizmoMode.Rotate));
-        _toolScale = StackedTool("expand", "Esticar", "Redimensionar (4)", () => SetMode(GizmoMode.Scale));
-        _toolFace = StackedTool("cube", "Face", "Selecionar uma face para colori-la (5)", () => FaceTool());
-        foreach (var button in new[] { _toolSelect, _toolMove, _toolRotate, _toolScale, _toolFace }) tools.AddChild(button);
-
-        var actions = new HBoxContainer(); actions.AddThemeConstantOverride("separation", 8); content.AddChild(actions);
-        foreach (var (icon, tip, action) in new (string, string, Action)[]
-        {
-            ("cube", "Criar a forma escolhida em Geral: depois clique onde quer colocá-la", CreateObject), ("copy", "Copiar (Ctrl+C)", CopySelection), ("paste", "Colar (Ctrl+V)", Paste), ("copy-plus", "Duplicar (Ctrl+D)", Duplicate),
-            ("trash", "Excluir (Delete)", DeleteSelection), ("undo", "Desfazer (Ctrl+Z)", Undo), ("redo", "Refazer (Ctrl+Y)", Redo)
-        })
-        {
-            var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 24), TooltipText = tip, CustomMinimumSize = new Vector2(0, 46), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            UiStyle.StyleButton(button, UiStyle.ButtonKind.Tool, 8, 6); button.Pressed += action; actions.AddChild(button);
-        }
-
-        var cameraRow = new HBoxContainer(); cameraRow.AddThemeConstantOverride("separation", 8); content.AddChild(cameraRow);
-        _cameraButton = ToolToggle(" Câmera de edição", "Gira em volta da seleção: botão direito orbita, botão do meio desloca, roda dá zoom (End)", ToggleEditCamera);
-        _cameraButton.Icon = UiStyle.Icon("camera", UiStyle.Text, 24); _cameraButton.ExpandIcon = false; _cameraButton.CustomMinimumSize = new Vector2(0, 44); _cameraButton.AddThemeFontSizeOverride("font_size", 17);
-        cameraRow.AddChild(_cameraButton);
-        cameraRow.AddChild(IconButton("focus", "Focar", "Aponta a câmera para a seleção (Home)", FocusSelection, UiStyle.ButtonKind.Tool));
-        cameraRow.AddChild(IconButton("help", "Tutorial", "Mostra o passo a passo de construção", RestartTutorial, UiStyle.ButtonKind.Tool));
-
-        var groupRow = new HBoxContainer(); groupRow.AddThemeConstantOverride("separation", 10); content.AddChild(groupRow);
-        groupRow.AddChild(IconButton("link", "Vincular", "Junta os objetos selecionados em um conjunto (Ctrl+G)", GroupSelection, height: 42));
-        groupRow.AddChild(IconButton("unlink", "Desvincular", "Separa o conjunto (Ctrl+Shift+G)", Ungroup, height: 42));
-
-        content.AddChild(new HSeparator());
-        var selectionRow = new HBoxContainer(); selectionRow.AddThemeConstantOverride("separation", 8); content.AddChild(selectionRow);
-        _selectionLabel = new Label { Text = "Nada selecionado", TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        _selectionLabel.AddThemeFontSizeOverride("font_size", 17);
-        selectionRow.AddChild(_selectionLabel);
-        _saveLabel = new Label { Text = "✓ Salvo", TooltipText = "Mostra se o servidor já confirmou as suas alterações" }; _saveLabel.AddThemeFontOverride("font", UiStyle.Bold); _saveLabel.AddThemeFontSizeOverride("font_size", 18); selectionRow.AddChild(_saveLabel);
-        content.AddChild(new HSeparator());
-        BuildTutorialCard(content);
-
-        // tabs
-        var tabs = new UiTabs { EqualWidth = true, Flat = true };
-        tabs.AddTab("Geral"); tabs.AddTab("Objeto"); tabs.AddTab("Textura"); tabs.AddTab("Recursos"); tabs.AddTab("Conteúdo"); tabs.AddTab("Alinhar");
-        content.AddChild(tabs);
-        var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 420) };
-        content.AddChild(stack);
-        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildContentTab()), Scroll(stack, BuildAlignTab()) };
-        tabs.TabChanged += index => { for (var i = 0; i < pages.Length; i++) pages[i].Visible = i == index; };
-        pages[0].Visible = true;
-
-        content.AddChild(new HSeparator());
-        var footer = new HBoxContainer(); footer.AddThemeConstantOverride("separation", 10); content.AddChild(footer);
-        var infoIcon = UiStyle.IconRect("info", UiStyle.TextMuted, 22); infoIcon.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin; footer.AddChild(infoIcon);
-        _status = new Label { Text = "Modo de construção ativo · Alterações são salvas automaticamente no servidor.", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(420, 0) };
-        _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); _status.AddThemeFontSizeOverride("font_size", 16);
-        footer.AddChild(_status);
-        AddChild(_window);
-        UpdateToolButtons();
-    }
 
     private Button ToolToggle(string text, string tip, Action action)
     {
@@ -144,30 +76,6 @@ public partial class BuildEditor
 
     // ---- tabs ------------------------------------------------------------------------------------------------
 
-    private Control BuildObjectTab()
-    {
-        var box = Section();
-        box.AddChild(FieldLabel("Posição (metros)")); box.AddChild(Triple(_position, "X", "Y", "Z"));
-        box.AddChild(FieldLabel("Rotação (graus)")); box.AddChild(Triple(_rotationFields, "X", "Y", "Z"));
-        box.AddChild(FieldLabel("Tamanho (metros, 0,01 a 64)")); box.AddChild(Triple(_size, "X", "Y", "Z"));
-        box.AddChild(FieldLabel("Passo de movimento (metros)"));
-        _snap = Field("0.5", 8); _snap.Text = "0.5"; _snap.TooltipText = "Passo do movimento com as setas e da posição aplicada"; box.AddChild(_snap);
-        box.AddChild(FieldLabel("Grade e encaixe"));
-        _showGrid = new CheckBox { Text = " Mostrar grade sob a seleção" }; _showGrid.Toggled += _ => UpdateGrid(); box.AddChild(_showGrid);
-        _gridSnap = new CheckBox { Text = " Ajustar à grade ao mover", TooltipText = "A posição final cai em múltiplos do passo de movimento" }; box.AddChild(_gridSnap);
-        _snap.TextChanged += _ => UpdateGrid();
-        box.AddChild(FieldLabel("Passo de giro (graus)"));
-        _rotSnap = Field("5", 6); _rotSnap.Text = "5"; box.AddChild(_rotSnap);
-        box.AddChild(FieldLabel("Forma (caixa, prisma, cilindro, tubo, cone e pirâmide)"));
-        var shape = new GridContainer { Columns = 2 }; shape.AddThemeConstantOverride("h_separation", 8); shape.AddThemeConstantOverride("v_separation", 6);
-        _hollow = Labeled(shape, "Oco (0 a 0,95)", "0"); _taperX = Labeled(shape, "Afunilar X (-1 a 1)", "0"); _taperY = Labeled(shape, "Afunilar Y (-1 a 1)", "0"); _twist = Labeled(shape, "Torção (-180 a 180)", "0");
-        box.AddChild(shape);
-        _ghost = new CheckBox { Text = " Fantasma (pode ser atravessado)", TooltipText = "Desativa a colisão sólida; o objeto continua visível" };
-        box.AddChild(_ghost);
-        box.AddChild(TextButton("Aplicar à seleção", "Envia posição, rotação, tamanho, forma e física ao servidor", ApplySelected, UiStyle.ButtonKind.Primary));
-        return box;
-    }
-
     private static VBoxContainer Section() { var box = new VBoxContainer(); box.AddThemeConstantOverride("separation", 8); return box; }
 
     private static Label FieldLabel(string text)
@@ -176,36 +84,9 @@ public partial class BuildEditor
         return label;
     }
 
-    private static LineEdit Field(string placeholder, int maxLength) => new() { PlaceholderText = placeholder, MaxLength = maxLength, CustomMinimumSize = new Vector2(0, 40), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+    private static LineEdit Field(string placeholder, int maxLength) => Fielded(new LineEdit { PlaceholderText = placeholder, MaxLength = maxLength, CustomMinimumSize = new Vector2(0, 40), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
 
-    private HBoxContainer Triple(LineEdit[] fields, params string[] labels)
-    {
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 6);
-        for (var i = 0; i < 3; i++)
-        {
-            var axis = new Label { Text = labels[i], VerticalAlignment = VerticalAlignment.Center };
-            axis.AddThemeColorOverride("font_color", i switch { 0 => new Color("#FF5A5A"), 1 => new Color("#5AE05A"), _ => new Color("#5A9BFF") }); axis.AddThemeFontOverride("font", UiStyle.Bold);
-            row.AddChild(axis);
-            fields[i] = Field("0", 12); fields[i].Text = "0"; fields[i].TextSubmitted += _ => ApplySelected(); row.AddChild(fields[i]);
-        }
-        return row;
-    }
-
-    private LineEdit Labeled(GridContainer grid, string label, string value)
-    {
-        var text = new Label { Text = label, VerticalAlignment = VerticalAlignment.Center }; text.AddThemeFontSizeOverride("font_size", 15); grid.AddChild(text);
-        var field = Field(value, 8); field.Text = value; field.TextSubmitted += _ => ApplySelected(); grid.AddChild(field);
-        return field;
-    }
-
-    private static HSlider Slider(VBoxContainer box, string label, float value)
-    {
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10);
-        var text = new Label { Text = label, CustomMinimumSize = new Vector2(110, 0) }; text.AddThemeFontSizeOverride("font_size", 16); row.AddChild(text);
-        var slider = new HSlider { MinValue = 0, MaxValue = 1, Step = .01, Value = value, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 28) }; row.AddChild(slider);
-        box.AddChild(row);
-        return slider;
-    }
+    private static LineEdit Fielded(LineEdit edit) { edit.AddThemeFontSizeOverride("font_size", 20); return edit; }
 
     // ---- reading and writing the fields ----------------------------------------------------------------------
 
@@ -218,6 +99,8 @@ public partial class BuildEditor
     {
         if (_selectionLabel is null) return;
         _filling = true;
+        _selectedCount.Text = _selection.Count switch { 0 => "nenhum", 1 => "1 objeto", _ => $"{_selection.Count} objetos" };
+        if (_selection.Count == 0) _primsLabel.Text = $"Prims: {_objects.Count:N0}".Replace(",", ".");
         _selectionLabel.Text = _selection.Count switch
         {
             0 => "Nada selecionado",
@@ -230,12 +113,13 @@ public partial class BuildEditor
             _name.Text = s.Name; _description.Text = s.Description;
             for (var i = 0; i < 3; i++)
             {
-                _position[i].Text = Num(new[] { view.Position.X, view.Position.Y, view.Position.Z }[i]);
-                _rotationFields[i].Text = Num(new[] { s.RotationX, s.RotationY, s.RotationZ }[i]);
-                _size[i].Text = Num(new[] { view.Scale.X, view.Scale.Y, view.Scale.Z }[i]);
+                _position[i].Text = Disp(new[] { view.Position.X, view.Position.Y, view.Position.Z }[i]);
+                _rotationFields[i].Text = Disp(new[] { s.RotationX, s.RotationY, s.RotationZ }[i]);
+                _size[i].Text = Disp(new[] { view.Scale.X, view.Scale.Y, view.Scale.Z }[i]);
+                _lastSize[i] = new[] { view.Scale.X, view.Scale.Y, view.Scale.Z }[i];
             }
             var geometry = ParseObject(s.GeometryJson); var material = ParseObject(s.MaterialJson); var physics = ParseObject(s.PhysicsJson);
-            _hollow.Text = Num(Read(geometry, "hollow", 0)); _taperX.Text = Num(Read(geometry, "taperX", 0)); _taperY.Text = Num(Read(geometry, "taperY", 0)); _twist.Text = Num(Read(geometry, "twist", 0));
+            _hollow.Value = Read(geometry, "hollow", 0); _taperX.Value = Read(geometry, "taperX", 0); _taperY.Value = Read(geometry, "taperY", 0); _twist.Value = Read(geometry, "twist", 0);
             if (material["color"]?.GetValue<string>() is { } color) _colorPicker.Color = Color.FromHtml(color);
             _roughness.Value = Read(material, "roughness", .7f); _metallic.Value = Read(material, "metallic", 0f); _opacity.Value = Read(material, "transparency", 1f);
             _glow.ButtonPressed = material["emission"] is not null;
@@ -249,6 +133,7 @@ public partial class BuildEditor
         FillTextureFields();
         FillContent();
         _filling = false;
+        RefreshPreviews();
         RefreshGizmo();
     }
 
@@ -293,8 +178,8 @@ public partial class BuildEditor
     private string GeometryFromFields(string existing)
     {
         var node = ParseObject(existing);
-        node["hollow"] = Mathf.Clamp(NumOr(_hollow, 0), 0f, .95f); node["taperX"] = Mathf.Clamp(NumOr(_taperX, 0), -1f, 1f);
-        node["taperY"] = Mathf.Clamp(NumOr(_taperY, 0), -1f, 1f); node["twist"] = Mathf.Clamp(NumOr(_twist, 0), -180f, 180f);
+        node["hollow"] = Math.Round(Mathf.Clamp((float)_hollow.Value, 0f, .95f), 3); node["taperX"] = Math.Round(Mathf.Clamp((float)_taperX.Value, -1f, 1f), 3);
+        node["taperY"] = Math.Round(Mathf.Clamp((float)_taperY.Value, -1f, 1f), 3); node["twist"] = Math.Round(Mathf.Clamp((float)_twist.Value, -180f, 180f), 2);
         return node.ToJsonString();
     }
 
@@ -349,7 +234,7 @@ public partial class BuildEditor
     public void ApplyFieldsForTesting(Vector3 position, Vector3 size, string name, float hollow)
     {
         for (var i = 0; i < 3; i++) { _position[i].Text = Num(position[i]); _size[i].Text = Num(size[i]); }
-        _name.Text = name; _hollow.Text = Num(hollow);
+        _name.Text = name; _hollow.Value = hollow;
         ApplySelected();
     }
     public void SelectToolForTesting() => SelectTool();
@@ -391,7 +276,7 @@ public partial class BuildEditor
     {
         if (_faceView is not null && IsInstanceValid(_faceView)) _faceView.HighlightFace(-1);
         _faceView = null; _selectedFace = -1;
-        if (_faceLabel is not null) { _faceLabel.Text = "Use a ferramenta Face (5) e clique em uma face de uma primitiva."; FillTextureFields(); }
+        if (_faceLabel is not null) { _faceLabel.Text = "Face (tecla 5): clique em uma face."; FillTextureFields(); }
     }
 
     private void PaintFace(bool clear)
@@ -423,29 +308,6 @@ public partial class BuildEditor
             min = min.Min(corner); max = max.Max(corner);
         }
         return new LifeVerse.Shared.Building.Bounds(new System.Numerics.Vector3(min.X, min.Y, min.Z), new System.Numerics.Vector3(max.X, max.Y, max.Z));
-    }
-
-    private Control BuildAlignTab()
-    {
-        var box = Section();
-        var note = new Label { Text = "Selecione dois ou mais objetos (Shift soma). Alinhar usa o contorno de cada objeto.", AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        note.AddThemeColorOverride("font_color", UiStyle.TextMuted); note.AddThemeFontSizeOverride("font_size", 15); box.AddChild(note);
-        foreach (var (axis, label, names) in new[] { (AlignAxis.X, "Eixo X", new[] { "Esquerda", "Centro", "Direita" }), (AlignAxis.Y, "Eixo Y (altura)", new[] { "Base", "Meio", "Topo" }), (AlignAxis.Z, "Eixo Z", new[] { "Frente", "Centro", "Trás" }) })
-        {
-            box.AddChild(FieldLabel(label));
-            var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 6); box.AddChild(row);
-            for (var i = 0; i < 3; i++) { var edge = (AlignEdge)i; var captured = axis; row.AddChild(TextButton(names[i], $"Alinha a seleção pelo lado: {names[i].ToLowerInvariant()}", () => AlignSelection(captured, edge))); }
-            row.AddChild(TextButton("Distribuir", "Deixa os espaços iguais entre três ou mais objetos", () => DistributeSelection(axis)));
-        }
-        box.AddChild(FieldLabel("Chão"));
-        box.AddChild(TextButton("Ajustar ao solo", "Apoia o ponto mais baixo da seleção no chão logo abaixo", RestSelectionOnGround));
-        box.AddChild(FieldLabel("Copiar entre objetos"));
-        var copy = new HBoxContainer(); copy.AddThemeConstantOverride("separation", 6); box.AddChild(copy);
-        copy.AddChild(TextButton("Copiar posição", "Guarda a posição do primeiro objeto", () => CopyTransform(0)));
-        copy.AddChild(TextButton("Copiar rotação", "Guarda a rotação do primeiro objeto", () => CopyTransform(1)));
-        copy.AddChild(TextButton("Copiar tamanho", "Guarda o tamanho do primeiro objeto", () => CopyTransform(2)));
-        box.AddChild(TextButton("Colar na seleção", "Aplica o que foi copiado", PasteTransform));
-        return box;
     }
 
     private void MoveSelection(float[] offsets, AlignAxis axis, string done)
