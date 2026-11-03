@@ -29,4 +29,10 @@ public partial class NetworkBridge : Node
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void ProtocolRejected(int serverVersion) => Manager.OnProtocolRejected(serverVersion);
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void BuildOperationApplied(string operationJson) => Manager.OnBuildOperationApplied(operationJson);
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void BuildOperationRejected(string code) => Manager.OnBuildOperationRejected(code);
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void EnterVehicle(int vehicleId) { }
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void ExitVehicle() { }
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered, TransferChannel = 1)] public void SubmitVehicleInput(float throttle, float steer, bool brake) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void VehicleSpawned(int vehicleId, string name, string type, float x, float y, float z, float yaw) => Manager.OnVehicleSpawned(vehicleId, name, type, new Vector3(x, y, z), yaw);
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered, TransferChannel = 2)] public void VehicleSnapshots(byte[] payload) => Manager.OnVehicleSnapshots(payload);
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void VehicleRejected(string code) => Manager.OnVehicleRejected(code);
 }

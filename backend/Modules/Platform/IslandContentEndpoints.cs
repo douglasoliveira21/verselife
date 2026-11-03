@@ -20,6 +20,7 @@ public static class IslandContentEndpoints
     {
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/island-content", ContentAsync).WithTags("Platform");
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/script-state", SaveStateAsync).WithTags("Platform");
+        endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/vehicles", VehiclesAsync).WithTags("Platform");
         return endpoints;
     }
 
@@ -43,6 +44,17 @@ public static class IslandContentEndpoints
         var state = (await db.ScriptStates.AsNoTracking().Where(x => scriptIds.Contains(x.ScriptId)).Select(x => new { x.ScriptId, x.Key, x.ValueJson }).ToListAsync(ct))
             .GroupBy(x => x.ScriptId).ToDictionary(group => group.Key, group => group.ToDictionary(x => x.Key, x => x.ValueJson));
         return Results.Ok(new { islandId = server.IslandId, objects, scripts, state });
+    }
+
+    /// The vehicles that belong on this island; the island server simulates them and adds new ones as they appear.
+    private static async Task<IResult> VehiclesAsync(Guid instanceId, HttpContext context, IConfiguration config, LifeVerseDbContext db, CancellationToken ct)
+    {
+        if (!PlatformEndpoints.HasValidServiceKey(context, config)) return Results.Unauthorized();
+        var server = await db.ServerInstances.AsNoTracking().SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct);
+        if (server is null) return Results.NotFound();
+        var vehicles = await db.Vehicles.AsNoTracking().Where(x => x.IslandId == server.IslandId && x.DeletedAt == null)
+            .Select(x => new { x.Id, x.Name, x.VehicleType, x.PositionX, x.PositionZ, x.RotationY, x.MaxSpeed }).Take(64).ToListAsync(ct);
+        return Results.Ok(new { vehicles });
     }
 
     private static async Task<IResult> SaveStateAsync(Guid instanceId, ScriptStateBatch batch, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)

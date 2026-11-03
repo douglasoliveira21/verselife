@@ -5,7 +5,9 @@ public static class NetworkProtocol
     // v2 adds authoritative terrain editing (full map, edit replication, resync request).
     // v3 adds per-island sea level, terrain undo/redo patches and heightmap import.
     // v4 adds touching scripted objects.
-    public const int Version = 4;
+    // v5 adds server-driven vehicles (enter, exit, drive input, vehicle snapshots).
+    public const int Version = 5;
+    public const int MaxVehicles = 64;
     public const int MaxTerrainEditsPerSecond = 20;
     public const int MaxTerrainImportBytes = 300_000;
     public const int MaxSnapshotBytes = 32 * 1024;

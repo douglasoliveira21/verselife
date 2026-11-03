@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://Tests/VehicleE2E.cs" type="Script" id="1"]
+
+[node name="VehicleE2E" type="Node3D"]
+script = ExtResource("1")

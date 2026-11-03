@@ -1,4 +1,5 @@
 using Godot;
+using LifeVerse.Shared.Vehicles;
 using LifeVerse.Client.Autoloads;
 using LifeVerse.Shared.Gameplay;
 using LifeVerse.Shared.Networking;
@@ -27,6 +28,7 @@ public partial class PlayerController : CharacterBody3D
     private Label _status = null!;
     private InteractableSeat? _selectedSeat;
     private InteractableSeat? _seat;
+    private bool _inVehicle;
     private bool _flying;
     private bool _volumeSwimming;
     private bool _flyFlagPending;
@@ -152,6 +154,7 @@ public partial class PlayerController : CharacterBody3D
     public override void _PhysicsProcess(double delta)
     {
         var dt = (float)delta;
+        if (UpdateVehicleDriving()) return;
         if (_seat is not null) { UpdateSeated(); return; }
         LiftOutOfTerrain();
         if (_emoteTime > 0)
@@ -275,6 +278,7 @@ public partial class PlayerController : CharacterBody3D
     public void SetSwimming(bool value) => _volumeSwimming = value;
     public void Reconcile(Vector3 authoritativePosition, Vector3 authoritativeVelocity, uint acknowledgedInput)
     {
+        if (_inVehicle) return;
         var error = GlobalPosition.DistanceTo(authoritativePosition);
         if (error > 3f) GlobalPosition = authoritativePosition;
         else if (error > .08f) GlobalPosition = GlobalPosition.Lerp(authoritativePosition, .18f);
@@ -334,7 +338,25 @@ public partial class PlayerController : CharacterBody3D
         _contextMenu.Position = screenPosition; _contextMenu.Visible = true;
     }
 
-    private void InteractOrStand() { if (_seat is not null) { Stand(); return; } RaycastSeat()?.Interact(this); }
+    private void InteractOrStand()
+    {
+        if (_inVehicle) { _network.ExitVehicle(); return; }
+        if (_seat is not null) { Stand(); return; }
+        if (RaycastSeat() is { } seat) { seat.Interact(this); return; }
+        if (_network.IsAuthenticated && !_flying && !_swimming && _network.Vehicles.Nearest(GlobalPosition, VehicleFleet.EnterRange) is { } car) _network.EnterVehicle(car.VehicleId);
+    }
+
+    /// While the server says this player drives a car, the avatar rides at the seat and the keys steer the car instead of walking.
+    private bool UpdateVehicleDriving()
+    {
+        var car = _network.IsAuthenticated ? _network.Vehicles.DrivenBy(_network.OwnPeerId) : null;
+        if (car is null) { if (_inVehicle) { _inVehicle = false; Velocity = Vector3.Zero; } return false; }
+        if (!_inVehicle) { _inVehicle = true; _flying = false; _walkTarget = null; _contextMenu.Visible = false; }
+        GlobalTransform = car.SeatTransform; Velocity = Vector3.Zero; _rig.SetMotionState(AvatarMotionState.Sit);
+        var typing = IsTyping();
+        _network.SendVehicleInput(typing ? 0f : Input.GetAxis("move_back", "move_forward"), typing ? 0f : Input.GetAxis("move_left", "move_right"), !typing && Input.IsActionPressed("jump"));
+        return true;
+    }
     private InteractableSeat? RaycastSeat()
     {
         var center = GetViewport().GetVisibleRect().Size / 2;

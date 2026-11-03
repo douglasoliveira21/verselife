@@ -6,6 +6,7 @@ using LifeVerse.Client.Scripts;
 using LifeVerse.Shared.Gameplay;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
+using LifeVerse.Shared.Vehicles;
 
 namespace LifeVerse.Client.Autoloads;
 
@@ -17,6 +18,9 @@ public partial class NetworkManager : Node
     [Signal] public delegate void BuildOperationRejectedEventHandler(string code);
     [Signal] public delegate void TerrainPermissionChangedEventHandler(bool canEdit);
     [Signal] public delegate void TerrainEditRejectedEventHandler(string code);
+    [Signal] public delegate void VehicleMessageEventHandler(string text);
+    public VehicleClient Vehicles { get; private set; } = null!;
+    public int OwnPeerId => Multiplayer.HasMultiplayerPeer() ? Multiplayer.GetUniqueId() : 0;
     private readonly Dictionary<int, RemoteAvatar> _remote = [];
     private HttpRequest _http = null!;
     private HttpRequest _snapshotHttp = null!;
@@ -37,6 +41,7 @@ public partial class NetworkManager : Node
     public override void _Ready()
     {
         _bridge = GetNode<NetworkBridge>("/root/NetworkBridge");
+        Vehicles = new VehicleClient { Name = "Vehicles" }; AddChild(Vehicles);
         _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnEntryResponse;
         _snapshotHttp = new HttpRequest(); AddChild(_snapshotHttp); _snapshotHttp.RequestCompleted += OnSnapshotResponse;
         Multiplayer.ConnectedToServer += OnConnected;
@@ -68,9 +73,10 @@ public partial class NetworkManager : Node
     }
 
     /// The API answers 503 with state "starting" while the supervisor boots the island's server; keep asking.
+    /// "running" with a 503 means the island registered but its first heartbeat has not made it healthy yet.
     private static bool IslandIsStarting(byte[] body)
     {
-        try { using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); return doc.RootElement.TryGetProperty("state", out var state) && state.GetString() == "starting"; }
+        try { using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); return doc.RootElement.TryGetProperty("state", out var state) && state.GetString() is "starting" or "running"; }
         catch (JsonException) { return false; }
     }
 
@@ -224,13 +230,19 @@ public partial class NetworkManager : Node
 
     private async void HandleConnectionLost(string reason)
     {
-        IsAuthenticated = false; CanEditTerrain = false; EmitSignal(SignalName.TerrainPermissionChanged, false); foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear();
+        IsAuthenticated = false; CanEditTerrain = false; EmitSignal(SignalName.TerrainPermissionChanged, false); foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); Vehicles.Clear();
         EmitSignal(SignalName.ConnectionStateChanged, "offline", reason);
         if (_intentionalDisconnect || _islandId == Guid.Empty || _reconnectAttempt >= 3) return;
         _reconnectAttempt++; await ToSignal(GetTree().CreateTimer(Math.Pow(2, _reconnectAttempt - 1)), SceneTreeTimer.SignalName.Timeout); JoinIsland(_islandId);
     }
 
-    public void Disconnect() { _intentionalDisconnect = true; _islandId = Guid.Empty; IsAuthenticated = false; ClosePeer(); }
+    public void Disconnect() { _intentionalDisconnect = true; _islandId = Guid.Empty; IsAuthenticated = false; Vehicles.Clear(); ClosePeer(); }
+    public void EnterVehicle(int vehicleId) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.EnterVehicle, vehicleId); }
+    public void ExitVehicle() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.ExitVehicle); }
+    public void SendVehicleInput(float throttle, float steer, bool brake) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitVehicleInput, throttle, steer, brake); }
+    public void OnVehicleSpawned(int vehicleId, string name, string type, Vector3 position, float yaw) => Vehicles.Spawn(vehicleId, name, type, position, yaw);
+    public void OnVehicleSnapshots(byte[] payload) { if (VehicleCodec.TryDecode(payload, out _, out var vehicles)) Vehicles.Apply(vehicles); }
+    public void OnVehicleRejected(string code) => EmitSignal(SignalName.VehicleMessage, code switch { "too_far" => "Chegue mais perto do veículo.", "occupied" => "Alguém já está dirigindo este veículo.", "already_driving" => "Você já está em um veículo.", _ => "Veículo indisponível." });
     private void ClosePeer() { if (Multiplayer.HasMultiplayerPeer()) Multiplayer.MultiplayerPeer.Close(); Multiplayer.MultiplayerPeer = null; }
     private static AvatarMotionState ToAvatarMotion(NetworkMotionState state) => state switch
     {

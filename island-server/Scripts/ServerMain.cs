@@ -6,6 +6,7 @@ using System.Text.Json;
 using Godot;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
+using LifeVerse.Shared.Vehicles;
 
 namespace LifeVerse.IslandServer.Scripts;
 
@@ -48,6 +49,7 @@ public partial class ServerMain : Node
             await RegisterAsync(_shutdown.Token);
             await LoadWorldSnapshotAsync(_shutdown.Token);
             await StartScriptingAsync(_shutdown.Token);
+            _ = VehicleSyncLoopAsync(_shutdown.Token);
             var peer = new ENetMultiplayerPeer();
             var enetError = peer.CreateServer(_config.GamePort, _config.MaxPlayers, 3);
             if (enetError != Error.Ok) throw new InvalidOperationException($"ENet failed to listen: {enetError}");
@@ -71,8 +73,11 @@ public partial class ServerMain : Node
         _scripting?.Update(_players.Values.Where(x => x.Authenticated).Select(PresenceOf).ToList());
         CheckIdle();
         var dt = Math.Min((float)delta, 1f / 20f);
+        TickVehicles(dt);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
+
         {
+            if (PinDriver(player)) continue;
             player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with
@@ -113,6 +118,7 @@ public partial class ServerMain : Node
 
     private void OnPeerDisconnected(long peerId)
     {
+        _fleet.Release((int)peerId);
         if (!_players.Remove((int)peerId, out var player)) return;
         if (player.Authenticated)
         {
@@ -155,6 +161,7 @@ public partial class ServerMain : Node
             SendSpawn(peerId, player);
             _bridge.RpcId(peerId, NetworkBridge.MethodName.AuthResult, true, "ok", (long)_serverTick);
             SendTerrain(player);
+            SendAllVehicles(peerId);
             Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
         }
         catch (Exception exception) { Log("admission_failed", new { peerId, error = exception.Message }); Reject(peerId, "admission_unavailable"); }
@@ -355,9 +362,10 @@ public partial class ServerMain : Node
         {
             var visible = _players.Values.Where(x => x.Authenticated && DistanceSquared(target.State, x.State) <= _config.InterestRadius * _config.InterestRadius)
                 .Select(x => new PlayerSnapshot(x.PeerId, x.State.X, x.State.Y, x.State.Z, x.State.VelocityX, x.State.VelocityY, x.State.VelocityZ,
-                    MathF.Atan2(x.State.VelocityX, -x.State.VelocityZ), x.Motion, x.LastProcessedInput)).ToArray();
+                    YawOf(x), x.Motion, x.LastProcessedInput)).ToArray();
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.Snapshot, SnapshotCodec.Encode(_serverTick, visible));
         }
+        BroadcastVehicles();
     }
 
     private void SendSpawn(int targetPeer, ConnectedPlayer player) => _bridge.RpcId(targetPeer, NetworkBridge.MethodName.SpawnPlayer,

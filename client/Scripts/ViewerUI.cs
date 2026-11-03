@@ -86,7 +86,7 @@ public partial class ViewerUI : CanvasLayer
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
         _islands = new HttpRequest(); AddChild(_islands); _islands.RequestCompleted += OnIslands;
         RefreshIslands();
-        _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected;
+        _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected; _network.VehicleMessage += Toast;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
         SetUiScale((float)(double)_prefs.GetValue("ui", "scale", 1.0), save: false);
         SetVolume((float)(double)_prefs.GetValue("audio", "volume", 1.0), save: false);
@@ -98,7 +98,7 @@ public partial class ViewerUI : CanvasLayer
     public override void _ExitTree()
     {
         if (_network is null) return;
-        _network.ChatReceived -= OnChat; _network.ConnectionStateChanged -= OnConnectionState; _network.TerrainEditRejected -= OnTerrainRejected;
+        _network.ChatReceived -= OnChat; _network.ConnectionStateChanged -= OnConnectionState; _network.TerrainEditRejected -= OnTerrainRejected; _network.VehicleMessage -= Toast;
     }
 
     public override void _Process(double delta)

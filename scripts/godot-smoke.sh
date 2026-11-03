@@ -21,5 +21,6 @@ run client res://Tests/BuildSmoke.tscn build_smoke
 run client res://Tests/AvatarGroundingSmoke.tscn avatar_grounding
 run client res://Tests/InventorySmoke.tscn inventory_smoke
 run client res://Tests/PeopleSmoke.tscn people_smoke
+run client res://Tests/VehicleSmoke.tscn vehicle_smoke
 run island-server res://Tests/ScriptingSmoke.tscn scripting_smoke
 exit $failed
