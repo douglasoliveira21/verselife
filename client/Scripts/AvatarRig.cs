@@ -82,10 +82,9 @@ public partial class AvatarRig : Node3D
 
         var top3 = AlignFeetToGround(hips, scaleFactor);
 
-        var name = new Label3D { Name = "DisplayName", Text = data.DisplayName, Position = new Vector3(0, top3 + .2f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, FontSize = 32, OutlineSize = 6 };
-        _visual.AddChild(name);
         var voice = new VoiceIndicator { Name = "VoiceIndicator", Position = new Vector3(0, top3 + .42f, 0), Active = _voiceActive };
         _visual.AddChild(voice); _voice = voice;
+        _visual.AddChild(new NamePlate(data.DisplayName, voice) { Name = "DisplayName", Position = new Vector3(0, top3 + .2f, 0) });
         if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(StateName(_state)); }
     }
 

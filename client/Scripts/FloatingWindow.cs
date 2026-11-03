@@ -2,16 +2,23 @@ using Godot;
 
 namespace LifeVerse.Client.Scripts;
 
-/// Draggable floating window with a title bar, like the panels of a desktop viewer.
+/// Draggable floating glass window: an icon and title on the left, minimize / expand / close on the right (see client/Assets/ui).
 public partial class FloatingWindow : PanelContainer
 {
     private readonly Label _title = new();
+    private readonly Control _body;
     private bool _dragging;
+    private bool _minimized;
+    private bool _expanded;
 
     public VBoxContainer Content { get; } = new();
     public event Action? CloseRequested;
+    /// Raised when the expand button is pressed; the argument says whether the window should now be larger.
+    public event Action<bool>? ExpandToggled;
 
-    public FloatingWindow(string title, bool closable = true)
+    public bool Minimized => _minimized;
+
+    public FloatingWindow(string title, bool closable = true, string? icon = null, bool minimizable = false, bool expandable = false)
     {
         Name = title.Replace(' ', '_').Replace('-', '_');
         AddThemeStyleboxOverride("panel", ViewerTheme.WindowBox());
@@ -21,25 +28,37 @@ public partial class FloatingWindow : PanelContainer
         var bar = new PanelContainer { MouseDefaultCursorShape = CursorShape.Move };
         bar.AddThemeStyleboxOverride("panel", ViewerTheme.TitleBar());
         root.AddChild(bar);
-        var row = new HBoxContainer();
+        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10);
         bar.AddChild(row);
-        _title.Text = title; _title.SizeFlagsHorizontal = SizeFlags.ExpandFill; _title.MouseFilter = MouseFilterEnum.Ignore;
-        _title.AddThemeColorOverride("font_color", new Color("#e8e8e8"));
+        if (icon is not null) { var glyph = UiStyle.IconRect(icon, UiStyle.Text, 26); glyph.MouseFilter = MouseFilterEnum.Ignore; row.AddChild(glyph); }
+        _title.Text = title; _title.SizeFlagsHorizontal = SizeFlags.ExpandFill; _title.MouseFilter = MouseFilterEnum.Ignore; _title.VerticalAlignment = VerticalAlignment.Center;
+        _title.AddThemeColorOverride("font_color", UiStyle.Text); _title.AddThemeFontOverride("font", UiStyle.Bold); _title.AddThemeFontSizeOverride("font_size", 19);
         row.AddChild(_title);
-        if (closable)
-        {
-            var close = new Button { Text = "x", Flat = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(22, 0), TooltipText = "Fechar" };
-            close.Pressed += () => { Visible = false; CloseRequested?.Invoke(); };
-            row.AddChild(close);
-        }
-        var body = new MarginContainer();
-        foreach (var side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) body.AddThemeConstantOverride(side, 8);
+        if (minimizable) row.AddChild(ChromeButton("minimize", "Minimizar", ToggleMinimized));
+        if (expandable) row.AddChild(ChromeButton("expand", "Expandir", () => { _expanded = !_expanded; ExpandToggled?.Invoke(_expanded); }));
+        if (closable) row.AddChild(ChromeButton("close", "Fechar", () => { Visible = false; CloseRequested?.Invoke(); }));
+        var body = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
+        foreach (var side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) body.AddThemeConstantOverride(side, 14);
         root.AddChild(body);
+        _body = body;
         body.AddChild(Content);
-        Content.AddThemeConstantOverride("separation", 6);
+        Content.AddThemeConstantOverride("separation", 8);
         bar.GuiInput += OnBarInput;
         GuiInput += input => { if (input is InputEventMouseButton { Pressed: true }) MoveToFront(); };
     }
+
+    private static Button ChromeButton(string icon, string tooltip, Action action)
+    {
+        var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 22), Flat = true, FocusMode = FocusModeEnum.None, TooltipText = tooltip, CustomMinimumSize = new Vector2(34, 34), ExpandIcon = false };
+        var hover = UiStyle.Box(new Color(1, 1, 1, .10f), new Color(0, 0, 0, 0), UiStyle.RadiusSmall, 0, 0, 0);
+        button.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); button.AddThemeStyleboxOverride("hover", hover); button.AddThemeStyleboxOverride("pressed", hover);
+        button.AddThemeStyleboxOverride("hover_pressed", hover); button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        button.Pressed += action;
+        return button;
+    }
+
+    /// Hides the body and leaves only the title bar.
+    public void ToggleMinimized() { _minimized = !_minimized; _body.Visible = !_minimized; ResetSize(); }
 
     public void SetOpacity(float alpha) => AddThemeStyleboxOverride("panel", ViewerTheme.WindowBox(alpha));
 
@@ -50,7 +69,6 @@ public partial class FloatingWindow : PanelContainer
         GrowHorizontal = anchorX > .5f ? GrowDirection.Begin : GrowDirection.End;
         GrowVertical = anchorY > .5f ? GrowDirection.Begin : GrowDirection.End;
     }
-
 
     private void OnBarInput(InputEvent input)
     {

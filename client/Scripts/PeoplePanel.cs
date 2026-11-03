@@ -4,8 +4,9 @@ using LifeVerse.Client.Autoloads;
 
 namespace LifeVerse.Client.Scripts;
 
-/// The People window: find players by name, answer friend requests, manage the friends list and groups.
-/// Requests go out one at a time; every change reloads the lists so the window always shows what the server holds.
+/// The People window (client/Assets/ui/04): tabs Buscar / Amigos / Grupos, friends as rows with avatar and status dot, friend
+/// requests as cards with Aceitar / Recusar. Requests go out one at a time; every change reloads the lists so the window
+/// always shows what the server holds.
 public partial class PeoplePanel : Node
 {
     [Signal] public delegate void MessageEventHandler(string text);
@@ -17,20 +18,24 @@ public partial class PeoplePanel : Node
     private HttpRequest? _http;
     private FloatingWindow _window = null!;
     private LineEdit _query = null!, _groupName = null!;
-    private ItemList _results = null!, _requests = null!, _friends = null!, _invites = null!, _groups = null!;
-    private Button _searchAction = null!, _requestAccept = null!, _requestDecline = null!, _friendRemove = null!, _inviteAccept = null!, _inviteDecline = null!, _groupLeave = null!;
+    private RowList _results = null!, _requests = null!, _friends = null!, _invites = null!, _groups = null!;
+    private Label _friendsTitle = null!, _requestsTitle = null!;
+    private Button _searchAction = null!, _friendRemove = null!, _groupLeave = null!;
+    private readonly List<Control> _pages = [];
     private readonly List<(Guid Id, string Relation)> _resultRows = [];
     private readonly List<(Guid Id, string Direction)> _requestRows = [];
     private readonly List<Guid> _friendRows = [], _inviteRows = [], _groupRows = [];
 
     /// Tests set this to capture requests instead of sending them.
     public Func<Godot.HttpClient.Method, string, string?, bool>? RequestSink { get; set; }
+    /// Raised by the chat button on a friend row.
+    public event Action<Guid, string>? ChatRequested;
     public bool Visible => _window.Visible;
-    public ItemList ResultsForTesting => _results;
-    public ItemList RequestsForTesting => _requests;
-    public ItemList FriendsForTesting => _friends;
-    public ItemList InvitesForTesting => _invites;
-    public ItemList GroupsForTesting => _groups;
+    public RowList ResultsForTesting => _results;
+    public RowList RequestsForTesting => _requests;
+    public RowList FriendsForTesting => _friends;
+    public RowList InvitesForTesting => _invites;
+    public RowList GroupsForTesting => _groups;
     public LineEdit QueryForTesting => _query;
 
     public override void _Ready() => Build();
@@ -43,76 +48,225 @@ public partial class PeoplePanel : Node
         if (_window.Visible) { _window.MoveToFront(); Reload(); }
     }
 
+    // ---- layout ----------------------------------------------------------------------------------------------
+
     private void Build()
     {
-        _window = new FloatingWindow("Pessoas") { Visible = false };
-        _window.Place(.5f, .5f, -250, -230, 250, 230);
-        var tabs = new TabContainer { CustomMinimumSize = new Vector2(480, 380) };
+        _window = new FloatingWindow("Pessoas", icon: "people", minimizable: true) { Visible = false };
+        _window.Place(.5f, .5f, -280, -300, 280, 300);
+        _window.Content.AddThemeConstantOverride("separation", 10);
+        var tabs = new UiTabs { EqualWidth = true };
+        tabs.AddTab("Buscar"); tabs.AddTab("Amigos"); tabs.AddTab("Grupos");
         _window.Content.AddChild(tabs);
+        var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 470) };
+        _window.Content.AddChild(stack);
 
-        var search = Tab(tabs, "Buscar");
-        _query = new LineEdit { PlaceholderText = "Nome do jogador (2 letras ou mais)", ClearButtonEnabled = true };
-        _query.TextSubmitted += _ => Search();
-        search.AddChild(_query);
-        var go = new Button { Text = "Buscar" }; go.Pressed += Search; search.AddChild(go);
-        _results = List(search, 190);
-        _results.ItemSelected += _ => UpdateButtons();
-        _searchAction = new Button { Text = "Adicionar amigo", Disabled = true }; _searchAction.Pressed += SearchAction; search.AddChild(_searchAction);
-
-        var friends = Tab(tabs, "Amigos");
-        friends.AddChild(new Label { Text = "Pedidos" });
-        _requests = List(friends, 90); _requests.ItemSelected += _ => UpdateButtons();
-        var requestButtons = Row(friends);
-        _requestAccept = AddButton(requestButtons, "Aceitar", AcceptRequest); _requestDecline = AddButton(requestButtons, "Recusar / cancelar", DeclineRequest);
-        friends.AddChild(new Label { Text = "Amigos" });
-        _friends = List(friends, 110); _friends.ItemSelected += _ => UpdateButtons();
-        _friendRemove = AddButton(friends, "Remover amigo", RemoveFriend);
-
-        var groups = Tab(tabs, "Grupos");
-        groups.AddChild(new Label { Text = "Convites" });
-        _invites = List(groups, 70); _invites.ItemSelected += _ => UpdateButtons();
-        var inviteButtons = Row(groups);
-        _inviteAccept = AddButton(inviteButtons, "Entrar", () => AnswerInvite(true)); _inviteDecline = AddButton(inviteButtons, "Recusar", () => AnswerInvite(false));
-        groups.AddChild(new Label { Text = "Meus grupos" });
-        _groups = List(groups, 100); _groups.ItemSelected += _ => UpdateButtons();
-        _groupLeave = AddButton(groups, "Sair do grupo", LeaveGroup);
-        var create = Row(groups);
-        _groupName = new LineEdit { PlaceholderText = "Nome do novo grupo", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        _groupName.TextSubmitted += _ => CreateGroup();
-        create.AddChild(_groupName);
-        AddButton(create, "Criar", CreateGroup);
+        _pages.Add(Page(stack, BuildSearch())); _pages.Add(Page(stack, BuildFriends())); _pages.Add(Page(stack, BuildGroups()));
+        tabs.TabChanged += index => { for (var i = 0; i < _pages.Count; i++) _pages[i].Visible = i == index; };
+        tabs.Select(1);
         UpdateButtons();
     }
 
-    private static VBoxContainer Tab(TabContainer tabs, string title)
+    private static Control Page(Control stack, Control content)
     {
-        var box = new VBoxContainer { Name = title };
-        box.AddThemeConstantOverride("separation", 6);
-        tabs.AddChild(box);
+        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, Visible = false };
+        scroll.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        content.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        scroll.AddChild(content);
+        stack.AddChild(scroll);
+        return scroll;
+    }
+
+    private Control BuildSearch()
+    {
+        var box = Column();
+        _query = new LineEdit { PlaceholderText = "Nome do jogador (2 letras ou mais)", ClearButtonEnabled = true, CustomMinimumSize = new Vector2(0, 44) };
+        _query.TextSubmitted += _ => Search();
+        box.AddChild(_query);
+        var go = new Button { Text = "Buscar", Icon = UiStyle.Icon("search", UiStyle.Text, 20), CustomMinimumSize = new Vector2(0, 44) };
+        UiStyle.StyleButton(go, UiStyle.ButtonKind.Primary); go.Pressed += Search; box.AddChild(go);
+        _results = new RowList(); box.AddChild(_results);
+        _results.SelectionChanged += _ => UpdateButtons();
+        _searchAction = new Button { Text = "Adicionar amigo", Disabled = true, CustomMinimumSize = new Vector2(0, 44) };
+        UiStyle.StyleButton(_searchAction, UiStyle.ButtonKind.Secondary); _searchAction.Pressed += SearchAction; box.AddChild(_searchAction);
         return box;
     }
 
-    private static ItemList List(Control parent, float height)
+    private Control BuildFriends()
     {
-        var list = new ItemList { CustomMinimumSize = new Vector2(0, height), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-        parent.AddChild(list);
-        return list;
+        var box = Column();
+        var friends = Section(box, "Meus Amigos", out _friendsTitle);
+        _friends = new RowList(); friends.AddChild(_friends);
+        _friends.SelectionChanged += _ => UpdateButtons();
+        _friendRemove = new Button { Text = "Remover amigo", Disabled = true, CustomMinimumSize = new Vector2(0, 40) };
+        UiStyle.StyleButton(_friendRemove, UiStyle.ButtonKind.Secondary); _friendRemove.Pressed += RemoveFriend;
+        friends.AddChild(_friendRemove);
+        var requests = Section(box, "Solicitações de amizade", out _requestsTitle);
+        _requests = new RowList { Gap = 8 }; requests.AddChild(_requests);
+        return box;
     }
 
-    private static HBoxContainer Row(Control parent)
+    private Control BuildGroups()
     {
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 6);
-        parent.AddChild(row);
-        return row;
+        var box = Column();
+        var invites = Section(box, "Convites", out _);
+        _invites = new RowList { Gap = 8 }; invites.AddChild(_invites);
+        var groups = Section(box, "Meus grupos", out _);
+        _groups = new RowList(); groups.AddChild(_groups);
+        _groups.SelectionChanged += _ => UpdateButtons();
+        _groupLeave = new Button { Text = "Sair do grupo", Disabled = true, CustomMinimumSize = new Vector2(0, 40) };
+        UiStyle.StyleButton(_groupLeave, UiStyle.ButtonKind.Secondary); _groupLeave.Pressed += LeaveGroup;
+        groups.AddChild(_groupLeave);
+        var create = new HBoxContainer(); create.AddThemeConstantOverride("separation", 8);
+        _groupName = new LineEdit { PlaceholderText = "Nome do novo grupo", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 44) };
+        _groupName.TextSubmitted += _ => CreateGroup();
+        create.AddChild(_groupName);
+        var make = new Button { Text = "Criar", CustomMinimumSize = new Vector2(90, 44) };
+        UiStyle.StyleButton(make, UiStyle.ButtonKind.Primary); make.Pressed += CreateGroup; create.AddChild(make);
+        box.AddChild(create);
+        return box;
     }
 
-    private static Button AddButton(Control parent, string text, Action pressed)
+    private static VBoxContainer Column()
     {
-        var button = new Button { Text = text, Disabled = true, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        button.Pressed += pressed;
-        parent.AddChild(button);
+        var box = new VBoxContainer();
+        box.AddThemeConstantOverride("separation", 10);
+        return box;
+    }
+
+    /// A collapsible section: a caret and a bold title that fold the content below it.
+    private static VBoxContainer Section(Control parent, string title, out Label label)
+    {
+        var holder = new VBoxContainer(); holder.AddThemeConstantOverride("separation", 4);
+        var head = new Button { Flat = true, Alignment = HorizontalAlignment.Left, Text = "  " + title, Icon = UiStyle.Icon("caret-down", UiStyle.Text, 16), FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 36) };
+        head.AddThemeFontOverride("font", UiStyle.Bold); head.AddThemeFontSizeOverride("font_size", 20);
+        foreach (var name in new[] { "normal", "hover", "pressed", "hover_pressed", "focus" }) head.AddThemeStyleboxOverride(name, new StyleBoxEmpty());
+        foreach (var name in new[] { "font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color" }) head.AddThemeColorOverride(name, UiStyle.Text);
+        var body = new VBoxContainer(); body.AddThemeConstantOverride("separation", 6);
+        head.Pressed += () => { body.Visible = !body.Visible; head.Icon = UiStyle.Icon(body.Visible ? "caret-down" : "caret-right", UiStyle.Text, 16); };
+        holder.AddChild(head); holder.AddChild(body);
+        parent.AddChild(holder);
+        label = new Label { Text = title }; // the title text lives on the button; this keeps the base text for counters
+        head.AddChild(label); label.Visible = false;
+        return body;
+    }
+
+    private static void SetSectionTitle(Label label, string text)
+    {
+        label.Text = text;
+        if (label.GetParent() is Button head) head.Text = "  " + text;
+    }
+
+    // ---- rows ------------------------------------------------------------------------------------------------
+
+    /// A vertical list of selectable rows; the test API mirrors the old ItemList (ItemCount, GetItemText, Select).
+    public partial class RowList : VBoxContainer
+    {
+        private readonly List<(PanelContainer Row, string Text)> _rows = [];
+        private int _selected = -1;
+        public int Gap { set => AddThemeConstantOverride("separation", value); }
+        public event Action<int>? SelectionChanged;
+        public int ItemCount => _rows.Count;
+        public int SelectedIndex => _selected;
+        public string GetItemText(int index) => _rows[index].Text;
+
+        public RowList() { AddThemeConstantOverride("separation", 0); }
+
+        public void Clear()
+        {
+            foreach (var (row, _) in _rows) { RemoveChild(row); row.QueueFree(); }
+            _rows.Clear(); _selected = -1;
+        }
+
+        public PanelContainer Add(Control content, string text, bool selectable = true, bool card = false)
+        {
+            var row = new PanelContainer { MouseFilter = MouseFilterEnum.Pass };
+            row.AddThemeStyleboxOverride("panel", card ? UiStyle.Box(UiStyle.RowFill, new Color(UiStyle.Border, .7f), UiStyle.Radius, 1, 12, 10) : RowBox(false));
+            row.AddChild(content);
+            var index = _rows.Count;
+            if (selectable) row.GuiInput += input => { if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Select(index); };
+            _rows.Add((row, text)); AddChild(row);
+            return row;
+        }
+
+        public void Select(int index)
+        {
+            if (index < 0 || index >= _rows.Count) return;
+            _selected = index;
+            for (var i = 0; i < _rows.Count; i++) _rows[i].Row.AddThemeStyleboxOverride("panel", RowBox(i == index));
+            SelectionChanged?.Invoke(index);
+        }
+
+        private static StyleBoxFlat RowBox(bool selected) => new()
+        {
+            BgColor = selected ? new Color(UiStyle.AccentFill, .65f) : new Color(0, 0, 0, 0),
+            BorderColor = selected ? UiStyle.Accent : new Color(UiStyle.Divider, .7f),
+            BorderWidthBottom = 1, BorderWidthLeft = selected ? 1 : 0, BorderWidthRight = selected ? 1 : 0, BorderWidthTop = selected ? 1 : 0,
+            ContentMarginLeft = 8, ContentMarginRight = 8, ContentMarginTop = 6, ContentMarginBottom = 6,
+            CornerRadiusBottomLeft = selected ? 10 : 0, CornerRadiusBottomRight = selected ? 10 : 0, CornerRadiusTopLeft = selected ? 10 : 0, CornerRadiusTopRight = selected ? 10 : 0,
+        };
+    }
+
+    /// A round avatar placeholder: the player's initial on a colour derived from the name.
+    private static Control Avatar(string name, int size)
+    {
+        var hue = (Math.Abs(name.GetHashCode()) % 360) / 360f;
+        var holder = new Panel { CustomMinimumSize = new Vector2(size, size), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        holder.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = Color.FromHsv(hue, .45f, .62f), BorderColor = new Color(1, 1, 1, .55f), BorderWidthBottom = 2, BorderWidthTop = 2, BorderWidthLeft = 2, BorderWidthRight = 2, CornerRadiusBottomLeft = size / 2, CornerRadiusBottomRight = size / 2, CornerRadiusTopLeft = size / 2, CornerRadiusTopRight = size / 2, AntiAliasing = true });
+        var letter = new Label { Text = name.Length > 0 ? name[..1].ToUpperInvariant() : "?", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        letter.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        letter.AddThemeFontOverride("font", UiStyle.Bold); letter.AddThemeFontSizeOverride("font_size", size / 2);
+        holder.AddChild(letter);
+        return holder;
+    }
+
+    private sealed partial class Dot : Control
+    {
+        public Color Color { get; set; }
+        public Dot(Color color) { Color = color; CustomMinimumSize = new Vector2(14, 14); SizeFlagsVertical = SizeFlags.ShrinkCenter; MouseFilter = MouseFilterEnum.Ignore; }
+        public override void _Draw() => DrawCircle(Size / 2, 6, Color);
+    }
+
+    private static Label Text(string text, int size, Color color, bool bold = false)
+    {
+        var label = new Label { Text = text, MouseFilter = Control.MouseFilterEnum.Ignore };
+        label.AddThemeFontOverride("font", bold ? UiStyle.Bold : UiStyle.Regular); label.AddThemeFontSizeOverride("font_size", size); label.AddThemeColorOverride("font_color", color);
+        label.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        return label;
+    }
+
+    private static Button IconButton(string icon, string tooltip, Action action)
+    {
+        var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 24), Flat = true, TooltipText = tooltip, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(44, 44), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        var hover = UiStyle.Box(new Color(1, 1, 1, .10f), new Color(0, 0, 0, 0), UiStyle.RadiusSmall, 0, 0, 0);
+        button.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); button.AddThemeStyleboxOverride("hover", hover); button.AddThemeStyleboxOverride("pressed", hover); button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        button.Pressed += action;
         return button;
     }
+
+    /// avatar · dot · name and subtitle · [action buttons]
+    private static HBoxContainer PersonLine(string name, string subtitle, Color? dot, int avatar = 52)
+    {
+        var line = new HBoxContainer(); line.AddThemeConstantOverride("separation", 12);
+        line.AddChild(Avatar(name, avatar));
+        if (dot is { } color) line.AddChild(new Dot(color));
+        var texts = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore };
+        texts.AddThemeConstantOverride("separation", 0);
+        texts.AddChild(Text(name, 20, UiStyle.Text, bold: true)); texts.AddChild(Text(subtitle, 17, UiStyle.Text));
+        line.AddChild(texts);
+        return line;
+    }
+
+    private static string FriendSubtitle(JsonElement e)
+    {
+        if (!e.TryGetProperty("online", out var online) || online.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return "Amigo";
+        var place = e.TryGetProperty("location", out var location) && location.ValueKind == JsonValueKind.String ? location.GetString() : null;
+        if (online.GetBoolean()) return string.IsNullOrWhiteSpace(place) ? "Online" : $"Online — {place}";
+        if (e.TryGetProperty("lastSeen", out var seen) && seen.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(seen.GetString(), out var when)) return $"Offline — {Ago(DateTimeOffset.UtcNow - when)}";
+        return "Offline";
+    }
+
+    private static string Ago(TimeSpan span) => span.TotalMinutes < 1 ? "agora há pouco" : span.TotalHours < 1 ? $"há {(int)span.TotalMinutes} min" : span.TotalDays < 1 ? $"há {(int)span.TotalHours} horas" : $"há {(int)span.TotalDays} dias";
 
     // ---- actions ---------------------------------------------------------------------------------------------
 
@@ -139,10 +293,10 @@ public partial class PeoplePanel : Node
         else if (relation == "pending_in") Act(Godot.HttpClient.Method.Post, $"/api/v1/social/friends/{id}/accept", null, "Amizade aceita.");
     }
 
-    private void AcceptRequest() { if (Selected(_requests) is { } i && _requestRows[i].Direction == "in") Act(Godot.HttpClient.Method.Post, $"/api/v1/social/friends/{_requestRows[i].Id}/accept", null, "Amizade aceita."); }
-    private void DeclineRequest() { if (Selected(_requests) is { } i) Act(Godot.HttpClient.Method.Post, $"/api/v1/social/friends/{_requestRows[i].Id}/decline", null, "Pedido removido."); }
+    private void AcceptRequest(int i) { if (i < _requestRows.Count && _requestRows[i].Direction == "in") Act(Godot.HttpClient.Method.Post, $"/api/v1/social/friends/{_requestRows[i].Id}/accept", null, "Amizade aceita."); }
+    private void DeclineRequest(int i) { if (i < _requestRows.Count) Act(Godot.HttpClient.Method.Post, $"/api/v1/social/friends/{_requestRows[i].Id}/decline", null, "Pedido removido."); }
     private void RemoveFriend() { if (Selected(_friends) is { } i) Act(Godot.HttpClient.Method.Delete, $"/api/v1/social/friends/{_friendRows[i]}", null, "Amigo removido."); }
-    private void AnswerInvite(bool accept) { if (Selected(_invites) is { } i) Act(Godot.HttpClient.Method.Post, $"/api/v1/social/groups/invites/{_inviteRows[i]}/{(accept ? "accept" : "decline")}", null, accept ? "Você entrou no grupo." : "Convite recusado."); }
+    private void AnswerInvite(int i, bool accept) { if (i < _inviteRows.Count) Act(Godot.HttpClient.Method.Post, $"/api/v1/social/groups/invites/{_inviteRows[i]}/{(accept ? "accept" : "decline")}", null, accept ? "Você entrou no grupo." : "Convite recusado."); }
     private void LeaveGroup() { if (Selected(_groups) is { } i) Act(Godot.HttpClient.Method.Post, $"/api/v1/social/groups/{_groupRows[i]}/leave", null, "Você saiu do grupo."); }
 
     private void CreateGroup()
@@ -154,18 +308,14 @@ public partial class PeoplePanel : Node
     }
 
     private void Act(Godot.HttpClient.Method method, string path, string? body, string success) => Send(Kind.Action, method, path, body, success);
-    private static int? Selected(ItemList list) { var items = list.GetSelectedItems(); return items.Length > 0 ? items[0] : null; }
+    private static int? Selected(RowList list) => list.SelectedIndex >= 0 ? list.SelectedIndex : null;
 
     private void UpdateButtons()
     {
         var result = Selected(_results);
-        _searchAction.Disabled = result is null || _resultRows[result.Value].Relation is not ("none" or "pending_in");
-        _searchAction.Text = result is not null && _resultRows[result.Value].Relation == "pending_in" ? "Aceitar pedido" : "Adicionar amigo";
-        var request = Selected(_requests);
-        _requestAccept.Disabled = request is null || _requestRows[request.Value].Direction != "in";
-        _requestDecline.Disabled = request is null;
+        _searchAction.Disabled = result is null || result.Value >= _resultRows.Count || _resultRows[result.Value].Relation is not ("none" or "pending_in");
+        _searchAction.Text = result is not null && result.Value < _resultRows.Count && _resultRows[result.Value].Relation == "pending_in" ? "Aceitar pedido" : "Adicionar amigo";
         _friendRemove.Disabled = Selected(_friends) is null;
-        _inviteAccept.Disabled = _inviteDecline.Disabled = Selected(_invites) is null;
         _groupLeave.Disabled = Selected(_groups) is null;
     }
 
@@ -217,34 +367,124 @@ public partial class PeoplePanel : Node
         switch (kind)
         {
             case Kind.Search:
-                Fill(_results, _resultRows, root, e => (Guid.Parse(e.GetProperty("id").GetString()!), e.GetProperty("relation").GetString() ?? "none"),
-                    e => $"{e.GetProperty("displayName").GetString()} (@{e.GetProperty("username").GetString()}) — {RelationText(e.GetProperty("relation").GetString())}");
-                if (_resultRows.Count == 0) _results.AddItem("Ninguém encontrado.", null, false);
+                _resultRows.Clear(); _results.Clear();
+                foreach (var e in root.EnumerateArray())
+                {
+                    var relation = e.GetProperty("relation").GetString() ?? "none";
+                    var name = e.GetProperty("displayName").GetString() ?? "?";
+                    var text = $"{name} (@{e.GetProperty("username").GetString()}) — {RelationText(relation)}";
+                    _resultRows.Add((Guid.Parse(e.GetProperty("id").GetString()!), relation));
+                    _results.Add(PersonLine(name, $"@{e.GetProperty("username").GetString()} {RelationText(relation)}".Trim(), null, 44), text);
+                }
+                if (_resultRows.Count == 0) _results.Add(Text("Ninguém encontrado.", 17, UiStyle.TextMuted), "Ninguém encontrado.", selectable: false);
                 break;
             case Kind.Requests:
-                Fill(_requests, _requestRows, root, e => (Guid.Parse(e.GetProperty("userId").GetString()!), e.GetProperty("direction").GetString() ?? "in"),
-                    e => $"{e.GetProperty("username").GetString()} — {(e.GetProperty("direction").GetString() == "in" ? "quer ser seu amigo" : "aguardando resposta")}");
+                _requestRows.Clear(); _requests.Clear();
+                foreach (var e in root.EnumerateArray())
+                {
+                    var direction = e.GetProperty("direction").GetString() ?? "in";
+                    var name = e.GetProperty("username").GetString() ?? "?";
+                    var index = _requestRows.Count;
+                    _requestRows.Add((Guid.Parse(e.GetProperty("userId").GetString()!), direction));
+                    _requests.Add(RequestCard(name, direction, index), $"{name} — {(direction == "in" ? "quer ser seu amigo" : "aguardando resposta")}", selectable: true, card: true);
+                }
+                SetSectionTitle(_requestsTitle, $"Solicitações de amizade ({_requestRows.Count})");
                 break;
             case Kind.Friends:
                 _friendRows.Clear(); _friends.Clear();
-                foreach (var e in root.EnumerateArray()) { _friendRows.Add(Guid.Parse(e.GetProperty("id").GetString()!)); _friends.AddItem(e.GetProperty("username").GetString() ?? "?"); }
+                var online = 0;
+                foreach (var e in root.EnumerateArray())
+                {
+                    var id = Guid.Parse(e.GetProperty("id").GetString()!);
+                    var name = e.GetProperty("username").GetString() ?? "?";
+                    var isOnline = e.TryGetProperty("online", out var flag) && flag.ValueKind == JsonValueKind.True;
+                    var known = e.TryGetProperty("online", out var any) && any.ValueKind is JsonValueKind.True or JsonValueKind.False;
+                    if (isOnline) online++;
+                    _friendRows.Add(id);
+                    var line = PersonLine(name, FriendSubtitle(e), known ? (isOnline ? UiStyle.SuccessBright : UiStyle.TextMuted) : null);
+                    if (isOnline || !known) line.AddChild(IconButton("chat", "Enviar mensagem", () => ChatRequested?.Invoke(id, name)));
+                    var more = IconButton("dots", "Mais opções", () => { });
+                    var captured = _friendRows.Count - 1;
+                    more.Pressed += () => OpenFriendMenu(more, captured);
+                    line.AddChild(more);
+                    _friends.Add(line, name);
+                }
+                SetSectionTitle(_friendsTitle, $"Meus Amigos ({online} online)");
                 break;
             case Kind.Invites:
                 _inviteRows.Clear(); _invites.Clear();
-                foreach (var e in root.EnumerateArray()) { _inviteRows.Add(Guid.Parse(e.GetProperty("inviteId").GetString()!)); _invites.AddItem($"{e.GetProperty("groupName").GetString()} — convite de {e.GetProperty("fromUsername").GetString()}"); }
+                foreach (var e in root.EnumerateArray())
+                {
+                    var group = e.GetProperty("groupName").GetString() ?? "?";
+                    var from = e.GetProperty("fromUsername").GetString() ?? "?";
+                    var index = _inviteRows.Count;
+                    _inviteRows.Add(Guid.Parse(e.GetProperty("inviteId").GetString()!));
+                    _invites.Add(InviteCard(group, from, index), $"{group} — convite de {from}", selectable: false, card: true);
+                }
                 break;
             case Kind.Groups:
                 _groupRows.Clear(); _groups.Clear();
-                foreach (var e in root.EnumerateArray()) { _groupRows.Add(Guid.Parse(e.GetProperty("id").GetString()!)); _groups.AddItem($"{e.GetProperty("name").GetString()} · {e.GetProperty("members").GetInt32()} membros · {e.GetProperty("role").GetString()}"); }
+                foreach (var e in root.EnumerateArray())
+                {
+                    var name = e.GetProperty("name").GetString() ?? "?";
+                    var members = e.GetProperty("members").GetInt32();
+                    var role = e.GetProperty("role").GetString() ?? "member";
+                    _groupRows.Add(Guid.Parse(e.GetProperty("id").GetString()!));
+                    _groups.Add(PersonLine(name, $"{members} membros · {role}", null, 44), $"{name} · {members} membros · {role}");
+                }
                 break;
         }
         UpdateButtons();
     }
 
-    private static void Fill<T>(ItemList list, List<T> rows, JsonElement array, Func<JsonElement, T> row, Func<JsonElement, string> text)
+    private Control RequestCard(string name, string direction, int index)
     {
-        rows.Clear(); list.Clear();
-        foreach (var element in array.EnumerateArray()) { rows.Add(row(element)); list.AddItem(text(element)); }
+        var box = new VBoxContainer(); box.AddThemeConstantOverride("separation", 8);
+        box.AddChild(PersonLine(name, direction == "in" ? "quer adicionar você aos amigos." : "aguardando resposta.", null, 52));
+        var buttons = new HBoxContainer(); buttons.AddThemeConstantOverride("separation", 12);
+        buttons.Alignment = BoxContainer.AlignmentMode.Center;
+        if (direction == "in") buttons.AddChild(ActionButton("Aceitar", "check", UiStyle.ButtonKind.Primary, () => AcceptRequest(index)));
+        buttons.AddChild(ActionButton(direction == "in" ? "Recusar" : "Cancelar", "close", UiStyle.ButtonKind.ToolSelected, () => DeclineRequest(index), orange: true));
+        box.AddChild(buttons);
+        return box;
+    }
+
+    private Control InviteCard(string group, string from, int index)
+    {
+        var box = new VBoxContainer(); box.AddThemeConstantOverride("separation", 8);
+        box.AddChild(PersonLine(group, $"convite de {from}", null, 44));
+        var buttons = new HBoxContainer(); buttons.AddThemeConstantOverride("separation", 12);
+        buttons.Alignment = BoxContainer.AlignmentMode.Center;
+        buttons.AddChild(ActionButton("Entrar", "check", UiStyle.ButtonKind.Primary, () => AnswerInvite(index, true)));
+        buttons.AddChild(ActionButton("Recusar", "close", UiStyle.ButtonKind.ToolSelected, () => AnswerInvite(index, false), orange: true));
+        box.AddChild(buttons);
+        return box;
+    }
+
+    private static Button ActionButton(string text, string icon, UiStyle.ButtonKind kind, Action action, bool orange = false)
+    {
+        var button = new Button { Text = text, Icon = UiStyle.Icon(icon, orange ? UiStyle.Orange : UiStyle.Accent, 26), CustomMinimumSize = new Vector2(150, 48), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false };
+        UiStyle.StyleButton(button, orange ? UiStyle.ButtonKind.Secondary : kind);
+        if (orange)
+        {
+            foreach (var (state, st) in new[] { ("normal", UiStyle.ButtonState.Normal), ("hover", UiStyle.ButtonState.Hover), ("pressed", UiStyle.ButtonState.Pressed), ("hover_pressed", UiStyle.ButtonState.Pressed) })
+                button.AddThemeStyleboxOverride(state, UiStyle.Box(st == UiStyle.ButtonState.Hover ? UiStyle.OrangeFillHover : st == UiStyle.ButtonState.Pressed ? UiStyle.OrangeFillPressed : UiStyle.OrangeFill, UiStyle.Orange, UiStyle.Radius, 1, 12, 7));
+        }
+        button.AddThemeFontSizeOverride("font_size", 20);
+        button.Pressed += action;
+        return button;
+    }
+
+    private void OpenFriendMenu(Control anchor, int index)
+    {
+        _friends.Select(index);
+        var menu = new PopupMenu();
+        menu.AddItem("Remover amigo", 0);
+        menu.IdPressed += _ => { RemoveFriend(); menu.QueueFree(); };
+        menu.PopupHide += () => menu.QueueFree();
+        anchor.AddChild(menu);
+        menu.Position = (Vector2I)anchor.GetScreenPosition() + new Vector2I(0, (int)anchor.Size.Y);
+        menu.Popup();
     }
 
     private static string RelationText(string? relation) => relation switch { "friend" => "amigo", "pending_out" => "pedido enviado", "pending_in" => "quer ser seu amigo", _ => "" };
@@ -257,10 +497,10 @@ public partial class PeoplePanel : Node
         {
             case "search": Search(); break;
             case "searchAction": SearchAction(); break;
-            case "accept": AcceptRequest(); break;
-            case "decline": DeclineRequest(); break;
+            case "accept": if (Selected(_requests) is { } a) AcceptRequest(a); break;
+            case "decline": if (Selected(_requests) is { } d) DeclineRequest(d); break;
             case "remove": RemoveFriend(); break;
-            case "inviteAccept": AnswerInvite(true); break;
+            case "inviteAccept": AnswerInvite(0, true); break;
             case "leave": LeaveGroup(); break;
             case "create": CreateGroup(); break;
         }

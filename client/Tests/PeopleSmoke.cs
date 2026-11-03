@@ -32,20 +32,20 @@ public partial class PeopleSmoke : Node
             var friend = Guid.NewGuid(); var received = Guid.NewGuid(); var sent = Guid.NewGuid(); var stranger = Guid.NewGuid();
             panel.DeliverForTesting("Search", $"[{{\"id\":\"{stranger}\",\"username\":\"maria\",\"displayName\":\"Maria\",\"relation\":\"none\"}},{{\"id\":\"{friend}\",\"username\":\"mario\",\"displayName\":\"Mario\",\"relation\":\"friend\"}},{{\"id\":\"{received}\",\"username\":\"marta\",\"displayName\":\"Marta\",\"relation\":\"pending_in\"}}]");
             Require(panel.ResultsForTesting.ItemCount == 3, "three results expected");
-            panel.ResultsForTesting.Select(0); panel.ResultsForTesting.EmitSignal(ItemList.SignalName.ItemSelected, 0);
+            panel.ResultsForTesting.Select(0); 
             panel.PressForTesting("searchAction");
             Require(requests[^1].StartsWith("Post ") && requests[^1].Contains("/friends/requests") && requests[^1].Contains(stranger.ToString()), $"add friend wrong: {requests[^1]}");
             var before = requests.Count;
-            panel.ResultsForTesting.Select(1); panel.ResultsForTesting.EmitSignal(ItemList.SignalName.ItemSelected, 1);
+            panel.ResultsForTesting.Select(1); 
             panel.PressForTesting("searchAction");
             Require(requests.Count == before, "an existing friend must not get another request");
-            panel.ResultsForTesting.Select(2); panel.ResultsForTesting.EmitSignal(ItemList.SignalName.ItemSelected, 2);
+            panel.ResultsForTesting.Select(2); 
             panel.PressForTesting("searchAction");
             Require(requests[^1].Contains($"/friends/{received}/accept"), $"accept wrong: {requests[^1]}");
 
             panel.DeliverForTesting("Requests", $"[{{\"userId\":\"{received}\",\"username\":\"marta\",\"direction\":\"in\"}},{{\"userId\":\"{sent}\",\"username\":\"paulo\",\"direction\":\"out\"}}]");
             Require(panel.RequestsForTesting.ItemCount == 2, "two requests expected");
-            panel.RequestsForTesting.Select(1); panel.RequestsForTesting.EmitSignal(ItemList.SignalName.ItemSelected, 1);
+            panel.RequestsForTesting.Select(1); 
             before = requests.Count;
             panel.PressForTesting("accept");
             Require(requests.Count == before, "an outgoing request cannot be accepted by me");
@@ -53,19 +53,19 @@ public partial class PeopleSmoke : Node
             Require(requests[^1].Contains($"/friends/{sent}/decline"), $"decline wrong: {requests[^1]}");
 
             panel.DeliverForTesting("Friends", $"[{{\"id\":\"{friend}\",\"username\":\"mario\"}}]");
-            panel.FriendsForTesting.Select(0); panel.FriendsForTesting.EmitSignal(ItemList.SignalName.ItemSelected, 0);
+            panel.FriendsForTesting.Select(0); 
             panel.PressForTesting("remove");
             Require(requests[^1].StartsWith("Delete ") && requests[^1].Contains($"/friends/{friend}"), $"remove wrong: {requests[^1]}");
 
             var invite = Guid.NewGuid(); var group = Guid.NewGuid();
             panel.DeliverForTesting("Invites", $"[{{\"inviteId\":\"{invite}\",\"groupId\":\"{group}\",\"groupName\":\"Clube\",\"fromUserId\":\"{friend}\",\"fromUsername\":\"mario\"}}]");
-            panel.InvitesForTesting.Select(0); panel.InvitesForTesting.EmitSignal(ItemList.SignalName.ItemSelected, 0);
+            panel.InvitesForTesting.Select(0); 
             panel.PressForTesting("inviteAccept");
             Require(requests[^1].Contains($"/groups/invites/{invite}/accept"), $"invite wrong: {requests[^1]}");
 
             panel.DeliverForTesting("Groups", $"[{{\"id\":\"{group}\",\"name\":\"Clube\",\"description\":\"\",\"role\":\"member\",\"members\":3}}]");
             Require(panel.GroupsForTesting.GetItemText(0).Contains("3 membros"), "group row should show the member count");
-            panel.GroupsForTesting.Select(0); panel.GroupsForTesting.EmitSignal(ItemList.SignalName.ItemSelected, 0);
+            panel.GroupsForTesting.Select(0); 
             panel.PressForTesting("leave");
             Require(requests[^1].Contains($"/groups/{group}/leave"), $"leave wrong: {requests[^1]}");
 

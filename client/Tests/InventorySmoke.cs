@@ -40,18 +40,19 @@ public partial class InventorySmoke : Node
             inventory.PopulateForTesting($"[{{\"id\":\"{folder}\",\"name\":\"Casas\"}}]",
                 $"[{{\"itemId\":\"{modelItem}\",\"assetId\":\"{modelAsset}\",\"name\":\"Caixa\",\"category\":\"models\",\"mimeType\":\"model/gltf-binary\",\"contentHash\":\"h1\",\"size\":{bytes.Length},\"version\":1,\"favorite\":false,\"deleted\":false,\"folderId\":null}},{{\"itemId\":\"{textureItem}\",\"assetId\":\"{textureAsset}\",\"name\":\"Grama\",\"category\":\"textures\",\"mimeType\":\"image/png\",\"contentHash\":\"h2\",\"size\":100,\"version\":1,\"favorite\":true,\"deleted\":false,\"folderId\":null}}]");
             Require(inventory.ItemCountForTesting == 2, $"inventory should hold 2 items: {inventory.ItemCountForTesting}");
-            var root = inventory.TreeForTesting.GetRoot();
-            Require(root.GetChildCount() == 3, $"expected folder + 2 items at the top: {root.GetChildCount()}");
-            Require(root.GetChild(0).GetText(0).StartsWith("Casas (0)"), "the folder should be listed first with its count");
+            var mine = inventory.TreeForTesting.GetRoot().GetChild(0);
+            Require(mine.GetText(0) == "Meu Inventário" && mine.GetChildCount() == 1, $"expected the folder inside Meu Inventário: {mine.GetChildCount()}");
+            Require(mine.GetChild(0).GetText(0).StartsWith("Casas (0)"), "the folder should be listed with its count");
+            Require(inventory.CardCountForTesting == 2, $"both items should show as cards: {inventory.CardCountForTesting}");
 
             // Drag a model onto the folder: it moves locally at once and the PATCH carries the folder id.
             var requests = new List<string>();
             inventory.RequestSink = (method, path, body) => { requests.Add($"{method} {path} {body}"); return true; };
             inventory.MoveItem(modelItem, folder);
             Require(requests.Count == 1 && requests[0].StartsWith("Patch ") && requests[0].Contains(folder.ToString()) && requests[0].Contains(modelItem.ToString()), $"move request wrong: {string.Join("|", requests)}");
-            Require(inventory.TreeForTesting.GetRoot().GetChild(0).GetChildCount() == 1 && inventory.TreeForTesting.GetRoot().GetChild(0).GetText(0).StartsWith("Casas (1)"), "the item should now be inside the folder");
+            Require(inventory.TreeForTesting.GetRoot().GetChild(0).GetChild(0).GetText(0).StartsWith("Casas (1)"), "the item should now be inside the folder");
             inventory.MoveItem(modelItem, null);
-            Require(inventory.TreeForTesting.GetRoot().GetChild(0).GetChildCount() == 0, "dragging out of the folder should empty it");
+            Require(inventory.TreeForTesting.GetRoot().GetChild(0).GetChild(0).GetText(0).StartsWith("Casas (0)"), "dragging out of the folder should empty it");
 
             // Only models can be placed in the world.
             inventory.PlaceForTesting(textureItem, new Vector3(0, 0, -6));

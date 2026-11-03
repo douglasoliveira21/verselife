@@ -8,7 +8,7 @@ namespace LifeVerse.Client.Scripts;
 /// Sounds, scripts and other kinds get a generated icon. Callers get the placeholder immediately and the preview later.
 public partial class ThumbnailLoader : Node
 {
-    public const int Size = 48;
+    public const int Size = 128;
     private const long MaxImageBytes = 4 * 1024 * 1024;
     private const long MaxModelBytes = 12 * 1024 * 1024;
     private sealed record Request(Guid AssetId, string Key, string Mime, string Category, List<Action<Texture2D>> Waiting);
@@ -25,7 +25,7 @@ public partial class ThumbnailLoader : Node
     {
         var key = string.IsNullOrEmpty(contentHash) ? assetId.ToString("N") : contentHash;
         if (_memory.TryGetValue(key, out var cached)) { done(cached); return; }
-        var cachePath = $"user://thumbs/{key}.png";
+        var cachePath = $"user://thumbs128/{key}.png";
         if (Godot.FileAccess.FileExists(cachePath) && Image.LoadFromFile(cachePath) is { } stored && !stored.IsEmpty())
         {
             var texture = ImageTexture.CreateFromImage(stored); _memory[key] = texture; done(texture); return;
@@ -66,8 +66,8 @@ public partial class ThumbnailLoader : Node
             _pending.Remove(request.Key);
             if (image is not null)
             {
-                DirAccess.MakeDirRecursiveAbsolute(ProjectSettings.GlobalizePath("user://thumbs"));
-                image.SavePng($"user://thumbs/{request.Key}.png");
+                DirAccess.MakeDirRecursiveAbsolute(ProjectSettings.GlobalizePath("user://thumbs128"));
+                image.SavePng($"user://thumbs128/{request.Key}.png");
                 var texture = ImageTexture.CreateFromImage(image); _memory[request.Key] = texture;
                 foreach (var callback in request.Waiting) callback(texture);
             }
@@ -125,16 +125,16 @@ public partial class ThumbnailLoader : Node
         var tile = Color.FromHsv(hue, .45f, .55f); var glyph = Color.FromHsv(hue, .15f, .95f);
         var image = Image.CreateEmpty(Size, Size, false, Image.Format.Rgba8);
         image.Fill(new Color(0, 0, 0, 0));
-        for (var y = 2; y < Size - 2; y++) for (var x = 2; x < Size - 2; x++) image.SetPixel(x, y, tile);
+        for (var y = 4; y < Size - 4; y++) for (var x = 4; x < Size - 4; x++) image.SetPixel(x, y, tile);
         for (var y = 0; y < Size; y++)
         for (var x = 0; x < Size; x++)
         {
-            var cx = x - Size / 2f; var cy = y - Size / 2f;
+            var u = x * 48f / Size; var w = y * 48f / Size; var cx = u - 24f; var cy = w - 24f;
             var inside = category switch
             {
                 "models" or "objects" => Math.Abs(cx) + Math.Abs(cy) < 14,
-                "textures" => x is > 10 and < 38 && y is > 10 and < 38 && ((x / 7 + y / 7) % 2 == 0),
-                "sounds" or "animations" => x is > 9 and < 39 && Math.Abs(cy) < 4 + 11 * Math.Abs(Mathf.Sin(x * .55f)),
+                "textures" => u is > 10 and < 38 && w is > 10 and < 38 && (((int)(u / 7) + (int)(w / 7)) % 2 == 0),
+                "sounds" or "animations" => u is > 9 and < 39 && Math.Abs(cy) < 4 + 11 * Math.Abs(Mathf.Sin(u * .55f)),
                 _ => cx * cx + cy * cy < 120
             };
             if (inside) image.SetPixel(x, y, glyph);

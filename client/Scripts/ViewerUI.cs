@@ -17,7 +17,8 @@ public partial class ViewerUI : CanvasLayer
     private Control _root = null!;
     private LineEdit _chat = null!;
     private RichTextLabel _chatLog = null!;
-    private FloatingWindow _chatWindow = null!;
+    private Control _chatWindow = null!;
+    private VBoxContainer _conversations = null!;
     private FloatingWindow _miniMapWindow = null!;
     private FloatingWindow _moveWindow = null!;
     private FloatingWindow _joinWindow = null!;
@@ -29,7 +30,9 @@ public partial class ViewerUI : CanvasLayer
     private Label _fps = null!;
     private Label _connection = null!;
     private Label _balance = null!;
-    private ColorRect _indicator = null!;
+    private StatusDot _indicator = null!;
+    private Label _islandName = null!;
+    private readonly Dictionary<Guid, string> _islandNames = [];
     private Button _walk = null!;
     private Button _run = null!;
     private Button _fly = null!;
@@ -81,7 +84,7 @@ public partial class ViewerUI : CanvasLayer
         BuildToasts();
         var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text);
         AnnounceUpdate();
-        _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += Toast;
+        _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += text => Toast(text); _people.ChatRequested += (_, name) => Toast($"Mensagem privada para {name}: abra a aba Conversas.");
         BuildTopBar();
         BuildBottomBar();
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
@@ -134,182 +137,6 @@ public partial class ViewerUI : CanvasLayer
         _world.GetNodeOrNull<Control>("Hint")?.Hide();
     }
 
-    private void BuildTopBar()
-    {
-        var bar = new PanelContainer { Name = "MenuBarPanel" };
-        bar.AddThemeStyleboxOverride("panel", ViewerTheme.BarBox());
-        bar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopWide);
-        _root.AddChild(bar);
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10); bar.AddChild(row);
-        var menu = new MenuBar { Name = "Menus" }; row.AddChild(menu);
-
-        var me = AddMenu(menu, "Eu",
-            ("Editar aparência…", () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator(), false),
-            ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
-            ("Preferências…", () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(), false),
-            ("-", null, false),
-            ("Sair da ilha", _network.Disconnect, false),
-            ("Sair do LifeVerse", () => GetTree().Quit(), false));
-        AddChoiceSubmenu(me, "Escala da interface", ["80%", "90%", "100%", "110%", "125%", "150%"], index => SetUiScale(UiScales[index]));
-        AddChoiceSubmenu(me, "Volume", ["Mudo", "25%", "50%", "75%", "100%"], index => SetVolume(Volumes[index]));
-        AddMenu(menu, "Comunicar",
-            ("Conversa local   Enter", () => _chat.GrabFocus(), false),
-            ("Pessoas, amigos e grupos…", () => _people?.Toggle(), false),
-            ("Mensagens privadas…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
-            ("Gestos", ToggleGestures, false),
-            ("-", null, false),
-            ("Voz: segure o botão Falar (use fones)", null, true),
-            ("Voz: microfone aberto (cadeado)  liga/desliga", ToggleOpenMic, false),
-            ("Voz: silenciar tudo  liga/desliga", ToggleVoice, false));
-        var world = AddMenu(menu, "Mundo",
-            ("Mapa e destinos…", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle(), false),
-            ("Mini-mapa", () => ToggleWindow(_miniMapWindow), false),
-            ("Ir para uma ilha…", () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); }, false),
-            ("-", null, false),
-            ("Editar terreno   T", () => _world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.SetActive(true), false),
-            ("Tirar foto", TakeSnapshot, false));
-        var environment = new PopupMenu { Name = "Ambiente" };
-        world.AddChild(environment);
-        foreach (var label in new[] { "Nascer do sol", "Meio-dia", "Pôr do sol", "Meia-noite" }) environment.AddItem(label);
-        environment.AddItem("Ciclo automático");
-        environment.IdPressed += id => SetEnvironment((int)id);
-        world.AddSubmenuNodeItem("Ambiente (somente neste computador)", environment);
-        AddChoiceSubmenu(world, "Clima (somente neste computador)", ["Limpo", "Nublado", "Chuva", "Tempestade", "Neblina"], index => SetWeather(WeatherNames[index]));
-        AddMenu(menu, "Conteúdo",
-            ("Construir   B", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true), false),
-            ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
-            ("Marketplace e carteira…", () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle(), false),
-            ("-", null, false),
-            ("Editor de scripts Lua…", () => _world.GetNodeOrNull<LuaScriptEditor>("LuaScriptEditor")?.Toggle(), false),
-            ("Editor de HUD…", () => _world.GetNodeOrNull<HudEditor>("HudEditor")?.Toggle(), false));
-        AddMenu(menu, "Ajuda",
-            ("Tutorial: primeiros passos", ShowTutorial, false),
-            ("Controles", ShowControlsHelp, false),
-            ("Baixar atualização", () => GetNode<AppManager>("/root/AppManager").Updates.OpenDownload(), false),
-            ("Sobre o LifeVerse", () => Toast($"LifeVerse · cliente {AppManager.Version}"), false));
-        AddMenu(menu, "Desenvolver",
-            ("Métricas de desempenho", () => _world.GetNodeOrNull<PerformanceOverlay>("PerformanceOverlay")?.Toggle(), false));
-
-        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-        _balance = StatusLabel("LV$ —", "Saldo de LV Coins");
-        _coords = StatusLabel("(0, 0, 0)", "Posição na ilha (leste, norte, altura)");
-        _clock = StatusLabel("12:00", "Hora do mundo");
-        _fps = StatusLabel("0 FPS", "Quadros por segundo");
-        _indicator = new ColorRect { CustomMinimumSize = new Vector2(10, 10), Color = ViewerTheme.Bad, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, TooltipText = "Estado da conexão" };
-        row.AddChild(_indicator);
-        _connection = StatusLabel("Offline", "Conexão com a ilha");
-        row.AddChild(new Control { CustomMinimumSize = new Vector2(6, 0) });
-    }
-
-    private Label StatusLabel(string text, string tooltip)
-    {
-        var label = new Label { Text = text, TooltipText = tooltip, MouseFilter = Control.MouseFilterEnum.Stop };
-        label.AddThemeColorOverride("font_color", new Color("#cfcfcf"));
-        ((HBoxContainer)GetNode("Viewer/MenuBarPanel").GetChild(0)).AddChild(label);
-        return label;
-    }
-
-    private static PopupMenu AddMenu(MenuBar bar, string title, params (string Label, Action? Action, bool Disabled)[] items)
-    {
-        var popup = new PopupMenu { Name = title };
-        bar.AddChild(popup);
-        var actions = new Dictionary<int, Action>();
-        var id = 0;
-        foreach (var (label, action, disabled) in items)
-        {
-            if (label == "-") { popup.AddSeparator(); continue; }
-            popup.AddItem(label, id);
-            if (disabled) popup.SetItemDisabled(popup.GetItemIndex(id), true);
-            if (action is not null) actions[id] = action;
-            id++;
-        }
-        popup.IdPressed += pressed => { if (actions.TryGetValue((int)pressed, out var run)) run(); };
-        return popup;
-    }
-
-    private void BuildBottomBar()
-    {
-        var bar = new PanelContainer { Name = "ToolbarPanel" };
-        bar.AddThemeStyleboxOverride("panel", ViewerTheme.BarBox());
-        bar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.BottomWide);
-        bar.GrowVertical = Control.GrowDirection.Begin;
-        _root.AddChild(bar);
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 4); bar.AddChild(row);
-        _chat = new LineEdit { PlaceholderText = "Clique aqui para conversar.", CustomMinimumSize = new Vector2(360, 36), MaxLength = 256, TooltipText = "Conversa local (alcance de 30 m). Enter para focar, Esc para sair." };
-        _chat.TextSubmitted += OnChatSubmit;
-        row.AddChild(_chat);
-        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-
-        ToolButton(row, "Conversar", "Focar a barra de conversa (Enter)", () => _chat.GrabFocus());
-        var voiceBar = new VoiceBar { Name = "VoiceBar" }; row.AddChild(voiceBar); voiceBar.Bind(_network.Voice);
-        _gestureButton = ToolButton(row, "Gestos", "Acenar, dançar e outras animações", ToggleGestures, toggle: true);
-        _moveButton = ToolButton(row, "Mover", "Andar, correr e voar", () => ToggleWindow(_moveWindow), toggle: true);
-        var view = new MenuButton { Text = "Ver", CustomMinimumSize = new Vector2(66, 36), TooltipText = "Modos de câmera", FocusMode = Control.FocusModeEnum.None, Flat = false };
-        var viewPopup = view.GetPopup();
-        viewPopup.AddItem("Terceira pessoa (padrão)", 0); viewPopup.AddItem("Primeira pessoa   C", 1); viewPopup.AddItem("Câmera livre   V", 2); viewPopup.AddSeparator(); viewPopup.AddItem("Redefinir câmera   R", 3);
-        viewPopup.IdPressed += id => { switch (id) { case 0: _player?.SetCameraMode("ThirdPerson"); break; case 1: _player?.SetCameraMode("FirstPerson"); break; case 2: _player?.SetCameraMode("FreeLook"); break; default: _player?.ResetCamera(); break; } };
-        row.AddChild(view);
-        ToolButton(row, "Foto", "Capturar a tela sem a interface", TakeSnapshot);
-        ToolButton(row, "Construir", "Ferramentas de construção (B)", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true));
-        ToolButton(row, "Pessoas", "Buscar pessoas, amigos e grupos", () => _people?.Toggle());
-        ToolButton(row, "Mapa", "Mapa, busca e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle());
-        ToolButton(row, "Inventário", "Seu inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle());
-        _miniMapButton = ToolButton(row, "Mini-mapa", "Mostrar ou ocultar o mini-mapa", () => ToggleWindow(_miniMapWindow), toggle: true);
-        _miniMapButton.ButtonPressed = true;
-        row.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-        row.AddChild(new Control { CustomMinimumSize = new Vector2(360, 0) });
-    }
-
-    private static Button ToolButton(HBoxContainer row, string text, string tooltip, Action? action, bool toggle = false, bool disabled = false)
-    {
-        var button = new Button { Text = text, TooltipText = tooltip, ToggleMode = toggle, Disabled = disabled, CustomMinimumSize = new Vector2(78, 36), FocusMode = Control.FocusModeEnum.None };
-        if (action is not null) button.Pressed += action;
-        row.AddChild(button);
-        return button;
-    }
-
-    private void BuildChatWindow()
-    {
-        _chatWindow = new FloatingWindow("Conversa local", closable: false);
-        _chatWindow.SetOpacity(.72f);
-        _chatWindow.Place(0, 1, 10, -258, 400, -52);
-        _chatLog = new RichTextLabel { BbcodeEnabled = true, ScrollFollowing = true, SelectionEnabled = true, CustomMinimumSize = new Vector2(372, 150), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-        _chatWindow.Content.AddChild(_chatLog);
-        _root.AddChild(_chatWindow);
-    }
-
-    private void BuildMiniMap()
-    {
-        _miniMapWindow = new FloatingWindow("Mini-mapa");
-        _miniMapWindow.Place(1, 0, -218, 38, -10, 270);
-        var map = new MiniMap();
-        _miniMapWindow.Content.AddChild(map);
-        if (_terrain is not null) map.Bind(_terrain, _player, _network);
-        _miniMapWindow.CloseRequested += () => _miniMapButton.ButtonPressed = false;
-        _root.AddChild(_miniMapWindow);
-    }
-
-    private void BuildMoveWindow()
-    {
-        _moveWindow = new FloatingWindow("Mover") { Visible = false };
-        _moveWindow.Place(.5f, 1, -130, -250, 130, -60);
-        _moveWindow.CloseRequested += () => _moveButton.ButtonPressed = false;
-        var modes = new HBoxContainer(); modes.AddThemeConstantOverride("separation", 4);
-        _walk = ModeButton(modes, "Andar", () => { if (_player is null) return; _player.AlwaysRun = false; if (_player.IsFlying) _player.RequestFlightToggle(); });
-        _run = ModeButton(modes, "Correr", () => { if (_player is null) return; _player.AlwaysRun = true; if (_player.IsFlying) _player.RequestFlightToggle(); });
-        _fly = ModeButton(modes, "Voar", () => _player?.RequestFlightToggle());
-        _moveWindow.Content.AddChild(modes);
-        _moveWindow.Content.AddChild(new Label { Text = "W/S andar · A/D girar · Q/Z lado\nShift inverte andar/correr · Espaço pula ou sobe\nCtrl desce · F voar · duplo clique anda até o ponto", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(240, 0), ThemeTypeVariation = "" });
-        _root.AddChild(_moveWindow);
-    }
-
-    private static Button ModeButton(HBoxContainer row, string text, Action action)
-    {
-        var button = new Button { Text = text, ToggleMode = true, CustomMinimumSize = new Vector2(76, 34), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None };
-        button.Pressed += action;
-        row.AddChild(button);
-        return button;
-    }
 
     private void BuildJoinWindow()
     {
@@ -362,7 +189,7 @@ public partial class ViewerUI : CanvasLayer
     {
         _toasts = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         _toasts.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterTop);
-        _toasts.OffsetTop = 40; _toasts.OffsetLeft = -230; _toasts.OffsetRight = 230;
+        _toasts.OffsetTop = 56; _toasts.OffsetLeft = -280; _toasts.OffsetRight = 280; _toasts.AddThemeConstantOverride("separation", 10);
         _root.AddChild(_toasts);
     }
 
@@ -502,7 +329,7 @@ public partial class ViewerUI : CanvasLayer
                 var active = island.TryGetProperty("runtimeState", out var state) && state.GetString() == "running";
                 _islandList.AddItem($"{island.GetProperty("name").GetString()}  ·  {(active ? "ativa" : "adormecida (inicia ao entrar)")}");
                 _islandList.SetItemCustomFgColor(_islandList.ItemCount - 1, active ? ViewerTheme.Good : ViewerTheme.TextDim);
-                _islandIds.Add(id);
+                _islandIds.Add(id); _islandNames[id] = island.GetProperty("name").GetString() ?? "Ilha";
                 if (string.IsNullOrWhiteSpace(_islandId.Text) && active) _islandId.Text = id.ToString();
             }
         }
@@ -525,13 +352,6 @@ public partial class ViewerUI : CanvasLayer
         _network.SendChatMessage(text);
     }
 
-    private void OnChat(string line)
-    {
-        var close = line.IndexOf("] ", StringComparison.Ordinal);
-        var colon = close >= 0 ? line.IndexOf(": ", close, StringComparison.Ordinal) : -1;
-        if (close < 0 || colon < 0) { AppendLine(Esc(line)); return; }
-        AppendLine($"[color=#8d8d8d]{Esc(line[..(close + 1)])}[/color] [color=#8fd0ff]{Esc(line[(close + 2)..colon])}[/color]: {Esc(line[(colon + 2)..])}");
-    }
 
     private void OnConnectionState(string state, string detail)
     {
@@ -564,8 +384,11 @@ public partial class ViewerUI : CanvasLayer
         _fps.Text = $"{Engine.GetFramesPerSecond():0} FPS";
         var online = _network.IsAuthenticated;
         var connecting = !online && _state is "requesting_ticket" or "connecting" or "authenticating" or "waiting_island";
-        _indicator.Color = online ? ViewerTheme.Good : connecting ? ViewerTheme.Warn : ViewerTheme.Bad;
-        _connection.Text = online ? "Online" : connecting ? "Conectando" : "Offline";
+        _indicator.Color = online ? UiStyle.SuccessBright : connecting ? UiStyle.Warning : UiStyle.Danger;
+        _connectionMenu.Text = online ? "Conectado" : connecting ? "Conectando…" : "Desconectado";
+        _islandName.Text = online ? (_islandNames.TryGetValue(_network.CurrentIslandId, out var islandTitle) ? islandTitle : "Ilha") : "Sem ilha";
+        _peopleButton.SetPressedNoSignal(_people?.Visible ?? false);
+        _inventoryButton.SetPressedNoSignal(_world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.IsOpen ?? false);
     }
 
     private void RequestWallet()
@@ -581,7 +404,7 @@ public partial class ViewerUI : CanvasLayer
         try
         {
             using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body));
-            if (doc.RootElement.TryGetProperty("availableCoins", out var coins)) _balance.Text = $"LV$ {coins.GetInt64():N0}";
+            if (doc.RootElement.TryGetProperty("availableCoins", out var coins)) _balance.Text = FormatCoins(coins.GetInt64());
         }
         catch (JsonException) { }
     }
@@ -618,13 +441,4 @@ public partial class ViewerUI : CanvasLayer
         _helpWindow.Visible = true; _helpWindow.MoveToFront();
     }
 
-    private void Toast(string text)
-    {
-        var panel = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
-        panel.AddThemeStyleboxOverride("panel", ViewerTheme.Box(new Color(.1f, .1f, .1f, .92f), new Color("#6a6a6a"), 3, 1, 8));
-        panel.AddChild(new Label { Text = text, HorizontalAlignment = HorizontalAlignment.Center, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(420, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
-        _toasts.AddChild(panel);
-        var tween = CreateTween();
-        tween.TweenInterval(3.5); tween.TweenProperty(panel, "modulate:a", 0f, .6); tween.TweenCallback(Callable.From(panel.QueueFree));
-    }
 }
