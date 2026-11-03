@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libfontconfig1 
 WORKDIR /app
 COPY Directory.Build.props ./
 COPY shared/ shared/
+COPY scripting/ scripting/
 COPY island-server/ island-server/
 
 RUN dotnet restore /app/island-server/LifeVerse.IslandServer.csproj

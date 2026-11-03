@@ -150,6 +150,7 @@ public partial class NetworkManager : Node
         if (!terrain.ApplyEdit((TerrainTool)tool, x, z, radius, strength, layer, revision)) _bridge.RpcId(1, NetworkBridge.MethodName.RequestTerrain);
     }
     public void OnTerrainEditRejected(string code) => EmitSignal(SignalName.TerrainEditRejected, code);
+    public void TouchObject(Guid objectId) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.TouchObject, objectId.ToString()); }
     public void SubmitSeaLevel(float level) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitSeaLevel, level); }
     public void UndoTerrain() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.UndoTerrain); }
     public void RedoTerrain() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.RedoTerrain); }

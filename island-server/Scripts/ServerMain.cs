@@ -30,6 +30,7 @@ public partial class ServerMain : Node
     private bool _terrainDirty;
     private string _environmentJson = "{}";
     private double _worldSaveAccumulator;
+    private IslandScripting? _scripting;
 
     public override async void _Ready()
     {
@@ -43,6 +44,7 @@ public partial class ServerMain : Node
             _ = ServeHealthAsync(_shutdown.Token);
             await RegisterAsync(_shutdown.Token);
             await LoadWorldSnapshotAsync(_shutdown.Token);
+            await StartScriptingAsync(_shutdown.Token);
             var peer = new ENetMultiplayerPeer();
             var enetError = peer.CreateServer(_config.GamePort, _config.MaxPlayers, 3);
             if (enetError != Error.Ok) throw new InvalidOperationException($"ENet failed to listen: {enetError}");
@@ -63,6 +65,7 @@ public partial class ServerMain : Node
     public override void _PhysicsProcess(double delta)
     {
         _serverTick++;
+        _scripting?.Update(_players.Values.Where(x => x.Authenticated).Select(PresenceOf).ToList());
         var dt = Math.Min((float)delta, 1f / 20f);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
         {
@@ -150,6 +153,56 @@ public partial class ServerMain : Node
         player.LatestInput = new MovementInput((uint)sequence, Math.Clamp(x, -1f, 1f), Math.Clamp(z, -1f, 1f), (InputFlags)flags & allowed);
     }
 
+    private static AvatarPresence PresenceOf(ConnectedPlayer player) => new(player.PeerId, player.AvatarId, player.UserId, player.DisplayName, player.State.X, player.State.Y, player.State.Z);
+
+    /// Loads this island's objects and Lua scripts. A failure here must not keep the island from starting.
+    private async Task StartScriptingAsync(CancellationToken ct)
+    {
+        _scripting = new IslandScripting(_api, _config,
+            accepted => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, accepted); },
+            (name, position, text) =>
+            {
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                foreach (var target in _players.Values.Where(x => x.Authenticated && MathF.Abs(x.State.X - position.X) <= 30f && MathF.Abs(x.State.Z - position.Z) <= 30f))
+                    _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, 0, name, text, now);
+            },
+            (userId, text) =>
+            {
+                foreach (var target in _players.Values.Where(x => x.Authenticated && x.UserId == userId))
+                    _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, 0, "Script", text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            },
+            Log);
+        try { await _scripting.RefreshAsync(ct); }
+        catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { Log("scripts_load_failed", new { error = exception.Message }); }
+        _ = ScriptSyncLoopAsync(ct);
+    }
+
+    private async Task ScriptSyncLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(15));
+        var ticks = 0;
+        try
+        {
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                ticks++;
+                try
+                {
+                    await _scripting!.RefreshAsync(ct);
+                    if (ticks % 2 == 0) await _scripting.FlushStateAsync(ct);
+                }
+                catch (Exception exception) when (exception is HttpRequestException or System.Text.Json.JsonException) { Log("scripts_sync_failed", new { error = exception.Message }); }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    public void TouchObject(int peerId, string objectId)
+    {
+        if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated || !Guid.TryParse(objectId, out var id)) return;
+        _scripting?.Touch(PresenceOf(player), id);
+    }
+
     public void SendChat(int peerId, string message)
     {
         if (!_players.TryGetValue(peerId, out var sender) || !sender.Authenticated) return;
@@ -160,6 +213,7 @@ public partial class ServerMain : Node
         sender.ChatTimes.Enqueue(now);
         foreach (var target in _players.Values.Where(x => x.Authenticated && DistanceSquared(sender.State, x.State) <= 30f * 30f))
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, peerId, sender.DisplayName, message, now.ToUnixTimeMilliseconds());
+        _scripting?.OnChat(PresenceOf(sender), message);
     }
 
     /// Shared checks for every terrain action: authenticated, allowed to edit terrain, within the per-second budget.
@@ -274,6 +328,7 @@ public partial class ServerMain : Node
             using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/build-operations", new { userId = actor.UserId, operation = command.Operation, objectId = command.ObjectId, @object = command.Object, expectedRevision = command.ExpectedRevision }, _shutdown.Token);
             if (!response.IsSuccessStatusCode) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, response.StatusCode == System.Net.HttpStatusCode.Conflict ? "revision_conflict" : $"server_rejected_{(int)response.StatusCode}"); return; }
             var accepted = await response.Content.ReadAsStringAsync(_shutdown.Token);
+            _scripting?.OnObjectApplied(accepted);
             foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, accepted);
         }
         catch (Exception exception) { Log("build_operation_failed", new { peerId, error = exception.Message }); _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "service_unavailable"); }
@@ -376,6 +431,7 @@ public partial class ServerMain : Node
         if (_stopping) return;
         _stopping = true;
         _shutdown.Cancel();
+        try { if (_scripting is not null) await _scripting.FlushStateAsync(CancellationToken.None); } catch (Exception exception) { Log("script_state_flush_failed", new { error = exception.Message }); }
         await SaveWorldSnapshotAsync(CancellationToken.None);
         Multiplayer.MultiplayerPeer?.Close();
         _healthListener?.Stop();

@@ -15,5 +15,6 @@
   <ItemGroup>
     <ProjectReference Include="../../backend/LifeVerse.Api.csproj" />
     <ProjectReference Include="../../shared/LifeVerse.Shared.csproj" />
+    <ProjectReference Include="../../scripting/LifeVerse.Scripting.csproj" />
   </ItemGroup>
 </Project>

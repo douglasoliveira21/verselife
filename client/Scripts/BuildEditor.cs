@@ -52,6 +52,7 @@ public partial class BuildEditor : Node3D
         _network = GetNode<NetworkManager>("/root/NetworkManager"); _session = GetNode<SessionManager>("/root/SessionManager");
         _network.BuildOperationReceived += OnOperation; _network.BuildOperationRejected += OnRejected;
         _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnObjectsLoaded;
+        _network.ConnectionStateChanged += OnConnectionState;
         _gizmo = new BuildGizmo { Name = "BuildGizmo" }; AddChild(_gizmo);
         BuildPanel();
     }
@@ -59,7 +60,14 @@ public partial class BuildEditor : Node3D
     public override void _ExitTree()
     {
         if (_network is null) return;
-        _network.BuildOperationReceived -= OnOperation; _network.BuildOperationRejected -= OnRejected;
+        _network.BuildOperationReceived -= OnOperation; _network.BuildOperationRejected -= OnRejected; _network.ConnectionStateChanged -= OnConnectionState;
+    }
+
+    /// Players see the island's objects as soon as they are online, not only after opening the build tools.
+    private void OnConnectionState(string state, string detail)
+    {
+        if (state == "online") { _islandId = _network.CurrentIslandId; LoadObjects(); }
+        else if (state is "offline" or "failed") { CancelDrag(); ClearSelection(); foreach (var view in _objects.Values) if (IsInstanceValid(view)) view.QueueFree(); _objects.Clear(); }
     }
 
     // ---- activation and input --------------------------------------------------------------------------------

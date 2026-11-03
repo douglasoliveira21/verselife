@@ -62,5 +62,7 @@ LV Coins, the ledger, marketplace purchases and island rentals are documented in
 
 The administrative panel, RBAC/MFA contract, audit trail and backup runbook are documented in [docs/ADMINISTRATION.md](docs/ADMINISTRATION.md).
 
+Lua scripts on objects (runs on the island server) are documented in [docs/SCRIPTING.md](docs/SCRIPTING.md).
+
 Windows build, launcher, installer, manifest and release gates are documented in [docs/RELEASE.md](docs/RELEASE.md).
 - `docs`: product, architecture, security, operations, and progress records

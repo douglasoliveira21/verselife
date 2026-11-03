@@ -25,6 +25,7 @@ public static class PlatformEndpoints
         group.MapPut("/{instanceId:guid}/heartbeat", HeartbeatAsync);
         group.MapDelete("/{instanceId:guid}", StopAsync);
         endpoints.MapPost("/api/v1/platform/entry-tokens/validate", ValidateEntryAsync).WithTags("Platform");
+        endpoints.MapIslandContentEndpoints();
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", GetServerSnapshotAsync).WithTags("Platform");
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", SaveServerSnapshotAsync).WithTags("Platform");
         endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/build-operations", ApplyServerBuildOperationAsync).WithTags("Platform");
@@ -115,7 +116,7 @@ public static class PlatformEndpoints
             identity.TokenId, identity.ProtocolVersion, identity.ExpiresAt, avatar.DisplayName, appearance, canEditTerrain));
     }
 
-    private static bool HasValidServiceKey(HttpContext context, IConfiguration config)
+    internal static bool HasValidServiceKey(HttpContext context, IConfiguration config)
     {
         var expected = config["IslandServer:SharedKey"] ?? string.Empty;
         var actual = context.Request.Headers["X-LifeVerse-Service-Key"].ToString();

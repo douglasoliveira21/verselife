@@ -2,7 +2,7 @@
 
 ## Segurança e runtime
 
-O contrato usa Lua 5.4 (intérprete oficial, licença MIT) como worker externo configurado por `LuaRuntime:WorkerPath`/`LIFEVERSE_LUA_WORKER`. O processo principal nunca avalia código do usuário. O worker recebe um envelope JSON por stdin, não recebe `LUA_PATH`/`LUA_CPATH`, não tem acesso a SQL, arquivos, rede, `os`, `io`, `debug`, `require`, `package`, FFI ou sockets, e é encerrado em 250 ms por padrão. O container de produção deve aplicar limite de memória de 256 KiB/worker e CPU através do sandbox do sistema operacional.
+Os scripts rodam no servidor da ilha, em uma máquina virtual Lua isolada (MoonSharp) com limites de instruções, tempo e memória, sem acesso a arquivos, processos, rede ou banco. Veja [SCRIPTING.md](SCRIPTING.md) para a API, os eventos e os limites. O texto abaixo sobre um worker externo é histórico: esse worker não é mais usado e a API não executa código de usuário.
 
 O serviço falha fechado quando o worker não existe. Antes de iniciar, o validador limita fonte a 64 KiB, estima instruções, rejeita loops infinitos óbvios e APIs perigosas, limita eventos a 20/s e quarentena scripts que excedem timeout. Execuções, erros e quarentenas são auditados em `world.script_executions`.
 
