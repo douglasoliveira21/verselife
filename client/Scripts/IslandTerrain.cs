@@ -91,6 +91,22 @@ void fragment() {
         return _map.Revision == revision;
     }
 
+    /// Replays an undo/redo patch accepted by the server; false means a full resync is needed.
+    public bool ApplyPatch(byte[] data, long revision)
+    {
+        if (!TerrainPatch.TryDeserialize(data, _map.VertexCount * _map.VertexCount, out var patch)) return false;
+        _map.Restore(patch);
+        _dirty = true;
+        return _map.Revision == revision;
+    }
+
+    public bool ApplySeaLevel(float level, long revision)
+    {
+        _map.SetSeaLevel(level);
+        _dirty = true;
+        return _map.Revision == revision;
+    }
+
     /// Ground point under a screen position, or null when the ray misses the terrain.
     public Vector3? Raycast(Camera3D camera, Vector2 screenPosition, float distance = 300f)
     {

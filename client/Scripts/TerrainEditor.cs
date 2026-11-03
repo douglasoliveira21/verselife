@@ -18,6 +18,9 @@ public partial class TerrainEditor : Node3D
     private Label _radiusLabel = null!;
     private Label _strengthLabel = null!;
     private OptionButton _layer = null!;
+    private HSlider _sea = null!;
+    private Label _seaLabel = null!;
+    private FileDialog? _fileDialog;
     private MeshInstance3D _brush = null!;
     private readonly Dictionary<TerrainTool, Button> _toolButtons = [];
     private TerrainTool _tool = TerrainTool.Raise;
@@ -32,6 +35,7 @@ public partial class TerrainEditor : Node3D
         _network = GetNode<NetworkManager>("/root/NetworkManager");
         _terrain = GetParent().GetNode<IslandTerrain>("IslandTerrain");
         _network.TerrainPermissionChanged += OnPermissionChanged;
+        _terrain.Changed += SyncSea;
         _network.TerrainEditRejected += OnRejected;
         BuildPanel();
         BuildBrush();
@@ -41,6 +45,7 @@ public partial class TerrainEditor : Node3D
     {
         if (_network is null) return;
         _network.TerrainPermissionChanged -= OnPermissionChanged;
+        if (_terrain is not null) _terrain.Changed -= SyncSea;
         _network.TerrainEditRejected -= OnRejected;
     }
 
@@ -55,6 +60,11 @@ public partial class TerrainEditor : Node3D
         if (input.IsActionPressed("terrain_mode")) SetActive(!_active);
         if (!_active) return;
         if (input.IsActionPressed("ui_cancel")) SetActive(false);
+        if (input is InputEventKey { Pressed: true, Echo: false, CtrlPressed: true } key)
+        {
+            if (key.PhysicalKeycode == Key.Z && !key.ShiftPressed) { Undo(); GetViewport().SetInputAsHandled(); }
+            else if (key.PhysicalKeycode == Key.Y || (key.PhysicalKeycode == Key.Z && key.ShiftPressed)) { Redo(); GetViewport().SetInputAsHandled(); }
+        }
         if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left } mouse)
         {
             _dragging = mouse.Pressed && !mouse.DoubleClick;
@@ -88,7 +98,7 @@ public partial class TerrainEditor : Node3D
     {
         _panel = new PanelContainer { Name = "TerrainTools", Visible = false };
         _panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        _panel.OffsetLeft = 380; _panel.OffsetTop = 44; _panel.OffsetRight = 640; _panel.OffsetBottom = 426;
+        _panel.OffsetLeft = 380; _panel.OffsetTop = 44; _panel.OffsetRight = 640; _panel.OffsetBottom = 45;
         var box = new VBoxContainer(); _panel.AddChild(box);
         box.AddChild(new Label { Text = "TERRENO · servidor autoritativo (T)" });
         foreach (var (tool, text) in new[] { (TerrainTool.Raise, "Elevar"), (TerrainTool.Lower, "Rebaixar"), (TerrainTool.Flatten, "Nivelar"), (TerrainTool.Smooth, "Suavizar"), (TerrainTool.Noise, "Rugosidade"), (TerrainTool.Paint, "Pintar textura") })
@@ -104,9 +114,68 @@ public partial class TerrainEditor : Node3D
         _radiusLabel = new Label(); _radius = Slider(1, TerrainMap.MaxBrushRadius, 4, 0.5, _radiusLabel, v => $"Raio do pincel: {v:0.#} m");
         _strengthLabel = new Label(); _strength = Slider(1, 100, 25, 1, _strengthLabel, v => $"Intensidade: {v:0}%");
         box.AddChild(_radiusLabel); box.AddChild(_radius); box.AddChild(_strengthLabel); box.AddChild(_strength);
+        var history = new HBoxContainer();
+        var undo = new Button { Text = "Desfazer (Ctrl+Z)", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; undo.Pressed += Undo; history.AddChild(undo);
+        var redo = new Button { Text = "Refazer (Ctrl+Y)", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; redo.Pressed += Redo; history.AddChild(redo);
+        box.AddChild(history);
+        _seaLabel = new Label();
+        _sea = Slider(TerrainMap.MinSeaLevel, TerrainMap.MaxSeaLevel, _terrain.Map.SeaLevel, .1, _seaLabel, v => $"Nível do mar: {v:0.0} m");
+        var applySea = new Button { Text = "Aplicar nível do mar" }; applySea.Pressed += ApplySeaLevel;
+        box.AddChild(_seaLabel); box.AddChild(_sea); box.AddChild(applySea);
+        var files = new HBoxContainer();
+        var export = new Button { Text = "Exportar mapa", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "Salva as alturas em um arquivo RAW de 16 bits" }; export.Pressed += ExportHeightmap; files.AddChild(export);
+        var import = new Button { Text = "Importar mapa", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "Substitui as alturas por um arquivo RAW de 16 bits" }; import.Pressed += OpenImportDialog; files.AddChild(import);
+        box.AddChild(files);
         _status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(240, 0) };
         box.AddChild(_status);
         AddChild(_panel);
+    }
+
+    private bool CheckCanEdit()
+    {
+        if (!_network.IsAuthenticated) { _status.Text = "Entre em uma ilha para editar o terreno."; return false; }
+        if (!_network.CanEditTerrain) { _status.Text = "Você não tem permissão para editar o terreno desta ilha."; return false; }
+        return true;
+    }
+
+    private void Undo() { if (CheckCanEdit()) _network.UndoTerrain(); }
+    private void Redo() { if (CheckCanEdit()) _network.RedoTerrain(); }
+    private void ApplySeaLevel() { if (CheckCanEdit()) _network.SubmitSeaLevel((float)_sea.Value); }
+    private void SyncSea() { if (Mathf.Abs((float)_sea.Value - _terrain.Map.SeaLevel) > .001f) { _sea.SetValueNoSignal(_terrain.Map.SeaLevel); _seaLabel.Text = $"Nível do mar: {_terrain.Map.SeaLevel:0.0} m"; } }
+
+    private void ExportHeightmap()
+    {
+        var map = _terrain.Map;
+        var directory = ProjectSettings.GlobalizePath("user://exports");
+        DirAccess.MakeDirRecursiveAbsolute(directory);
+        var path = $"{directory}/heightmap-{map.VertexCount}x{map.VertexCount}-{DateTime.Now:yyyyMMdd-HHmmss}.r16";
+        System.IO.File.WriteAllBytes(path, map.ExportHeights16());
+        _status.Text = $"Mapa exportado (RAW 16 bits, {map.VertexCount}×{map.VertexCount}, {TerrainMap.MinHeight:0}…{TerrainMap.MaxHeight:0} m):\n{path}";
+    }
+
+    private void OpenImportDialog()
+    {
+        if (!CheckCanEdit()) return;
+        if (_fileDialog is null)
+        {
+            _fileDialog = new FileDialog { Title = "Importar mapa de alturas (RAW 16 bits)", FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, UseNativeDialog = true, Filters = ["*.r16,*.raw ; Mapa de alturas de 16 bits"] };
+            _fileDialog.FileSelected += ImportHeightmap;
+            AddChild(_fileDialog);
+        }
+        _fileDialog.CurrentDir = ProjectSettings.GlobalizePath("user://exports");
+        _fileDialog.PopupCentered(new Vector2I(900, 600));
+    }
+
+    private void ImportHeightmap(string path)
+    {
+        if (!CheckCanEdit()) return;
+        byte[] bytes;
+        try { bytes = System.IO.File.ReadAllBytes(path); }
+        catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException) { _status.Text = $"Não foi possível ler o arquivo: {exception.Message}"; return; }
+        var count = _terrain.Map.VertexCount;
+        if (bytes.Length != count * count * 2) { _status.Text = $"Arquivo inválido: esperado {count}×{count} amostras de 16 bits ({count * count * 2} bytes), mas tem {bytes.Length} bytes."; return; }
+        _network.SubmitTerrainImport(bytes);
+        _status.Text = "Mapa enviado ao servidor. As bordas (fundo do mar) não mudam.";
     }
 
     private static HSlider Slider(double min, double max, double value, double step, Label label, Func<double, string> format)
@@ -141,5 +210,5 @@ public partial class TerrainEditor : Node3D
     }
 
     private void OnPermissionChanged(bool canEdit) { if (_active) RefreshStatus(); }
-    private void OnRejected(string code) => _status.Text = code switch { "no_permission" => "Sem permissão para editar o terreno.", "rate_limit" => "Muitas edições seguidas; aguarde um instante.", _ => $"Edição recusada: {code}" };
+    private void OnRejected(string code) => _status.Text = code switch { "no_permission" => "Sem permissão para editar o terreno.", "rate_limit" => "Muitas edições seguidas; aguarde um instante.", "nothing_to_undo" => "Nada para desfazer.", "nothing_to_redo" => "Nada para refazer.", "invalid_heightmap" => "O servidor recusou o mapa de alturas.", _ => $"Edição recusada: {code}" };
 }

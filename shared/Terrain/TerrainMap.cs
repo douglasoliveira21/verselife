@@ -18,15 +18,18 @@ public sealed class TerrainMap
     public const float MinHeight = -8f;
     public const float MaxHeight = 48f;
     public const float MaxBrushRadius = 24f;
-    /// <summary>Water surface height; flat land (0) stands just above it and the shore slopes down into the sea.</summary>
-    public const float SeaLevel = -.8f;
+    /// <summary>Default water surface height; flat land (0) stands just above it and the shore slopes down into the sea.</summary>
+    public const float DefaultSeaLevel = -.8f;
+    public const float MinSeaLevel = MinHeight + 1f;
+    public const float MaxSeaLevel = 20f;
     /// <summary>Width of the beach that slopes from the flat interior down to the sea floor at the island edge.</summary>
     public const float ShoreWidth = 24f;
     /// <summary>Open ocean around the island that avatars can swim in before reaching the world limit.</summary>
     public const float OceanMargin = 192f;
     private const int MinUnits = -8000; // MinHeight in millimetres
     private const int MaxCells = 256;
-    private const uint Magic = 0x3154564C; // "LVT1"
+    private const uint Magic = 0x3254564C; // "LVT2": LVT1 plus the sea level
+    private const uint MagicV1 = 0x3154564C; // "LVT1"
 
     private readonly float[] _heights;
     private readonly byte[] _splat;
@@ -36,6 +39,7 @@ public sealed class TerrainMap
     public int VertexCount => Cells + 1;
     public float HalfExtent => Cells * CellSize / 2f;
     public long Revision { get; set; }
+    public float SeaLevel { get; private set; } = DefaultSeaLevel;
     public IReadOnlyList<float> Heights => _heights;
     public IReadOnlyList<byte> Splat => _splat;
 
@@ -60,7 +64,17 @@ public sealed class TerrainMap
     }
 
     public bool IsBorder(int x, int z) => x == 0 || z == 0 || x == Cells || z == Cells;
-    public static float WaterDepth(float groundHeight) => SeaLevel - groundHeight;
+    public float WaterDepth(float groundHeight) => SeaLevel - groundHeight;
+
+    /// <summary>Moves the water surface (a per-island setting). Returns false when nothing changed.</summary>
+    public bool SetSeaLevel(float level)
+    {
+        if (!float.IsFinite(level)) return false;
+        level = MathF.Round(Math.Clamp(level, MinSeaLevel, MaxSeaLevel) * 100f) / 100f;
+        if (level == SeaLevel) return false;
+        SeaLevel = level; Revision++;
+        return true;
+    }
 
     public float HeightAt(int x, int z) => _heights[Math.Clamp(z, 0, Cells) * VertexCount + Math.Clamp(x, 0, Cells)];
 
@@ -128,7 +142,7 @@ public sealed class TerrainMap
         using var raw = new MemoryStream();
         using (var writer = new BinaryWriter(raw, System.Text.Encoding.UTF8, true))
         {
-            writer.Write(Magic); writer.Write(Cells); writer.Write(CellSize); writer.Write(Revision);
+            writer.Write(Magic); writer.Write(Cells); writer.Write(CellSize); writer.Write(Revision); writer.Write(SeaLevel);
             // Heights are always whole millimetres (see SetHeight), so storing the integer count is lossless.
             foreach (var height in _heights) writer.Write((ushort)Math.Clamp((int)MathF.Round(height * 1000f) - MinUnits, 0, ushort.MaxValue));
             writer.Write(_splat);
@@ -147,11 +161,19 @@ public sealed class TerrainMap
             using var deflate = new DeflateStream(new MemoryStream(data), CompressionMode.Decompress);
             var header = new byte[20];
             deflate.ReadExactly(header);
-            if (BitConverter.ToUInt32(header, 0) != Magic) return false;
+            var magic = BitConverter.ToUInt32(header, 0);
+            if (magic != Magic && magic != MagicV1) return false;
             var cells = BitConverter.ToInt32(header, 4);
             var cellSize = BitConverter.ToSingle(header, 8);
             if (cells is < 4 or > MaxCells || !float.IsFinite(cellSize) || cellSize is < .25f or > 16f) return false;
             var loaded = new TerrainMap(cells, cellSize) { Revision = BitConverter.ToInt64(header, 12) };
+            if (magic == Magic)
+            {
+                var seaBytes = new byte[4]; deflate.ReadExactly(seaBytes);
+                var sea = BitConverter.ToSingle(seaBytes, 0);
+                if (!float.IsFinite(sea)) return false;
+                loaded.SeaLevel = Math.Clamp(sea, MinSeaLevel, MaxSeaLevel);
+            }
             var heights = new byte[loaded._heights.Length * 2];
             deflate.ReadExactly(heights);
             for (var i = 0; i < loaded._heights.Length; i++) loaded._heights[i] = (BitConverter.ToUInt16(heights, i * 2) + MinUnits) / 1000f;
@@ -181,6 +203,79 @@ public sealed class TerrainMap
             catch (Exception exception) when (exception is JsonException or FormatException) { }
         }
         return new TerrainMap();
+    }
+
+    /// <summary>State of every sculptable vertex a brush at this position and radius would touch.</summary>
+    public TerrainPatch Capture(float worldX, float worldZ, float radius)
+    {
+        var patch = new TerrainPatch();
+        if (!float.IsFinite(worldX) || !float.IsFinite(worldZ) || !float.IsFinite(radius)) return patch;
+        radius = Math.Clamp(radius, CellSize / 2f, MaxBrushRadius);
+        var cx = (worldX + HalfExtent) / CellSize; var cz = (worldZ + HalfExtent) / CellSize; var span = radius / CellSize;
+        for (var z = Math.Max(1, (int)MathF.Floor(cz - span)); z <= Math.Min(Cells - 1, (int)MathF.Ceiling(cz + span)); z++)
+        for (var x = Math.Max(1, (int)MathF.Floor(cx - span)); x <= Math.Min(Cells - 1, (int)MathF.Ceiling(cx + span)); x++)
+            if (MathF.Sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz)) * CellSize <= radius) CaptureVertex(patch, z * VertexCount + x);
+        return patch;
+    }
+
+    /// <summary>Sets the patch's vertices and returns a patch that reverts the change. Border vertices are never changed.</summary>
+    public TerrainPatch Restore(TerrainPatch patch)
+    {
+        var inverse = new TerrainPatch();
+        var changed = false;
+        foreach (var (index, (height, splat)) in patch.Entries)
+        {
+            if (index < 0 || index >= _heights.Length || IsBorder(index % VertexCount, index / VertexCount)) continue;
+            CaptureVertex(inverse, index);
+            changed |= SetHeight(index, height);
+            for (var layer = 0; layer < LayerCount; layer++)
+                if (_splat[index * LayerCount + layer] != splat[layer]) { _splat[index * LayerCount + layer] = splat[layer]; changed = true; }
+        }
+        if (changed) Revision++;
+        return inverse;
+    }
+
+    /// <summary>Heights as 16-bit little-endian samples (MinHeight..MaxHeight), row by row, the common "RAW 16" terrain format.</summary>
+    public byte[] ExportHeights16()
+    {
+        var bytes = new byte[_heights.Length * 2];
+        for (var i = 0; i < _heights.Length; i++)
+        {
+            var value = (ushort)Math.Clamp((int)MathF.Round((_heights[i] - MinHeight) / (MaxHeight - MinHeight) * ushort.MaxValue), 0, ushort.MaxValue);
+            bytes[i * 2] = (byte)(value & 0xFF); bytes[i * 2 + 1] = (byte)(value >> 8);
+        }
+        return bytes;
+    }
+
+    /// <summary>Replaces the sculptable heights from RAW 16 samples. Returns the patch that undoes the import, or null if the data does not fit.</summary>
+    public TerrainPatch? ImportHeights16(byte[] data)
+    {
+        if (data.Length != _heights.Length * 2) return null;
+        var undo = new TerrainPatch();
+        var changed = false;
+        for (var z = 1; z < Cells; z++)
+        for (var x = 1; x < Cells; x++)
+        {
+            var index = z * VertexCount + x;
+            var value = data[index * 2] | (data[index * 2 + 1] << 8);
+            var before = _heights[index];
+            if (SetHeight(index, MinHeight + value / (float)ushort.MaxValue * (MaxHeight - MinHeight)))
+            {
+                var old = new byte[LayerCount];
+                for (var layer = 0; layer < LayerCount; layer++) old[layer] = _splat[index * LayerCount + layer];
+                undo.Add(index, before, old);
+                changed = true;
+            }
+        }
+        if (changed) Revision++;
+        return undo;
+    }
+
+    private void CaptureVertex(TerrainPatch patch, int index)
+    {
+        var splat = new byte[LayerCount];
+        for (var layer = 0; layer < LayerCount; layer++) splat[layer] = _splat[index * LayerCount + layer];
+        patch.Add(index, _heights[index], splat);
     }
 
     private bool SetHeight(int index, float value)

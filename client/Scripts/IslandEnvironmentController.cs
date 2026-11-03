@@ -55,12 +55,39 @@ void sky() {
     {
         _sun = GetParent().GetNodeOrNull<DirectionalLight3D>("Sun")!; _environment = GetParent().GetNodeOrNull<WorldEnvironment>("WorldEnvironment")!;
         if (float.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_HOUR"), out var hour)) Hour = Mathf.PosMod(hour, 24); var configuredWeather = OS.GetEnvironment("LIFEVERSE_WEATHER"); if (!string.IsNullOrWhiteSpace(configuredWeather)) Weather = configuredWeather.ToLowerInvariant();
-        BuildSky(); UpdateSun(); ApplyWeather();
+        BuildSky(); BuildRain(); UpdateSun(); ApplyWeather();
     }
     public override void _Process(double delta)
     {
         if (DayNightCycle) Hour = Mathf.PosMod(Hour + (float)delta * TimeScale, 24);
-        UpdateSun(); ApplyWeather();
+        UpdateSun(); ApplyWeather(); UpdateRain();
+    }
+
+    private GpuParticles3D? _rainParticles;
+
+    private void BuildRain()
+    {
+        var material = new ParticleProcessMaterial
+        {
+            EmissionShape = ParticleProcessMaterial.EmissionShapeEnum.Box, EmissionBoxExtents = new Vector3(30, .5f, 30),
+            Direction = new Vector3(.12f, -1, 0), Spread = 1.5f, InitialVelocityMin = 28f, InitialVelocityMax = 34f, Gravity = new Vector3(0, -6, 0), ParticleFlagAlignY = true
+        };
+        var streak = new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(.78f, .85f, .96f, .5f), BillboardMode = BaseMaterial3D.BillboardModeEnum.Particles };
+        _rainParticles = new GpuParticles3D
+        {
+            Name = "Rain", Amount = 6000, Lifetime = 1.1, ProcessMaterial = material, DrawPass1 = new QuadMesh { Size = new Vector2(.014f, .6f), Material = streak },
+            VisibilityAabb = new Aabb(new Vector3(-40, -40, -40), new Vector3(80, 80, 80)), Emitting = false, LocalCoords = false, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off
+        };
+        AddChild(_rainParticles);
+    }
+
+    private void UpdateRain()
+    {
+        if (_rainParticles is null) return;
+        var raining = Weather is "rain" or "storm";
+        _rainParticles.Emitting = raining;
+        _rainParticles.AmountRatio = Weather == "storm" ? 1f : .6f;
+        if (GetViewport().GetCamera3D() is { } camera) _rainParticles.GlobalPosition = camera.GlobalPosition + Vector3.Up * 14f;
     }
 
     private void BuildSky()

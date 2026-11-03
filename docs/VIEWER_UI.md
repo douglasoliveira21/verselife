@@ -22,3 +22,16 @@ A interface segue o layout de um viewer de mundo virtual desktop: barra de menus
 - Sem ícones nos botões, sem menu circular de objeto, sem perfil de avatar, sem arrastar e soltar no inventário, sem voz.
 - A escala da interface segue a janela (base 1920×1080); não há ajuste de escala próprio ainda.
 - Verificado por capturas de tela no Godot; não testado com dois clientes reais.
+
+## Polimento adicional
+
+- **Tutorial "Primeiros passos"**: seis páginas, abre sozinho na primeira conexão (e em Ajuda > Tutorial); "Não mostrar ao conectar" é lembrado em `user://viewer.cfg`.
+- **Eu > Escala da interface** (80% a 150%) e **Eu > Volume** (mudo a 100%): ficam salvos no mesmo arquivo.
+- **Mundo > Clima**: limpo, nublado, chuva, tempestade e neblina, só no seu computador. Chuva e tempestade têm partículas de chuva que acompanham a câmera.
+- **Sons gerados por código** (`AmbientSynth`, sem arquivos de áudio): ondas perto da costa e na água, vento (mais forte em tempestade e em altura), chuva e passos (mais abafados na areia e na água).
+- **Avatar:** o corpo é escalado para a altura da cápsula de colisão (1,8 m).
+
+### Limitações
+
+- Os sons são sintetizados e simples; não há música nem efeitos gravados. Não ouvi o resultado: a verificação foi por testes do sintetizador (nível, limites, decaimento).
+- O clima e o ambiente só valem para quem os escolhe; o clima compartilhado entre jogadores ainda não existe.

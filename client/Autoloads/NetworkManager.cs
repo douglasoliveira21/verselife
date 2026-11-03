@@ -150,6 +150,20 @@ public partial class NetworkManager : Node
         if (!terrain.ApplyEdit((TerrainTool)tool, x, z, radius, strength, layer, revision)) _bridge.RpcId(1, NetworkBridge.MethodName.RequestTerrain);
     }
     public void OnTerrainEditRejected(string code) => EmitSignal(SignalName.TerrainEditRejected, code);
+    public void SubmitSeaLevel(float level) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitSeaLevel, level); }
+    public void UndoTerrain() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.UndoTerrain); }
+    public void RedoTerrain() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.RedoTerrain); }
+    public void SubmitTerrainImport(byte[] heights) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitTerrainImport, heights); }
+    public void OnSeaLevelChanged(float level, long revision)
+    {
+        if (GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain") is not { } terrain) return;
+        if (!terrain.ApplySeaLevel(level, revision)) _bridge.RpcId(1, NetworkBridge.MethodName.RequestTerrain);
+    }
+    public void OnTerrainPatched(byte[] patch, long revision)
+    {
+        if (GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain") is not { } terrain) return;
+        if (!terrain.ApplyPatch(patch, revision)) _bridge.RpcId(1, NetworkBridge.MethodName.RequestTerrain);
+    }
     public void OnBuildOperationApplied(string operationJson) => EmitSignal(SignalName.BuildOperationReceived, operationJson);
     public void OnBuildOperationRejected(string code) => EmitSignal(SignalName.BuildOperationRejected, code);
 

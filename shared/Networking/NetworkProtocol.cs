@@ -3,8 +3,10 @@ namespace LifeVerse.Shared.Networking;
 public static class NetworkProtocol
 {
     // v2 adds authoritative terrain editing (full map, edit replication, resync request).
-    public const int Version = 2;
+    // v3 adds per-island sea level, terrain undo/redo patches and heightmap import.
+    public const int Version = 3;
     public const int MaxTerrainEditsPerSecond = 20;
+    public const int MaxTerrainImportBytes = 300_000;
     public const int MaxSnapshotBytes = 32 * 1024;
     public const int MaxPlayersPerSnapshot = 256;
     public const int MaxChatCharacters = 256;

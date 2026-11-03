@@ -66,20 +66,24 @@ public partial class AvatarRig : Node3D
         Limb(hips, "LeftUpperLeg", "LeftLowerLeg", new Vector3(-0.17f, -0.18f, 0), new Vector3(0, -0.55f, 0), bottom, bottomItem == "pants_basic" ? bottom : skin, shoes, true);
         Limb(hips, "RightUpperLeg", "RightLowerLeg", new Vector3(0.17f, -0.18f, 0), new Vector3(0, -0.55f, 0), bottom, bottomItem == "pants_basic" ? bottom : skin, shoes, true);
 
-        AlignFeetToGround(hips);
+        var top3 = AlignFeetToGround(hips, scaleFactor);
 
-        var name = new Label3D { Name = "DisplayName", Text = data.DisplayName, Position = new Vector3(0, 2.8f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, FontSize = 32, OutlineSize = 6 };
+        var name = new Label3D { Name = "DisplayName", Text = data.DisplayName, Position = new Vector3(0, top3 + .2f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, FontSize = 32, OutlineSize = 6 };
         _visual.AddChild(name);
         if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(StateName(_state)); }
     }
 
+    /// Height of the player capsule in Player.tscn; the visible body is scaled to match it.
+    private const float CapsuleHeight = 1.8f;
+
     /// The rig origin is the avatar's feet. The procedural legs are longer than the leg length they were
     /// laid out with, so the shoe soles hang below the origin and the avatar stands knee-deep in the ground.
     /// Measure the lowest point of the body and lift the visual so the soles rest exactly on the origin.
-    private void AlignFeetToGround(Node3D hips)
+    private float AlignFeetToGround(Node3D hips, Vector3 appearanceScale)
     {
-        _visual.Position = Vector3.Zero;
-        var lowest = float.MaxValue;
+        // Measure the unscaled body, then scale it to the collision capsule height and rest the soles on the origin.
+        _visual.Position = Vector3.Zero; _visual.Scale = Vector3.One;
+        var lowest = float.MaxValue; var highest = float.MinValue;
         void Visit(Node3D node, Transform3D parent)
         {
             var current = parent * node.Transform;
@@ -87,12 +91,18 @@ public partial class AvatarRig : Node3D
             {
                 var box = mesh.Mesh.GetAabb();
                 for (var corner = 0; corner < 8; corner++)
-                    lowest = Mathf.Min(lowest, (current * (box.Position + new Vector3((corner & 1) * box.Size.X, ((corner >> 1) & 1) * box.Size.Y, ((corner >> 2) & 1) * box.Size.Z))).Y);
+                {
+                    var y = (current * (box.Position + new Vector3((corner & 1) * box.Size.X, ((corner >> 1) & 1) * box.Size.Y, ((corner >> 2) & 1) * box.Size.Z))).Y;
+                    lowest = Mathf.Min(lowest, y); highest = Mathf.Max(highest, y);
+                }
             }
             foreach (var child in node.GetChildren()) if (child is Node3D childNode) Visit(childNode, current);
         }
-        Visit(hips, new Transform3D(Basis.FromScale(_visual.Scale), Vector3.Zero));
-        if (lowest < float.MaxValue) _visual.Position = new Vector3(0, -lowest, 0);
+        Visit(hips, Transform3D.Identity);
+        if (lowest >= highest) { _visual.Scale = appearanceScale; return 2.5f; }
+        _visual.Scale = appearanceScale * (CapsuleHeight / (highest - lowest));
+        _visual.Position = new Vector3(0, -lowest * _visual.Scale.Y, 0);
+        return highest;
     }
 
     public void SetMotionState(AvatarMotionState state, bool force = false)

@@ -47,6 +47,16 @@ public partial class ViewerUI : CanvasLayer
     private bool _snapshotBusy;
     private string _state = "offline";
     private Theme _theme = null!;
+    private const string PrefsPath = "user://viewer.cfg";
+    private static readonly float[] UiScales = [.8f, .9f, 1f, 1.1f, 1.25f, 1.5f];
+    private static readonly float[] Volumes = [0f, .25f, .5f, .75f, 1f];
+    private static readonly string[] WeatherNames = ["clear", "cloudy", "rain", "storm", "fog"];
+    private readonly ConfigFile _prefs = new();
+    private FloatingWindow? _tutorial;
+    private Label _tutorialText = null!;
+    private Label _tutorialPage = null!;
+    private CheckBox _tutorialSkip = null!;
+    private int _page;
 
     public override void _Ready()
     {
@@ -56,6 +66,7 @@ public partial class ViewerUI : CanvasLayer
         _player = _world.GetNodeOrNull<PlayerController>("Player");
         _terrain = _world.GetNodeOrNull<IslandTerrain>("IslandTerrain");
         _environment = _world.GetNodeOrNull<IslandEnvironmentController>("EnvironmentController");
+        _prefs.Load(PrefsPath);
         var theme = _theme = ViewerTheme.Create();
         GetWindow().Theme = theme;
         _root = new Control { Name = "Viewer", Theme = theme, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -74,6 +85,8 @@ public partial class ViewerUI : CanvasLayer
         RefreshIslands();
         _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
+        SetUiScale((float)(double)_prefs.GetValue("ui", "scale", 1.0), save: false);
+        SetVolume((float)(double)_prefs.GetValue("audio", "volume", 1.0), save: false);
         UpdateStatus();
         foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditor", "TerrainEditor" })
             foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; FloatingWindow.MakeDraggable(child); }
@@ -126,13 +139,15 @@ public partial class ViewerUI : CanvasLayer
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10); bar.AddChild(row);
         var menu = new MenuBar { Name = "Menus" }; row.AddChild(menu);
 
-        AddMenu(menu, "Eu",
+        var me = AddMenu(menu, "Eu",
             ("Editar aparência…", () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator(), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
             ("Preferências…", () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(), false),
             ("-", null, false),
             ("Sair da ilha", _network.Disconnect, false),
             ("Sair do LifeVerse", () => GetTree().Quit(), false));
+        AddChoiceSubmenu(me, "Escala da interface", ["80%", "90%", "100%", "110%", "125%", "150%"], index => SetUiScale(UiScales[index]));
+        AddChoiceSubmenu(me, "Volume", ["Mudo", "25%", "50%", "75%", "100%"], index => SetVolume(Volumes[index]));
         AddMenu(menu, "Comunicar",
             ("Conversa local   Enter", () => _chat.GrabFocus(), false),
             ("Pessoas, amigos e grupos…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
@@ -152,6 +167,7 @@ public partial class ViewerUI : CanvasLayer
         environment.AddItem("Ciclo automático");
         environment.IdPressed += id => SetEnvironment((int)id);
         world.AddSubmenuNodeItem("Ambiente (somente neste computador)", environment);
+        AddChoiceSubmenu(world, "Clima (somente neste computador)", ["Limpo", "Nublado", "Chuva", "Tempestade", "Neblina"], index => SetWeather(WeatherNames[index]));
         AddMenu(menu, "Conteúdo",
             ("Construir   B", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
@@ -160,6 +176,7 @@ public partial class ViewerUI : CanvasLayer
             ("Editor de scripts Lua…", () => _world.GetNodeOrNull<LuaScriptEditor>("LuaScriptEditor")?.Toggle(), false),
             ("Editor de HUD…", () => _world.GetNodeOrNull<HudEditor>("HudEditor")?.Toggle(), false));
         AddMenu(menu, "Ajuda",
+            ("Tutorial: primeiros passos", ShowTutorial, false),
             ("Controles", ShowControlsHelp, false),
             ("Sobre o LifeVerse", () => Toast($"LifeVerse · cliente {AppManager.Version}"), false));
         AddMenu(menu, "Desenvolver",
@@ -346,6 +363,84 @@ public partial class ViewerUI : CanvasLayer
         _gestureButton.SetPressedNoSignal(_gestures?.Visible ?? false);
     }
 
+    private static void AddChoiceSubmenu(PopupMenu parent, string title, string[] choices, Action<int> chosen)
+    {
+        var submenu = new PopupMenu { Name = title.Replace(' ', '_').Replace('(', '_').Replace(')', '_') };
+        parent.AddChild(submenu);
+        foreach (var choice in choices) submenu.AddItem(choice);
+        submenu.IdPressed += id => chosen((int)id);
+        parent.AddSubmenuNodeItem(title, submenu);
+    }
+
+    private void SetUiScale(float scale, bool save = true)
+    {
+        scale = Mathf.Clamp(scale, .6f, 2f);
+        GetWindow().ContentScaleFactor = scale;
+        if (save) { _prefs.SetValue("ui", "scale", (double)scale); _prefs.Save(PrefsPath); Toast($"Escala da interface: {scale:P0}"); }
+    }
+
+    private void SetVolume(float volume, bool save = true)
+    {
+        volume = Mathf.Clamp(volume, 0f, 1f);
+        AudioServer.SetBusVolumeDb(0, volume <= 0f ? -80f : Mathf.LinearToDb(volume));
+        AudioServer.SetBusMute(0, volume <= 0f);
+        if (save) { _prefs.SetValue("audio", "volume", (double)volume); _prefs.Save(PrefsPath); Toast(volume <= 0f ? "Som desligado." : $"Volume: {volume:P0}"); }
+    }
+
+    private void SetWeather(string weather)
+    {
+        if (_environment is null) return;
+        _environment.Weather = weather;
+        Toast("Clima alterado somente para você.");
+    }
+
+    private static readonly string[] TutorialPages =
+    [
+        "Bem-vindo ao LifeVerse!\n\nEste é um mundo persistente onde você anda, conversa, constrói e explora ilhas com outras pessoas. Este guia rápido mostra o essencial. Você pode abri-lo de novo em Ajuda > Tutorial.",
+        "Andar e correr\n\nW/S andam para frente e para trás, A/D giram o personagem e Q/Z dão passos para o lado. Segure Shift para alternar entre andar e correr, Espaço pula e F liga o voo. Dê duplo clique no chão para andar até lá.",
+        "Câmera\n\nSegure o botão direito do mouse e arraste para girar a câmera, use a roda para aproximar ou afastar e o botão do meio para olhar para um ponto. C alterna a primeira pessoa e R redefine a câmera.",
+        "Conversar\n\nPressione Enter, digite e envie para falar com quem está a até 30 metros. Esc sai da barra de conversa. Em Pessoas você encontra amigos, grupos e mensagens.",
+        "Construir e moldar o terreno\n\nB abre as ferramentas de construção e T abre as de terreno: elevar, rebaixar, nivelar, suavizar e pintar texturas, além do nível do mar. Só o dono da ilha, ou quem tem permissão, pode editar.",
+        "Explorar\n\nO Mini-mapa mostra onde você está, o Mapa lista as ilhas e a Foto salva uma imagem sem a interface. O oceano cerca a ilha: entre na água e você nada. Divirta-se!"
+    ];
+
+    public void ShowTutorial()
+    {
+        if (_tutorial is null)
+        {
+            _tutorial = new FloatingWindow("Primeiros passos");
+            _tutorial.Place(.5f, .5f, -250, -190, 250, 190);
+            _tutorialText = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(470, 190), SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+            _tutorial.Content.AddChild(_tutorialText);
+            _tutorialPage = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+            _tutorial.Content.AddChild(_tutorialPage);
+            var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 6);
+            var back = new Button { Text = "Voltar", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; back.Pressed += () => ShowTutorialPage(_page - 1);
+            var next = new Button { Text = "Próximo", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; next.Pressed += () => { if (_page >= TutorialPages.Length - 1) FinishTutorial(); else ShowTutorialPage(_page + 1); };
+            row.AddChild(back); row.AddChild(next); _tutorial.Content.AddChild(row);
+            _tutorialSkip = new CheckBox { Text = "Não mostrar ao conectar", ButtonPressed = (bool)_prefs.GetValue("tutorial", "done", false) };
+            _tutorial.Content.AddChild(_tutorialSkip);
+            _tutorial.CloseRequested += FinishTutorial;
+            _root.AddChild(_tutorial);
+        }
+        ShowTutorialPage(0);
+        _tutorial.Visible = true; _tutorial.MoveToFront();
+    }
+
+    private void ShowTutorialPage(int page)
+    {
+        _page = Mathf.Clamp(page, 0, TutorialPages.Length - 1);
+        _tutorialText.Text = TutorialPages[_page];
+        _tutorialPage.Text = $"{_page + 1} / {TutorialPages.Length}";
+    }
+
+    private void FinishTutorial()
+    {
+        if (_tutorial is null) return;
+        _tutorial.Visible = false;
+        if (_tutorialSkip.ButtonPressed || _page >= TutorialPages.Length - 1) { _prefs.SetValue("tutorial", "done", true); _prefs.Save(PrefsPath); }
+    }
+
     private void SetEnvironment(int id)
     {
         if (_environment is null) return;
@@ -410,7 +505,7 @@ public partial class ViewerUI : CanvasLayer
     {
         _state = state; _joinStatus.Text = detail;
         if (state is "failed" or "offline") RefreshIslands();
-        if (state == "online") { Toast("Conectado à ilha."); _joinWindow.Visible = false; _walletTimer = 60; }
+        if (state == "online") { Toast("Conectado à ilha."); _joinWindow.Visible = false; _walletTimer = 60; if (!(bool)_prefs.GetValue("tutorial", "done", false)) ShowTutorial(); }
         else if (state is "failed" or "incompatible") { Toast(detail); _joinWindow.Visible = true; }
         else if (state == "offline") { Toast("Desconectado da ilha."); _joinWindow.Visible = true; }
     }

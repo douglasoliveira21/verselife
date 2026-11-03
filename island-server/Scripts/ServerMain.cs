@@ -66,7 +66,7 @@ public partial class ServerMain : Node
         var dt = Math.Min((float)delta, 1f / 20f);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
         {
-            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, TerrainMap.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin);
+            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with
             {
@@ -162,23 +162,92 @@ public partial class ServerMain : Node
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, peerId, sender.DisplayName, message, now.ToUnixTimeMilliseconds());
     }
 
+    /// Shared checks for every terrain action: authenticated, allowed to edit terrain, within the per-second budget.
+    private bool TryBeginTerrainAction(int peerId, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out ConnectedPlayer? actor)
+    {
+        actor = null;
+        if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return false;
+        if (!player.CanEditTerrain) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return false; }
+        var now = DateTimeOffset.UtcNow;
+        while (player.TerrainTimes.Count > 0 && now - player.TerrainTimes.Peek() > TimeSpan.FromSeconds(1)) player.TerrainTimes.Dequeue();
+        if (player.TerrainTimes.Count >= NetworkProtocol.MaxTerrainEditsPerSecond) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "rate_limit"); return false; }
+        player.TerrainTimes.Enqueue(now);
+        actor = player;
+        return true;
+    }
+
     public void SubmitTerrainEdit(int peerId, int tool, float x, float z, float radius, float strength, int layer)
     {
-        if (!_players.TryGetValue(peerId, out var actor) || !actor.Authenticated) return;
-        if (!actor.CanEditTerrain) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return; }
-        var now = DateTimeOffset.UtcNow;
-        while (actor.TerrainTimes.Count > 0 && now - actor.TerrainTimes.Peek() > TimeSpan.FromSeconds(1)) actor.TerrainTimes.Dequeue();
-        if (actor.TerrainTimes.Count >= NetworkProtocol.MaxTerrainEditsPerSecond) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "rate_limit"); return; }
+        if (!TryBeginTerrainAction(peerId, out var actor)) return;
         if (!Enum.IsDefined((TerrainTool)tool) || layer is < 0 or >= TerrainMap.LayerCount || !float.IsFinite(x) || !float.IsFinite(z)
             || Math.Abs(x) > _terrain.HalfExtent + TerrainMap.MaxBrushRadius || Math.Abs(z) > _terrain.HalfExtent + TerrainMap.MaxBrushRadius)
         { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "invalid_edit"); return; }
-        actor.TerrainTimes.Enqueue(now);
         // The accepted values are the clamped ones, so every client replays exactly what the server applied.
         radius = Math.Clamp(radius, 1f, TerrainMap.MaxBrushRadius); strength = Math.Clamp(strength, 0f, 1f);
+        var before = _terrain.Capture(x, z, radius);
         if (!_terrain.Apply((TerrainTool)tool, x, z, radius, strength, layer)) return;
         _terrainDirty = true;
+        RememberStroke(actor, before);
         foreach (var target in _players.Values.Where(p => p.Authenticated))
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.TerrainEdited, tool, x, z, radius, strength, layer, _terrain.Revision);
+    }
+
+    /// Edits made within a short time by the same player form one stroke, so a single undo reverts a whole drag.
+    private static void RememberStroke(ConnectedPlayer actor, TerrainPatch before)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (actor.UndoStack.Count > 0 && now - actor.LastStrokeAt < TimeSpan.FromMilliseconds(700) && actor.RedoStack.Count == 0) actor.UndoStack[^1].MergeKeepingOldest(before);
+        else { actor.UndoStack.Add(before); actor.RedoStack.Clear(); if (actor.UndoStack.Count > 50) actor.UndoStack.RemoveAt(0); }
+        actor.LastStrokeAt = now;
+    }
+
+    public void SubmitSeaLevel(int peerId, float level)
+    {
+        if (!TryBeginTerrainAction(peerId, out _)) return;
+        if (!_terrain.SetSeaLevel(level)) return;
+        _terrainDirty = true;
+        foreach (var target in _players.Values.Where(p => p.Authenticated))
+            _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.SeaLevelChanged, _terrain.SeaLevel, _terrain.Revision);
+    }
+
+    public void UndoTerrain(int peerId) => StepHistory(peerId, undo: true);
+    public void RedoTerrain(int peerId) => StepHistory(peerId, undo: false);
+
+    private void StepHistory(int peerId, bool undo)
+    {
+        if (!TryBeginTerrainAction(peerId, out var actor)) return;
+        var from = undo ? actor.UndoStack : actor.RedoStack;
+        var to = undo ? actor.RedoStack : actor.UndoStack;
+        if (from.Count == 0) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, undo ? "nothing_to_undo" : "nothing_to_redo"); return; }
+        var patch = from[^1]; from.RemoveAt(from.Count - 1);
+        to.Add(_terrain.Restore(patch));
+        _terrainDirty = true;
+        actor.LastStrokeAt = DateTimeOffset.MinValue;
+        BroadcastPatch(patch);
+    }
+
+    /// Sends the vertices that changed; very large patches (such as undoing an import) go out as a full map instead.
+    private void BroadcastPatch(TerrainPatch patch)
+    {
+        foreach (var target in _players.Values.Where(p => p.Authenticated))
+        {
+            if (patch.Count > 4000) SendTerrain(target);
+            else _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.TerrainPatched, patch.Serialize(), _terrain.Revision);
+        }
+    }
+
+    public void SubmitTerrainImport(int peerId, byte[] heights)
+    {
+        if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return;
+        if (heights.Length > NetworkProtocol.MaxTerrainImportBytes || DateTimeOffset.UtcNow - player.LastTerrainImport < TimeSpan.FromSeconds(5)) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "rate_limit"); return; }
+        if (!TryBeginTerrainAction(peerId, out var actor)) return;
+        actor.LastTerrainImport = DateTimeOffset.UtcNow;
+        var undo = _terrain.ImportHeights16(heights);
+        if (undo is null) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "invalid_heightmap"); return; }
+        if (undo.Count == 0) return;
+        _terrainDirty = true;
+        actor.UndoStack.Add(undo); actor.RedoStack.Clear(); if (actor.UndoStack.Count > 20) actor.UndoStack.RemoveAt(0);
+        foreach (var target in _players.Values.Where(p => p.Authenticated)) SendTerrain(target);
     }
 
     public void RequestTerrain(int peerId)
@@ -191,6 +260,7 @@ public partial class ServerMain : Node
     }
 
     private void SendTerrain(ConnectedPlayer player) => _bridge.RpcId(player.PeerId, NetworkBridge.MethodName.TerrainFull, _terrain.Serialize(), player.CanEditTerrain);
+
 
     public async void SubmitBuildOperation(int peerId, string operationJson)
     {
@@ -340,6 +410,10 @@ public partial class ServerMain : Node
         public Queue<DateTimeOffset> TerrainTimes { get; } = new();
         public bool CanEditTerrain { get; set; }
         public DateTimeOffset LastTerrainRequest { get; set; }
+        public DateTimeOffset LastTerrainImport { get; set; }
+        public DateTimeOffset LastStrokeAt { get; set; }
+        public List<TerrainPatch> UndoStack { get; } = [];
+        public List<TerrainPatch> RedoStack { get; } = [];
     }
     private sealed record SuspendedPlayer(ConnectedPlayer Player, DateTimeOffset ExpiresAt);
     private sealed record AdmissionResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,

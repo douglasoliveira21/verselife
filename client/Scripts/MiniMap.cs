@@ -51,7 +51,7 @@ public partial class MiniMap : Control
         for (var x = 0; x < count; x++)
         {
             var height = map.HeightAt(x, z);
-            var depth = TerrainMap.SeaLevel - height;
+            var depth = map.SeaLevel - height;
             Color color;
             if (depth > 0) color = new Color("#58a8d4").Lerp(new Color("#133f73"), Mathf.Clamp(depth / 6f, 0f, 1f));
             else

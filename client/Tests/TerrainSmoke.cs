@@ -49,7 +49,7 @@ public partial class TerrainSmoke : Node
             player.GlobalPosition = new Vector3(0, 0, -122);
             player.Velocity = Vector3.Zero;
             await Frames(150);
-            var floatY = TerrainMap.SeaLevel - LifeVerse.Shared.Networking.AuthoritativeMovement.SwimFloatDepth;
+            var floatY = TerrainMap.DefaultSeaLevel - LifeVerse.Shared.Networking.AuthoritativeMovement.SwimFloatDepth;
             Require(!player.IsOnFloor() && Mathf.Abs(player.GlobalPosition.Y - floatY) < .6f, $"player is not floating at the surface: y={player.GlobalPosition.Y} expected~{floatY}");
             GD.Print($"event=ocean_debug camera_y={GetViewport().GetCamera3D().GlobalPosition.Y:F2} underwater={world.GetNode<OceanSurface>("OceanSurface").IsUnderwater}");
             await Capture("ocean");
@@ -81,6 +81,28 @@ public partial class TerrainSmoke : Node
             await Frames(30);
             await Capture("edited");
 
+            // Tutorial window, rain, and a raised sea level that must make an avatar on land swim.
+            var viewer = world.GetNode<ViewerUI>("ViewerUI");
+            viewer.ShowTutorial();
+            await Frames(10);
+            await Capture("tutorial");
+            if (world.FindChild("Primeiros_passos", true, false) is Control tutorialWindow) tutorialWindow.Visible = false;
+            var environment = world.GetNode<IslandEnvironmentController>("EnvironmentController");
+            environment.Weather = "storm";
+            player.GlobalPosition = new Vector3(0, 0, 4); player.Velocity = Vector3.Zero;
+            await Frames(150);
+            await Capture("rain");
+            environment.Weather = "clear";
+            player.GlobalPosition = new Vector3(0, 0, -60); player.Velocity = Vector3.Zero;
+            await Frames(30);
+            terrain.ApplySeaLevel(2.5f, terrain.Map.Revision + 1);
+            await Frames(180);
+            var raisedFloat = 2.5f - LifeVerse.Shared.Networking.AuthoritativeMovement.SwimFloatDepth;
+            Require(!player.IsOnFloor() && Mathf.Abs(player.GlobalPosition.Y - raisedFloat) < .7f, $"avatar did not float after the sea level rose: y={player.GlobalPosition.Y} expected~{raisedFloat}");
+            await Capture("sealevel");
+            terrain.ApplySeaLevel(TerrainMap.DefaultSeaLevel, terrain.Map.Revision + 1);
+            player.GlobalPosition = new Vector3(0, 1, 0); player.Velocity = Vector3.Zero;
+            await Frames(60);
             GD.Print($"event=terrain_smoke result=passed hill={hill:F2}");
             GetTree().Quit();
         }

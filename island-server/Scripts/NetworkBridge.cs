@@ -24,6 +24,21 @@ public partial class NetworkBridge : Node
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
     public void RequestTerrain() => Server.RequestTerrain(Multiplayer.GetRemoteSenderId());
 
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void SubmitSeaLevel(float level) => Server.SubmitSeaLevel(Multiplayer.GetRemoteSenderId(), level);
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void UndoTerrain() => Server.UndoTerrain(Multiplayer.GetRemoteSenderId());
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void RedoTerrain() => Server.RedoTerrain(Multiplayer.GetRemoteSenderId());
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void SubmitTerrainImport(byte[] heights) => Server.SubmitTerrainImport(Multiplayer.GetRemoteSenderId(), heights);
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void SeaLevelChanged(float level, long revision) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainPatched(byte[] patch, long revision) { }
+
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainFull(byte[] data, bool canEdit) { }
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainEdited(int tool, float x, float z, float radius, float strength, int layer, long revision) { }
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainEditRejected(string code) { }

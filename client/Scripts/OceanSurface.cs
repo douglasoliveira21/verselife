@@ -69,6 +69,8 @@ void fragment() {
     private ShaderMaterial _material = null!;
     private ColorRect _underwater = null!;
     private IslandEnvironmentController? _environment;
+    private IslandTerrain? _terrain;
+    private float Sea => _terrain?.Map.SeaLevel ?? TerrainMap.DefaultSeaLevel;
     public bool IsUnderwater => _underwater.Visible;
 
     public override void _Ready()
@@ -89,7 +91,7 @@ void fragment() {
             ExtraCullMargin = 16f
         };
         AddChild(_plane);
-        _plane.Position = new Vector3(0, TerrainMap.SeaLevel, 0);
+
 
         var layer = new CanvasLayer { Layer = -1 };
         _underwater = new ColorRect { Color = new Color(.02f, .26f, .4f, .5f), Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -97,6 +99,7 @@ void fragment() {
         layer.AddChild(_underwater);
         AddChild(layer);
         _environment = GetParent().GetNodeOrNull<IslandEnvironmentController>("EnvironmentController");
+        _terrain = GetParent().GetNodeOrNull<IslandTerrain>("IslandTerrain");
     }
 
     public override void _Process(double delta)
@@ -105,9 +108,9 @@ void fragment() {
         if (camera is null) return;
         // Waves are computed from world position, so snapping the plane to the grid is invisible.
         var position = camera.GlobalPosition;
-        _plane.GlobalPosition = new Vector3(Mathf.Snapped(position.X, GridStep), TerrainMap.SeaLevel, Mathf.Snapped(position.Z, GridStep));
+        _plane.GlobalPosition = new Vector3(Mathf.Snapped(position.X, GridStep), Sea, Mathf.Snapped(position.Z, GridStep));
         _material.SetShaderParameter("day", _environment?.DayFactor ?? 1f);
-        var under = position.Y < TerrainMap.SeaLevel;
+        var under = position.Y < Sea;
         _underwater.Visible = under;
         if (under) _underwater.Color = new Color(.02f, .26f, .4f, .5f).Lerp(new Color(0, .02f, .06f, .5f), 1f - (_environment?.DayFactor ?? 1f));
     }

@@ -16,7 +16,7 @@ Cada ilha começa como um terreno plano de 256×256 m (128×128 células de 2 m)
 - Cliente (`IslandTerrain`): malha com normais, shader de mistura de texturas procedurais, `HeightMapShape3D` para colisão, brilho do pincel em `TerrainEditor`.
 - Permissão: a API informa `canEditTerrain` na validação do ticket (dono da ilha, ou permissão `edit_terrain`/`admin`).
 
-## Protocolo (v2)
+## Protocolo (v3)
 
 Cliente → servidor: `SubmitTerrainEdit(tool, x, z, radius, strength, layer)`, `RequestTerrain()`.
 Servidor → cliente: `TerrainFull(data, canEdit)` após autenticar, `TerrainEdited(..., revision)` para cada edição aceita, `TerrainEditRejected(code)`.
@@ -24,7 +24,7 @@ Se a revisão local divergir da recebida, o cliente pede o mapa completo.
 
 ## Limitações
 
-- Sem undo/redo de terreno, sem importação/exportação de heightmap, sem rios, ondas na praia nem ajuste do nível do mar; a ilha fica limitada a 256×256 m.
+- Sem rios nem ondas quebrando na praia; a ilha fica limitada a 256×256 m e o formato de importação é só RAW de 16 bits (sem PNG).
 - A textura é procedural (sem arte licenciada); não há texturas customizadas por usuário.
 - Terreno não é editável fora de uma ilha conectada (nada seria persistido).
 - Não foi testado com dois clientes reais nem contra o servidor em produção.
@@ -38,3 +38,10 @@ Se a revisão local divergir da recebida, o cliente pede o mapa completo.
 - Rede: novo estado de movimento `Swim` para os outros jogadores.
 
 Verificado: testes unitários (`OceanTests`) e `TerrainSmoke` no Godot (flutuar, mergulhar e voltar à superfície). Não verificado: dois clientes reais e o servidor em produção.
+
+## Desfazer, nível do mar e mapas de altura (protocolo v3)
+
+- **Desfazer/refazer** (Ctrl+Z, Ctrl+Y ou Ctrl+Shift+Z, ou os botões do painel): cada jogador tem sua própria pilha, mantida pelo servidor (até 50 pinceladas). Edições seguidas em menos de 0,7 s formam uma pincelada só, então um arrasto inteiro é desfeito de uma vez. O servidor devolve só os vértices alterados (`TerrainPatched`); remendos muito grandes viram o mapa completo. Desfazer restaura o estado anterior, inclusive sobre edições feitas por outra pessoa depois.
+- **Nível do mar por ilha:** o painel tem um controle (de -7 a 20 m) e o botão "Aplicar nível do mar". O valor é salvo com o terreno, move o oceano, a natação, o mini-mapa e o som. Mapas salvos antes disso carregam com o nível padrão (-0,8 m).
+- **Exportar mapa:** grava as alturas em `user://exports/heightmap-129x129-<data>.r16` (RAW de 16 bits, little-endian, linha a linha, de -8 m a 48 m). **Importar mapa:** lê um arquivo desse formato com o mesmo tamanho e o envia ao servidor, que valida o tamanho (máximo de 300 KB), a permissão e o limite de uma importação a cada 5 s. A importação também pode ser desfeita; as bordas (fundo do mar) não mudam.
+- Novas mensagens: `UndoTerrain`, `RedoTerrain`, `SubmitSeaLevel`, `SubmitTerrainImport` (cliente → servidor) e `TerrainPatched`, `SeaLevelChanged` (servidor → cliente). A versão do protocolo é a **3**; um teste confere que `IslandEntry:ProtocolVersion` do `appsettings.json` da API acompanha a versão do protocolo e que as pontes de rede do cliente e do servidor têm os mesmos métodos.

@@ -194,7 +194,7 @@ public partial class PlayerController : CharacterBody3D
             _targetYaw += Mathf.Wrap(_targetBodyYaw - _targetYaw, -Mathf.Pi, Mathf.Pi) * (1f - Mathf.Exp(-CameraFollowRate * dt));
         // Ocean: same rule as the server (water over the ground at least chest deep means swimming).
         _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
-        _oceanSwimming = !_flying && _terrainNode is not null && TerrainMap.WaterDepth(_terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z)) >= AuthoritativeMovement.WadeDepth;
+        _oceanSwimming = !_flying && _terrainNode is not null && _terrainNode.Map.WaterDepth(_terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z)) >= AuthoritativeMovement.WadeDepth;
         var flags = InputFlags.None;
         if (RunHeld) flags |= InputFlags.Run;
         if (_flying || _swimming ? Input.IsActionPressed("jump") : Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
@@ -208,7 +208,7 @@ public partial class PlayerController : CharacterBody3D
         {
             // Buoyancy keeps the avatar floating chest-deep; jump surfaces/rises, descend dives toward the sea floor.
             var swimSpeed = RunHeld ? AuthoritativeMovement.SwimRunSpeed : AuthoritativeMovement.SwimSpeed;
-            var floatY = TerrainMap.SeaLevel - AuthoritativeMovement.SwimFloatDepth;
+            var floatY = (_terrainNode?.Map.SeaLevel ?? TerrainMap.DefaultSeaLevel) - AuthoritativeMovement.SwimFloatDepth;
             velocity.X = SmoothHorizontal(velocity.X, direction.X * swimSpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * swimSpeed, dt);
             var verticalTarget = Input.IsActionPressed("jump") ? AuthoritativeMovement.SwimVerticalSpeed : Input.IsActionPressed("descend") ? -AuthoritativeMovement.SwimVerticalSpeed : Mathf.Clamp((floatY - GlobalPosition.Y) * 3f, -2f, 2f);
             velocity.Y = Mathf.MoveToward(velocity.Y, verticalTarget, 14f * dt);

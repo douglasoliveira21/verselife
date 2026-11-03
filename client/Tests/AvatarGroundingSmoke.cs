@@ -19,6 +19,7 @@ public partial class AvatarGroundingSmoke : Node
             await Frames(10);
             var (idleLow, idleHigh) = Extent(rig);
             Require(idleLow is > -.02f and < .03f, $"idle soles are not on the ground: lowest={idleLow:F3}");
+            Require(idleHigh - idleLow is > 1.7f and < 1.95f, $"avatar height does not match the 1.8 m capsule: {idleHigh - idleLow:F3}");
             foreach (var state in Enum.GetValues<AvatarMotionState>().Where(x => x is not (AvatarMotionState.Sit or AvatarMotionState.SitFloor or AvatarMotionState.Swim or AvatarMotionState.FlyMove or AvatarMotionState.StandUp or AvatarMotionState.Dance)))
             {
                 rig.SetMotionState(state, true);
