@@ -4,9 +4,10 @@ Voz de perto, como numa conversa: quem está a até 25 m ouve você, mais baixo 
 
 ## Como usar
 
-- **Segure V** para falar (não funciona enquanto você digita no chat).
-- Menu **Comunicar**: *Voz: microfone aberto* (envia quando você fala, sem apertar nada) e *Voz: silenciar tudo* (você não fala nem ouve).
-- Aparece "● Falando" quando sua voz está sendo enviada e "((•))" sobre o avatar de quem está falando.
+- **Botão Falar** (canto inferior, ao lado do chat): clique e **segure** para falar; ao soltar, o microfone fecha.
+- **Cadeado** ao lado do botão: clique para deixar o microfone **sempre aberto** sem precisar segurar (só envia quando você fala); clique de novo para abrir o cadeado e voltar ao modo de segurar. O item *Voz: microfone aberto (cadeado)* do menu Comunicar faz o mesmo.
+- Menu **Comunicar**, *Voz: silenciar tudo*: você não fala nem ouve (o botão e o cadeado ficam apagados).
+- **Bolinha sobre o nome:** aparece em você quando a voz está ligada e em cada jogador depois que você ouve a voz dele. Quando alguém fala, ondas se espalham em volta da bolinha: **verdes** quando o som está limpo e **vermelhas e maiores** quando o áudio estoura (volume no máximo). O mesmo vale para a sua própria bolinha, e uma barra fina embaixo do botão Falar mostra o seu volume, também ficando vermelha quando estoura.
 - **Use fones de ouvido.** O Godot não tem cancelamento de eco; com caixa de som e microfone abertos você vai ouvir eco.
 - O microfone só é aberto na primeira vez que você fala. O sistema operacional pode pedir permissão nessa hora.
 
@@ -21,7 +22,7 @@ Com o microfone aberto, silêncio não é enviado (corte por volume com 200 ms d
 
 ## Verificado e não verificado
 
-- **Verificado:** codec ida e volta (o tom volta com a mesma altura, pacotes de poucas dezenas de bytes), conversão de taxa, corte de silêncio, regras de alcance e limite de taxa (31 testes), comportamento do cliente com áudio sintético (`VoiceSmoke`) e **dois clientes reais** em uma ilha real: um envia 3 s de tom e o outro recebe e decodifica (`VoiceE2E`).
+- **Verificado:** a barra (segurar, soltar, cadeado, voz desligada), o medidor e a bolinha com ondas verdes e vermelhas (`VoiceUiSmoke`, com uma foto dos estados numa janela real), codec ida e volta (o tom volta com a mesma altura, pacotes de poucas dezenas de bytes), conversão de taxa, corte de silêncio, regras de alcance e limite de taxa (31 testes), comportamento do cliente com áudio sintético (`VoiceSmoke`) e **dois clientes reais** em uma ilha real: um envia 3 s de tom e o outro recebe e decodifica (`VoiceE2E`).
 - **Não verificado:** microfone de verdade, alto-falante, qualidade e latência percebidas, e o comportamento em Windows/Linux de verdade fora desta máquina. O teste automático usa o driver de áudio "mudo" do Godot. Teste com dois jogadores reais antes de divulgar.
 
 ## Limites conhecidos

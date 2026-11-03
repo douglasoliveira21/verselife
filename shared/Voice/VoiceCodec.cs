@@ -111,3 +111,20 @@ public static class VoiceLevel
         return (float)Math.Min(1.0, Math.Sqrt(sum / frame.Length) / 8000.0);
     }
 }
+
+/// How loud a frame is, for the meters and the rings around a speaker. Clipping means the signal touched the top of the range.
+public static class VoiceMeter
+{
+    /// Peak at or above this fraction of full scale counts as "too loud" (red).
+    public const float ClippingPeak = .92f;
+
+    /// Largest sample as a fraction of full scale, 0 to 1.
+    public static float Peak(ReadOnlySpan<short> frame)
+    {
+        var peak = 0;
+        foreach (var sample in frame) { var magnitude = sample == short.MinValue ? short.MaxValue : Math.Abs((int)sample); if (magnitude > peak) peak = magnitude; }
+        return peak / (float)short.MaxValue;
+    }
+
+    public static bool IsClipping(float peak) => peak >= ClippingPeak;
+}

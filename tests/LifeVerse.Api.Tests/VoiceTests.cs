@@ -232,3 +232,31 @@ public sealed class VoiceFramerStreamingTests
         Assert.InRange(frames, expected - 2, expected + 1);
     }
 }
+
+public sealed class VoiceMeterTests
+{
+    [Fact]
+    public void PeakIsTheLargestSampleAsAFractionOfFullScale()
+    {
+        Assert.Equal(0f, VoiceMeter.Peak([]));
+        Assert.Equal(0f, VoiceMeter.Peak(new short[320]));
+        Assert.Equal(.5f, VoiceMeter.Peak([0, 16383, -100]), 2);
+        Assert.Equal(.5f, VoiceMeter.Peak([0, -16383, 100]), 2);
+    }
+
+    [Fact]
+    public void TheMostNegativeSampleDoesNotOverflow() => Assert.Equal(1f, VoiceMeter.Peak([short.MinValue]));
+
+    [Theory]
+    [InlineData(.5f, false)] [InlineData(.91f, false)] [InlineData(.92f, true)] [InlineData(1f, true)]
+    public void ClippingStartsNearTheTopOfTheRange(float peak, bool clipping) => Assert.Equal(clipping, VoiceMeter.IsClipping(peak));
+
+    [Fact]
+    public void ANormalSpeechLevelIsGreenAndAShoutIsRed()
+    {
+        var normal = Enumerable.Range(0, 320).Select(i => (short)(MathF.Sin(i * .2f) * 9000)).ToArray();
+        var shout = Enumerable.Range(0, 320).Select(i => (short)Math.Clamp(MathF.Sin(i * .2f) * 60000, short.MinValue, short.MaxValue)).ToArray();
+        Assert.False(VoiceMeter.IsClipping(VoiceMeter.Peak(normal)));
+        Assert.True(VoiceMeter.IsClipping(VoiceMeter.Peak(shout)));
+    }
+}

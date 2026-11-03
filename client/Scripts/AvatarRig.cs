@@ -16,6 +16,8 @@ public partial class AvatarRig : Node3D
     ];
     private Skeleton3D _skeleton = null!;
     private Node3D _visual = null!;
+    private VoiceIndicator? _voice;
+    private bool _voiceActive;
     private AnimationTree _tree = null!;
     private AnimationNodeStateMachinePlayback _playback = null!;
     private AvatarMotionState _state = AvatarMotionState.Idle;
@@ -28,6 +30,18 @@ public partial class AvatarRig : Node3D
         BuildSkeleton();
         BuildAnimationSystem();
         ApplyAppearance(AvatarAppearanceDataFallback());
+    }
+
+    /// The voice dot and rings above the name (null until an appearance has been applied).
+    public VoiceIndicator? Voice => _voice is not null && IsInstanceValid(_voice) ? _voice : null;
+
+    /// Shows the dot while voice is on for this avatar and feeds the rings with the current loudness.
+    public void SetVoice(bool active, float level, float peak)
+    {
+        _voiceActive = active;
+        if (Voice is not { } indicator) return;
+        indicator.Active = active;
+        indicator.SetSignal(level, peak);
     }
 
     public void ApplyAppearance(AvatarAppearanceData data)
@@ -70,6 +84,8 @@ public partial class AvatarRig : Node3D
 
         var name = new Label3D { Name = "DisplayName", Text = data.DisplayName, Position = new Vector3(0, top3 + .2f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, FontSize = 32, OutlineSize = 6 };
         _visual.AddChild(name);
+        var voice = new VoiceIndicator { Name = "VoiceIndicator", Position = new Vector3(0, top3 + .62f, 0), Active = _voiceActive };
+        _visual.AddChild(voice); _voice = voice;
         if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(StateName(_state)); }
     }
 

@@ -154,6 +154,7 @@ public partial class PlayerController : CharacterBody3D
     public override void _PhysicsProcess(double delta)
     {
         var dt = (float)delta;
+        UpdateVoiceIndicator();
         if (UpdateVehicleDriving()) return;
         if (_seat is not null) { UpdateSeated(); return; }
         LiftOutOfTerrain();
@@ -347,6 +348,13 @@ public partial class PlayerController : CharacterBody3D
     }
 
     /// While the server says this player drives a car, the avatar rides at the seat and the keys steer the car instead of walking.
+    /// The dot above your own name shows that voice is on, and its rings follow how loud you are (red when too loud).
+    private void UpdateVoiceIndicator()
+    {
+        if (_network is null) return;
+        _rig.SetVoice(_network.IsAuthenticated && _network.Voice.Enabled, _network.Voice.LocalLevel, _network.Voice.LocalPeak);
+    }
+
     private bool UpdateVehicleDriving()
     {
         var car = _network.IsAuthenticated ? _network.Vehicles.DrivenBy(_network.OwnPeerId) : null;

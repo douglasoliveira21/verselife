@@ -24,5 +24,6 @@ run client res://Tests/PeopleSmoke.tscn people_smoke
 run client res://Tests/VehicleSmoke.tscn vehicle_smoke
 run client res://Tests/UpdateSmoke.tscn update_smoke
 run client res://Tests/VoiceSmoke.tscn voice_smoke
+run client res://Tests/VoiceUiSmoke.tscn voice_ui_smoke
 run island-server res://Tests/ScriptingSmoke.tscn scripting_smoke
 exit $failed

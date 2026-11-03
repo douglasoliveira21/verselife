@@ -46,6 +46,7 @@ public partial class AvatarGroundingSmoke : Node
         var low = float.MaxValue; var high = float.MinValue;
         void Visit(Node current)
         {
+            if (current is VoiceIndicator) return; // the dot above the name is interface, not part of the body
             if (current is MeshInstance3D { Mesh: not null } mesh)
             {
                 var box = mesh.Mesh.GetAabb();

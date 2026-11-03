@@ -4,7 +4,8 @@ using LifeVerse.Shared.Voice;
 namespace LifeVerse.Client.Scripts;
 
 /// One speaker's voice in the world: decoded frames go through a small jitter buffer into a generator stream played
-/// from the speaker's avatar, so volume and direction follow where they stand. A "speaking" marker floats above them.
+/// from the speaker's avatar, so volume and direction follow where they stand. It also feeds the dot and rings above
+/// their name with how loud they are (red when it is too loud). Hearing someone at all turns their dot on.
 public partial class VoicePlayback : Node3D
 {
     private const int PrebufferFrames = 3;
@@ -12,13 +13,18 @@ public partial class VoicePlayback : Node3D
     private readonly Queue<short[]> _queue = new();
     private AudioStreamPlayer3D _player = null!;
     private AudioStreamGeneratorPlayback? _playback;
-    private Label3D _marker = null!;
     private bool _started;
     private double _sinceLastFrame = 10;
+    private float _level;
+    private float _peak;
+    private float _pendingLevel;
+    private float _pendingPeak;
 
     public bool Speaking => _sinceLastFrame < .35;
     public int Queued => _queue.Count;
     public bool Started => _started;
+    public float Level => _level;
+    public float Peak => _peak;
 
     public override void _Ready()
     {
@@ -28,14 +34,13 @@ public partial class VoicePlayback : Node3D
             MaxDistance = VoiceSettings.HearingRange, UnitSize = 6f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Bus = "Master"
         };
         AddChild(_player);
-        _marker = new Label3D { Text = "((•))", Position = new Vector3(0, 2.35f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, FontSize = 40, PixelSize = .006f, Modulate = new Color(.55f, 1f, .6f), NoDepthTest = true, Visible = false };
-        AddChild(_marker);
     }
 
     /// Queues a decoded 20 ms frame. The queue is bounded: when the network bursts, the oldest audio is dropped so the delay never grows.
     public void Push(short[] frame)
     {
         _sinceLastFrame = 0;
+        _pendingLevel = Mathf.Max(_pendingLevel, VoiceLevel.Of(frame)); _pendingPeak = Mathf.Max(_pendingPeak, VoiceMeter.Peak(frame));
         _queue.Enqueue(frame);
         while (_queue.Count > MaxQueuedFrames) _queue.Dequeue();
     }
@@ -43,7 +48,8 @@ public partial class VoicePlayback : Node3D
     public override void _Process(double delta)
     {
         _sinceLastFrame += delta;
-        _marker.Visible = Speaking;
+        _level = _pendingLevel; _peak = _pendingPeak; _pendingLevel = _pendingPeak = 0;
+        FeedIndicator();
         if (_sinceLastFrame > .5) { if (_started) Stop(); return; }
         if (!_started)
         {
@@ -57,6 +63,14 @@ public partial class VoicePlayback : Node3D
             for (var i = 0; i < frame.Length; i++) { var value = frame[i] / (float)short.MaxValue; samples[i] = new Vector2(value, value); }
             _playback.PushBuffer(samples);
         }
+    }
+
+    /// The avatar this voice plays from carries the dot; having heard it at all means that person has voice on.
+    private void FeedIndicator()
+    {
+        if (GetParent() is not { } parent) return;
+        foreach (var child in parent.GetChildren())
+            if (child is AvatarRig rig) { rig.SetVoice(true, _level, _peak); return; }
     }
 
     private void Stop() { _player.Stop(); _playback = null; _started = false; _queue.Clear(); }

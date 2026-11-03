@@ -32,6 +32,13 @@ public partial class AuthManager : Node
         try
         {
             var json = Encoding.UTF8.GetString(body);
+            if (result != (long)HttpRequest.Result.Success)
+            {
+                // The request never reached the API (wrong address, no internet, TLS problem): say where it tried.
+                var address = GetNode<AppManager>("/root/AppManager").ApiBaseUrl;
+                EmitSignal(SignalName.RequestFinished, false, _registering, $"Não foi possível falar com o servidor ({address}). Confira a internet e o endereço da API (variável LIFEVERSE_API_URL).");
+                return;
+            }
             if (responseCode is >= 200 and < 300)
             {
                 using var document = JsonDocument.Parse(json);
