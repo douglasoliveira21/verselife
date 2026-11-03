@@ -20,6 +20,7 @@ public partial class NetworkManager : Node
     [Signal] public delegate void TerrainEditRejectedEventHandler(string code);
     [Signal] public delegate void VehicleMessageEventHandler(string text);
     public VehicleClient Vehicles { get; private set; } = null!;
+    public VoiceChat Voice { get; private set; } = null!;
     public int OwnPeerId => Multiplayer.HasMultiplayerPeer() ? Multiplayer.GetUniqueId() : 0;
     private readonly Dictionary<int, RemoteAvatar> _remote = [];
     private HttpRequest _http = null!;
@@ -42,6 +43,7 @@ public partial class NetworkManager : Node
     {
         _bridge = GetNode<NetworkBridge>("/root/NetworkBridge");
         Vehicles = new VehicleClient { Name = "Vehicles" }; AddChild(Vehicles);
+        Voice = new VoiceChat { Name = "Voice" }; AddChild(Voice);
         _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnEntryResponse;
         _snapshotHttp = new HttpRequest(); AddChild(_snapshotHttp); _snapshotHttp.RequestCompleted += OnSnapshotResponse;
         Multiplayer.ConnectedToServer += OnConnected;
@@ -220,7 +222,7 @@ public partial class NetworkManager : Node
         _remote[peerId] = new RemoteAvatar(node, rig, position);
     }
 
-    public void OnPlayerDespawned(int peerId, bool suspended) { if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }
+    public void OnPlayerDespawned(int peerId, bool suspended) { Voice.Forget(peerId); if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }
     public void OnChatReceived(int peerId, string displayName, string message, long unixMilliseconds)
     {
         var time = DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds).ToLocalTime().ToString("HH:mm");
@@ -230,13 +232,16 @@ public partial class NetworkManager : Node
 
     private async void HandleConnectionLost(string reason)
     {
-        IsAuthenticated = false; CanEditTerrain = false; EmitSignal(SignalName.TerrainPermissionChanged, false); foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); Vehicles.Clear();
+        IsAuthenticated = false; CanEditTerrain = false; EmitSignal(SignalName.TerrainPermissionChanged, false); foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); Vehicles.Clear(); Voice.Reset();
         EmitSignal(SignalName.ConnectionStateChanged, "offline", reason);
         if (_intentionalDisconnect || _islandId == Guid.Empty || _reconnectAttempt >= 3) return;
         _reconnectAttempt++; await ToSignal(GetTree().CreateTimer(Math.Pow(2, _reconnectAttempt - 1)), SceneTreeTimer.SignalName.Timeout); JoinIsland(_islandId);
     }
 
-    public void Disconnect() { _intentionalDisconnect = true; _islandId = Guid.Empty; IsAuthenticated = false; Vehicles.Clear(); ClosePeer(); }
+    public void Disconnect() { _intentionalDisconnect = true; _islandId = Guid.Empty; IsAuthenticated = false; Vehicles.Clear(); Voice.Reset(); ClosePeer(); }
+    public void SendVoice(long sequence, byte[] data) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitVoice, sequence, data); }
+    public void OnVoiceReceived(int speakerPeer, long sequence, byte[] data) => Voice.Receive(speakerPeer, sequence, data);
+    public Node3D? RemoteNode(int peerId) => _remote.TryGetValue(peerId, out var remote) ? remote.Node : null;
     public void EnterVehicle(int vehicleId) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.EnterVehicle, vehicleId); }
     public void ExitVehicle() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.ExitVehicle); }
     public void SendVehicleInput(float throttle, float steer, bool brake) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitVehicleInput, throttle, steer, brake); }

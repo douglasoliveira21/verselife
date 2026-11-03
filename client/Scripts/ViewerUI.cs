@@ -81,6 +81,7 @@ public partial class ViewerUI : CanvasLayer
         BuildToasts();
         var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text);
         AnnounceUpdate();
+        BuildVoiceIndicator();
         _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += Toast;
         BuildTopBar();
         BuildBottomBar();
@@ -158,7 +159,9 @@ public partial class ViewerUI : CanvasLayer
             ("Mensagens privadas…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
             ("Gestos", ToggleGestures, false),
             ("-", null, false),
-            ("Voz espacial (indisponível)", null, true));
+            ("Voz: segure V para falar (use fones)", null, true),
+            ("Voz: microfone aberto  liga/desliga", ToggleOpenMic, false),
+            ("Voz: silenciar tudo  liga/desliga", ToggleVoice, false));
         var world = AddMenu(menu, "Mundo",
             ("Mapa e destinos…", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle(), false),
             ("Mini-mapa", () => ToggleWindow(_miniMapWindow), false),
@@ -330,6 +333,34 @@ public partial class ViewerUI : CanvasLayer
         _joinWindow.Content.AddChild(_joinStatus);
         _islandId.TextSubmitted += _ => Join();
         _root.AddChild(_joinWindow);
+    }
+
+    private Label? _talking;
+
+    private void BuildVoiceIndicator()
+    {
+        _talking = new Label { Text = "● Falando", Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _talking.AddThemeColorOverride("font_color", new Color(.55f, 1f, .6f));
+        _talking.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterBottom);
+        _talking.OffsetTop = -110; _talking.OffsetBottom = -80; _talking.OffsetLeft = -60; _talking.OffsetRight = 60;
+        _root.AddChild(_talking);
+        _network.Voice.TalkingChanged += OnTalkingChanged;
+        TreeExiting += () => _network.Voice.TalkingChanged -= OnTalkingChanged;
+    }
+
+    private void OnTalkingChanged(bool talking) { if (_talking is not null) _talking.Visible = talking; }
+
+    private void ToggleOpenMic()
+    {
+        _network.Voice.OpenMic = !_network.Voice.OpenMic;
+        Toast(_network.Voice.OpenMic ? "Microfone aberto: sua voz é enviada quando você fala. Use fones para evitar eco." : "Microfone aberto desligado: segure V para falar.");
+    }
+
+    private void ToggleVoice()
+    {
+        _network.Voice.Enabled = !_network.Voice.Enabled;
+        if (!_network.Voice.Enabled) _network.Voice.Reset();
+        Toast(_network.Voice.Enabled ? "Voz ligada." : "Voz desligada: você não fala nem ouve.");
     }
 
     /// Mentions a newer client once, as a toast, when the start-up check says one exists.

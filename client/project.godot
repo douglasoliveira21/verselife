@@ -56,3 +56,7 @@ textures/default_filters/use_nearest_mipmap_filter=false
 
 [physics]
 3d/default_gravity=9.8
+
+[audio]
+
+driver/enable_input=true

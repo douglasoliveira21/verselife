@@ -35,4 +35,6 @@ public partial class NetworkBridge : Node
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void VehicleSpawned(int vehicleId, string name, string type, float x, float y, float z, float yaw) => Manager.OnVehicleSpawned(vehicleId, name, type, new Vector3(x, y, z), yaw);
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.UnreliableOrdered, TransferChannel = 2)] public void VehicleSnapshots(byte[] payload) => Manager.OnVehicleSnapshots(payload);
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void VehicleRejected(string code) => Manager.OnVehicleRejected(code);
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Unreliable, TransferChannel = 1)] public void SubmitVoice(long sequence, byte[] data) { }
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Unreliable, TransferChannel = 2)] public void ReceiveVoice(int speakerPeer, long sequence, byte[] data) => Manager.OnVoiceReceived(speakerPeer, sequence, data);
 }

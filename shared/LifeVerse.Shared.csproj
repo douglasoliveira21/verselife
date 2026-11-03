@@ -3,4 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>LifeVerse.Shared</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Concentus" Version="2.2.2" />
+  </ItemGroup>
 </Project>
