@@ -205,7 +205,7 @@ public partial class PlayerController : CharacterBody3D
         if (Input.IsActionJustPressed("fly_toggle") || _flyFlagPending) flags |= InputFlags.Fly;
         _flyFlagPending = false;
         if (Input.IsActionPressed("descend")) flags |= InputFlags.Descend;
-        _network.SendInput(++_inputSequence, new Vector2(direction.X, direction.Z), flags);
+        _network.SendInput(++_inputSequence, SentDirection(direction), flags);
         var velocity = Velocity;
 
         if (_oceanSwimming)
@@ -238,12 +238,34 @@ public partial class PlayerController : CharacterBody3D
 
         Velocity = velocity;
         MoveAndSlide();
+        _blockedVelocity = WallContact() ? new Vector2(Velocity.X, Velocity.Z) : null;
         if (_flying && IsOnFloor() && Input.IsActionPressed("descend")) _flying = false;
         var grounded = IsOnFloor();
         if (grounded && !_wasGrounded) _landingTime = .22f;
         _wasGrounded = grounded;
         UpdateAnimation(direction, direction.Length());
         _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : RunHeld ? "Running" : "Walking");
+    }
+
+    private Vector2? _blockedVelocity;
+
+    /// True while the avatar walks against a wall (a surface that is not floor).
+    private bool WallContact()
+    {
+        if (_flying || _swimming || _oceanSwimming) return false;
+        for (var i = 0; i < GetSlideCollisionCount(); i++) if (GetSlideCollision(i).GetNormal().Y < .6f) return true;
+        return false;
+    }
+
+    /// What the server is told about where the avatar is going. Normally the intended direction; while a wall stops the avatar it is what
+    /// the avatar really did (the part that slides along the wall), so the server never runs ahead into or through the wall, even
+    /// where it knows nothing about that wall.
+    private Vector2 SentDirection(Vector3 direction)
+    {
+        var intended = new Vector2(direction.X, direction.Z);
+        if (_blockedVelocity is not { } actual || intended.LengthSquared() < .0025f) return intended;
+        var real = actual / (RunHeld ? RunSpeed : WalkSpeed);
+        return real.Length() > intended.Length() ? real.Normalized() * intended.Length() : real;
     }
 
     /// A heightmap shape does not push bodies out when the ground rises (terrain edit, reconcile, teleport),

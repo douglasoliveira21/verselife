@@ -19,7 +19,7 @@ public readonly record struct Obstacle(ObstacleShape Shape, Vector3 Center, Quat
 /// </summary>
 public sealed class ObstacleField
 {
-    public const float Radius = .35f;      // the avatar's body
+    public const float Radius = .45f;      // the avatar's body: the same capsule as the player scene (radius 0.45, height 1.8)
     public const float Height = 1.8f;
     public const float StepUp = .4f;       // the highest ledge walked onto without jumping
 
