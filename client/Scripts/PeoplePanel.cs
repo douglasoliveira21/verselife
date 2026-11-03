@@ -17,6 +17,7 @@ public partial class PeoplePanel : Node
     private Pending? _current;
     private HttpRequest? _http;
     private FloatingWindow _window = null!;
+    private UiTabs _tabs = null!;
     private LineEdit _query = null!, _groupName = null!;
     private RowList _results = null!, _requests = null!, _friends = null!, _invites = null!, _groups = null!;
     private Label _friendsTitle = null!, _requestsTitle = null!;
@@ -42,6 +43,12 @@ public partial class PeoplePanel : Node
 
     public void AttachTo(Control root) { root.AddChild(_window); }
 
+    /// Opens the window on the search tab with a name already searched (the radial menu's "Adicionar amigo").
+    public void SearchFor(string name)
+    {
+        _window.Visible = true; _window.MoveToFront(); _tabs.Select(0); _query.Text = name; Reload(); Search();
+    }
+
     public void Toggle()
     {
         _window.Visible = !_window.Visible;
@@ -55,7 +62,7 @@ public partial class PeoplePanel : Node
         _window = new FloatingWindow("Pessoas", icon: "people", minimizable: true) { Visible = false };
         _window.Place(.5f, .5f, -280, -300, 280, 300);
         _window.Content.AddThemeConstantOverride("separation", 10);
-        var tabs = new UiTabs { EqualWidth = true };
+        var tabs = _tabs = new UiTabs { EqualWidth = true };
         tabs.AddTab("Buscar"); tabs.AddTab("Amigos"); tabs.AddTab("Grupos");
         _window.Content.AddChild(tabs);
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 470) };

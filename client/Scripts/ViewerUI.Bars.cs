@@ -261,6 +261,41 @@ public partial class CoinIcon : Control
 public partial class ViewerUI
 {
     /// Opens a few windows with sample content so the look of the interface can be captured and compared with the design references.
+    private ContextInteractionManager? _context;
+    public RadialMenu? Radial => _context?.Menu;
+    public ContextInteractionManager? ContextManager => _context;
+
+    /// The right-click menu: a radial circle around the cursor whose slices depend on what was clicked.
+    private void BuildRadial()
+    {
+        var menu = new RadialMenu(); _root.AddChild(menu);
+        var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
+        var services = new ContextServices
+        {
+            ToggleInventory = () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(),
+            ToggleGestures = ToggleGestures,
+            TogglePeople = () => _people?.Toggle(),
+            OpenSettings = () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(),
+            SearchPerson = name => _people?.SearchFor(name),
+            Tell = text => Toast(text),
+            WalkTo = point => _player?.WalkTo(point),
+            Gesture = name => _player?.Gesture(name),
+            Sit = seat => _player?.SitOn(seat),
+            Touch = id => _network.TouchObject(id),
+            EditObject = (id, mode) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.EditObject(id, mode),
+            ObjectCommand = (_, command) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.RunCommand(command),
+            StartBuilding = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true),
+            StartPlacing = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.StartPlacing(),
+            Owns = view => session is null || session.UserId == Guid.Empty || view.State.OwnerUserId == session.UserId
+        };
+        _context = new ContextInteractionManager { Name = "ContextInteraction" }; AddChild(_context);
+        _context.Setup(_world, _player, menu, services);
+        if (_player is not null) _player.ContextRequested += position => { if (!ToolsOwnTheMouse()) _context.OpenAt(position); };
+    }
+
+    /// While the build or terrain tools are active a right click belongs to them (the editing camera), not to the menu.
+    private bool ToolsOwnTheMouse() => (_world.GetNodeOrNull<BuildEditor>("BuildEditor")?.EditCameraActive ?? false) || (_world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.Active ?? false);
+
     public void PreviewForTesting(string view = "people")
     {
         _joinWindow.Visible = false;

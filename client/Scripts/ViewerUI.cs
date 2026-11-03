@@ -95,6 +95,7 @@ public partial class ViewerUI : CanvasLayer
         SetUiScale((float)(double)_prefs.GetValue("ui", "scale", 1.0), save: false);
         SetVolume((float)(double)_prefs.GetValue("audio", "volume", 1.0), save: false);
         UpdateStatus();
+        BuildRadial();
         foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditor", "TerrainEditor" })
             foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; if (child is not FloatingWindow) FloatingWindow.MakeDraggable(child); }
     }

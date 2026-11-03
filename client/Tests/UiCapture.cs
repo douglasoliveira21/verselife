@@ -29,6 +29,14 @@ public partial class UiCapture : Node
                 var document = new GltfDocument(); var state = new GltfState(); document.AppendFromScene(sample, state);
                 world.GetNode<InventoryPanel>("InventoryPanel").ImportDialogForTesting.ShowForTesting("vaso.glb", document.GenerateBuffer(state));
             }
+            if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") is "radial" or "radial2")
+            {
+                RadialItem Item(string label, string icon, bool accent = false, List<RadialItem>? children = null) => new() { Label = label, Icon = icon, Accent = accent, Children = children };
+                var radial = ui.Radial!;
+                radial.Open(new Vector2(790, 430), "Avatar\nLucas Ferreira", "user", [Item("Ver Perfil", "user"), Item("Mensagem", "chat"), Item("Adicionar Amigo", "user-add"), Item("Interagir", "hand", children: [Item("Cumprimentar", "hand"), Item("Acenar", "hand"), Item("Abraçar", "people"), Item("Dançar", "volume"), Item("Seguir", "run")]), Item("Teleporte", "pin"), Item("Enviar Item", "cube"), Item("Mais Opções", "dots"), Item("Fechar", "close", true)]);
+                if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "radial2") radial.PickForTesting(3);
+                radial.HoverForTesting(new Vector2(OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "radial2" ? 0 : 0, OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "radial2" ? 0 : -130));
+            }
             ui.PreviewForTesting(OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") is { Length: > 0 } view ? view : "people");
             for (var i = 0; i < 30; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             GetViewport().GetTexture().GetImage().SavePng($"{OS.GetEnvironment("LIFEVERSE_CAPTURE_PATH")}-ui.png");

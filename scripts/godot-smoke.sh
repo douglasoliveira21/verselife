@@ -17,6 +17,7 @@ run() {
 }
 
 run client res://Tests/TerrainSmoke.tscn terrain_smoke
+run client res://Tests/RadialSmoke.tscn radial_smoke
 run client res://Tests/BuildSmoke.tscn build_smoke
 run client res://Tests/BuildLoadSmoke.tscn build_load_smoke
 run client res://Tests/AvatarGroundingSmoke.tscn avatar_grounding

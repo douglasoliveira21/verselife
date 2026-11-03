@@ -21,6 +21,8 @@ public partial class NetworkManager : Node
     [Signal] public delegate void VehicleMessageEventHandler(string text);
     public VehicleClient Vehicles { get; private set; } = null!;
     public VoiceChat Voice { get; private set; } = null!;
+    /// The other avatars on the island with their names and where they stand, for matching a right click to a person.
+    public IEnumerable<(int Peer, string Name, Vector3 Position)> RemoteAvatars => _remote.Select(x => (x.Key, x.Value.Name, x.Value.Node.GlobalPosition)).ToList();
     public int OwnPeerId => Multiplayer.HasMultiplayerPeer() ? Multiplayer.GetUniqueId() : 0;
     private readonly Dictionary<int, RemoteAvatar> _remote = [];
     private HttpRequest _http = null!;
@@ -223,7 +225,7 @@ public partial class NetworkManager : Node
         var rig = GD.Load<PackedScene>("res://Scenes/AvatarRig.tscn").Instantiate<AvatarRig>(); node.AddChild(rig);
         try { rig.ApplyAppearance(JsonSerializer.Deserialize<AvatarAppearanceData>(appearanceJson) ?? new AvatarAppearanceData { DisplayName = displayName }); } catch { }
         rig.SetMotionState(ToAvatarMotion((NetworkMotionState)state), true);
-        _remote[peerId] = new RemoteAvatar(node, rig, position);
+        _remote[peerId] = new RemoteAvatar(node, rig, position) { Name = displayName };
     }
 
     public void OnPlayerDespawned(int peerId, bool suspended) { Voice.Forget(peerId); if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }
@@ -261,7 +263,7 @@ public partial class NetworkManager : Node
     };
     private sealed class RemoteAvatar(Node3D node, AvatarRig rig, Vector3 target)
     {
-        public Node3D Node { get; } = node; public AvatarRig Rig { get; } = rig;
+        public Node3D Node { get; } = node; public AvatarRig Rig { get; } = rig; public string Name { get; set; } = string.Empty;
         public Vector3 TargetPosition { get; set; } = target; public float TargetYaw { get; set; }
     }
 }

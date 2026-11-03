@@ -361,8 +361,16 @@ public partial class PlayerController : CharacterBody3D
         return 1f;
     }
 
+    /// A right click that was not an orbit drag; the radial menu listens. Without a listener the old seat menu is used.
+    public event Action<Vector2>? ContextRequested;
+
+    public void WalkTo(Vector3 point) { _walkTarget = point; }
+    public void Gesture(string name) { if (name == "wave") StartGesture(AvatarMotionState.Wave, 2.5f, InputFlags.Wave); else if (name == "dance") StartGesture(AvatarMotionState.Dance, 5f, InputFlags.Dance); }
+    public void SitOn(InteractableSeat seat) => seat.Interact(this);
+
     private void OpenContextMenu(Vector2 screenPosition)
     {
+        if (ContextRequested is not null) { ContextRequested.Invoke(screenPosition); return; }
         _selectedSeat = RaycastSeat();
         if (_selectedSeat is null) return;
         _contextMenu.Position = screenPosition; _contextMenu.Visible = true;
