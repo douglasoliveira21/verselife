@@ -11,6 +11,14 @@ public partial class UiCapture : Node
     {
         try
         {
+            if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "login")
+            {
+                AddChild(GD.Load<PackedScene>("res://Scenes/Login.tscn").Instantiate<Control>());
+                for (var i = 0; i < 30; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                GetViewport().GetTexture().GetImage().SavePng($"{OS.GetEnvironment("LIFEVERSE_CAPTURE_PATH")}-ui.png");
+                GetTree().Quit();
+                return;
+            }
             var world = GD.Load<PackedScene>("res://Scenes/World.tscn").Instantiate<Node3D>();
             AddChild(world);
             for (var i = 0; i < 20; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);

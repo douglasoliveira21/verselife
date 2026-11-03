@@ -13,6 +13,12 @@ public partial class UpdateSmoke : Node
     {
         try
         {
+            SavedLogin.Clear();
+            Require(SavedLogin.Load() is null, "no saved login at first");
+            SavedLogin.Save("maria", "s3nha forte");
+            Require(SavedLogin.Load() is { Login: "maria", Password: "s3nha forte" }, "the saved login must round-trip");
+            SavedLogin.Clear();
+            Require(!SavedLogin.Exists, "clearing removes the file");
             var updates = GetNode<AppManager>("/root/AppManager").Updates;
             var login = GD.Load<PackedScene>("res://Scenes/Login.tscn").Instantiate<Control>();
             AddChild(login);
