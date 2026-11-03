@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    name: Build and unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore LifeVerse.slnx
+      - run: dotnet build LifeVerse.slnx -c Release --no-restore
+      - name: Unit tests
+        run: dotnet test tests/LifeVerse.Api.Tests -c Release --no-build --logger "trx;LogFileName=tests.trx"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: "**/tests.trx"
+
+  island-image:
+    name: Island server image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image the same way the host does
+        run: docker build -f island-server/Dockerfile -t lifeverse-island:ci .
+      - name: Build the on-demand supervisor image
+        run: docker build -f island-supervisor/Dockerfile -t lifeverse-islands:ci .
+
+  godot-smoke:
+    name: Godot smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: barichello/godot-ci:mono-4.7.2
+    # Needs the Godot image and a first import of the projects; not verified on a runner yet, so it reports
+    # without blocking until it has been seen passing.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the C# projects (the image's SDK is older than global.json, which only the host build needs)
+        run: |
+          rm -f global.json
+          dotnet build client/LifeVerse.Client.csproj
+          dotnet build island-server/LifeVerse.IslandServer.csproj
+      - name: Import resources
+        run: |
+          godot --headless --path client --import || true
+          godot --headless --path island-server --import || true
+      - name: Smoke scenes
+        run: bash scripts/godot-smoke.sh godot

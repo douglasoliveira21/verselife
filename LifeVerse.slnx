@@ -8,6 +8,9 @@
   <Folder Name="/Island Server/">
     <Project Path="island-server/LifeVerse.IslandServer.csproj" />
   </Folder>
+  <Folder Name="/Island Supervisor/">
+    <Project Path="island-supervisor/LifeVerse.IslandSupervisor.csproj" />
+  </Folder>
   <Folder Name="/Scripting/">
     <Project Path="scripting/LifeVerse.Scripting.csproj" />
   </Folder>

@@ -4,22 +4,28 @@ namespace LifeVerse.Api.Modules.Assets;
 
 public sealed class AssetStorageOptions
 {
-    public string Endpoint { get; init; } = "http://localhost:9000";
+    public string Endpoint { get; init; } = string.Empty;
+    public string AccessKey { get; init; } = string.Empty;
+    public string SecretKey { get; init; } = string.Empty;
+    public string Region { get; init; } = "us-east-1";
     public string Bucket { get; init; } = "lifeverse-assets";
     public string LocalRoot { get; init; } = Path.Combine(AppContext.BaseDirectory, "asset-data");
+
+    /// Files go to an S3-compatible server (MinIO) when an endpoint and keys are configured, otherwise to LocalRoot.
+    public bool UsesS3 => !string.IsNullOrWhiteSpace(Endpoint) && !string.IsNullOrWhiteSpace(AccessKey) && !string.IsNullOrWhiteSpace(SecretKey);
 }
 
-public sealed class AssetStorageService(AssetStorageOptions options, ILogger<AssetStorageService> logger)
+public sealed class AssetStorageService(IObjectStore store, ILogger<AssetStorageService> logger)
 {
     public async Task<string> PutAsync(Guid ownerId, string hash, byte[] bytes, CancellationToken ct)
     {
-        var key = $"{ownerId:N}/{hash}"; var path = Path.Combine(options.LocalRoot, ownerId.ToString("N"), hash);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!); await File.WriteAllBytesAsync(path, bytes, ct); logger.LogInformation("Asset {Hash} stored through object adapter", hash); return key;
+        var key = $"{ownerId:N}/{hash}";
+        await store.PutAsync(key, bytes, ct);
+        logger.LogInformation("Asset {Hash} stored", hash);
+        return key;
     }
-    public Task<Stream?> OpenReadAsync(string key, CancellationToken ct)
-    {
-        var path = Path.Combine(options.LocalRoot, key.Replace('/', Path.DirectorySeparatorChar)); if (!File.Exists(path)) return Task.FromResult<Stream?>(null); return Task.FromResult<Stream?>(File.OpenRead(path));
-    }
+
+    public Task<Stream?> OpenReadAsync(string key, CancellationToken ct) => store.OpenReadAsync(key, ct);
 }
 
 public sealed record AssetInspection(bool Valid, string? Error, string MimeType, int? Width, int? Height, double? DurationSeconds, string MetadataJson = "{}");

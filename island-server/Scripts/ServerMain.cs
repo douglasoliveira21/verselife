@@ -31,6 +31,9 @@ public partial class ServerMain : Node
     private string _environmentJson = "{}";
     private double _worldSaveAccumulator;
     private IslandScripting? _scripting;
+    // When set (by the supervisor), an island nobody is on for this long saves itself and exits to free its port.
+    private readonly int _idleShutdownMinutes = int.TryParse(System.Environment.GetEnvironmentVariable("LIFEVERSE_IDLE_SHUTDOWN_MINUTES"), out var idle) ? Math.Clamp(idle, 0, 24 * 60) : 0;
+    private DateTimeOffset? _emptySince;
 
     public override async void _Ready()
     {
@@ -66,6 +69,7 @@ public partial class ServerMain : Node
     {
         _serverTick++;
         _scripting?.Update(_players.Values.Where(x => x.Authenticated).Select(PresenceOf).ToList());
+        CheckIdle();
         var dt = Math.Min((float)delta, 1f / 20f);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
         {
@@ -88,6 +92,17 @@ public partial class ServerMain : Node
         foreach (var peer in _players.Values.Where(x => !x.Authenticated && now - x.ConnectedAt > TimeSpan.FromSeconds(5)).Select(x => x.PeerId).ToArray())
             Multiplayer.MultiplayerPeer.DisconnectPeer(peer);
         foreach (var avatar in _suspended.Where(x => x.Value.ExpiresAt <= now).Select(x => x.Key).ToArray()) _suspended.Remove(avatar);
+    }
+
+    private void CheckIdle()
+    {
+        if (_idleShutdownMinutes <= 0 || !_ready || _stopping) return;
+        var now = DateTimeOffset.UtcNow;
+        if (_players.Values.Any(x => x.Authenticated) || _suspended.Count > 0) { _emptySince = null; return; }
+        _emptySince ??= now;
+        if (now - _emptySince < TimeSpan.FromMinutes(_idleShutdownMinutes)) return;
+        Log("idle_shutdown", new { minutes = _idleShutdownMinutes });
+        _ = StopAsync();
     }
 
     private void OnPeerConnected(long peerId)

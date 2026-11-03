@@ -39,7 +39,17 @@ builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<IslandEntryTokenService>();
 builder.Services.AddScoped<WorldManager>();
 builder.Services.AddSingleton(builder.Configuration.GetSection("ObjectStorage").Get<AssetStorageOptions>() ?? new AssetStorageOptions());
+builder.Services.AddSingleton<IObjectStore>(services =>
+{
+    var storage = services.GetRequiredService<AssetStorageOptions>();
+    if (!storage.UsesS3) return new LocalObjectStore(storage.LocalRoot);
+    var s3 = new S3ObjectStore(storage, new HttpClient { Timeout = TimeSpan.FromSeconds(60) }, services.GetRequiredService<TimeProvider>());
+    try { s3.EnsureBucketAsync(CancellationToken.None).GetAwaiter().GetResult(); }
+    catch (Exception exception) { services.GetRequiredService<ILogger<S3ObjectStore>>().LogWarning(exception, "Object storage bucket check failed; uploads will fail until it is reachable"); }
+    return s3;
+});
 builder.Services.AddSingleton<AssetStorageService>();
+builder.Services.AddSingleton<NotificationHub>();
 builder.Services.AddSingleton(builder.Configuration.GetSection("LuaRuntime").Get<LuaRuntimeOptions>() ?? new LuaRuntimeOptions());
 builder.Services.AddSingleton<LuaSandboxService>();
 builder.Services.AddSingleton<ScriptMessagingService>();
@@ -87,6 +97,7 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseRateLimiter();
+app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 app.UseAuthentication();
 app.Use(async (context, next) =>
 {
@@ -122,6 +133,7 @@ app.MapBuildEndpoints();
 app.MapAssetEndpoints();
 app.MapScriptingEndpoints();
 app.MapSocialEndpoints();
+app.MapNotificationEndpoints();
 app.MapDiscoveryEndpoints();
 app.MapEconomyEndpoints();
 app.MapAdminEndpoints();

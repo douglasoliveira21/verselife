@@ -78,6 +78,7 @@ public partial class ViewerUI : CanvasLayer
         BuildMoveWindow();
         BuildJoinWindow();
         BuildToasts();
+        var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text);
         BuildTopBar();
         BuildBottomBar();
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
@@ -309,7 +310,7 @@ public partial class ViewerUI : CanvasLayer
         _joinWindow.Place(.5f, .5f, -230, -170, 230, 170);
         _islandId = new LineEdit { PlaceholderText = "ID (UUID) da ilha", Text = OS.GetEnvironment("LIFEVERSE_ISLAND_ID") };
         _joinWindow.Content.AddChild(new Label { Text = "Escolha uma ilha (duplo clique entra) ou cole o ID." });
-        _islandList = new ItemList { CustomMinimumSize = new Vector2(440, 120), TooltipText = "Ilhas públicas. \"sem servidor\" significa que ninguém pode entrar agora." };
+        _islandList = new ItemList { CustomMinimumSize = new Vector2(440, 120), TooltipText = "Ilhas públicas. Uma ilha adormecida inicia quando você entra (leva até um minuto)." };
         _islandList.ItemSelected += index => { if (index >= 0 && index < _islandIds.Count) _islandId.Text = _islandIds[(int)index].ToString(); };
         _islandList.ItemActivated += index => { if (index >= 0 && index < _islandIds.Count) { _islandId.Text = _islandIds[(int)index].ToString(); Join(); } };
         _joinWindow.Content.AddChild(_islandList);
@@ -468,7 +469,7 @@ public partial class ViewerUI : CanvasLayer
             {
                 if (!Guid.TryParse(island.GetProperty("id").GetString(), out var id)) continue;
                 var active = island.TryGetProperty("runtimeState", out var state) && state.GetString() == "running";
-                _islandList.AddItem($"{island.GetProperty("name").GetString()}  ·  {(active ? "ativa" : "sem servidor")}");
+                _islandList.AddItem($"{island.GetProperty("name").GetString()}  ·  {(active ? "ativa" : "adormecida (inicia ao entrar)")}");
                 _islandList.SetItemCustomFgColor(_islandList.ItemCount - 1, active ? ViewerTheme.Good : ViewerTheme.TextDim);
                 _islandIds.Add(id);
                 if (string.IsNullOrWhiteSpace(_islandId.Text) && active) _islandId.Text = id.ToString();
@@ -531,7 +532,7 @@ public partial class ViewerUI : CanvasLayer
         _clock.Text = $"{(int)hour:00}:{(int)((hour - (int)hour) * 60):00}";
         _fps.Text = $"{Engine.GetFramesPerSecond():0} FPS";
         var online = _network.IsAuthenticated;
-        var connecting = !online && _state is "requesting_ticket" or "connecting" or "authenticating";
+        var connecting = !online && _state is "requesting_ticket" or "connecting" or "authenticating" or "waiting_island";
         _indicator.Color = online ? ViewerTheme.Good : connecting ? ViewerTheme.Warn : ViewerTheme.Bad;
         _connection.Text = online ? "Online" : connecting ? "Conectando" : "Offline";
     }

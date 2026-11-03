@@ -8,6 +8,7 @@ public sealed record WorldInstanceDecision(Guid IslandId, string State, Guid? In
 
 public sealed class WorldManager(LifeVerseDbContext db, TimeProvider clock, ILogger<WorldManager> logger)
 {
+    public const int StartTimeoutMinutes = 3;
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _locks = new();
 
     public async Task<WorldInstanceDecision?> EnsureAsync(Guid islandId, CancellationToken ct)
@@ -39,6 +40,9 @@ public sealed class WorldManager(LifeVerseDbContext db, TimeProvider clock, ILog
     {
         var cutoff = clock.GetUtcNow().AddSeconds(-45);
         var islands = await db.Islands.Where(x => x.DeletedAt == null && x.RuntimeState == "running" && !db.ServerInstances.Any(s => s.IslandId == x.Id && s.StoppedAt == null && s.LastHeartbeatAt > cutoff)).ToListAsync(ct);
+        // An island that was asked to start but never got a server (supervisor down, no free ports) stops waiting.
+        var giveUp = clock.GetUtcNow().AddMinutes(-StartTimeoutMinutes);
+        islands.AddRange(await db.Islands.Where(x => x.DeletedAt == null && x.RuntimeState == "starting" && x.UpdatedAt < giveUp && !db.ServerInstances.Any(s => s.IslandId == x.Id && s.StoppedAt == null && s.LastHeartbeatAt > cutoff)).ToListAsync(ct));
         foreach (var island in islands) { island.RuntimeState = "suspended"; island.UpdatedAt = clock.GetUtcNow(); }
         if (islands.Count > 0) await db.SaveChangesAsync(ct);
     }

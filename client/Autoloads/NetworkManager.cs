@@ -27,6 +27,8 @@ public partial class NetworkManager : Node
     private string _host = string.Empty;
     private int _port;
     private int _reconnectAttempt;
+    private int _startAttempts;
+    private const int MaxStartAttempts = 18;
     private bool _intentionalDisconnect;
     public bool IsAuthenticated { get; private set; }
     public Guid CurrentIslandId => _islandId;
@@ -54,19 +56,37 @@ public partial class NetworkManager : Node
 
     public IEnumerable<Vector3> RemotePositions => _remote.Values.Select(remote => remote.Node.GlobalPosition);
 
-    public Error JoinIsland(Guid islandId)
+    public Error JoinIsland(Guid islandId, bool retry = false)
     {
         if (islandId == Guid.Empty) return Error.InvalidParameter;
         var session = GetNode<SessionManager>("/root/SessionManager");
         if (!session.IsAuthenticated || _http.GetHttpClientStatus() != Godot.HttpClient.Status.Disconnected) return Error.Unauthorized;
-        _islandId = islandId; _intentionalDisconnect = false;
+        _islandId = islandId; _intentionalDisconnect = false; if (!retry) _startAttempts = 0;
         EmitSignal(SignalName.ConnectionStateChanged, "requesting_ticket", "Solicitando entrada na ilha…");
         return _http.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/islands/{islandId}/entry-token",
             [$"Authorization: Bearer {session.AccessToken}"], Godot.HttpClient.Method.Post);
     }
 
+    /// The API answers 503 with state "starting" while the supervisor boots the island's server; keep asking.
+    private static bool IslandIsStarting(byte[] body)
+    {
+        try { using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); return doc.RootElement.TryGetProperty("state", out var state) && state.GetString() == "starting"; }
+        catch (JsonException) { return false; }
+    }
+
+    private async void WaitForIsland()
+    {
+        var island = _islandId;
+        if (++_startAttempts > MaxStartAttempts) { EmitSignal(SignalName.ConnectionStateChanged, "failed", "A ilha não iniciou a tempo. Tente de novo em instantes ou avise o administrador."); return; }
+        EmitSignal(SignalName.ConnectionStateChanged, "waiting_island", $"Iniciando a ilha… ({_startAttempts}/{MaxStartAttempts})");
+        await ToSignal(GetTree().CreateTimer(4), SceneTreeTimer.SignalName.Timeout);
+        if (_intentionalDisconnect || _islandId != island) return;
+        JoinIsland(island, retry: true);
+    }
+
     private void OnEntryResponse(long result, long responseCode, string[] headers, byte[] body)
     {
+        if (responseCode == 503 && IslandIsStarting(body)) { WaitForIsland(); return; }
         if (responseCode is < 200 or >= 300) { EmitSignal(SignalName.ConnectionStateChanged, "failed", EntryFailureMessage(responseCode)); return; }
         try
         {
