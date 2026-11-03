@@ -7,7 +7,7 @@ Voz de perto, como numa conversa: quem está a até 25 m ouve você, mais baixo 
 - **Botão Falar** (canto inferior, ao lado do chat): clique e **segure** para falar; ao soltar, o microfone fecha.
 - **Cadeado** ao lado do botão: clique para deixar o microfone **sempre aberto** sem precisar segurar (só envia quando você fala); clique de novo para abrir o cadeado e voltar ao modo de segurar. O item *Voz: microfone aberto (cadeado)* do menu Comunicar faz o mesmo.
 - Menu **Comunicar**, *Voz: silenciar tudo*: você não fala nem ouve (o botão e o cadeado ficam apagados).
-- **Bolinha sobre o nome:** aparece em você quando a voz está ligada e em cada jogador depois que você ouve a voz dele. Quando alguém fala, ondas se espalham em volta da bolinha: **verdes** quando o som está limpo e **vermelhas e maiores** quando o áudio estoura (volume no máximo). O mesmo vale para a sua própria bolinha, e uma barra fina embaixo do botão Falar mostra o seu volume, também ficando vermelha quando estoura.
+- **Bolinha sobre o nome:** um ponto pequeno (cinza) mostra que a voz está ativa na ilha; aparece em todos os avatares enquanto a sua voz estiver ligada. Quando alguém fala, ondas pequenas se espalham em volta dele: **verdes** quando o som está limpo e **vermelhas e maiores** quando o áudio estoura (volume no máximo). O mesmo vale para a sua própria bolinha, e uma barra fina embaixo do botão Falar mostra o seu volume, também ficando vermelha quando estoura.
 - **Use fones de ouvido.** O Godot não tem cancelamento de eco; com caixa de som e microfone abertos você vai ouvir eco.
 - O microfone só é aberto na primeira vez que você fala. O sistema operacional pode pedir permissão nessa hora.
 

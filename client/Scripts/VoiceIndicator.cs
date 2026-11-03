@@ -63,7 +63,7 @@ public partial class VoiceIndicator : Node3D
 
     public override void _Ready()
     {
-        AddChild(new MeshInstance3D { Name = "Waves", Mesh = new QuadMesh { Size = new Vector2(1.7f, 1.7f) }, MaterialOverride = _material, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+        AddChild(new MeshInstance3D { Name = "Waves", Mesh = new QuadMesh { Size = new Vector2(.5f, .5f) }, MaterialOverride = _material, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
         Push(0);
     }
 

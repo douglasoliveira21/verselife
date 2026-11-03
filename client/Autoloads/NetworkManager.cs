@@ -54,10 +54,12 @@ public partial class NetworkManager : Node
     public override void _Process(double delta)
     {
         var weight = 1f - MathF.Exp(-12f * (float)delta);
-        foreach (var remote in _remote.Values)
+        foreach (var (peer, remote) in _remote)
         {
             remote.Node.Position = remote.Node.Position.Lerp(remote.TargetPosition, weight);
             remote.Node.Rotation = new Vector3(0, Mathf.LerpAngle(remote.Node.Rotation.Y, remote.TargetYaw, weight), 0);
+            // Voice is a property of the island: while it is on for you, everyone shows the small dot. Speakers feed their own rings (VoicePlayback).
+            if (Voice.PlaybackOf(peer) is null) remote.Rig.SetVoice(IsAuthenticated && Voice.Enabled, 0f, 0f);
         }
     }
 

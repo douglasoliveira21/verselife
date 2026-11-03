@@ -95,21 +95,21 @@ public partial class VoiceUiSmoke : Node3D
         }
     }
 
-    /// Three indicators side by side: dot only, clean speech, shouting. Saved as a picture for a human to look at.
+    /// Three avatars side by side with their names: voice on but quiet, speaking cleanly, shouting. Saved as a picture for a human to look at.
     private async Task Capture()
     {
         foreach (var child in GetChildren().OfType<Node3D>().ToArray()) child.Visible = false;
-        var environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = new Color(.16f, .18f, .22f) };
-        AddChild(new WorldEnvironment { Environment = environment });
-        AddChild(new Camera3D { Position = new Vector3(0, 0, 5.2f), Current = true });
-        var states = new (float X, bool Active, float Level, float Peak)[] { (-2.2f, true, 0f, 0f), (0f, true, .5f, .5f), (2.2f, true, .9f, 1f) };
-        var indicators = new List<(VoiceIndicator Node, float Level, float Peak)>();
-        foreach (var (x, active, level, peak) in states)
+        AddChild(new WorldEnvironment { Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = new Color(.35f, .45f, .6f), AmbientLightSource = Godot.Environment.AmbientSource.Color, AmbientLightColor = Colors.White, AmbientLightEnergy = .8f } });
+        AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-35, 30, 0) });
+        var camera = new Camera3D { Position = new Vector3(0, 1.5f, 4.6f), Current = true }; AddChild(camera);
+        var states = new (float X, float Level, float Peak)[] { (-1.6f, 0f, 0f), (0f, .5f, .5f), (1.6f, .9f, 1f) };
+        var rigs = new List<(AvatarRig Rig, float Level, float Peak)>();
+        foreach (var (x, level, peak) in states)
         {
-            var indicator = new VoiceIndicator { Position = new Vector3(x, 0, 0), Active = active }; AddChild(indicator); indicators.Add((indicator, level, peak));
+            var holder = new Node3D { Position = new Vector3(x, 0, 0), Rotation = new Vector3(0, Mathf.Pi, 0) }; AddChild(holder);
+            var rig = GD.Load<PackedScene>("res://Scenes/AvatarRig.tscn").Instantiate<AvatarRig>(); holder.AddChild(rig); rigs.Add((rig, level, peak));
         }
-        for (var frame = 0; frame < 50; frame++) { foreach (var (node, level, peak) in indicators) { node.SetSignal(level, peak); node.Advance(1f / 30f); } await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); }
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        for (var frame = 0; frame < 60; frame++) { foreach (var (rig, level, peak) in rigs) rig.SetVoice(true, level, peak); await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); }
         GetViewport().GetTexture().GetImage().SavePng($"{OS.GetEnvironment("LIFEVERSE_CAPTURE_PATH")}-voice-indicator.png");
     }
 
