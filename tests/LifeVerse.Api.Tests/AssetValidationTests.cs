@@ -8,9 +8,15 @@ public sealed class AssetValidationTests
     [Fact]
     public async Task Validator_AcceptsGlbHeaderAndRejectsEmbeddedScripts()
     {
-        var glb = new byte[16]; glb[0] = (byte)'g'; glb[1] = (byte)'l'; glb[2] = (byte)'T'; glb[3] = (byte)'F';
+        var glb = GltfLimitsTests.Glb(GltfLimitsTests.Model(indices: 300));
         var valid = await AssetValidator.InspectAsync("avatar.glb", "model/gltf-binary", glb, CancellationToken.None);
-        Assert.True(valid.Valid);
+        Assert.True(valid.Valid, valid.Error);
+        // a bare header is not a model: the JSON part with the meshes is required
+        var headerOnly = new byte[16]; headerOnly[0] = (byte)'g'; headerOnly[1] = (byte)'l'; headerOnly[2] = (byte)'T'; headerOnly[3] = (byte)'F';
+        Assert.False((await AssetValidator.InspectAsync("avatar.glb", "model/gltf-binary", headerOnly, CancellationToken.None)).Valid);
+        // a model over the triangle limit is refused with a reason
+        var heavy = await AssetValidator.InspectAsync("big.glb", "model/gltf-binary", GltfLimitsTests.Glb(GltfLimitsTests.Model(indices: (GltfLimits.MaxTriangles + 1) * 3)), CancellationToken.None);
+        Assert.False(heavy.Valid); Assert.Contains("triangles", heavy.Error);
         var unsafeFile = System.Text.Encoding.UTF8.GetBytes("glTF script javascript");
         var rejected = await AssetValidator.InspectAsync("avatar.glb", "model/gltf-binary", unsafeFile, CancellationToken.None);
         Assert.False(rejected.Valid);

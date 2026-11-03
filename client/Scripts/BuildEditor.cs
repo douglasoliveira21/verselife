@@ -94,6 +94,7 @@ public partial class BuildEditor : Node3D
 
     public override void _Process(double delta)
     {
+        PumpRez(delta);
         if (!_active || !_dragging) return;
         if (!Input.IsMouseButtonPressed(MouseButton.Left)) { EndDrag(); return; }
         var camera = GetViewport().GetCamera3D();
@@ -302,7 +303,7 @@ public partial class BuildEditor : Node3D
         var template = new BuildObjectState
         {
             PrimitiveType = "mesh", Name = string.IsNullOrWhiteSpace(name) ? "Modelo" : name.Trim(), MaterialJson = "{}", PhysicsJson = "{\"collision\":true}",
-            GeometryJson = JsonSerializer.Serialize(new { assetId = assetId.ToString().ToLowerInvariant() }), ScaleX = 2, ScaleY = 2, ScaleZ = 2
+            GeometryJson = JsonSerializer.Serialize(new { assetId = assetId.ToString().ToLowerInvariant() }), ScaleX = ModelImportDialog.PlacementSize, ScaleY = ModelImportDialog.PlacementSize, ScaleZ = ModelImportDialog.PlacementSize
         };
         var entry = new HistoryEntry("create", []);
         CreateFrom(template, position, null, created => { entry.Items.Add(new HistoryItem(created.Id, null, Clone(created))); SelectIds([created.Id]); });
@@ -496,6 +497,7 @@ public partial class BuildEditor : Node3D
     private void OnRejected(string code)
     {
         _createCallbacks.Clear();
+        CancelRez("Colocação interrompida: o servidor recusou um objeto (limite de objetos ou permissão).");
         foreach (var view in _selection) if (IsInstanceValid(view)) view.Apply(view.State);
         RefreshGizmo();
         _status.Text = code switch { "revision_conflict" => "Outra pessoa alterou este objeto antes; a edição foi recusada.", "rate_limit" => "Muitas alterações seguidas; aguarde um instante.", "object_quota" or "server_rejected_409" => "A ilha atingiu o limite de objetos.", _ => $"Construção rejeitada: {code}" };
@@ -545,7 +547,7 @@ public partial class BuildEditor : Node3D
         ["primitiveType"] = s.PrimitiveType, ["positionX"] = s.PositionX, ["positionY"] = s.PositionY, ["positionZ"] = s.PositionZ,
         ["rotationX"] = s.RotationX, ["rotationY"] = s.RotationY, ["rotationZ"] = s.RotationZ, ["scaleX"] = s.ScaleX, ["scaleY"] = s.ScaleY, ["scaleZ"] = s.ScaleZ,
         ["materialJson"] = s.MaterialJson, ["geometryJson"] = s.GeometryJson, ["physicsJson"] = string.IsNullOrWhiteSpace(s.PhysicsJson) ? "{\"collision\":true}" : s.PhysicsJson,
-        ["groupId"] = s.GroupId, ["expectedRevision"] = s.Revision, ["name"] = s.Name, ["description"] = s.Description
+        ["groupId"] = s.GroupId, ["expectedRevision"] = s.Revision, ["name"] = s.Name, ["description"] = s.Description, ["contentJson"] = string.IsNullOrWhiteSpace(s.ContentJson) ? "[]" : s.ContentJson
     };
 
     private static string Command(string operation, Guid? objectId, int revision, object? payload) => JsonSerializer.Serialize(new { operation, objectId, @object = payload, expectedRevision = revision });

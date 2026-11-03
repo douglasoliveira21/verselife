@@ -95,7 +95,7 @@ public partial class ModelCache : Node
     private static int Count(Node node) { var total = 1; foreach (var child in node.GetChildren()) total += Count(child); return total; }
 
     /// Bounding box of every mesh under a root, in the root's own space (the nodes are not in a scene tree yet).
-    private static Aabb? Bounds(Node3D root)
+    public static Aabb? Bounds(Node3D root)
     {
         Aabb? result = null;
         void Visit(Node3D node, Transform3D parent)

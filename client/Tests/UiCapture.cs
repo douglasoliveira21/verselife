@@ -23,6 +23,12 @@ public partial class UiCapture : Node
             AddChild(world);
             for (var i = 0; i < 20; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             var ui = world.GetNode<ViewerUI>("ViewerUI");
+            if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "import")
+            {
+                var sample = new Node3D(); sample.AddChild(new MeshInstance3D { Mesh = new CylinderMesh { TopRadius = .2f, BottomRadius = .5f, Height = 1.6f }, MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color("#C98B5A") } });
+                var document = new GltfDocument(); var state = new GltfState(); document.AppendFromScene(sample, state);
+                world.GetNode<InventoryPanel>("InventoryPanel").ImportDialogForTesting.ShowForTesting("vaso.glb", document.GenerateBuffer(state));
+            }
             ui.PreviewForTesting(OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") is { Length: > 0 } view ? view : "people");
             for (var i = 0; i < 30; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             GetViewport().GetTexture().GetImage().SavePng($"{OS.GetEnvironment("LIFEVERSE_CAPTURE_PATH")}-ui.png");

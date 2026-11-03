@@ -25,3 +25,8 @@ Limitações conhecidas: a conversão/mipmap/thumbnail e processamento isolado c
 - O inventário lista até 100 itens por vez e as pastas não se aninham na interface.
 - A conversão de mídia e o armazenamento continuam no disco local da API (sem MinIO).
 - Verificado por testes unitários da validação e por um teste no Godot com um GLB gerado em memória; não testado com a API real nem com vários jogadores.
+
+## Construções salvas e limites de modelos (Etapa 4 do editor)
+
+- Uma construção salva é um item de inventário da categoria `packages` (tipo `application/vnd.lifeverse.build+json`), guardado pelo mesmo armazenamento dos outros itens. Veja `docs/BUILD_EDITOR.md`.
+- O upload de modelos 3D agora lê a parte JSON do GLB/glTF (`GltfLimits`) e recusa arquivos danificados, que não sejam glTF 2.0, sem triângulos ou acima dos limites: 300 mil triângulos, 64 materiais, 32 texturas, 5 mil partes. Um GLB que é só o cabeçalho deixou de ser aceito.

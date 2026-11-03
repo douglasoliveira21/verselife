@@ -43,6 +43,7 @@ public static class AssetValidator
             if (ContainsAscii(bytes, "script") || ContainsAscii(bytes, "javascript")) return new(false, "Embedded scripts are not permitted.", contentType, null, null, null);
             if (ContainsAscii(bytes, "http://") || ContainsAscii(bytes, "https://") || ContainsAscii(bytes, "file://") || ContainsAscii(bytes, "../") || ContainsAscii(bytes, "..\\")) return new(false, "External or unsafe glTF references are not permitted.", contentType, null, null, null);
             var primitives = CountAscii(bytes, "primitives"); if (primitives > 10000) return new(false, "Mesh complexity exceeds the primitive limit.", contentType, null, null, null);
+            var stats = GltfLimits.Inspect(bytes, extension == ".glb", out var statsError); if (stats is null) return new(false, statsError ?? "The model could not be read.", contentType, null, null, null); if (GltfLimits.Check(stats) is { } limitError) return new(false, limitError, contentType, null, null, null);
             return new(true, null, extension == ".glb" ? "model/gltf-binary" : "model/gltf+json", null, null, null, $"{{\"format\":\"{extension[1..]}\",\"primitiveTokens\":{primitives},\"previewAvailable\":false,\"thumbnailGenerated\":false}}");
         }
         if (extension is ".png" or ".jpg" or ".jpeg" or ".webp")

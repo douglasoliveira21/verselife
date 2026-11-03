@@ -28,6 +28,7 @@ public partial class InventoryPanel : Node3D
     private ConfirmationDialog _newFolderDialog = null!;
     private HttpRequest _http = null!, _folderHttp = null!;
     private FileDialog _fileDialog = null!;
+    private ModelImportDialog _import = null!;
     private ThumbnailLoader _thumbnails = null!;
     private readonly Dictionary<Guid, ItemInfo> _items = [];
     private readonly List<FolderInfo> _folders = [];
@@ -54,7 +55,10 @@ public partial class InventoryPanel : Node3D
         BuildUi();
     }
 
+    public ModelImportDialog ImportDialogForTesting => _import;
     public bool IsOpen => _window.Visible;
+    /// Reloads the list when the window is open (another window changed the inventory).
+    public void Refresh() { if (_window.Visible) LoadItems(); }
     /// Raised when the server accepted a change (upload, move, favourite…), so other windows can refresh what they list.
     public event Action? ItemsChanged;
     /// Sends an image to the inventory as a texture (used by the build window's Importar imagem).
@@ -97,7 +101,7 @@ public partial class InventoryPanel : Node3D
         var plus = new MenuButton { Icon = UiStyle.Icon("plus", UiStyle.Text, 24), TooltipText = "Importar arquivo, nova pasta…", FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(54, 52), Flat = false };
         StyleSquare(plus, false);
         var menu = plus.GetPopup();
-        menu.AddItem("Importar arquivo…", 0); menu.AddItem("Nova pasta…", 1); menu.AddItem("Excluir pasta selecionada", 2); menu.AddSeparator(); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5); menu.AddItem("Restaurar da lixeira", 6);
+        menu.AddItem("Importar modelo 3D…", 7); menu.AddItem("Importar arquivo…", 0); menu.AddItem("Nova pasta…", 1); menu.AddItem("Excluir pasta selecionada", 2); menu.AddSeparator(); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5); menu.AddItem("Restaurar da lixeira", 6);
         menu.IdPressed += OnMenu;
         top.AddChild(plus);
 
@@ -135,6 +139,7 @@ public partial class InventoryPanel : Node3D
         _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.glb,*.gltf,*.png,*.jpg,*.jpeg,*.webp,*.ogg,*.wav"] };
         AddChild(_fileDialog);
         _fileDialog.FileSelected += Upload;
+        _import = new ModelImportDialog { Name = "ModelImport" }; AddChild(_import); _import.AttachTo(this); _import.Confirmed += Upload;
         _search.TextChanged += _ => LoadItems();
         _gridMode.Pressed += () => { _listLayout = false; RebuildCards(); }; _listMode.Pressed += () => { _listLayout = true; RebuildCards(); };
         UpdateStorage();
@@ -163,6 +168,7 @@ public partial class InventoryPanel : Node3D
         switch (id)
         {
             case 0: _fileDialog.PopupCentered(new Vector2I(800, 500)); break;
+            case 7: _import.Open(); break;
             case 1: _folderName.Clear(); _newFolderDialog.PopupCentered(); _folderName.GrabFocus(); break;
             case 2: DeleteFolder(); break;
             case 3: Place(); break;
@@ -369,6 +375,7 @@ public partial class InventoryPanel : Node3D
 
     // ---- placing models --------------------------------------------------------------------------------------
 
+    private static bool IsPackage(ItemInfo info) => info.Category == "packages";
     private static bool IsModel(ItemInfo info) => info.Mime.StartsWith("model/", StringComparison.Ordinal) || info.Category == "models";
 
     private void Place()
@@ -381,7 +388,14 @@ public partial class InventoryPanel : Node3D
 
     private void PlaceInWorld(ItemInfo info, Vector3 position)
     {
-        if (!IsModel(info)) { _status.Text = "Só modelos 3D (GLB/glTF) podem ser colocados no mundo."; return; }
+        if (IsPackage(info))
+        {
+            if (GetParent()?.GetNodeOrNull<BuildEditor>("BuildEditor") is not { } builder) { _status.Text = "O editor de construção não está disponível."; return; }
+            builder.RezPackage(info.ItemId, position - Vector3.Up * 1f);
+            _status.Text = $"Colocando \"{info.Name}\"…";
+            return;
+        }
+        if (!IsModel(info)) { _status.Text = "Só modelos 3D e construções podem ser colocados no mundo."; return; }
         if (GetParent()?.GetNodeOrNull<BuildEditor>("BuildEditor") is not { } editor) { _status.Text = "O editor de construção não está disponível."; return; }
         editor.CreateMeshFromAsset(info.AssetId, info.Name, position);
         _status.Text = $"Colocando \"{info.Name}\"…";
@@ -510,7 +524,8 @@ public partial class InventoryPanel : Node3D
         private Control? Badge()
         {
             Control content;
-            if (IsModel(Info)) { var label = new Label { Text = "3D", MouseFilter = MouseFilterEnum.Ignore, HorizontalAlignment = HorizontalAlignment.Center }; label.AddThemeFontOverride("font", UiStyle.Bold); label.AddThemeFontSizeOverride("font_size", 17); content = label; }
+            if (IsPackage(Info)) content = UiStyle.IconRect("layers", UiStyle.Text, 22);
+            else if (IsModel(Info)) { var label = new Label { Text = "3D", MouseFilter = MouseFilterEnum.Ignore, HorizontalAlignment = HorizontalAlignment.Center }; label.AddThemeFontOverride("font", UiStyle.Bold); label.AddThemeFontSizeOverride("font_size", 17); content = label; }
             else if (Info.Category == "textures" || Info.Mime.StartsWith("image/", StringComparison.Ordinal)) content = UiStyle.IconRect("image", UiStyle.Text, 22);
             else if (Info.Category is "sounds" || Info.Mime.StartsWith("audio/", StringComparison.Ordinal)) content = UiStyle.IconRect("volume", UiStyle.Text, 22);
             else return null;
@@ -527,7 +542,7 @@ public partial class InventoryPanel : Node3D
         {
             if (input is not InputEventMouseButton { Pressed: true } click) return;
             _owner.SelectItem(Info.ItemId);
-            if (click.ButtonIndex == MouseButton.Left && click.DoubleClick && IsModel(Info)) _owner.Place();
+            if (click.ButtonIndex == MouseButton.Left && click.DoubleClick && (IsModel(Info) || IsPackage(Info))) _owner.Place();
             else if (click.ButtonIndex == MouseButton.Right) _owner.OpenItemMenu(this, GetGlobalMousePosition());
         }
 

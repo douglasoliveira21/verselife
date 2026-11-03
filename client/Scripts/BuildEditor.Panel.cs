@@ -69,11 +69,11 @@ public partial class BuildEditor
 
         // tabs
         var tabs = new UiTabs { EqualWidth = true };
-        tabs.AddTab("Geral"); tabs.AddTab("Objeto"); tabs.AddTab("Textura"); tabs.AddTab("Recursos"); tabs.AddTab("Alinhar");
+        tabs.AddTab("Geral"); tabs.AddTab("Objeto"); tabs.AddTab("Textura"); tabs.AddTab("Recursos"); tabs.AddTab("Conteúdo"); tabs.AddTab("Alinhar");
         content.AddChild(tabs);
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 420) };
         content.AddChild(stack);
-        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildAlignTab()) };
+        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildContentTab()), Scroll(stack, BuildAlignTab()) };
         tabs.TabChanged += index => { for (var i = 0; i < pages.Length; i++) pages[i].Visible = i == index; };
         pages[0].Visible = true;
 
@@ -142,6 +142,7 @@ public partial class BuildEditor
         _primitive = new OptionButton();
         foreach (var (id, label) in Primitives) { _primitive.AddItem(label); _primitive.SetItemMetadata(_primitive.ItemCount - 1, id); }
         box.AddChild(_primitive);
+        BuildPackageSection(box);
         return box;
     }
 
@@ -246,6 +247,7 @@ public partial class BuildEditor
         }
         else _info.Text = _selection.Count == 0 ? "Selecione um objeto para ver criador, proprietário e identificador." : $"{_selection.Count} objetos: posição, rotação e tamanho próprios não são editados em conjunto; forma, material e física valem para todos.";
         FillTextureFields();
+        FillContent();
         _filling = false;
         RefreshGizmo();
     }

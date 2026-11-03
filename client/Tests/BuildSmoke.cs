@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Godot;
 using LifeVerse.Client.Scripts;
+using LifeVerse.Shared.Building;
 
 namespace LifeVerse.Client.Tests;
 
@@ -226,6 +227,59 @@ public partial class BuildSmoke : Node
             _editor.ApplyLightForTesting(false, 2f, 8f);
             await Frames(2);
             Require(_editor.ViewForTesting(lit)!.GetNodeOrNull<OmniLight3D>("ObjectLight") is null, "removing the light must remove it");
+
+            // Saving a construction in the inventory and placing it again.
+            var wallA = Add(new Vector3(100, 1, -6), "cube"); var wallB = Add(new Vector3(104, 1, -6), "cube"); var roof = Add(new Vector3(102, 3, -2), "prism");
+            _editor.SelectIds([wallA, wallB]); _editor.CommandForTesting("group");
+            _editor.SelectIds([wallA, wallB, roof]);
+            string? savedJson = null;
+            _editor.PackageSink = json => { savedJson = json; return true; };
+            _editor.SetPackageNameForTesting("Casinha");
+            _editor.SaveSelectionForTesting(false);
+            var package = BuildPackages.Parse(savedJson ?? "", out var packageError) ?? throw new InvalidOperationException($"saved package invalid: {packageError}");
+            Require(package.Name == "Casinha" && package.Objects.Length == 3, "the package must hold the three objects");
+            Require(package.Objects.Count(o => o.Group == 0) == 2 && package.Objects.Count(o => o.Group is null) == 1, "linked objects must stay linked in the package");
+            Require(Mathf.Abs(package.Objects[0].X + 2f) < .01f && Mathf.Abs(package.Objects[1].X - 2f) < .01f, $"positions must be relative to the middle: {package.Objects[0].X},{package.Objects[1].X}");
+            Require(_server.ContainsKey(wallA) && _server.ContainsKey(roof), "saving a copy must leave the objects in the world");
+
+            var originalGroup = _server[wallA].GroupId;
+            var beforeTake = _server.Count;
+            _editor.SaveSelectionForTesting(true);
+            Require(_server.Count == beforeTake - 3 && !_server.ContainsKey(wallA), "taking must remove the objects from the world");
+            _editor.CommandForTesting("undo");
+            Require(_server.Count == beforeTake, "undoing a take must bring the objects back");
+
+            var beforeRez = _server.Count;
+            var rezzed = _editor.RezPackageJson(savedJson!, new Vector3(200, 0, -6), instant: true);
+            Require(rezzed == 3 && _server.Count == beforeRez + 3, $"placing must create the three objects: {_server.Count - beforeRez}");
+            var fresh = _server.Values.Where(s => s.PositionX > 190).ToList();
+            Require(fresh.Count == 3 && fresh.Count(s => s.GroupId is not null) == 2 && fresh.Select(s => s.GroupId).Where(g => g is not null).Distinct().Count() == 1, "the placed walls must be one new group");
+            Require(!fresh.Any(s => s.GroupId == originalGroup), "a placed copy must not share the original's group");
+            Require(_editor.Selection.Count == 3, "the placed construction must be selected");
+            _editor.CommandForTesting("undo");
+            Require(_server.Count == beforeRez, "one undo must remove the whole placed construction");
+
+            var pacedBefore = _server.Count;
+            _editor.RezPackageJson(savedJson!, new Vector3(300, 0, -6));
+            Require(_editor.RezPendingForTesting == 3 && _server.Count == pacedBefore, "placing is paced: nothing is created in the first instant");
+            await ToSignal(GetTree().CreateTimer(.7), SceneTreeTimer.SignalName.Timeout);
+            Require(_server.Count == pacedBefore + 3 && _editor.RezPendingForTesting == 0, $"the paced placing must finish: {_server.Count - pacedBefore}");
+            Require(_editor.RezPackageJson("{\"not\":\"a package\"}", Vector3.Zero) == 0, "a damaged package must not place anything");
+
+            // The Conteúdo tab.
+            var box = Add(new Vector3(110, .5f, -6), "cube");
+            _editor.SelectIds([box]);
+            var soundAsset = Guid.NewGuid();
+            _editor.AddContentForTesting(soundAsset, "Campainha", "sounds");
+            Require(_server[box].ContentJson.Contains(soundAsset.ToString()) && _editor.ContentCountForTesting == 1, $"content not saved: {_server[box].ContentJson}");
+            _editor.AddContentForTesting(soundAsset, "Campainha", "sounds");
+            Require(_editor.ContentCountForTesting == 1, "the same item cannot be listed twice");
+            _editor.RenameContentForTesting(0, "Toque");
+            Require(_server[box].ContentJson.Contains("Toque") && _editor.ContentTextForTesting(0).StartsWith("Toque"), "renaming must reach the server and the list");
+            _editor.RemoveContentForTesting(0);
+            Require(_editor.ContentCountForTesting == 0 && _server[box].ContentJson == "[]", "removing must empty the object");
+            _editor.FillPicker($"{{\"items\":[{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Som\",\"category\":\"sounds\"}},{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Lixo\",\"category\":\"sounds\",\"deleted\":true}},{{\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Estranho\",\"category\":\"malware\"}}]}}");
+            Require(_editor.PickerCountForTesting == 1, "the picker lists only kept items of kinds an object can hold");
 
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();

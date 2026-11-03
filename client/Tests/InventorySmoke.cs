@@ -29,6 +29,7 @@ public partial class InventorySmoke : Node
             await Frames(20);
 
             // A 2 x 1 x 4 m box exported as a real GLB: the importer must shrink it so its longest side is one metre.
+            ModelImportDialog.SetPlacementSizeForTesting(2f); // the placement size is a saved preference; start from the default
             var bytes = BuildGlb(new Vector3(2, 1, 4));
             var modelAsset = Guid.NewGuid(); var textureAsset = Guid.NewGuid();
             Require(bytes.Length > 100 && bytes[0] == 'g' && bytes[1] == 'l' && bytes[2] == 'T' && bytes[3] == 'F', "could not build a GLB");
@@ -103,6 +104,27 @@ public partial class InventorySmoke : Node
                 var path = OS.GetEnvironment("LIFEVERSE_CAPTURE_PATH");
                 if (!string.IsNullOrWhiteSpace(path)) rendered.SavePng($"{path}-thumbnail.png");
             }
+
+            // The import window: real size, triangles and materials before anything is uploaded.
+            var dialog = inventory.ImportDialogForTesting;
+            string? confirmedPath = null; dialog.Confirmed += path => confirmedPath = path;
+            dialog.Show("caixa.glb", bytes);
+            await Frames(2);
+            var report = dialog.Report!;
+            Require(report.Valid && report.Triangles == 12, $"a box has twelve triangles: {report.Triangles}");
+            Require(Mathf.Abs(report.Size.X - 2f) < .01f && Mathf.Abs(report.Size.Y - 1f) < .01f && Mathf.Abs(report.Size.Z - 4f) < .01f, $"the real size must be shown: {report.Size}");
+            Require(dialog.CanConfirmForTesting && dialog.InfoForTesting.Contains("caixa.glb") && dialog.InfoForTesting.Contains("12"), $"the info panel must describe the model: {dialog.InfoForTesting}");
+            dialog.ConfirmForTesting("300");
+            Require(confirmedPath is null && dialog.ProblemForTesting.Contains("0,1 e 64"), "an absurd placement size must be refused with a reason");
+            dialog.ConfirmForTesting("3,5");
+            Require(confirmedPath == "caixa.glb" && Mathf.Abs(ModelImportDialog.PlacementSize - 3.5f) < .001f, $"confirming must hand over the file and remember the size: {confirmedPath} {ModelImportDialog.PlacementSize}");
+            dialog.Show("caixa.glb", bytes); dialog.ConfirmForTesting("2"); // restore the default for the other tests
+            Require(Mathf.Abs(ModelImportDialog.PlacementSize - 2f) < .001f, "the default size must be restored");
+            dialog.Show("lixo.glb", new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 });
+            Require(dialog.Report is { Valid: false, Error: not null } && !dialog.CanConfirmForTesting, "a damaged file must not be importable");
+            dialog.Show("vazio.glb", []);
+            Require(!dialog.CanConfirmForTesting && dialog.ProblemForTesting.Length > 0, "an empty file must not be importable");
+            dialog.Close();
 
             GD.Print("event=inventory_smoke result=passed");
             GetTree().Quit();
