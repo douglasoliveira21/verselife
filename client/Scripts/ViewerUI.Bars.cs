@@ -286,6 +286,9 @@ public partial class ViewerUI
             ObjectCommand = (_, command) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.RunCommand(command),
             StartBuilding = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true),
             StartPlacing = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.StartPlacing(),
+            EnterVehicle = id => _network.EnterVehicle(id),
+            ExitVehicle = () => _network.ExitVehicle(),
+            IsDriving = id => _network.Vehicles.DrivenBy(_network.OwnPeerId)?.VehicleId == id,
             Owns = view => session is null || session.UserId == Guid.Empty || view.State.OwnerUserId == session.UserId
         };
         _context = new ContextInteractionManager { Name = "ContextInteraction" }; AddChild(_context);

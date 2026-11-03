@@ -57,6 +57,11 @@ public partial class RadialSmoke : Node
             Require(InteractionRegistry.Build(new GroundTarget(Vector3.Zero), services).Select(x => x.Label).SequenceEqual(["Ir até aqui", "Construir", "Criar objeto", "Copiar local", "Fechar"]), "the ground offers walking, building and its location");
             Require(InteractionRegistry.Build(new AvatarTarget(2, "Lucas", Vector3.Zero), services).Any(x => x.Label == "Interagir" && x.Children!.Count > 0), "another avatar offers interactions");
             Require(InteractionRegistry.Build(new SelfTarget("Eu"), services).Any(x => x.Label == "Inventário"), "your own avatar offers your things");
+            var car = new VehicleView(); AddChild(car); car.Setup(7, "Carro do Rafa", "car");
+            var carFree = InteractionRegistry.Build(new VehicleTarget(car), new ContextServices { IsDriving = _ => false }); var carDriven = InteractionRegistry.Build(new VehicleTarget(car), new ContextServices { IsDriving = id => id == 7 });
+            Require(carFree.Select(x => x.Label).SequenceEqual(["Entrar", "Inspecionar", "Fechar"]) && carDriven[0].Label == "Sair", "a car offers entering, or leaving when you are driving it");
+            var entered = -1; InteractionRegistry.Build(new VehicleTarget(car), new ContextServices { EnterVehicle = id => entered = id })[0].Run!();
+            Require(entered == 7, "Entrar asks for this very vehicle");
             Require(new[] { own, other }.All(list => list.Last().Accent), "the last slice is always the orange Fechar");
 
             GD.Print("event=radial_smoke result=passed");

@@ -11,6 +11,7 @@ public partial class VehicleClient : Node
 
     public int Count => _views.Count;
     public VehicleView? Get(int id) => _views.GetValueOrDefault(id);
+    public IEnumerable<VehicleView> Views => _views.Values;
     public VehicleView? DrivenBy(int peer) => peer == 0 ? null : _views.Values.FirstOrDefault(v => v.DriverPeer == peer);
 
     public void Spawn(int id, string name, string type, Vector3 position, float yaw, Node? parent = null)

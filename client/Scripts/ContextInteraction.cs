@@ -11,6 +11,7 @@ public sealed record AvatarTarget(int Peer, string Name, Vector3 Position) : Con
 public sealed record ObjectTarget(BuildObjectView View) : ContextTarget(string.IsNullOrWhiteSpace(View.State.Name) ? "Objeto" : View.State.Name, "cube");
 public sealed record SeatTarget(InteractableSeat Seat) : ContextTarget("Assento", "user");
 public sealed record GroundTarget(Vector3 Point) : ContextTarget("Terreno", "map");
+public sealed record VehicleTarget(VehicleView View) : ContextTarget(string.IsNullOrWhiteSpace(View.DisplayName) ? "Veículo" : View.DisplayName, "run");
 
 /// What the menu can do, handed in by the window that owns each thing (so this file depends on none of them).
 public sealed class ContextServices
@@ -31,6 +32,10 @@ public sealed class ContextServices
     public Action StartPlacing { get; init; } = () => { };
     /// Whether this person owns an object (only then are the editing slices shown; the server checks again whatever the screen says).
     public Func<BuildObjectView, bool> Owns { get; init; } = _ => false;
+    public Action<int> EnterVehicle { get; init; } = _ => { };
+    public Action ExitVehicle { get; init; } = () => { };
+    /// Whether this person is the one driving that vehicle right now.
+    public Func<int, bool> IsDriving { get; init; } = _ => false;
 }
 
 /// Which slices each kind of target gets. Only things that really work are offered, and what does not make sense for a target is left out:
@@ -46,6 +51,7 @@ public static class InteractionRegistry
         ObjectTarget @object => ForObject(@object.View, s),
         SeatTarget seat => [new RadialItem { Label = "Sentar", Icon = "user", Run = () => s.Sit(seat.Seat), Tooltip = "Senta neste assento" }, Close],
         GroundTarget ground => ForGround(ground, s),
+        VehicleTarget car => ForVehicle(car.View, s),
         _ => [Close]
     };
 
@@ -99,6 +105,17 @@ public static class InteractionRegistry
             });
             items.Add(new RadialItem { Label = "Copiar", Icon = "copy", Run = () => { s.EditObject(id, null); s.ObjectCommand(id, "copy"); s.Tell("Objeto copiado: Ctrl+V cola onde o cursor aponta."); }, Tooltip = "Copia o objeto (Ctrl+V cola)" });
         }
+        items.Add(Close);
+        return items;
+    }
+
+    private static List<RadialItem> ForVehicle(VehicleView car, ContextServices s)
+    {
+        var id = car.VehicleId;
+        var items = new List<RadialItem>();
+        if (s.IsDriving(id)) items.Add(new RadialItem { Label = "Sair", Icon = "undo", Run = s.ExitVehicle, Tooltip = "Desce do veículo" });
+        else items.Add(new RadialItem { Label = "Entrar", Icon = "run", Run = () => s.EnterVehicle(id), Tooltip = "Entra e dirige (precisa estar a até 4 m)" });
+        items.Add(new RadialItem { Label = "Inspecionar", Icon = "search", Run = () => s.Tell(car.DriverPeer == 0 ? $"{car.DisplayName}: livre." : $"{car.DisplayName}: em uso."), Tooltip = "Mostra se o veículo está livre" });
         items.Add(Close);
         return items;
     }
@@ -161,6 +178,15 @@ public partial class ContextInteractionManager : Node
             if (distance <= AvatarGrab && along < nearest && along <= hitDistance + .3f) { nearest = along; person = candidate; }
         }
         if (_player is not null) Consider(new SelfTarget(SelfName()), _player.GlobalPosition);
+        // a car is wide: grab it from the body's middle, a little more generously than a person
+        if (_network is not null)
+            foreach (var car in _network.Vehicles.Views)
+            {
+                var feet = car.GlobalPosition;
+                var distance = RayMath.DistanceToSegment(new System.Numerics.Vector3(origin.X, origin.Y, origin.Z), new System.Numerics.Vector3(direction.X, direction.Y, direction.Z),
+                    new System.Numerics.Vector3(feet.X, feet.Y + .2f, feet.Z), new System.Numerics.Vector3(feet.X, feet.Y + 1.6f, feet.Z), PickReach, out var along);
+                if (distance <= 1.5f && along < nearest && along <= hitDistance + 1.5f) { nearest = along; person = new VehicleTarget(car); }
+            }
         if (_network is not null) foreach (var (peer, name, position) in _network.RemoteAvatars) Consider(new AvatarTarget(peer, name, position), position);
         if (person is not null) return person;
 
