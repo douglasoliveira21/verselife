@@ -58,9 +58,10 @@ public static class SearchText
     public static double Relevance(string title, string text, string query, IReadOnlyCollection<string> terms, double popularity, DateTimeOffset updatedAt, DateTimeOffset now)
     {
         var t = Normalize(title); var q = Normalize(query); double score = 20; // all the terms are in the text, or it would not be a candidate
-        if (t == q) score += 80;
+        // the steps between these are larger than all that popularity (15) and novelty (5) can add, so what is more popular never beats a better match of the title
+        if (t == q) score += 85;
         else if (t.StartsWith(q, StringComparison.Ordinal)) score += 60;
-        else if (t.Contains(" " + q, StringComparison.Ordinal)) score += 45;
+        else if (t.Contains(" " + q, StringComparison.Ordinal)) score += 37;
         var inTitle = terms.Count(term => HasWordStartingWith(t, term));
         score += 25.0 * inTitle / Math.Max(1, terms.Count);
         if (terms.Count > 0 && inTitle == terms.Count) score += 10;

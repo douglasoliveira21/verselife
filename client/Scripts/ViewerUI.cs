@@ -104,9 +104,19 @@ public partial class ViewerUI : CanvasLayer
         EnterFirstIsland();
         if (_world.GetNodeOrNull<LandManager>("LandManager") is null) { var land = new LandManager { Name = "LandManager" }; _world.AddChild(land); land.Said += text => Toast(text); land.WalletChanged += RequestWallet; }
         if (_world.GetNodeOrNull<LandMapWindow>("LandMapWindow") is null) _world.AddChild(new LandMapWindow { Name = "LandMapWindow", JoinIsland = JoinIslandById });
+        if (_world.GetNodeOrNull<SearchWindow>("SearchWindow") is null)
+        {
+            var land = _world.GetNodeOrNull<LandManager>("LandManager");
+            _world.AddChild(new SearchWindow
+            {
+                Name = "SearchWindow", JoinIsland = JoinIslandById, CurrentIsland = () => _network.CurrentIslandId,
+                TeleportToPoint = (x, z) => land?.TeleportToPoint(x, z),
+                TeleportToParcel = id => { if (land?.Parcels.FirstOrDefault(p => p.Id == id) is { } parcel) { land.TeleportTo(parcel); return true; } return false; },
+            });
+        }
         if (_world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow") is null) _world.AddChild(new AppearanceWindow { Name = "AppearanceWindow", Player = _player });
         if (_world.GetNodeOrNull<GroupsWindow>("GroupsWindow") is null) _world.AddChild(new GroupsWindow { Name = "GroupsWindow" });
-        foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditor", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "AppearanceWindow" })
+        foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditor", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "AppearanceWindow", "SearchWindow" })
             foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; if (child is not FloatingWindow) FloatingWindow.MakeDraggable(child); }
     }
 
@@ -392,6 +402,12 @@ public partial class ViewerUI : CanvasLayer
     {
         if (_player is null || _network.CurrentIslandId == _arrivedAt) return;
         _arrivedAt = _network.CurrentIslandId;
+        if (SearchTravel.TakeFor(_arrivedAt) is { } spot) // the person chose a result on this island from the search: once the avatar is standing here, go to the spot
+        {
+            var land = _world.GetNodeOrNull<LandManager>("LandManager");
+            GetTree().CreateTimer(1.5).Timeout += () => land?.TeleportToPoint(spot.X, spot.Z);
+            return;
+        }
         if (StartPlace.FacingOn(GetNode<SessionManager>("/root/SessionManager").UserId, _network.CurrentIslandId) is { } yaw) _player.FaceYaw(yaw);
     }
 

@@ -3236,6 +3236,165 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("search_index", "discovery");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.SearchFavorite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("RefId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ref_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.HasIndex("UserId", "Kind", "RefId")
+                        .IsUnique();
+
+                    b.ToTable("search_favorites", "discovery");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.SearchInterest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Term")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("term");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Term")
+                        .IsUnique();
+
+                    b.ToTable("search_interests", "discovery");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.SearchReport", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("RefId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ref_id");
+
+                    b.Property<Guid>("ReporterUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reporter_user_id");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReporterUserId", "CreatedAt");
+
+                    b.HasIndex("Kind", "RefId", "Status");
+
+                    b.HasIndex("ReporterUserId", "Kind", "RefId")
+                        .IsUnique();
+
+                    b.ToTable("search_reports", "discovery");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.SearchStat", b =>
+                {
+                    b.Property<DateOnly>("Day")
+                        .HasColumnType("date")
+                        .HasColumnName("day");
+
+                    b.Property<string>("Query")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("query");
+
+                    b.Property<int>("Opens")
+                        .HasColumnType("integer")
+                        .HasColumnName("opens");
+
+                    b.Property<int>("Searches")
+                        .HasColumnType("integer")
+                        .HasColumnName("searches");
+
+                    b.Property<int>("Teleports")
+                        .HasColumnType("integer")
+                        .HasColumnName("teleports");
+
+                    b.Property<long>("TotalMs")
+                        .HasColumnType("bigint")
+                        .HasColumnName("total_ms");
+
+                    b.Property<int>("ZeroResults")
+                        .HasColumnType("integer")
+                        .HasColumnName("zero_results");
+
+                    b.HasKey("Day", "Query");
+
+                    b.ToTable("search_stats", "discovery");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.SearchState", b =>
                 {
                     b.Property<string>("Kind")
@@ -4665,6 +4824,33 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
                         .WithMany()
                         .HasForeignKey("ScriptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.SearchFavorite", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.SearchInterest", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.SearchReport", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("ReporterUserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

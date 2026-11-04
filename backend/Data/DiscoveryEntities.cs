@@ -39,6 +39,39 @@ public sealed class SearchEntry
     public DateTimeOffset IndexedAt { get; set; }
 }
 
+/// <summary>Something a person marked in the search to find again (any kind of result, not only islands). Kept by kind and id, so it follows the index.</summary>
+public sealed class SearchFavorite { public Guid Id { get; set; } public Guid UserId { get; set; } public required string Kind { get; set; } public Guid RefId { get; set; } public DateTimeOffset CreatedAt { get; set; } }
+
+/// <summary>A report of a search result (what was reported is kept by kind and id, with the title it had).</summary>
+public sealed class SearchReport
+{
+    public Guid Id { get; set; }
+    public Guid ReporterUserId { get; set; }
+    public required string Kind { get; set; }
+    public Guid RefId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public required string Reason { get; set; }
+    /// <summary>open, hidden (the result was kept out of the search) or dismissed (it was put back).</summary>
+    public required string Status { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ResolvedAt { get; set; }
+}
+
+/// <summary>How the search was used on a day, for one search text (no names): searches, those that found nothing, results opened and visited, time spent.</summary>
+public sealed class SearchStat
+{
+    public DateOnly Day { get; set; }
+    public required string Query { get; set; }
+    public int Searches { get; set; }
+    public int ZeroResults { get; set; }
+    public int Opens { get; set; }
+    public int Teleports { get; set; }
+    public long TotalMs { get; set; }
+}
+
+/// <summary>A subject the person said they like (a word or two, normalized): the base of the recommendations.</summary>
+public sealed class SearchInterest { public Guid Id { get; set; } public Guid UserId { get; set; } public required string Term { get; set; } public DateTimeOffset CreatedAt { get; set; } }
+
 /// <summary>How far the indexer has read each kind of source (so it only reads what changed since).</summary>
 public sealed class SearchState
 {

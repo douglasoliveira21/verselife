@@ -290,6 +290,7 @@ public sealed class SearchIndexWorker(IServiceScopeFactory scopes, ILogger<Searc
             {
                 using var scope = scopes.CreateScope();
                 var report = await SearchIndexer.RunAsync(scope.ServiceProvider.GetRequiredService<LifeVerseDbContext>(), DateTimeOffset.UtcNow, stoppingToken);
+                if (scope.ServiceProvider.GetService<SearchMetrics>() is { } metrics) await metrics.FlushAsync(scope.ServiceProvider.GetRequiredService<LifeVerseDbContext>(), stoppingToken);
                 if (report.Written + report.Removed > 0) logger.LogInformation("event=search_index_updated written={Written} removed={Removed} ms={Ms}", report.Written, report.Removed, (int)report.Took.TotalMilliseconds);
             }
             catch (Exception exception) when (exception is not OperationCanceledException) { logger.LogWarning(exception, "event=search_index_failed"); }

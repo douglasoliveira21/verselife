@@ -50,6 +50,7 @@ public partial class ViewerUI
             ("Ir para uma ilha…", () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); }, false),
             ("-", null, false),
             ("Editar terreno   T", () => _world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.SetActive(true), false),
+            ("Buscar no LifeVerse…", () => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.Toggle(), false),
             ("Mapa de terrenos e busca…", () => _world.GetNodeOrNull<LandMapWindow>("LandMapWindow")?.Toggle(), false),
             ("Selecionar terreno (limites e donos)", () => _world.GetNodeOrNull<LandManager>("LandManager")?.SetActive(true), false),
             ("Tirar foto", TakeSnapshot, false));
