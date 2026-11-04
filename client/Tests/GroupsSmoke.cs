@@ -13,15 +13,19 @@ public partial class GroupsSmoke : Node
             var window = new GroupsWindow(); AddChild(window);
             var requests = new List<string>(); var group = Guid.NewGuid(); var me = Guid.NewGuid(); var other = Guid.NewGuid(); var roleMod = Guid.NewGuid(); var roleMember = Guid.NewGuid(); var roleOwner = Guid.NewGuid();
             var chatJson = "[]"; var annJson = "[]"; var evJson = "[]"; var noticeJson = "{\"unread\":0,\"items\":[]}"; var mutedJson = "null"; var island = Guid.NewGuid();
+            var landsJson = "{}"; var availJson = "[]"; var grantsJson = "[]"; var parcel = Guid.NewGuid(); var islandId = Guid.NewGuid(); var friends = Guid.NewGuid();
             var role = "moderator"; var perms = "[\"kick\",\"mute\"]"; var rank = 40; var leader = false; var memberRank = 0;
             window.Transport = (method, path, body) =>
             {
                 requests.Add($"{method} {path} {body}");
-                if (path == "/mine") return (200, $"[{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"CLB\",\"description\":\"d\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":true}}]");
+                if (path == "/mine") return (200, $"[{{\"id\":\"{friends}\",\"name\":\"Amigos\",\"tag\":\"\",\"description\":\"\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"open\",\"members\":3,\"memberLimit\":500,\"isMember\":true}},{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"CLB\",\"description\":\"d\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":true}}]");
                 if (path == $"/{group}") return (200, $"{{\"card\":{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"CLB\",\"description\":\"d\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":true}},\"myRole\":\"{role}\",\"myRank\":{rank},\"myPermissions\":{perms},\"isLeader\":{(leader ? "true" : "false")},\"leaderName\":\"dono\",\"mutedUntil\":{mutedJson},\"notificationsMuted\":false}}");
                 if (path == $"/{group}/members") return (200, $"[{{\"userId\":\"{other}\",\"username\":\"ana\",\"roleId\":\"{roleMember}\",\"roleName\":\"Membro\",\"rank\":{memberRank}}},{{\"userId\":\"{me}\",\"username\":\"eu\",\"roleId\":\"{roleMod}\",\"roleName\":\"Moderador\",\"rank\":40}}]");
                 if (path == $"/{group}/roles") return (200, $"[{{\"id\":\"{roleOwner}\",\"name\":\"Líder\",\"systemKey\":\"owner\",\"rank\":1000,\"permissions\":[],\"members\":1,\"canEdit\":false}},{{\"id\":\"{roleMod}\",\"name\":\"Moderador\",\"systemKey\":\"moderator\",\"rank\":40,\"permissions\":[\"kick\"],\"members\":1,\"canEdit\":false}},{{\"id\":\"{roleMember}\",\"name\":\"Membro\",\"systemKey\":\"member\",\"rank\":0,\"permissions\":[],\"members\":1,\"canEdit\":false}}]");
                 if (path.StartsWith($"/search")) return (200, $"[{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"\",\"description\":\"\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":false}}]");
+                if (path == $"/{group}/lands") return (200, landsJson);
+                if (path == $"/{group}/lands/available") return (200, availJson);
+                if (path == $"/api/v1/worlds/islands/{islandId}/land/parcels/{parcel}/group-access") return (200, grantsJson);
                 if (path == $"/{group}/chat?take=100") return (200, chatJson);
                 if (path == $"/{group}/announcements") return (200, annJson);
                 if (path == $"/{group}/events") return (200, evJson);
@@ -33,8 +37,8 @@ public partial class GroupsSmoke : Node
             await Frames(2);
 
             window.Open();
-            Require(window.Visible && window.Mine.Count == 1, "opening should load my groups");
-            window.SelectMine(0);
+            Require(window.Visible && window.Mine.Count == 2, "opening should load my groups");
+            window.SelectMine(1);
             Require(window.Current?.Name == "Clube" && window.InnerTabsVisibleForTesting, "the group should open with its tabs");
             Require(window.OverviewForTesting.Contains("dono"), "overview should show the leader");
             Require(window.Members.Count == 2 && window.Roles.Count == 3, "members and roles should load");
@@ -105,13 +109,32 @@ public partial class GroupsSmoke : Node
             before = requests.Count; window.OnLiveEvent($"{{\"type\":\"group_announcement\",\"data\":{{\"groupId\":\"{group}\"}}}}"); Require(requests.Count > before, "a new announcement should reload the list");
             window.OnLiveEvent("not json"); window.OnLiveEvent("{}");
 
+            // land of the group (as the leader)
+            var spare = Guid.NewGuid(); var grantId = Guid.NewGuid();
+            landsJson = $"{{\"lands\":[{{\"parcelId\":\"{parcel}\",\"islandId\":\"{islandId}\",\"islandName\":\"Ilha\",\"name\":\"Praca\",\"area\":32,\"maxObjects\":100,\"accessMode\":\"private\",\"buildMode\":\"owner\",\"forSale\":false}}],\"canManage\":true,\"canBuild\":true,\"canRelease\":true,\"limit\":50}}";
+            availJson = $"[{{\"parcelId\":\"{spare}\",\"name\":\"Casinha\",\"islandName\":\"Ilha\"}}]";
+            grantsJson = $"[{{\"id\":\"{grantId}\",\"groupId\":\"{friends}\",\"groupName\":\"Amigos\",\"kind\":\"allow\"}}]";
+            window.OpenGroup(group);
+            Require(window.Lands.Count == 1 && window.Lands[0].Name == "Praca" && window.LandNoteForTesting.Contains("Terrenos do grupo"), "the land of the group should load");
+            Require(window.LandButtonEnabledForTesting("donate") && !window.LandButtonEnabledForTesting("release") && !window.LandButtonEnabledForTesting("grant"), "donating is on, the rest wait for a selection");
+            window.SelectLandForTesting(0);
+            Require(window.Grants.Count == 1 && window.LandButtonEnabledForTesting("release") && window.LandButtonEnabledForTesting("grant") && !window.LandButtonEnabledForTesting("revoke"), "selecting land shows its grants and turns the buttons on");
+            window.DonateLand(); Require(requests.Any(r => r.StartsWith("Post ") && r.Contains($"/{group}/lands {{") && r.Contains(spare.ToString())), "donate wrong");
+            window.SelectLandForTesting(0); window.ChooseHeirForTesting("ana"); window.ReleaseLand(); Require(requests.Any(r => r.StartsWith("Post ") && r.Contains($"/lands/{parcel}/release") && r.Contains(other.ToString())), "release wrong");
+            window.SelectLandForTesting(0); window.ChooseGrantGroupForTesting("Amigos", true); window.GrantAccess();
+            Require(requests.Any(r => r.StartsWith("Post ") && r.Contains($"/land/parcels/{parcel}/group-access") && r.Contains(friends.ToString()) && r.Contains("\"kind\":\"build\"")), "grant wrong");
+            window.SelectGrantForTesting(0); Require(window.LandButtonEnabledForTesting("revoke"), "revoke should turn on");
+            window.RevokeAccess(); Require(requests.Any(r => r.StartsWith("Delete ") && r.Contains($"/group-access/{grantId}")), "revoke wrong");
+
             // a plain member who is muted
+            landsJson = landsJson.Replace("\"canManage\":true", "\"canManage\":false").Replace("\"canRelease\":true", "\"canRelease\":false"); availJson = "[]";
             role = "member"; rank = 0; leader = false; perms = "[]"; mutedJson = $"\"{future}\"";
             window.OpenGroup(group);
             Require(!window.CommButtonEnabledForTesting("send") && !window.CommButtonEnabledForTesting("chatInput") && window.ChatPlaceholderForTesting.Contains("silenciado"), "a muted member cannot type");
             Require(!window.CommButtonEnabledForTesting("post") && !window.CommButtonEnabledForTesting("evCreate"), "a plain member cannot announce or make events");
             window.SelectChatForTesting(0); Require(!window.CommButtonEnabledForTesting("chatDelete"), "a plain member cannot delete a message of someone else");
             window.SelectChatForTesting(1); Require(window.CommButtonEnabledForTesting("chatDelete"), "but can delete their own");
+            Require(!window.LandButtonEnabledForTesting("donate") && !window.LandButtonEnabledForTesting("release") && !window.LandButtonEnabledForTesting("grant"), "a plain member runs no land");
             mutedJson = "null"; window.OpenGroup(group); Require(window.CommButtonEnabledForTesting("send"), "talking again once the mute ends");
 
             // searching and joining

@@ -13,7 +13,8 @@ public sealed record LandParcelView(Guid Id, string Name, string Description, Gu
     long? RentPrice = null, int RentPeriodDays = 0, int RentMinPeriods = 0, int RentMaxPeriods = 0, long RentDeposit = 0, int RentGraceDays = 0, bool RentAutoRenewAllowed = false,
     Guid? RentalId = null, string? TenantName = null, bool TenantIsMe = false, string? RentStatus = null, DateTimeOffset? RentExpiresAt = null, long RentNextCharge = 0, bool RentAutoRenew = false, string AccessMode = "public",
     string BuildMode = "owner", bool AllowScripts = false, int? AutoReturnMinutes = null, int OthersObjects = 0, int OthersCost = 0, int Builders = 0, bool CanEditTerrain = false,
-    double? ArrivalX = null, double? ArrivalZ = null, float ArrivalYaw = 0, string TeleportMode = "free", string Environment = "{}", string Media = "{}", bool EnvironmentAllowed = true);
+    double? ArrivalX = null, double? ArrivalZ = null, float ArrivalYaw = 0, string TeleportMode = "free", string Environment = "{}", string Media = "{}", bool EnvironmentAllowed = true,
+    Guid? GroupId = null, string? GroupName = null);
 
 public sealed record LandView(Guid IslandId, int Size, int CellSize, long Version, IReadOnlyList<LandParcelView> Parcels);
 
@@ -35,10 +36,12 @@ public static class LandService
         var nowFacts = TimeProvider.System.GetUtcNow();
         var entries = (await db.ParcelAccess.AsNoTracking().Where(a => parcelIds.Contains(a.ParcelId) && a.RevokedAt == null && (a.ExpiresAt == null || a.ExpiresAt > nowFacts)).Select(a => new { a.ParcelId, a.UserId, a.Kind }).ToListAsync(ct)).ToLookup(a => a.ParcelId);
         var areaById = parcels.ToDictionary(p => p.Id, p => p.Area);
+        var people = await LandAuthority.PeopleAsync(db, parcels, ct);
         ParcelFacts WithRules(ParcelFacts f)
         {
             var mine = entries[f.Id].ToList(); var area = areaById[f.Id];
-            return f with { Builders = mine.Where(a => a.Kind == "build").Select(a => a.UserId).ToHashSet(), Banned = mine.Where(a => a.Kind == "ban").Select(a => a.UserId).ToHashSet(), CostBudget = LandBudget.CostBudget(limits, area) };
+            people.TryGetValue(f.Id, out var crowd);
+            return f with { Builders = mine.Where(a => a.Kind == "build").Select(a => a.UserId).ToHashSet(), Banned = mine.Where(a => a.Kind == "ban").Select(a => a.UserId).ToHashSet(), CostBudget = LandBudget.CostBudget(limits, area), Managers = crowd?.Managers, GroupBuilders = crowd?.Builders };
         }
         return [.. parcels.Select(ParcelFacts.From).OfType<ParcelFacts>().Select(f => (byParcel.TryGetValue(f.Id, out var set) ? f with { Cells = set } : f) with { TenantUserId = tenants.TryGetValue(f.Id, out var tenant) ? tenant : null }).Select(WithRules)];
     }
@@ -47,13 +50,14 @@ public static class LandService
     /// Who may reshape the ground of a parcel: the owner, the tenant and the people on the builders list; not people banned from it, and nobody
     /// where the parcel is closed to building (only island administrators then).
     /// </summary>
-    public static List<Guid> TerrainEditors(IslandParcel parcel, Guid? tenant, IReadOnlyCollection<ParcelAccess> entries)
+    public static List<Guid> TerrainEditors(IslandParcel parcel, Guid? tenant, IReadOnlyCollection<ParcelAccess> entries, IEnumerable<Guid>? groupPeople = null)
     {
         if (parcel.BuildMode == "nobody") return [];
         var banned = entries.Where(e => e.Kind == "ban").Select(e => e.UserId).ToHashSet();
         var editors = new List<Guid> { parcel.OwnerUserId };
         if (tenant is { } t) editors.Add(t);
         editors.AddRange(entries.Where(e => e.Kind == "build").Select(e => e.UserId));
+        if (groupPeople is not null) editors.AddRange(groupPeople);
         return [.. editors.Where(e => e == parcel.OwnerUserId || !banned.Contains(e)).Distinct()];
     }
 
@@ -154,6 +158,9 @@ public static class LandService
             if (cellParcel.TryGetValue(LandGrid.Key(LandGrid.CellOf(o.PositionX), LandGrid.CellOf(o.PositionZ)), out var owner)) insideBy[owner].Add((o.PositionX, o.PositionZ, o.Cost, o.OwnerUserId));
             else foreach (var f in legacy) if (f.Contains(o.PositionX, o.PositionZ)) { insideBy[f.Id].Add((o.PositionX, o.PositionZ, o.Cost, o.OwnerUserId)); break; }
         }
+        var people = await LandAuthority.PeopleAsync(db, parcels, ct);
+        var groupIdsHere = parcels.Where(p => p.GroupId != null).Select(p => p.GroupId!.Value).Distinct().ToList();
+        var groupNames = await db.SocialGroups.AsNoTracking().Where(g => groupIdsHere.Contains(g.Id)).ToDictionaryAsync(g => g.Id, g => g.Name, ct);
         var views = new List<LandParcelView>();
         var parcelEnvironment = LandPresentation.IslandAllowsParcelEnvironment(island.EnvironmentJson);
         foreach (var parcel in parcels.OrderBy(p => p.Name))
@@ -162,22 +169,25 @@ public static class LandService
             var inside = insideBy[parcel.Id];
             var cells = fact.Cells ?? LandGrid.CellsInRect(fact.MinX, fact.MinZ, fact.MaxX, fact.MaxZ);
             rentalByParcel.TryGetValue(parcel.Id, out var rentalHere);
-            var closedToMe = parcel.OwnerUserId != viewer && rentalHere?.TenantUserId != viewer && (mineAccess.Any(a => a.ParcelId == parcel.Id && a.Kind == "ban") || parcel.AccessMode == "private" || (parcel.AccessMode == "list" && !mineAccess.Any(a => a.ParcelId == parcel.Id && a.Kind == "allow")));
+            people.TryGetValue(parcel.Id, out var crowd);
+            var ownerSide = parcel.GroupId is null ? parcel.OwnerUserId == viewer : crowd?.Members.Contains(viewer) == true; var guest = crowd?.Guests.Contains(viewer) == true;
+            var closedToMe = !ownerSide && rentalHere?.TenantUserId != viewer && (mineAccess.Any(a => a.ParcelId == parcel.Id && a.Kind == "ban") || parcel.AccessMode == "private" || (parcel.AccessMode == "list" && !guest && !mineAccess.Any(a => a.ParcelId == parcel.Id && a.Kind == "allow")));
             var arrivalSet = cells.Contains(LandGrid.Key(LandGrid.CellOf(parcel.SpawnX), LandGrid.CellOf(parcel.SpawnZ)));
             var enter = EnterAllowed(parcel.PermissionsJson) && !closedToMe;
-            var mine = parcel.OwnerUserId == viewer;
+            var mine = parcel.GroupId is null ? parcel.OwnerUserId == viewer : crowd?.Managers.Contains(viewer) == true;
             var rental = rentalHere;
             var forSale = parcel.SalePrice is not null && (parcel.SaleBuyerUserId is null || parcel.SaleBuyerUserId == viewer);
             var forRent = parcel.RentPrice is not null && rental is null;
             var state = mine ? "own" : forSale ? "sale" : forRent ? "rent" : rental?.TenantUserId == viewer ? "rented_by_me" : fact.PublicBuild ? "public" : !enter ? "restricted" : "owned";
-            views.Add(new LandParcelView(parcel.Id, parcel.Name, parcel.Description, parcel.OwnerUserId, names.GetValueOrDefault(parcel.OwnerUserId, "—"), mine, state, parcel.Area, cells.Count, parcel.MaxObjects, fact.MaxCost,
+            views.Add(new LandParcelView(parcel.Id, parcel.Name, parcel.Description, parcel.OwnerUserId, parcel.GroupId is { } gid && groupNames.TryGetValue(gid, out var gname) ? gname : names.GetValueOrDefault(parcel.OwnerUserId, "—"), mine, state, parcel.Area, cells.Count, parcel.MaxObjects, fact.MaxCost,
                 inside.Count, inside.Sum(o => o.Cost), fact.PublicBuild, enter, parcel.Revision, LandGrid.Runs(cells), parcel.SpawnX, parcel.SpawnY, parcel.SpawnZ, parcel.CreatedAt,
                 parcel.SalePrice, parcel.SaleIncludesObjects, parcel.SaleDescription, parcel.SaleBuyerUserId is not null,
                 parcel.RentPrice, parcel.RentPeriodDays, parcel.RentMinPeriods, parcel.RentMaxPeriods, parcel.RentDeposit, parcel.RentGraceDays, parcel.RentAutoRenewAllowed,
                 rental?.Id, rental is null ? null : names.GetValueOrDefault(rental.TenantUserId, "—"), rental?.TenantUserId == viewer, rental?.Status, rental?.ExpiresAt, rental?.PricePerPeriod ?? 0, rental?.AutoRenew ?? false, parcel.AccessMode,
                 parcel.BuildMode, fact.AllowScripts, parcel.AutoReturnMinutes, inside.Count(o => o.OwnerUserId != parcel.OwnerUserId), inside.Where(o => o.OwnerUserId != parcel.OwnerUserId).Sum(o => o.Cost), fact.Builders?.Count ?? 0,
-                TerrainEditors(parcel, rental?.TenantUserId, mineAccess.Where(a => a.ParcelId == parcel.Id).Select(a => new ParcelAccess { Id = a.Id, ParcelId = a.ParcelId, UserId = a.UserId, Kind = a.Kind, GrantedByUserId = a.GrantedByUserId, CreatedAt = a.CreatedAt }).ToList()).Contains(viewer),
-                arrivalSet ? parcel.SpawnX : null, arrivalSet ? parcel.SpawnZ : null, parcel.ArrivalYaw, parcel.TeleportMode, parcel.EnvironmentJson, parcel.MediaJson, parcelEnvironment));
+                TerrainEditors(parcel, rental?.TenantUserId, mineAccess.Where(a => a.ParcelId == parcel.Id).Select(a => new ParcelAccess { Id = a.Id, ParcelId = a.ParcelId, UserId = a.UserId, Kind = a.Kind, GrantedByUserId = a.GrantedByUserId, CreatedAt = a.CreatedAt }).ToList(), crowd is null ? null : [.. crowd.Managers, .. crowd.Builders]).Contains(viewer),
+                arrivalSet ? parcel.SpawnX : null, arrivalSet ? parcel.SpawnZ : null, parcel.ArrivalYaw, parcel.TeleportMode, parcel.EnvironmentJson, parcel.MediaJson, parcelEnvironment,
+                parcel.GroupId, parcel.GroupId is { } g2 ? groupNames.GetValueOrDefault(g2) : null));
         }
         var version = parcels.Count == 0 ? 0 : parcels.Max(p => p.UpdatedAt.UtcTicks) + parcels.Count;
         return new LandView(island.Id, island.Size, LandGrid.CellSize, version, views);

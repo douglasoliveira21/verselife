@@ -29,6 +29,13 @@ public sealed record ParcelFacts(Guid Id, string Name, Guid OwnerUserId, bool Pu
     public IReadOnlySet<Guid>? Banned { get; init; }
     /// <summary>Whether people who build here (and are not the owner or tenant) may put scripts in their objects.</summary>
     public bool AllowScripts { get; init; }
+    /// <summary>For a parcel of a group: the members whose cargo lets them run it, who count as its owners.</summary>
+    public IReadOnlySet<Guid>? Managers { get; init; }
+    /// <summary>For a parcel of a group (or lent to one): the members who may build in it.</summary>
+    public IReadOnlySet<Guid>? GroupBuilders { get; init; }
+    /// <summary>The owner, or for a parcel of a group the members who manage its land.</summary>
+    public bool IsOwner(Guid actor) => OwnerUserId == actor || Managers?.Contains(actor) == true;
+
     /// <summary>Minutes after which objects of people who may not build here are sent back; null: never.</summary>
     public int? AutoReturnMinutes { get; init; }
 
@@ -67,7 +74,8 @@ public static class BuildRules
         if (parcel is null) return hasIslandBuild ? null : "forbidden";
         if (parcel.Banned?.Contains(actor) == true) return "parcel_banned";
         if (parcel.BuildMode == "nobody") return "parcel_forbidden"; // closed to everyone but island administrators
-        if (parcel.OwnerUserId == actor || (parcel.TenantUserId is { } tenant && tenant == actor)) return null;
+        if (parcel.IsOwner(actor) || (parcel.TenantUserId is { } tenant && tenant == actor)) return null;
+        if (parcel.GroupBuilders?.Contains(actor) == true) return null;
         if (parcel.PublicBuild || parcel.BuildMode == "everyone") return null;
         if (parcel.BuildMode == "list" && parcel.Builders?.Contains(actor) == true) return null;
         return "parcel_forbidden";
@@ -75,14 +83,14 @@ public static class BuildRules
 
     /// <summary>Null when this person may put scripts into an object on this spot: the owner, the tenant and administrators always may; others only where the parcel allows scripts.</summary>
     public static string? CanPutScripts(ParcelFacts? parcel, Guid actor, bool isIslandAdmin) =>
-        isIslandAdmin || parcel is null || parcel.OwnerUserId == actor || parcel.TenantUserId == actor || parcel.AllowScripts ? null : "scripts_not_allowed";
+        isIslandAdmin || parcel is null || parcel.IsOwner(actor) || parcel.TenantUserId == actor || parcel.AllowScripts ? null : "scripts_not_allowed";
 
 
     /// <summary>Null when the actor may change or delete an object that belongs to <paramref name="objectOwner"/> and stands in <paramref name="parcel"/>.</summary>
     public static string? CanEditObject(Guid actor, Guid objectOwner, bool isIslandAdmin, ParcelFacts? parcel) =>
-        actor == objectOwner || isIslandAdmin || parcel?.OwnerUserId == actor ? null : "not_owner";
+        actor == objectOwner || isIslandAdmin || parcel?.IsOwner(actor) == true ? null : "not_owner";
 
     /// <summary>Null when the actor may send this object back to its owner's inventory (an owner may always take their own).</summary>
     public static string? CanReturn(Guid actor, Guid objectOwner, bool isIslandAdmin, ParcelFacts? parcel) =>
-        actor == objectOwner || isIslandAdmin || parcel?.OwnerUserId == actor ? null : "not_allowed_to_return";
+        actor == objectOwner || isIslandAdmin || parcel?.IsOwner(actor) == true ? null : "not_allowed_to_return";
 }

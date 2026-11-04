@@ -2629,6 +2629,48 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("parcel_changes", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelGroupAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("GrantedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("granted_by_user_id");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("ParcelId", "GroupId", "Kind");
+
+                    b.ToTable("parcel_group_access", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ParcelRental", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4225,6 +4267,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("LifeVerse.Api.Data.IslandParcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelGroupAccess", b =>
+                {
                     b.HasOne("LifeVerse.Api.Data.IslandParcel", null)
                         .WithMany()
                         .HasForeignKey("ParcelId")

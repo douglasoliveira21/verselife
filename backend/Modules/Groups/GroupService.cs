@@ -506,6 +506,7 @@ public static partial class GroupService
         var owner = ctx.Roles.Values.First(r => r.SystemKey == "owner"); var admin = ctx.Roles.Values.First(r => r.SystemKey == "admin");
         target.RoleId = owner.Id; target.Role = "owner"; ctx.Member!.RoleId = admin.Id; ctx.Member.Role = "admin";
         ctx.Group.OwnerUserId = newLeader; ctx.Group.UpdatedAt = now;
+        await PassStewardshipAsync(db, groupId, newLeader, me, now, ct);
         Log(db, groupId, me, "leadership_transferred", newLeader, new { }, now);
         var saved = await SaveAsync(db, ct); if (!saved.Ok) return saved;
         await TellAsync(notify, newLeader, "group_leader_changed", new { groupId, groupName = ctx.Group.Name, leader = true });

@@ -94,7 +94,8 @@ public static class LandCommerce
     public static async Task<CommerceResult> OfferForSaleAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, SaleOffer offer, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (parcel.GroupId is not null) return CommerceResult.Fail("group_owned"); // what a group owns is not sold by one person; the group's treasury comes later
         if (offer.Price is < 1 or > MaxPrice) return CommerceResult.Fail("bad_price");
         if (offer.BuyerUserId == actor) return CommerceResult.Fail("bad_buyer");
         if (await HasLiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
@@ -110,7 +111,7 @@ public static class LandCommerce
     public static async Task<CommerceResult> CancelSaleAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (parcel.SalePrice is null) return CommerceResult.Fail("not_for_sale");
         var now = clock.GetUtcNow();
         parcel.SalePrice = null; parcel.SaleBuyerUserId = null; parcel.SaleDescription = string.Empty;
@@ -166,7 +167,8 @@ public static class LandCommerce
     public static async Task<CommerceResult> OfferForRentAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, RentOffer offer, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (parcel.GroupId is not null) return CommerceResult.Fail("group_owned");
         if (offer.PricePerPeriod is < 1 or > MaxPrice || offer.DepositCoins is < 0 or > MaxPrice) return CommerceResult.Fail("bad_price");
         if (offer.PeriodDays is < 1 or > 365 || offer.MinPeriods < 1 || offer.MaxPeriods < offer.MinPeriods || offer.MaxPeriods > 120 || offer.GraceDays is < 0 or > 60) return CommerceResult.Fail("bad_terms");
         if (await HasLiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
@@ -182,7 +184,7 @@ public static class LandCommerce
     public static async Task<CommerceResult> CancelRentOfferAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (parcel.RentPrice is null) return CommerceResult.Fail("not_for_rent");
         var now = clock.GetUtcNow();
         parcel.RentPrice = null;

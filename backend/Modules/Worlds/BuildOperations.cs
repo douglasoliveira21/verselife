@@ -205,7 +205,7 @@ public static class BuildOperations
         if (parcel is not null)
         {
             var (insideObjects, insideCost) = await LandService.UsageAsync(db, islandId, parcel, Guid.Empty, ct);
-            parcelInfo = new { id = parcel.Id, name = parcel.Name, mine = parcel.OwnerUserId == user, publicBuild = parcel.PublicBuild, buildMode = parcel.BuildMode, objects = insideObjects, maxObjects = parcel.MaxObjects, cost = insideCost, maxCost = parcel.MaxCost, allowScripts = parcel.AllowScripts, autoReturnMinutes = parcel.AutoReturnMinutes };
+            parcelInfo = new { id = parcel.Id, name = parcel.Name, mine = parcel.IsOwner(user), publicBuild = parcel.PublicBuild, buildMode = parcel.BuildMode, objects = insideObjects, maxObjects = parcel.MaxObjects, cost = insideCost, maxCost = parcel.MaxCost, allowScripts = parcel.AllowScripts, autoReturnMinutes = parcel.AutoReturnMinutes };
         }
         return Results.Ok(new
         {

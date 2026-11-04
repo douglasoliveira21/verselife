@@ -84,6 +84,14 @@ public static class LandEndpoints
         group.MapGet("/parcels/{parcelId:guid}/audit", async (Guid islandId, Guid parcelId, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
             !TryUser(c, out var user) ? Results.Unauthorized() : await LandAdmin.AuditAsync(db, parcelId, user, ct) is { } list ? Results.Ok(list) : Results.Forbid());
 
+        // opening a parcel to a whole group
+        group.MapGet("/parcels/{parcelId:guid}/group-access", async (Guid islandId, Guid parcelId, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
+            !TryUser(c, out var user) ? Results.Unauthorized() : Groups.GroupEndpoints.Answer(await Groups.GroupService.GroupAccessAsync(db, user, parcelId, ct)));
+        group.MapPost("/parcels/{parcelId:guid}/group-access", async (Guid islandId, Guid parcelId, Groups.GroupAccessRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !TryUser(c, out var user) ? Results.Unauthorized() : Groups.GroupEndpoints.Answer(await Groups.GroupService.GrantGroupAccessAsync(db, user, parcelId, r.GroupId, r.Kind, t.GetUtcNow(), ct)));
+        group.MapDelete("/parcels/{parcelId:guid}/group-access/{entryId:guid}", async (Guid islandId, Guid parcelId, Guid entryId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !TryUser(c, out var user) ? Results.Unauthorized() : Groups.GroupEndpoints.Answer(await Groups.GroupService.RevokeGroupAccessAsync(db, user, parcelId, entryId, t.GetUtcNow(), ct)));
+
         // how a parcel presents itself: where people arrive, its sky and its music
         group.MapPut("/parcels/{parcelId:guid}/arrival", async (Guid islandId, Guid parcelId, ArrivalRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandPresentation.SetArrivalAsync(db, parcelId, user, r.X, r.Z, r.Yaw, r.Mode, t, ct)));
@@ -125,7 +133,7 @@ public static class LandEndpoints
         var parcel = await db.IslandParcels.AsNoTracking().SingleOrDefaultAsync(p => p.Id == parcelId && p.IslandId == islandId && p.DeletedAt == null, ct);
         if (parcel is null) return Results.NotFound();
         var tenant = await db.ParcelRentals.AsNoTracking().AnyAsync(r => r.ParcelId == parcelId && r.TenantUserId == user && (r.Status == "active" || r.Status == "grace"), ct);
-        if (parcel.OwnerUserId != user && !tenant) return Results.Forbid();
+        if (!tenant && !await LandAuthority.CanManageAsync(db, parcel, user, ct)) return Results.Forbid();
         return Results.Ok(await db.ParcelTransactions.AsNoTracking().Where(t => t.ParcelId == parcelId).OrderByDescending(t => t.CreatedAt).Take(50).Select(t => new { t.Type, t.Amount, t.FromUserId, t.ToUserId, at = t.CreatedAt }).ToListAsync(ct));
     }
 

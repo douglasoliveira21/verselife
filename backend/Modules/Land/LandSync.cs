@@ -25,6 +25,7 @@ public static class LandSync
         var parcels = await db.IslandParcels.AsNoTracking().Where(p => p.IslandId == island.Id && p.DeletedAt == null).ToListAsync(ct);
         var parcelIds = parcels.Select(p => p.Id).ToList();
         var entries = await db.ParcelAccess.AsNoTracking().Where(a => parcelIds.Contains(a.ParcelId) && a.RevokedAt == null && (a.ExpiresAt == null || a.ExpiresAt > now)).ToListAsync(ct);
+        var people = await LandAuthority.PeopleAsync(db, parcels, ct);
         var restricted = parcels.Where(p => p.AccessMode != "public" || entries.Any(e => e.ParcelId == p.Id && e.Kind == "ban")).ToList();
         var restrictedIds = restricted.Select(p => p.Id).ToList();
         var tenants = await db.ParcelRentals.AsNoTracking().Where(r => r.Status == "active" && restrictedIds.Contains(r.ParcelId)).ToDictionaryAsync(r => r.ParcelId, r => r.TenantUserId, ct);
@@ -35,8 +36,8 @@ public static class LandSync
             admins,
             parcels = restricted.Select(p => new
             {
-                id = p.Id, mode = p.AccessMode, owner = p.OwnerUserId, tenant = tenants.TryGetValue(p.Id, out var t) ? (Guid?)t : null,
-                allow = entries.Where(e => e.ParcelId == p.Id && e.Kind == "allow").Select(e => e.UserId).ToList(),
+                id = p.Id, mode = p.GroupId != null && p.AccessMode == "private" ? "list" : p.AccessMode, owner = p.OwnerUserId, tenant = tenants.TryGetValue(p.Id, out var t) ? (Guid?)t : null,
+                allow = entries.Where(e => e.ParcelId == p.Id && e.Kind == "allow").Select(e => e.UserId).Concat(people.TryGetValue(p.Id, out var crowd) ? crowd.Members.Concat(p.AccessMode == "list" ? crowd.Guests : Enumerable.Empty<Guid>()) : Enumerable.Empty<Guid>()).Distinct().ToList(),
                 bans = entries.Where(e => e.ParcelId == p.Id && e.Kind == "ban").Select(e => new { userId = e.UserId, untilMs = e.ExpiresAt?.ToUnixTimeMilliseconds() }).ToList(),
                 runs = allCells.TryGetValue(p.Id, out var list) ? LandGrid.Runs(list) : []
             }).ToList()
@@ -58,7 +59,7 @@ public static class LandSync
         var allTenants = await db.ParcelRentals.AsNoTracking().Where(r => r.Status == "active" && parcelIds.Contains(r.ParcelId)).ToDictionaryAsync(r => r.ParcelId, r => r.TenantUserId, ct);
         var terrain = new
         {
-            parcels = parcels.Where(p => allCells.ContainsKey(p.Id)).Select(p => new { id = p.Id, editors = LandService.TerrainEditors(p, allTenants.TryGetValue(p.Id, out var tn) ? tn : null, entries.Where(e => e.ParcelId == p.Id).ToList()), runs = LandGrid.Runs(allCells[p.Id]) }).ToList()
+            parcels = parcels.Where(p => allCells.ContainsKey(p.Id)).Select(p => new { id = p.Id, editors = LandService.TerrainEditors(p, allTenants.TryGetValue(p.Id, out var tn) ? tn : null, entries.Where(e => e.ParcelId == p.Id).ToList(), people.TryGetValue(p.Id, out var team) ? team.Managers.Concat(team.Builders) : null), runs = LandGrid.Runs(allCells[p.Id]) }).ToList()
         };
         // where teleports land and which parcels refuse them; an arrival point only counts while it is still on the parcel's land
         var teleport = new

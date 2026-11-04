@@ -282,6 +282,19 @@ public sealed class ParcelAccess
     public DateTimeOffset? RevokedAt { get; set; }
 }
 
+/// <summary>The members of a group may enter (allow) or build (build) in a parcel: access given to a whole group instead of person by person.</summary>
+public sealed class ParcelGroupAccess
+{
+    public Guid Id { get; set; }
+    public Guid ParcelId { get; set; }
+    public Guid GroupId { get; set; }
+    /// <summary>allow or build.</summary>
+    public required string Kind { get; set; }
+    public Guid GrantedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
 /// <summary>A rental of a parcel: the tenant may build in it while the contract is active. Status: active, grace (overdue, no building) or ended.</summary>
 public sealed class ParcelRental
 {

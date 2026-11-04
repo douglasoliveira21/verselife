@@ -62,7 +62,7 @@ public static class LandAdmin
     public static async Task<CommerceResult> SplitAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, IReadOnlyCollection<long> cutCells, string name, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (await LiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
         name = (name ?? string.Empty).Trim(); if (name.Length == 0 || name.Length > 120) return CommerceResult.Fail("bad_name");
         if (await db.IslandParcels.AnyAsync(p => p.IslandId == parcel.IslandId && p.Name == name && p.DeletedAt == null, ct)) return CommerceResult.Fail("name_taken");
@@ -114,7 +114,8 @@ public static class LandAdmin
         var parcels = await db.IslandParcels.Where(p => ids.Contains(p.Id) && p.DeletedAt == null).OrderBy(p => p.CreatedAt).ToListAsync(ct);
         if (parcels.Count != ids.Count) return CommerceResult.Fail("not_found");
         if (parcels.Select(p => p.IslandId).Distinct().Count() != 1) return CommerceResult.Fail("other_island");
-        if (parcels.Any(p => p.OwnerUserId != actor)) return CommerceResult.Fail("forbidden");
+        foreach (var each in parcels) if (!await LandAuthority.CanManageAsync(db, each, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (parcels.Select(p => p.GroupId).Distinct().Count() > 1) return CommerceResult.Fail("mixed_owners"); // a parcel of a group never joins a personal one
         foreach (var parcel in parcels) if (await LiveRentalAsync(db, parcel.Id, ct)) return CommerceResult.Fail("rented");
         var union = new HashSet<long>();
         foreach (var parcel in parcels) { var cells = await CellsAsync(db, parcel.Id, ct); if (cells.Count == 0) return CommerceResult.Fail("no_cells"); union.UnionWith(cells); }
@@ -150,7 +151,7 @@ public static class LandAdmin
     public static async Task<CommerceResult> SetAccessModeAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, string mode, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (!Modes.Contains(mode)) return CommerceResult.Fail("bad_mode");
         parcel.AccessMode = mode;
         Log(db, parcel, actor, "access_mode", new { mode }, clock.GetUtcNow());
@@ -168,7 +169,7 @@ public static class LandAdmin
     public static async Task<CommerceResult> SetOptionsAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, string buildMode, bool allowScripts, int? autoReturnMinutes, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (!BuildModes.Contains(buildMode)) return CommerceResult.Fail("bad_mode");
         if (autoReturnMinutes is { } minutes && (minutes < 1 || minutes > 10_080)) return CommerceResult.Fail("bad_duration");
         parcel.BuildMode = buildMode; parcel.AutoReturnMinutes = autoReturnMinutes;
@@ -183,7 +184,7 @@ public static class LandAdmin
     public static async Task<CommerceResult> AddAccessAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, Guid userId, string kind, int? minutes, string? reason, TimeProvider clock, CancellationToken ct, string operation = "access_add")
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (kind is not ("allow" or "ban" or "build")) return CommerceResult.Fail("bad_kind");
         if (userId == actor || userId == parcel.OwnerUserId) return CommerceResult.Fail("bad_target");
         if (minutes is { } m && (m < 1 || m > 525_600)) return CommerceResult.Fail("bad_duration");
@@ -207,7 +208,7 @@ public static class LandAdmin
     public static async Task<CommerceResult> RemoveAccessAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, Guid entryId, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         var entry = await db.ParcelAccess.SingleOrDefaultAsync(a => a.Id == entryId && a.ParcelId == parcelId && a.RevokedAt == null, ct);
         if (entry is null) return CommerceResult.Fail("not_found");
         var now = clock.GetUtcNow(); entry.RevokedAt = now;
@@ -218,7 +219,7 @@ public static class LandAdmin
     public static async Task<AccessView?> AccessAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await db.IslandParcels.AsNoTracking().SingleOrDefaultAsync(p => p.Id == parcelId && p.DeletedAt == null, ct);
-        if (parcel is null || parcel.OwnerUserId != actor) return null;
+        if (parcel is null || !await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return null;
         var now = clock.GetUtcNow();
         var entries = await db.ParcelAccess.AsNoTracking().Where(a => a.ParcelId == parcelId && a.RevokedAt == null && (a.ExpiresAt == null || a.ExpiresAt > now)).OrderBy(a => a.Kind).ThenBy(a => a.CreatedAt).ToListAsync(ct);
         var names = await NamesAsync(db, entries.Select(e => e.UserId), ct);
@@ -240,7 +241,7 @@ public static class LandAdmin
         var parcel = await db.IslandParcels.AsNoTracking().SingleOrDefaultAsync(p => p.Id == parcelId && p.DeletedAt == null, ct); if (parcel is null) return null;
         var island = await db.Islands.AsNoTracking().SingleAsync(i => i.Id == parcel.IslandId, ct);
         var admin = island.OwnerUserId == actor || await db.IslandPermissions.AnyAsync(p => p.IslandId == island.Id && p.UserId == actor && p.RevokedAt == null && p.Permission == "admin", ct);
-        if (parcel.OwnerUserId != actor && !admin) return null;
+        if (!admin && !await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return null;
         return (parcel, island, await CellsAsync(db, parcelId, ct), admin);
     }
 

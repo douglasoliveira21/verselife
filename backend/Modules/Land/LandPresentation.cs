@@ -51,7 +51,7 @@ public static class LandPresentation
     public static async Task<CommerceResult> SetEnvironmentAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, string? json, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await db.IslandParcels.SingleOrDefaultAsync(p => p.Id == parcelId && p.DeletedAt == null, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         var island = await db.Islands.AsNoTracking().SingleAsync(i => i.Id == parcel.IslandId, ct);
         if (!IslandAllowsParcelEnvironment(island.EnvironmentJson)) return CommerceResult.Fail("environment_not_allowed");
         var normalized = NormalizeEnvironment(json); if (normalized is null) return CommerceResult.Fail("bad_environment");
@@ -90,7 +90,7 @@ public static class LandPresentation
     public static async Task<CommerceResult> SetMediaAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, string? musicUrl, float volume, bool autoplay, string? name, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await db.IslandParcels.SingleOrDefaultAsync(p => p.Id == parcelId && p.DeletedAt == null, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         string json;
         if (string.IsNullOrWhiteSpace(musicUrl)) json = "{}";
         else
@@ -115,7 +115,7 @@ public static class LandPresentation
     public static async Task<CommerceResult> SetArrivalAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, double? x, double? z, double yaw, string mode, TimeProvider clock, CancellationToken ct)
     {
         var parcel = await db.IslandParcels.SingleOrDefaultAsync(p => p.Id == parcelId && p.DeletedAt == null, ct); if (parcel is null) return CommerceResult.Fail("not_found");
-        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (!TeleportModes.Contains(mode)) return CommerceResult.Fail("bad_mode");
         if (!double.IsFinite(yaw)) return CommerceResult.Fail("bad_point");
         var cells = (await db.ParcelCells.AsNoTracking().Where(c => c.ParcelId == parcelId).Select(c => new { c.Cx, c.Cz }).ToListAsync(ct)).Select(c => LandGrid.Key(c.Cx, c.Cz)).ToHashSet();

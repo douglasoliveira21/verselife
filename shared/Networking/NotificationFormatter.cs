@@ -29,6 +29,8 @@ public static class NotificationFormatter
                 "group_dissolved" => $"{Group(data)} foi dissolvido.",
                 "group_announcement" => $"{Group(data)} — anúncio: {Clip(Text(data, "title"), 60)}",
                 "group_event" => $"{Group(data)} — novo evento: {Clip(Text(data, "name"), 60)}",
+                "group_land" => $"{Group(data)} — novo terreno: {Clip(Text(data, "name"), 60)}",
+                "group_land_released" => $"{Group(data)} devolveu a você o terreno {Clip(Text(data, "name"), 60)}.",
                 "group_event_cancelled" => $"{Group(data)} — evento cancelado: {Clip(Text(data, "name"), 60)}",
                 _ => null
             };
