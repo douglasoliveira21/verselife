@@ -41,7 +41,8 @@ public sealed record AvatarResponse(
     string CustomModelBonesJson = "{}",
     string CustomWearablesJson = "[]",
     string AnimationOverridesJson = "{}",
-    string AnimationFilesJson = "[]");
+    string AnimationFilesJson = "[]",
+    IReadOnlyList<string>? LookSkipped = null);
 
 public static partial class AvatarCatalog
 {

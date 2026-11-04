@@ -7,7 +7,7 @@ using LifeVerse.Shared.Avatar;
 namespace LifeVerse.Client.Scripts;
 
 /// <summary>One saved look as the server lists it.</summary>
-public sealed record LookEntry(Guid Id, string Name, string? ShareCode, string SkinColor, string HairStyle);
+public sealed record LookEntry(Guid Id, string Name, string? ShareCode, string SkinColor, string HairStyle, bool Full = false, bool CustomBody = false, int Animations = 0);
 
 /// <summary>
 /// Avatar 2.0 in the character editor: body and face sliders, every wearable slot with conflict handling (a dress takes the legs, an outer layer
@@ -136,6 +136,29 @@ public partial class CharacterCreator
     /// <summary>Asks the server for the looks of this avatar.</summary>
     public void LoadLooks() => _manager.Call(Godot.HttpClient.Method.Get, "/looks", null, (status, body) => { if (status is >= 200 and < 300) ReadLooks(body); });
 
+    /// <summary>The line of a look in the list: its name, and what else it brings (a custom body, animations) and whether it is shared.</summary>
+    public static string LookLabel(LookEntry look)
+    {
+        var parts = new List<string> { look.Name };
+        if (look.CustomBody) parts.Add("corpo próprio");
+        if (look.Animations > 0) parts.Add(look.Animations == 1 ? "1 animação" : $"{look.Animations} animações");
+        if (look.ShareCode is not null) parts.Add("compartilhado");
+        return string.Join("  ·  ", parts);
+    }
+
+    /// <summary>What a look could not bring back, in words (the server names the body and the animations that no longer exist).</summary>
+    public static string SkippedText(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            if (!document.RootElement.TryGetProperty("lookSkipped", out var skipped) || skipped.ValueKind != JsonValueKind.Array) return string.Empty;
+            var things = skipped.EnumerateArray().Select(x => x.GetString() ?? string.Empty).Where(x => x.Length > 0).Select(x => x == "body" ? "o corpo próprio (ele não existe mais)" : x.StartsWith("animation:", StringComparison.Ordinal) ? $"a animação de {x["animation:".Length..]} (o arquivo não existe mais)" : x).ToList();
+            return things.Count == 0 ? string.Empty : " Ficaram de fora: " + string.Join("; ", things) + ".";
+        }
+        catch (JsonException) { return string.Empty; }
+    }
+
     private void ReadLooks(string body)
     {
         var selected = SelectedLook()?.Id;
@@ -147,9 +170,11 @@ public partial class CharacterCreator
             {
                 string Text(string name) => item.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? string.Empty : string.Empty;
                 if (!Guid.TryParse(Text("id"), out var id)) continue;
-                var entry = new LookEntry(id, Text("name"), Text("shareCode") is { Length: > 0 } code ? code : null, Text("skinColor"), Text("hairStyle"));
+                bool Flag(string name) => item.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
+                var animations = item.TryGetProperty("animationOverrides", out var count) && count.TryGetInt32(out var n) ? n : 0;
+                var entry = new LookEntry(id, Text("name"), Text("shareCode") is { Length: > 0 } code ? code : null, Text("skinColor"), Text("hairStyle"), Flag("full"), Flag("customBody"), animations);
                 _lookEntries.Add(entry);
-                _looks.AddItem(entry.ShareCode is null ? entry.Name : $"{entry.Name}  ·  compartilhado");
+                _looks.AddItem(LookLabel(entry));
                 if (entry.Id == selected) _looks.Select(_lookEntries.Count - 1);
             }
         }
@@ -179,7 +204,7 @@ public partial class CharacterCreator
         {
             if (status is < 200 or >= 300) { _lookMessage.Text = LookMessage(status, body); return; }
             if (AvatarManager.ParseAppearance(body) is { } value) { value.DisplayName = string.IsNullOrWhiteSpace(value.DisplayName) ? _displayName.Text : value.DisplayName; _lastSaved = value.Copy(); _undoValue = value.Copy(); _manager.SetCurrent(value); ApplyToForm(value); }
-            _lookMessage.Text = $"Look “{look.Name}” aplicado.";
+            _lookMessage.Text = $"Look “{look.Name}” aplicado." + SkippedText(body);
         });
     }
 

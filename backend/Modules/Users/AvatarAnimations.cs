@@ -166,6 +166,25 @@ public static class AvatarAnimations
         return new ModelResult(true, null, new { overrides = clean });
     }
 
+    /// <summary>
+    /// Keeps the entries of a saved look that still work (a built-in animation of that state, or a clip of a file the avatar still has) and names the
+    /// ones that no longer do, so a look can be put on without refusing it for an animation that was deleted.
+    /// </summary>
+    public static async Task<(Dictionary<string, string> Clean, List<string> Dropped)> FilterOverridesAsync(LifeVerseDbContext db, Guid avatarId, IReadOnlyDictionary<string, string> wanted, CancellationToken ct)
+    {
+        var files = (await db.AvatarAnimationFiles.AsNoTracking().Where(f => f.AvatarId == avatarId && f.DeletedAt == null).ToListAsync(ct)).ToDictionary(f => f.Id, f => Clips(f.ReportJson).Select(c => c.Name).ToHashSet());
+        var clean = new Dictionary<string, string>(); var dropped = new List<string>();
+        foreach (var (state, source) in wanted.Take(AnimationStates.MaxOverrides))
+        {
+            if (!AnimationStates.All.ContainsKey(state) || string.IsNullOrWhiteSpace(source) || source == "default") { if (!AnimationStates.All.ContainsKey(state)) dropped.Add(state); continue; }
+            var ok = source.StartsWith(AnimationStates.BuiltinPrefix, StringComparison.Ordinal)
+                ? AnimationStates.BuiltinFor(state).Contains(source[AnimationStates.BuiltinPrefix.Length..])
+                : AnimationStates.TryParseCustom(source, out var fileId, out var animation) && files.TryGetValue(fileId, out var names) && names.Contains(animation);
+            if (ok) clean[state] = source; else dropped.Add(state);
+        }
+        return (clean, dropped);
+    }
+
     /// <summary>The animation files the overrides of an avatar use (id and hash), so everyone who sees the avatar can download them.</summary>
     public static async Task<string> FilesInfoAsync(LifeVerseDbContext db, Avatar avatar, CancellationToken ct)
     {

@@ -10,11 +10,15 @@ namespace LifeVerse.Api.Modules.Users;
 public sealed record LookNameRequest(string Name);
 public sealed record LookImportRequest(string Code, string? Name);
 
-/// <summary>What a saved look holds: the whole appearance except the name of the avatar and the camera preferences, which belong to the person.</summary>
+/// <summary>
+/// What a saved look holds: the whole appearance except the name of the avatar and the camera preferences, which belong to the person. Looks saved now also
+/// hold which custom body was worn and the animation overrides (<see cref="LookSnapshot.WithBodyAndAnimations"/>); older looks do not, and putting them on leaves the body and animations as they are.
+/// </summary>
 public sealed record LookSnapshot(string BaseModel, string SkinColor, string HairColor, string HairStyle, string EyeColor, string BeardStyle,
-    string BodySettingsJson, string FaceSettingsJson, string OutfitsJson, string AttachmentsJson, IReadOnlyList<EquippedItemRequest> EquippedItems);
+    string BodySettingsJson, string FaceSettingsJson, string OutfitsJson, string AttachmentsJson, IReadOnlyList<EquippedItemRequest> EquippedItems,
+    bool WithBodyAndAnimations = false, Guid? CustomModelId = null, string? AnimationOverridesJson = null);
 
-public sealed record LookSummary(Guid Id, string Name, DateTimeOffset UpdatedAt, string? ShareCode, string SkinColor, string HairColor, string HairStyle, IReadOnlyList<EquippedItemRequest> EquippedItems);
+public sealed record LookSummary(Guid Id, string Name, DateTimeOffset UpdatedAt, string? ShareCode, string SkinColor, string HairColor, string HairStyle, IReadOnlyList<EquippedItemRequest> EquippedItems, bool Full = false, bool CustomBody = false, int AnimationOverrides = 0);
 
 public sealed record LookResult(bool Ok, string? Error = null, object? Data = null);
 
@@ -68,7 +72,8 @@ public static class AvatarLooks
     {
         var response = UserEndpoints.ToResponse(avatar);
         return new LookSnapshot(response.BaseModel, response.SkinColor, response.HairColor, response.HairStyle, response.EyeColor, response.BeardStyle,
-            response.BodySettingsJson, response.FaceSettingsJson, response.OutfitsJson, response.AttachmentsJson, response.EquippedItems);
+            response.BodySettingsJson, response.FaceSettingsJson, response.OutfitsJson, response.AttachmentsJson, response.EquippedItems,
+            WithBodyAndAnimations: true, CustomModelId: avatar.CustomModelId, AnimationOverridesJson: response.AnimationOverridesJson);
     }
 
     /// <summary>The request that would save a snapshot over an avatar, so the same validation as a normal save applies.</summary>
@@ -80,7 +85,7 @@ public static class AvatarLooks
     private static LookSummary Summary(AvatarLook look)
     {
         var snapshot = Read(look.SnapshotJson);
-        return new LookSummary(look.Id, look.Name, look.UpdatedAt, look.ShareCode, snapshot?.SkinColor ?? "#C98F65", snapshot?.HairColor ?? "#2B1B14", snapshot?.HairStyle ?? "short", snapshot?.EquippedItems ?? []);
+        return new LookSummary(look.Id, look.Name, look.UpdatedAt, look.ShareCode, snapshot?.SkinColor ?? "#C98F65", snapshot?.HairColor ?? "#2B1B14", snapshot?.HairStyle ?? "short", snapshot?.EquippedItems ?? [], snapshot?.WithBodyAndAnimations == true, snapshot?.CustomModelId is not null, snapshot is { WithBodyAndAnimations: true } full ? AvatarAnimations.ReadOverrides(full.AnimationOverridesJson).Count : 0);
     }
 
     public static async Task<IReadOnlyList<LookSummary>> ListAsync(LifeVerseDbContext db, Guid user, CancellationToken ct)
@@ -128,9 +133,26 @@ public static class AvatarLooks
         var look = await db.AvatarLooks.SingleOrDefaultAsync(l => l.Id == id && l.AvatarId == avatar.Id, ct); if (look is null) return new LookResult(false, "not_found");
         if (Read(look.SnapshotJson) is not { } snapshot) return new LookResult(false, "look_invalid");
         var request = ToRequest(avatar, snapshot);
-        if (AvatarCatalog.Validate(request, await AvatarWearables.ResolverAsync(db, avatar.Id, ct)).Count > 0 || (request.EquippedItems.Any(i => AvatarRules.IsCustom(i.ItemKey)) && (await AvatarWearables.CheckOutfitAsync(db, avatar, request.EquippedItems, ct)).Count > 0)) return new LookResult(false, "look_invalid");
+        if (AvatarCatalog.Validate(request, await AvatarWearables.ResolverAsync(db, avatar.Id, ct)).Count > 0) return new LookResult(false, "look_invalid");
+
+        // the body and the animations come back too, as far as they still exist: what was deleted since is left out and reported, not a reason to refuse the look
+        var skipped = new List<string>(); var previousBody = avatar.CustomModelId; Dictionary<string, string>? overrides = null;
+        if (snapshot.WithBodyAndAnimations)
+        {
+            Guid? body = null;
+            if (snapshot.CustomModelId is { } wanted)
+            {
+                if (await db.AvatarModels.AsNoTracking().AnyAsync(m => m.Id == wanted && m.AvatarId == avatar.Id && m.DeletedAt == null, ct)) body = wanted; else skipped.Add("body");
+            }
+            avatar.CustomModelId = body;
+            var (clean, dropped) = await AvatarAnimations.FilterOverridesAsync(db, avatar.Id, AvatarAnimations.ReadOverrides(snapshot.AnimationOverridesJson), ct);
+            overrides = clean; skipped.AddRange(dropped.Select(state => "animation:" + state));
+        }
+        if (request.EquippedItems.Any(i => AvatarRules.IsCustom(i.ItemKey)) && (await AvatarWearables.CheckOutfitAsync(db, avatar, request.EquippedItems, ct)).Count > 0) { avatar.CustomModelId = previousBody; return new LookResult(false, "look_invalid"); }
         UserEndpoints.ApplyAvatar(db, avatar, request, now);
-        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct)));
+        if (overrides is not null && avatar.Appearance is not null) { avatar.Appearance.AnimationOverridesJson = AvatarAnimations.WriteOverrides(overrides); avatar.Appearance.UpdatedAt = now; }
+        if (snapshot.WithBodyAndAnimations) avatar.UpdatedAt = now;
+        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct)) with { LookSkipped = skipped });
     }
 
     public static async Task<LookResult> DuplicateAsync(LifeVerseDbContext db, Guid user, Guid id, DateTimeOffset now, CancellationToken ct)
@@ -190,7 +212,9 @@ public static class AvatarLooks
         if (await db.AvatarLooks.CountAsync(l => l.AvatarId == avatar.Id, ct) >= MaxLooks) return new LookResult(false, "too_many_looks");
         var wanted = CleanName(name) ?? source.Name;
         var free = await FreeNameAsync(db, avatar.Id, wanted, ct); if (free is null) return new LookResult(false, "name_taken");
-        var copy = new AvatarLook { Id = Guid.NewGuid(), AvatarId = avatar.Id, Name = free, SnapshotJson = source.SnapshotJson, CreatedAt = now, UpdatedAt = now };
+        // the body and the animation files of the sender are theirs: they do not come in through a code, so the copy leaves the body and animations of whoever puts it on as they are
+        var stripped = snapshot with { WithBodyAndAnimations = false, CustomModelId = null, AnimationOverridesJson = null };
+        var copy = new AvatarLook { Id = Guid.NewGuid(), AvatarId = avatar.Id, Name = free, SnapshotJson = JsonSerializer.Serialize(stripped, Options), CreatedAt = now, UpdatedAt = now };
         db.AvatarLooks.Add(copy);
         return await SaveAsync(db, ct, Summary(copy));
     }

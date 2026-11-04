@@ -81,10 +81,11 @@ public partial class Avatar2Smoke : Node
             var calls = new List<string>(); var saved = new List<(Guid Id, string Name, string? Code)>(); var lastBody = string.Empty;
             var models = new List<(Guid Id, string Name)>(); Guid? usedModel = null;
             var wear = new List<(Guid Id, string Name, string Slot, string Kind, string Covers)>(); var animFiles = new List<(Guid Id, string Name)>(); var savedOverrides = string.Empty;
+            var fullLooks = new HashSet<Guid>();
             manager.Transport = (method, path, body) =>
             {
                 calls.Add($"{method} {path} {body}");
-                string List() => "[" + string.Join(",", saved.Select(l => $"{{\"id\":\"{l.Id}\",\"name\":\"{l.Name}\",\"shareCode\":{(l.Code is null ? "null" : $"\"{l.Code}\"")},\"skinColor\":\"#C98F65\",\"hairStyle\":\"short\"}}")) + "]";
+                string List() => "[" + string.Join(",", saved.Select(l => $"{{\"id\":\"{l.Id}\",\"name\":\"{l.Name}\",\"shareCode\":{(l.Code is null ? "null" : $"\"{l.Code}\"")},\"skinColor\":\"#C98F65\",\"hairStyle\":\"short\"{(fullLooks.Contains(l.Id) ? ",\"full\":true,\"customBody\":true,\"animationOverrides\":2" : string.Empty)}}}")) + "]";
                 if (method == Godot.HttpClient.Method.Get && path == "/animations") return (200, "[" + string.Join(",", animFiles.Select(a => $"{{\"id\":\"{a.Id}\",\"name\":\"{a.Name}\",\"hash\":\"{new string('c', 64)}\",\"clips\":[{{\"name\":\"Passada\"}},{{\"name\":\"Acenar\"}}]}}")) + "]");
                 if (method == Godot.HttpClient.Method.Post && path == "/animations")
                 {
@@ -118,9 +119,9 @@ public partial class Avatar2Smoke : Node
                 {
                     var name = JsonDocument.Parse(body!).RootElement.GetProperty("name").GetString()!;
                     if (saved.Any(l => l.Name == name)) return (409, "{\"error\":\"name_taken\"}");
-                    saved.Add((Guid.NewGuid(), name, null)); return (200, "{}");
+                    var made = Guid.NewGuid(); saved.Add((made, name, null)); fullLooks.Add(made); return (200, "{}");
                 }
-                if (path.EndsWith("/apply")) return (200, "{\"displayName\":\"Teste\",\"baseModel\":\"human_b\",\"skinColor\":\"#8D5524\",\"hairColor\":\"#2B1B14\",\"hairStyle\":\"long\",\"eyeColor\":\"#4A3326\",\"beardStyle\":\"none\",\"bodySettingsJson\":\"{\\\"height\\\":1.1}\",\"faceSettingsJson\":\"{\\\"noseSize\\\":1.2}\",\"outfitsJson\":\"[]\",\"attachmentsJson\":\"[]\",\"cameraSensitivity\":0.003,\"invertCameraY\":false,\"equippedItems\":[{\"slot\":\"top\",\"itemKey\":\"dress_basic\",\"tintColor\":\"#8E3B6B\"},{\"slot\":\"bottom\",\"itemKey\":\"covered\",\"tintColor\":\"#FFFFFF\"},{\"slot\":\"shoes\",\"itemKey\":\"boots_basic\",\"tintColor\":\"#E7E9EE\"},{\"slot\":\"hat\",\"itemKey\":\"cap_basic\",\"tintColor\":\"#B23A48\"}]}");
+                if (path.EndsWith("/apply")) return (200, "{\"lookSkipped\":[\"body\",\"animation:Dance\"],\"displayName\":\"Teste\",\"baseModel\":\"human_b\",\"skinColor\":\"#8D5524\",\"hairColor\":\"#2B1B14\",\"hairStyle\":\"long\",\"eyeColor\":\"#4A3326\",\"beardStyle\":\"none\",\"bodySettingsJson\":\"{\\\"height\\\":1.1}\",\"faceSettingsJson\":\"{\\\"noseSize\\\":1.2}\",\"outfitsJson\":\"[]\",\"attachmentsJson\":\"[]\",\"cameraSensitivity\":0.003,\"invertCameraY\":false,\"equippedItems\":[{\"slot\":\"top\",\"itemKey\":\"dress_basic\",\"tintColor\":\"#8E3B6B\"},{\"slot\":\"bottom\",\"itemKey\":\"covered\",\"tintColor\":\"#FFFFFF\"},{\"slot\":\"shoes\",\"itemKey\":\"boots_basic\",\"tintColor\":\"#E7E9EE\"},{\"slot\":\"hat\",\"itemKey\":\"cap_basic\",\"tintColor\":\"#B23A48\"}]}");
                 if (path.EndsWith("/duplicate")) { saved.Add((Guid.NewGuid(), saved[0].Name + " (cópia)", null)); return (200, "{}"); }
                 if (path.EndsWith("/share") && method == Godot.HttpClient.Method.Post) { saved[0] = (saved[0].Id, saved[0].Name, "ABCD2345"); return (200, "{\"shareCode\":\"ABCD2345\"}"); }
                 if (path.EndsWith("/share")) { saved[0] = (saved[0].Id, saved[0].Name, null); return (200, "{\"shareCode\":null}"); }
@@ -150,6 +151,7 @@ public partial class Avatar2Smoke : Node
             creator.SaveLookForTesting();
             Require(calls[0].StartsWith("Put  ") && calls[1].StartsWith("Post /looks") && calls[1].Contains("Praia") && calls[2].StartsWith("Get /looks"), $"saving a look saves the avatar first, then the look, then reloads the list: {string.Join(" | ", calls.Select(c => c[..Math.Min(18, c.Length)]))}");
             Require(creator.Looks.Count == 1 && creator.Looks[0].Name == "Praia", "the list shows the new look");
+            Require(creator.Looks[0] is { Full: true, CustomBody: true, Animations: 2 } && CharacterCreator.LookLabel(creator.Looks[0]) == "Praia  ·  corpo próprio  ·  2 animações", $"the list says what else a look brings: {CharacterCreator.LookLabel(creator.Looks[0])}");
             creator.SaveLookForTesting();
             Require(creator.LookMessageForTesting.Contains("já existe", StringComparison.OrdinalIgnoreCase) || creator.LookMessageForTesting.Contains("Já existe"), $"a repeated name is explained: {creator.LookMessageForTesting}");
             creator.SelectLookForTesting(0);
@@ -163,6 +165,7 @@ public partial class Avatar2Smoke : Node
             var applied = creator.FormForTesting();
             Require(applied.HairStyle == "long" && applied.BaseModel == "human_b" && applied.BodySettingsJson == "{\"height\":1.1}" && applied.Item("top", "") == "dress_basic" && applied.Item("bottom", "") == "covered" && applied.Item("hat", "") == "cap_basic", "applying a look puts every part of it on the form");
             Require(manager.Current.HairStyle == "long", "the current avatar is the applied look");
+            Require(creator.LookMessageForTesting.Contains("Ficaram de fora") && creator.LookMessageForTesting.Contains("corpo próprio") && creator.LookMessageForTesting.Contains("animação de Dance"), $"what a look could not bring back is said: {creator.LookMessageForTesting}");
             creator.SetImportCodeForTesting("NOPE"); creator.ImportLookForTesting();
             Require(creator.LookMessageForTesting.Contains("8"), "a short code is refused before asking");
             creator.SetImportCodeForTesting("ZZZZ9999"); creator.ImportLookForTesting();
