@@ -105,15 +105,16 @@ public partial class PlayerController : CharacterBody3D
         _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
-        _cameraPivot.Position = new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, _oceanSwimming ? 2.7f : 1.55f, weight * .35f), 0);
+        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : _oceanSwimming ? 2.7f : 1.55f;
+        _cameraPivot.Position = new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
     }
 
     public override void _UnhandledInput(InputEvent input)
     {
         if (input.IsActionPressed("cursor_toggle")) SetCursorFree(true);
-        if (input.IsActionPressed("first_person")) ToggleFirstPerson();
-        if (input.IsActionPressed("camera_mode")) CycleCameraMode();
-        if (input.IsActionPressed("camera_reset")) ResetCamera();
+        if (input.IsActionPressed("first_person") && !_mirror) ToggleFirstPerson();
+        if (input.IsActionPressed("camera_mode") && !_mirror) CycleCameraMode();
+        if (input.IsActionPressed("camera_reset") && !_mirror) ResetCamera();
         if (input.IsActionPressed("ui_cancel"))
         {
             _contextMenu.Visible = false; _rightDragging = false; SetCursorFree(true);
@@ -169,7 +170,7 @@ public partial class PlayerController : CharacterBody3D
             return;
         }
         if (_landingTime > 0) _landingTime -= dt;
-        var blocked = IsTyping() || _contextMenu.Visible;
+        var blocked = IsTyping() || _contextMenu.Visible || _mirror;
         var input = blocked ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_back");
         var strafe = blocked ? 0f : Input.GetAxis("strafe_left", "strafe_right");
         var steering = Mathf.Abs(input.X) > .01f || Mathf.Abs(input.Y) > .01f || Mathf.Abs(strafe) > .01f;
@@ -201,10 +202,12 @@ public partial class PlayerController : CharacterBody3D
         _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
         _oceanSwimming = !_flying && _terrainNode is not null && _terrainNode.Map.WaterDepth(_terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z)) >= AuthoritativeMovement.WadeDepth;
         var flags = InputFlags.None;
+        if (_mirror) _walkTarget = null;
         if (RunHeld) flags |= InputFlags.Run;
         if (_flying || _swimming ? Input.IsActionPressed("jump") : Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
         if (Input.IsActionJustPressed("fly_toggle") || _flyFlagPending) flags |= InputFlags.Fly;
         _flyFlagPending = false;
+        if (_mirror) flags = InputFlags.None; // in front of the mirror the avatar stands still: no jumping, running or flying from the keys typed into the window
         if (Input.IsActionPressed("descend")) flags |= InputFlags.Descend;
         _network.SendInput(++_inputSequence, SentDirection(direction), flags);
         var velocity = Velocity;
@@ -447,7 +450,7 @@ public partial class PlayerController : CharacterBody3D
     private bool _avatarHidden;
     /// Hides the avatar while the build camera is in use (and shows it again afterwards).
     public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
-    private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, 1.5f, 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
+    private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, _mirror ? .7f : 1.5f, _mirror ? 5f : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     private bool IsTyping() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
     private void SetWalkTarget(Vector2 screenPosition)
     {
@@ -463,6 +466,43 @@ public partial class PlayerController : CharacterBody3D
         var point = value.AsVector3(); var direction = point - GlobalPosition; direction.Y = 0;
         if (direction.LengthSquared() > .01f) _targetYaw = Mathf.Atan2(-direction.X, -direction.Z);
     }
+    // ---- the mirror: the camera in front of the avatar, close, while the appearance is being changed on the spot ----------------------------
+
+    private bool _mirror, _mirrorFace = true;
+    private (CameraMode Mode, float Distance, float Yaw, float Pitch) _beforeMirror;
+
+    /// <summary>True while the camera is in front of the avatar for the appearance window; the avatar stands still.</summary>
+    public bool MirrorActive => _mirror;
+    public bool MirrorFace => _mirrorFace;
+    public float CameraDistance => _cameraDistance;
+
+    /// <summary>Puts the camera in front of the avatar (the face, or the whole body) and keeps the avatar still. The state of the camera before is kept for <see cref="ExitMirror"/>.</summary>
+    public void EnterMirror(bool face = true)
+    {
+        if (!_mirror) _beforeMirror = (_cameraMode, _cameraDistance, _targetYaw, _targetPitch);
+        _mirror = true; _walkTarget = null; _rightDragging = false;
+        SetCameraMode(CameraMode.ThirdPerson);
+        SetMirrorView(face);
+    }
+
+    public void SetMirrorView(bool face)
+    {
+        if (!_mirror) return;
+        _mirrorFace = face; _cameraDistance = face ? 1.15f : 3.1f; _springArm.SpringLength = _cameraDistance;
+        _targetPitch = face ? -.02f : -.1f; _targetYaw = _targetBodyYaw + Mathf.Pi;
+    }
+
+    /// <summary>Turns the camera around the avatar (radians), so every side can be seen.</summary>
+    public void TurnMirror(float radians) { if (_mirror) _targetYaw += radians; }
+
+    public void ExitMirror()
+    {
+        if (!_mirror) return;
+        _mirror = false;
+        _cameraDistance = _beforeMirror.Distance; _targetYaw = _beforeMirror.Yaw; _targetPitch = _beforeMirror.Pitch;
+        SetCameraMode(_beforeMirror.Mode);
+    }
+
     public void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; }
     /// Shows a new look on our own avatar (it came from the island after a refresh); the camera preferences stay as they are.
     public void ShowAppearance(AvatarAppearanceData value) => _rig.ApplyAppearance(value);

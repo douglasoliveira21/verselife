@@ -24,7 +24,8 @@ public partial class ViewerUI
         row.AddChild(new Control { CustomMinimumSize = new Vector2(14, 0) });
 
         var me = AddMenu(row, "Eu",
-            ("Editar aparência…", () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator(), false),
+            ("Espelho: mudar o visual aqui…", () => _world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow")?.Toggle(), false),
+            ("Editar aparência (tela completa)…", () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator(), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
             ("Preferências…", () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(), false),
             ("-", null, false),

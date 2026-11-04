@@ -159,3 +159,21 @@ A pessoa pode trazer o **próprio cabelo** e os **próprios olhos**, como peças
 **Testes:** `CustomHairEyesTests` (19: slots, cabelo e olhos aceitos, osso, tint, tamanho, não-roupa, `EyesVisible`, só itens seus no slot certo, chapéu por cima, o que os outros recebem, look, apagar), a seção nova do `AvatarWearablesSmoke` (peças substituem os do catálogo, tomam as cores, ficam na cabeça, voltam ao catálogo de longe) e a do `Avatar2Smoke` (menus, vestir, exemplos válidos).
 
 **Limitações:** os controles de rosto (tamanho e distância dos olhos) não mexem na peça de olhos; se o arquivo do cabelo ou dos olhos falha ao baixar, o avatar fica sem cabelo/olhos até a peça chegar (o do catálogo não volta sozinho); a peça não acompanha expressões nem piscar; nada foi verificado em captura de tela, só por números.
+
+## Avatar 2.0 — editor de aparência dentro do mundo: o espelho (entregue)
+
+Antes, mudar o visual levava para outra tela (a do personagem), saindo da ilha. Agora há o **espelho**: no menu **Eu → "Espelho: mudar o visual aqui…"** abre-se uma janela ao lado do avatar, **sem sair da ilha**, e a câmera vai para a frente dele. A tela completa continua no menu ("Editar aparência (tela completa)…") e pelo botão **Editor completo…** da janela.
+
+**Câmera.** `PlayerController.EnterMirror/SetMirrorView/TurnMirror/ExitMirror`: a câmera fica na frente do avatar, em **Rosto** (1,15 m, na altura da cabeça) ou **Corpo inteiro** (3,1 m), com **◀ Girar / Girar ▶** (45° por vez), botão direito para orbitar e roda para aproximar (0,7 a 5 m). Enquanto o espelho está aberto o avatar **fica parado** (andar, correr, pular e voar, inclusive por atalhos digitados na janela, são ignorados e o destino de caminhada é cancelado) e as teclas de trocar câmera não valem. Ao fechar, a câmera volta ao modo, distância e ângulo de antes.
+
+**Janela** (`AppearanceWindow`): abas **Corpo** (corpo base, os 7 controles de corpo, cor da pele), **Rosto** (os 7 controles de rosto, cabelo, barba, cor do cabelo e dos olhos), **Roupas** (um menu por slot: o catálogo e os itens próprios com ★, inclusive cabelo e olhos próprios; as mesmas regras de conflito e cobertura da tela completa, via `AvatarRules.Resolve`) e **Looks** (lista, aplicar, salvar o visual atual como look).
+- **Ao vivo e só local**: cada mudança aparece no avatar na hora (no máximo uma reconstrução por quadro, mesmo arrastando vários controles) e **só na sua tela** até salvar.
+- **Salvar** envia o visual (`PUT /api/v1/users/me/avatar`, as mesmas regras do servidor) e, como em qualquer mudança, **avisa a ilha**: todos passam a ver. A resposta do servidor vira o visual salvo (ela traz o que os outros precisam para desenhar os itens). Erros do servidor aparecem em frase.
+- **Desfazer** volta ao visual salvo; **Fechar** sem salvar também desfaz no avatar. Aplicar um look salva e mostra o que ele não conseguiu trazer (corpo ou animação que não existem mais).
+- **Editor completo…** salva o que estiver pendente antes de abrir a tela completa.
+
+**O que continua só na tela completa:** corpos personalizados, animações, importar roupas e acessórios e o nome do avatar.
+
+**Teste:** `MirrorSmoke` (carrega o mundo com o jogador de verdade: a câmera vai para a frente e perto, o avatar não anda com a tecla apertada, visão do corpo inteiro e de costas, mudanças aparecendo no avatar, vestido cobrindo a calça, item próprio indo para o visual com o que a prévia precisa, salvar, desfazer, fechar sem salvar volta ao salvo e a câmera volta, andar de novo, looks, salvar como look).
+
+**Limitações:** sem captura de tela (a distância e a posição da câmera foram conferidas por números); a prévia reconstrói o avatar por inteiro a cada mudança, como a tela completa; o espelho não mostra um reflexo de verdade, é a câmera na frente do avatar; durante o espelho, quem está perto vê o avatar parado como em qualquer pausa e não o visual ainda não salvo.
