@@ -14,6 +14,7 @@ public partial class GroupsSmoke : Node
             var requests = new List<string>(); var group = Guid.NewGuid(); var me = Guid.NewGuid(); var other = Guid.NewGuid(); var roleMod = Guid.NewGuid(); var roleMember = Guid.NewGuid(); var roleOwner = Guid.NewGuid();
             var chatJson = "[]"; var annJson = "[]"; var evJson = "[]"; var noticeJson = "{\"unread\":0,\"items\":[]}"; var mutedJson = "null"; var island = Guid.NewGuid();
             var landsJson = "{}"; var availJson = "[]"; var grantsJson = "[]"; var parcel = Guid.NewGuid(); var islandId = Guid.NewGuid(); var friends = Guid.NewGuid();
+            var treasuryJson = "{}"; var ledgerJson = "[]"; var productsJson = "[]"; var storesJson = "[]"; var inventoryJson = "{}";
             var role = "moderator"; var perms = "[\"kick\",\"mute\"]"; var rank = 40; var leader = false; var memberRank = 0;
             window.Transport = (method, path, body) =>
             {
@@ -23,6 +24,11 @@ public partial class GroupsSmoke : Node
                 if (path == $"/{group}/members") return (200, $"[{{\"userId\":\"{other}\",\"username\":\"ana\",\"roleId\":\"{roleMember}\",\"roleName\":\"Membro\",\"rank\":{memberRank}}},{{\"userId\":\"{me}\",\"username\":\"eu\",\"roleId\":\"{roleMod}\",\"roleName\":\"Moderador\",\"rank\":40}}]");
                 if (path == $"/{group}/roles") return (200, $"[{{\"id\":\"{roleOwner}\",\"name\":\"Líder\",\"systemKey\":\"owner\",\"rank\":1000,\"permissions\":[],\"members\":1,\"canEdit\":false}},{{\"id\":\"{roleMod}\",\"name\":\"Moderador\",\"systemKey\":\"moderator\",\"rank\":40,\"permissions\":[\"kick\"],\"members\":1,\"canEdit\":false}},{{\"id\":\"{roleMember}\",\"name\":\"Membro\",\"systemKey\":\"member\",\"rank\":0,\"permissions\":[],\"members\":1,\"canEdit\":false}}]");
                 if (path.StartsWith($"/search")) return (200, $"[{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"\",\"description\":\"\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":false}}]");
+                if (path == $"/{group}/treasury") return (200, treasuryJson);
+                if (path == $"/{group}/treasury/ledger?take=50") return (200, ledgerJson);
+                if (path == $"/{group}/products") return (200, productsJson);
+                if (path == $"/{group}/stores") return (200, storesJson);
+                if (path == "/api/v1/inventory/items?page=1&pageSize=100") return (200, inventoryJson);
                 if (path == $"/{group}/lands") return (200, landsJson);
                 if (path == $"/{group}/lands/available") return (200, availJson);
                 if (path == $"/api/v1/worlds/islands/{islandId}/land/parcels/{parcel}/group-access") return (200, grantsJson);
@@ -126,7 +132,35 @@ public partial class GroupsSmoke : Node
             window.SelectGrantForTesting(0); Require(window.LandButtonEnabledForTesting("revoke"), "revoke should turn on");
             window.RevokeAccess(); Require(requests.Any(r => r.StartsWith("Delete ") && r.Contains($"/group-access/{grantId}")), "revoke wrong");
 
+            // the chest and the shop (as the leader)
+            var prod = Guid.NewGuid(); var assetId = Guid.NewGuid(); var storeId = Guid.NewGuid();
+            treasuryJson = "{\"canView\":true,\"canTake\":true,\"canFreeze\":true,\"balance\":1500,\"totalIn\":2000,\"totalOut\":500,\"frozen\":false,\"myContributed\":300,\"top\":[]}";
+            ledgerJson = $"[{{\"id\":\"{Guid.NewGuid()}\",\"type\":\"contribution\",\"amount\":300,\"balanceAfter\":1500,\"actor\":\"eu\",\"target\":null,\"note\":\"festa\",\"at\":\"{future}\"}}]";
+            productsJson = $"[{{\"id\":\"{prod}\",\"name\":\"Cadeira\",\"description\":\"\",\"category\":\"x\",\"priceCoins\":100,\"status\":\"active\",\"publisher\":\"eu\",\"sold\":2}}]";
+            storesJson = $"[{{\"id\":\"{storeId}\",\"islandId\":\"{islandId}\",\"islandName\":\"Praca\",\"productId\":\"{prod}\",\"productName\":\"Cadeira\",\"displayName\":\"Banca\"}}]";
+            inventoryJson = $"{{\"items\":[{{\"item\":{{\"id\":\"{Guid.NewGuid()}\"}},\"asset\":{{\"id\":\"{assetId}\",\"name\":\"Cadeira Rara\",\"ownerUserId\":\"{me}\"}}}},{{\"item\":{{\"id\":\"{Guid.NewGuid()}\"}},\"asset\":{{\"id\":\"{Guid.NewGuid()}\",\"name\":\"Comprado\",\"ownerUserId\":\"{other}\"}}}}]}}";
+            window.OpenGroup(group);
+            Require(window.Treasury is { CanView: true, Balance: 1500, CanFreeze: true } && window.Ledger.Count == 1 && window.ChestInfoForTesting.Contains("1.500"), "the chest and its extract should load");
+            Require(window.EconomyButtonEnabledForTesting("give") && window.EconomyButtonEnabledForTesting("take") && window.EconomyButtonEnabledForTesting("freeze"), "the leader gives, takes and freezes");
+            window.SetGiveForTesting("250", "valeu"); window.Contribute();
+            Require(requests.Any(r => r.StartsWith("Post ") && r.Contains($"/{group}/treasury/contribute") && r.Contains("\"amount\":250") && r.Contains("idempotencyKey")), "contribute wrong");
+            window.SetGiveForTesting("0", ""); before = requests.Count; window.Contribute(); Require(requests.Count == before, "a zero gift must not be sent");
+            window.SetTakeForTesting("100", "reembolso", "ana"); window.Withdraw();
+            Require(requests.Any(r => r.StartsWith("Post ") && r.Contains("/treasury/withdraw") && r.Contains("\"amount\":100") && r.Contains(other.ToString()) && r.Contains("reembolso")), "withdraw wrong");
+            window.SetFreezeForTesting(true); Require(requests.Any(r => r.StartsWith("Put ") && r.Contains("/treasury/frozen") && r.Contains("\"frozen\":true")), "freeze wrong");
+            Require(window.Products.Count == 1 && window.Stores.Count == 1 && window.EconomyButtonEnabledForTesting("publish") && window.EconomyButtonEnabledForTesting("openStore"), "the shop should load with the items of the person");
+            window.SetProductFormForTesting("Mesa", "500", ""); window.PublishProduct();
+            Require(requests.Any(r => r.StartsWith("Post ") && r.Contains($"/{group}/products {{") && r.Contains("\"name\":\"Mesa\"") && r.Contains("\"priceCoins\":500") && r.Contains(assetId.ToString())), "publish wrong");
+            window.SelectProductForTesting(0); Require(window.EconomyButtonEnabledForTesting("reprice") && window.EconomyButtonEnabledForTesting("unpublish"), "an active product can be repriced or taken off");
+            window.SetProductFormForTesting("", "", "250"); window.Reprice(); Require(requests.Any(r => r.StartsWith("Put ") && r.Contains($"/products/{prod}") && r.Contains("\"priceCoins\":250")), "reprice wrong");
+            window.SelectProductForTesting(0); window.Unpublish(); Require(requests.Any(r => r.StartsWith("Delete ") && r.Contains($"/products/{prod}")), "unpublish wrong");
+            window.SetStoreFormForTesting("Banca 2"); window.OpenStore();
+            Require(requests.Any(r => r.StartsWith("Post ") && r.Contains($"/{group}/stores {{") && r.Contains("\"displayName\":\"Banca 2\"") && r.Contains(prod.ToString()) && r.Contains(island.ToString())), "open store wrong");
+            window.SelectStoreForTesting(0); Require(window.EconomyButtonEnabledForTesting("closeStore"), "a store can be closed");
+            window.CloseStore(); Require(requests.Any(r => r.StartsWith("Delete ") && r.Contains($"/stores/{storeId}")), "close store wrong");
+
             // a plain member who is muted
+            treasuryJson = "{\"canView\":false,\"canTake\":false,\"canFreeze\":false,\"frozen\":false,\"myContributed\":300}";
             landsJson = landsJson.Replace("\"canManage\":true", "\"canManage\":false").Replace("\"canRelease\":true", "\"canRelease\":false"); availJson = "[]";
             role = "member"; rank = 0; leader = false; perms = "[]"; mutedJson = $"\"{future}\"";
             window.OpenGroup(group);
@@ -134,6 +168,7 @@ public partial class GroupsSmoke : Node
             Require(!window.CommButtonEnabledForTesting("post") && !window.CommButtonEnabledForTesting("evCreate"), "a plain member cannot announce or make events");
             window.SelectChatForTesting(0); Require(!window.CommButtonEnabledForTesting("chatDelete"), "a plain member cannot delete a message of someone else");
             window.SelectChatForTesting(1); Require(window.CommButtonEnabledForTesting("chatDelete"), "but can delete their own");
+            Require(window.EconomyButtonEnabledForTesting("give") && !window.EconomyButtonEnabledForTesting("take") && !window.EconomyButtonEnabledForTesting("freeze") && !window.EconomyButtonEnabledForTesting("publish") && window.ChestInfoForTesting.Contains("Você já deu"), "a plain member gives but runs nothing");
             Require(!window.LandButtonEnabledForTesting("donate") && !window.LandButtonEnabledForTesting("release") && !window.LandButtonEnabledForTesting("grant"), "a plain member runs no land");
             mutedJson = "null"; window.OpenGroup(group); Require(window.CommButtonEnabledForTesting("send"), "talking again once the mute ends");
 

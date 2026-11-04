@@ -81,3 +81,36 @@ public sealed class GroupNotification
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ReadAt { get; set; }
 }
+
+/// <summary>The chest of a group: the coins its members gave and what its shops earned. The balance only moves together with a line in <see cref="GroupLedgerEntry"/>.</summary>
+public sealed class GroupTreasury
+{
+    public Guid GroupId { get; set; }
+    /// <summary>Coins in the chest. It is a concurrency token: two operations on the same balance at once cannot both win.</summary>
+    public long Balance { get; set; }
+    public long TotalIn { get; set; }
+    public long TotalOut { get; set; }
+    /// <summary>While frozen only the leader can take coins out (set by the leader when something looks wrong).</summary>
+    public bool Frozen { get; set; }
+    public Guid? FrozenByUserId { get; set; }
+    public DateTimeOffset? FrozenAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>One movement of the chest, kept forever: positive coins came in (contribution, sale), negative went out (withdrawal).</summary>
+public sealed class GroupLedgerEntry
+{
+    public Guid Id { get; set; }
+    public Guid GroupId { get; set; }
+    /// <summary>contribution, sale or withdrawal.</summary>
+    public required string Type { get; set; }
+    public long Amount { get; set; }
+    public long BalanceAfter { get; set; }
+    public Guid? ActorUserId { get; set; }
+    public Guid? TargetUserId { get; set; }
+    public string Note { get; set; } = string.Empty;
+    /// <summary>What it refers to: the order of a sale.</summary>
+    public Guid? RefId { get; set; }
+    public Guid? LedgerTransactionId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}

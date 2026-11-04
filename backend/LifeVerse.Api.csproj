@@ -6,6 +6,7 @@
     <Version>0.6.0</Version>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="LifeVerse.Api.Tests" />
     <ProjectReference Include="../shared/LifeVerse.Shared.csproj" />
   </ItemGroup>
   <ItemGroup>

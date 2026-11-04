@@ -22,7 +22,7 @@ public sealed partial class GroupsWindow
     private readonly Dictionary<Guid, int> _unreadChat = [];
     private DateTimeOffset? _mutedUntil; private bool _notifyMuted; private Guid? _testUser;
 
-    private Control _noticesPage = null!;
+    private Control _noticesPage = null!; private ScrollContainer _innerBar = null!;
     private ItemList _chatList = null!, _announceList = null!, _eventList = null!, _noticeList = null!;
     private LineEdit _chatInput = null!, _annTitle = null!, _evName = null!, _evStart = null!, _evMinutes = null!, _evCapacity = null!;
     private TextEdit _annText = null!; private Label _announceBody = null!, _eventBody = null!;

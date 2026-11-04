@@ -518,6 +518,7 @@ public static partial class GroupService
     {
         var blockers = new List<string>();
         if (await db.IslandParcels.AnyAsync(p => p.GroupId == groupId && p.DeletedAt == null, ct)) blockers.Add("owns_land");
+        if (await db.GroupTreasuries.AnyAsync(t => t.GroupId == groupId && t.Balance > 0, ct)) blockers.Add("treasury_not_empty");
         return blockers;
     }
 
@@ -533,7 +534,7 @@ public static partial class GroupService
         foreach (var i in await db.GroupInvites.Where(i => i.GroupId == groupId && i.Status == "pending").ToListAsync(ct)) i.Status = "declined";
         foreach (var r in await db.GroupJoinRequests.Where(r => r.GroupId == groupId && r.Status == "pending").ToListAsync(ct)) { r.Status = "cancelled"; r.DecidedAt = now; }
         foreach (var p in await db.IslandPermissions.Where(p => p.GroupId == groupId && p.RevokedAt == null).ToListAsync(ct)) p.RevokedAt = now; // what the group was allowed on islands ends with it
-        await EndGroupEventsAsync(db, groupId, ct);
+        await EndGroupEventsAsync(db, groupId, ct); await EndGroupShopsAsync(db, groupId, now, ct);
         foreach (var a in await db.GroupAnnouncements.Where(a => a.GroupId == groupId && a.DeletedAt == null).ToListAsync(ct)) a.DeletedAt = now;
         ctx.Group.DeletedAt = now; ctx.Group.UpdatedAt = now;
         Log(db, groupId, me, "group_dissolved", null, new { members = members.Count }, now);

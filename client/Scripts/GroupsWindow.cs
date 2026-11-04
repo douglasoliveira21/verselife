@@ -111,7 +111,21 @@ public sealed partial class GroupsWindow : Node
         "system_role" => "Os cargos iniciais não mudam de nome nem de nível e não podem ser apagados.",
         "leader_cannot_leave" => "O líder precisa passar a liderança antes de sair.",
         "confirmation_needed" => "Escreva o nome do grupo, igualzinho, para confirmar.",
-        "blocked" => "O grupo ainda tem terrenos. Passe-os adiante antes de dissolver.",
+        "blocked" => "O grupo ainda tem terrenos ou moedas no cofre. Devolva os terrenos e retire as moedas antes de dissolver.",
+        "frozen" => "O cofre está congelado: só o líder tira moedas.",
+        "insufficient_funds" => "O cofre não tem moedas suficientes.",
+        "insufficient_balance" => "Você não tem moedas suficientes.",
+        "over_limit" => "Acima do limite diário de retirada do seu cargo.",
+        "bad_reason" => "Escreva o motivo (de 3 a 200 letras).",
+        "bad_amount" => "Informe uma quantidade de moedas válida.",
+        "bad_key" => "Tente de novo.",
+        "bad_note" => "O recado passa de 120 caracteres.",
+        "wallet_blocked" => "A carteira está bloqueada.",
+        "bad_asset" => "Escolha um item seu para vender.",
+        "bad_price" => "Preço inválido.",
+        "bad_product" => "Escolha um produto ativo do grupo.",
+        "too_many_products" => "O grupo já vende produtos demais (o limite é 100).",
+        "too_many_stores" => "O grupo já tem lojas demais (o limite é 50).",
         "muted" => "Você está silenciado neste grupo.",
         "bad_announcement" => "O anúncio precisa de título (até 80) e texto (até 2000).",
         "too_many_pinned" => "Já há 3 anúncios fixados. Desafixe um antes.",
@@ -186,8 +200,8 @@ public sealed partial class GroupsWindow : Node
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { Say("Não foi possível ler o grupo."); return; }
         _detail.Visible = true; var member = _current.IsMember;
-        _inner.Visible = member;
-        if (member) { LoadChat(); LoadAnnouncements(); LoadEvents(); LoadLands(); LoadMembers(); LoadRoles(); if (Has(GroupPermissions.ApproveRequests)) LoadRequests(); if (Has(GroupPermissions.Ban)) LoadBans(); if (Has(GroupPermissions.ViewAudit)) LoadAudit(); FillSettings(); }
+        _innerBar.Visible = member;
+        if (member) { LoadChat(); LoadAnnouncements(); LoadEvents(); LoadLands(); LoadTreasury(); LoadShop(); LoadMembers(); LoadRoles(); if (Has(GroupPermissions.ApproveRequests)) LoadRequests(); if (Has(GroupPermissions.Ban)) LoadBans(); if (Has(GroupPermissions.ViewAudit)) LoadAudit(); FillSettings(); }
         UpdateButtons();
     });
 
@@ -199,7 +213,7 @@ public sealed partial class GroupsWindow : Node
         _members.Clear(); _members.AddRange(ReadList(body, m => new GroupMemberData(IdOf(m, "userId"), Str(m, "username"), IdOf(m, "roleId"), Str(m, "roleName"), Num(m, "rank"), Time(m, "mutedUntil"))));
         _memberList.Clear(); foreach (var m in _members) _memberList.AddItem($"{m.Username} · {m.RoleName}{(m.MutedUntil is { } until ? $" · silenciado até {until.ToLocalTime():HH:mm}" : string.Empty)}");
         _leaderChoice.Clear(); foreach (var m in _members.Where(x => x.Rank < GroupRules.LeaderRank)) { _leaderChoice.AddItem(m.Username); _leaderChoice.SetItemMetadata(_leaderChoice.ItemCount - 1, m.UserId.ToString()); }
-        RefreshHeirs();
+        RefreshHeirs(); RefreshTakeTargets();
         UpdateButtons();
     });
 
@@ -234,6 +248,7 @@ public sealed partial class GroupsWindow : Node
         "request_approved" => "aprovou a entrada de", "request_denied" => "recusou a entrada de", "member_kicked" => "expulsou", "member_banned" => "baniu", "member_unbanned" => "desbaniu", "member_muted" => "silenciou",
         "role_assigned" => "mudou o cargo de", "role_created" => "criou um cargo", "role_updated" => "mudou um cargo", "role_deleted" => "apagou um cargo", "leadership_transferred" => "passou a liderança para", "group_dissolved" => "dissolveu o grupo",
         "message_deleted" => "apagou uma mensagem de", "announcement_posted" => "publicou um anúncio", "announcement_updated" => "mudou um anúncio", "announcement_deleted" => "apagou um anúncio", "event_created" => "criou um evento", "event_cancelled" => "cancelou um evento",
+        "treasury_contribution" => "contribuiu para o cofre", "treasury_withdrawal" => "retirou do cofre para", "treasury_frozen" => "congelou o cofre", "treasury_unfrozen" => "liberou o cofre", "product_published" => "publicou um produto", "product_updated" => "mudou um produto", "product_removed" => "retirou um produto", "store_created" => "abriu uma loja", "store_removed" => "fechou uma loja",
         "land_donated" => "colocou um terreno no grupo", "land_released" => "devolveu um terreno a", "land_access_granted" => "abriu um terreno a outro grupo", "land_access_revoked" => "retirou o acesso de um grupo a um terreno", _ => action
     };
 
@@ -266,6 +281,7 @@ public sealed partial class GroupsWindow : Node
         _leave.Disabled = _current is null || !_current.IsMember || _isLeader; _leave.Visible = _current?.IsMember == true;
         UpdateCommunicationButtons();
         UpdateLandButtons();
+        UpdateEconomyButtons();
         UpdateSearchButtons();
     }
 
@@ -363,9 +379,9 @@ public sealed partial class GroupsWindow : Node
         _detail = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, Visible = false }; mine.AddChild(_detail);
         _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(400, 0) }; _overview.AddThemeFontSizeOverride("font_size", 16); _detail.AddChild(_overview);
         _leave = Act("Sair do grupo", UiStyle.ButtonKind.Secondary, LeaveCurrent); _detail.AddChild(_leave);
-        _inner = new UiTabs { EqualWidth = true, Flat = true, FontSize = 13 }; foreach (var t in new[] { "Chat", "Anúncios", "Eventos", "Terrenos", "Membros", "Cargos", "Pedidos", "Histórico", "Ajustes" }) _inner.AddTab(t); _detail.AddChild(_inner);
+        _inner = new UiTabs { Flat = true, FontSize = 14 }; foreach (var t in new[] { "Chat", "Anúncios", "Eventos", "Terrenos", "Cofre", "Loja", "Membros", "Cargos", "Pedidos", "Histórico", "Ajustes" }) _inner.AddTab(t); _innerBar = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Auto, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 48) }; _innerBar.AddChild(_inner); _detail.AddChild(_innerBar);
         var innerStack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 280) }; _detail.AddChild(innerStack);
-        _innerPages.Add(BuildChat(innerStack)); _innerPages.Add(BuildAnnouncements(innerStack)); _innerPages.Add(BuildEvents(innerStack)); _innerPages.Add(BuildLands(innerStack)); _innerPages.Add(BuildMembers(innerStack)); _innerPages.Add(BuildRoles(innerStack)); _innerPages.Add(BuildRequests(innerStack)); _innerPages.Add(BuildAudit(innerStack)); _innerPages.Add(BuildSettings(innerStack));
+        _innerPages.Add(BuildChat(innerStack)); _innerPages.Add(BuildAnnouncements(innerStack)); _innerPages.Add(BuildEvents(innerStack)); _innerPages.Add(BuildLands(innerStack)); _innerPages.Add(BuildChest(innerStack)); _innerPages.Add(BuildShop(innerStack)); _innerPages.Add(BuildMembers(innerStack)); _innerPages.Add(BuildRoles(innerStack)); _innerPages.Add(BuildRequests(innerStack)); _innerPages.Add(BuildAudit(innerStack)); _innerPages.Add(BuildSettings(innerStack));
         _inner.TabChanged += i => { for (var p = 0; p < _innerPages.Count; p++) _innerPages[p].Visible = p == i; };
         _innerPages[0].Visible = true;
 

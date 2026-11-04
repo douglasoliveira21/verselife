@@ -1228,6 +1228,64 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("group_join_requests", "social");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupLedgerEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("amount");
+
+                    b.Property<long>("BalanceAfter")
+                        .HasColumnType("bigint")
+                        .HasColumnName("balance_after");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<Guid?>("LedgerTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ledger_transaction_id");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("note");
+
+                    b.Property<Guid?>("RefId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ref_id");
+
+                    b.Property<Guid?>("TargetUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_user_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "CreatedAt");
+
+                    b.ToTable("group_ledger", "social");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.GroupMember", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1376,6 +1434,46 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("group_roles", "social");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupTreasury", b =>
+                {
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<long>("Balance")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("balance");
+
+                    b.Property<bool>("Frozen")
+                        .HasColumnType("boolean")
+                        .HasColumnName("frozen");
+
+                    b.Property<DateTimeOffset?>("FrozenAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("frozen_at");
+
+                    b.Property<Guid?>("FrozenByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("frozen_by_user_id");
+
+                    b.Property<long>("TotalIn")
+                        .HasColumnType("bigint")
+                        .HasColumnName("total_in");
+
+                    b.Property<long>("TotalOut")
+                        .HasColumnType("bigint")
+                        .HasColumnName("total_out");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("GroupId");
+
+                    b.ToTable("group_treasuries", "social");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.HudDefinition", b =>
@@ -2160,11 +2258,17 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
                     b.Property<Guid?>("UserId")
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("GroupId");
 
                     b.HasIndex("UserId", "AccountType")
                         .IsUnique();
@@ -2353,6 +2457,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("description");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
 
                     b.Property<string>("ImageUrl")
                         .HasColumnType("text")
@@ -3724,6 +3832,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(160)")
                         .HasColumnName("display_name");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
                     b.Property<Guid>("IslandId")
                         .HasColumnType("uuid")
                         .HasColumnName("island_id");
@@ -3991,6 +4103,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupLedgerEntry", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.SocialGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.GroupMember", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.SocialGroup", null)
@@ -4016,6 +4137,15 @@ namespace LifeVerse.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.GroupRole", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.SocialGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupTreasury", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.SocialGroup", null)
                         .WithMany()
