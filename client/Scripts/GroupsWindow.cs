@@ -15,7 +15,7 @@ public sealed record GroupRoleData(Guid Id, string Name, string SystemKey, int R
 /// hierarchy rules as the server, so buttons that would be refused are off); the server checks everything again. Tabs for my groups, the search
 /// and creating a group; for the group chosen: overview, members, cargos, requests and bans, history and settings.
 /// </summary>
-public partial class GroupsWindow : Node
+public sealed partial class GroupsWindow : Node
 {
     private static readonly string[] ActionNames = ["Parado"];
     private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-BR");
@@ -60,7 +60,7 @@ public partial class GroupsWindow : Node
     public override void _Ready() => Build();
 
     public void Toggle() { if (_window.Visible) _window.Visible = false; else Open(); }
-    public void Open() { _window.Visible = true; _window.MoveToFront(); LoadMine(); }
+    public void Open() { _window.Visible = true; _window.MoveToFront(); LoadMine(); LoadNotices(); }
 
     // ---- talking to the API -------------------------------------------------------------------------------------------------------------------------
 
@@ -73,7 +73,7 @@ public partial class GroupsWindow : Node
         var http = new HttpRequest { Timeout = 15 }; AddChild(http);
         http.RequestCompleted += (result, code, _, bytes) => { http.QueueFree(); done(result == (long)HttpRequest.Result.Success ? (int)code : 0, bytes.GetStringFromUtf8()); };
         var headers = new List<string> { $"Authorization: Bearer {session.AccessToken}" }; if (json is not null) headers.Add("Content-Type: application/json");
-        if (http.Request($"{app.ApiBaseUrl}/api/v1/groups{path}", [.. headers], method, json ?? string.Empty) != Error.Ok) { http.QueueFree(); done(0, string.Empty); }
+        if (http.Request($"{app.ApiBaseUrl}{(path.StartsWith("/api/", StringComparison.Ordinal) ? path : "/api/v1/groups" + path)}", [.. headers], method, json ?? string.Empty) != Error.Ok) { http.QueueFree(); done(0, string.Empty); }
     }
 
     private static string ErrorOf(string body) { try { using var d = JsonDocument.Parse(body); return d.RootElement.TryGetProperty("error", out var e) ? e.GetString() ?? string.Empty : string.Empty; } catch (JsonException) { return string.Empty; } }
@@ -112,6 +112,14 @@ public partial class GroupsWindow : Node
         "leader_cannot_leave" => "O líder precisa passar a liderança antes de sair.",
         "confirmation_needed" => "Escreva o nome do grupo, igualzinho, para confirmar.",
         "blocked" => "O grupo ainda tem terrenos. Passe-os adiante antes de dissolver.",
+        "muted" => "Você está silenciado neste grupo.",
+        "bad_announcement" => "O anúncio precisa de título (até 80) e texto (até 2000).",
+        "too_many_pinned" => "Já há 3 anúncios fixados. Desafixe um antes.",
+        "bad_time" => "Datas inválidas: o fim vem depois do início, no futuro, e dura até 7 dias.",
+        "bad_capacity" => "A capacidade vai de 1 a 5000.",
+        "bad_island" => "Escolha uma ilha onde você pode entrar.",
+        "too_many_events" => "O grupo já tem eventos demais marcados (o limite é 20).",
+        "event_full" => "O evento está lotado.",
         _ => status == 0 ? "Sem conexão com o servidor." : status == 401 ? "Entre na sua conta." : $"Não foi possível concluir (HTTP {status})."
     };
 
@@ -142,7 +150,7 @@ public partial class GroupsWindow : Node
     {
         if (status is < 200 or >= 300) { Say(Explain(status, body)); return; }
         _mine.Clear(); _mine.AddRange(ReadList(body, Card)); _mineList.Clear();
-        foreach (var g in _mine) _mineList.AddItem($"{(g.Tag.Length > 0 ? $"[{g.Tag}] " : string.Empty)}{g.Name} · {g.Members} membro(s)");
+        foreach (var g in _mine) _mineList.AddItem($"{(g.Tag.Length > 0 ? $"[{g.Tag}] " : string.Empty)}{g.Name} · {g.Members} membro(s){(_unreadChat.GetValueOrDefault(g.Id) is > 0 and var n ? $" · {n} nova(s)" : string.Empty)}");
         if (_current is { } current) { var again = _mine.FindIndex(g => g.Id == current.Id); if (again >= 0) _mineList.Select(again); else { _current = null; _detail.Visible = false; } }
     });
 
@@ -167,13 +175,14 @@ public partial class GroupsWindow : Node
         {
             using var d = JsonDocument.Parse(body); var root = d.RootElement;
             _current = Card(root.GetProperty("card")); _myRole = Str(root, "myRole"); _myRank = Num(root, "myRank"); _isLeader = Flag(root, "isLeader");
+            _mutedUntil = Time(root, "mutedUntil"); _notifyMuted = Flag(root, "notificationsMuted"); _unreadChat.Remove(_current.Id);
             _myPermissions = root.TryGetProperty("myPermissions", out var p) ? [.. p.EnumerateArray().Select(x => x.GetString() ?? string.Empty)] : [];
             _overview.Text = $"{_current.Name}{(_current.Tag.Length > 0 ? $" [{_current.Tag}]" : string.Empty)}\n{(_current.Description.Length > 0 ? _current.Description : "Sem descrição.")}\n\nLíder: {Str(root, "leaderName")} · {_current.Members}/{_current.MemberLimit} membros\nPrivacidade: {(_current.Privacy == "public" ? "público" : "privado")} · Entrada: {PolicyName(_current)}\nSeu cargo: {(string.IsNullOrEmpty(_myRole) ? "(você não é membro)" : _myRole)}";
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { Say("Não foi possível ler o grupo."); return; }
         _detail.Visible = true; var member = _current.IsMember;
         _inner.Visible = member;
-        if (member) { LoadMembers(); LoadRoles(); if (Has(GroupPermissions.ApproveRequests)) LoadRequests(); if (Has(GroupPermissions.Ban)) LoadBans(); if (Has(GroupPermissions.ViewAudit)) LoadAudit(); FillSettings(); }
+        if (member) { LoadChat(); LoadAnnouncements(); LoadEvents(); LoadMembers(); LoadRoles(); if (Has(GroupPermissions.ApproveRequests)) LoadRequests(); if (Has(GroupPermissions.Ban)) LoadBans(); if (Has(GroupPermissions.ViewAudit)) LoadAudit(); FillSettings(); }
         UpdateButtons();
     });
 
@@ -247,6 +256,7 @@ public partial class GroupsWindow : Node
         foreach (var (key, box) in _permissionBoxes) box.Disabled = !(manage && (_isLeader || _myPermissions.Contains(key) || box.ButtonPressed && role is { CanEdit: true }));
         _saveSettings.Disabled = !Has(GroupPermissions.EditProfile); _transfer.Disabled = _dissolve.Disabled = !_isLeader; _confirm.Editable = _isLeader;
         _leave.Disabled = _current is null || !_current.IsMember || _isLeader; _leave.Visible = _current?.IsMember == true;
+        UpdateCommunicationButtons();
         UpdateSearchButtons();
     }
 
@@ -332,10 +342,10 @@ public partial class GroupsWindow : Node
     private void Build()
     {
         _window = new FloatingWindow("Grupos", icon: "people") { Name = "GroupsWindow", Visible = false };
-        _window.Place(.5f, .5f, -400, -300, 400, 300);
+        _window.Place(.5f, .5f, -440, -300, 440, 300);
         var content = _window.Content; content.AddThemeConstantOverride("separation", 8);
-        _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 16 }; _tabs.AddTab("Meus grupos", "people"); _tabs.AddTab("Procurar", "search"); _tabs.AddTab("Criar grupo", "plus"); content.AddChild(_tabs);
-        var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(780, 470) }; content.AddChild(stack);
+        _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 16 }; _tabs.AddTab("Meus grupos", "people"); _tabs.AddTab("Procurar", "search"); _tabs.AddTab("Criar grupo", "plus"); _tabs.AddTab("Avisos"); content.AddChild(_tabs);
+        var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(860, 470) }; content.AddChild(stack);
 
         // my groups: the list on the left, the group on the right
         var mine = new HBoxContainer { Visible = true }; mine.SetAnchorsPreset(Control.LayoutPreset.FullRect); mine.AddThemeConstantOverride("separation", 10); stack.AddChild(mine); _minePage = mine;
@@ -344,9 +354,9 @@ public partial class GroupsWindow : Node
         _detail = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, Visible = false }; mine.AddChild(_detail);
         _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(400, 0) }; _overview.AddThemeFontSizeOverride("font_size", 16); _detail.AddChild(_overview);
         _leave = Act("Sair do grupo", UiStyle.ButtonKind.Secondary, LeaveCurrent); _detail.AddChild(_leave);
-        _inner = new UiTabs { EqualWidth = true, Flat = true, FontSize = 14 }; foreach (var t in new[] { "Membros", "Cargos", "Pedidos", "Histórico", "Ajustes" }) _inner.AddTab(t); _detail.AddChild(_inner);
+        _inner = new UiTabs { EqualWidth = true, Flat = true, FontSize = 13 }; foreach (var t in new[] { "Chat", "Anúncios", "Eventos", "Membros", "Cargos", "Pedidos", "Histórico", "Ajustes" }) _inner.AddTab(t); _detail.AddChild(_inner);
         var innerStack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 280) }; _detail.AddChild(innerStack);
-        _innerPages.Add(BuildMembers(innerStack)); _innerPages.Add(BuildRoles(innerStack)); _innerPages.Add(BuildRequests(innerStack)); _innerPages.Add(BuildAudit(innerStack)); _innerPages.Add(BuildSettings(innerStack));
+        _innerPages.Add(BuildChat(innerStack)); _innerPages.Add(BuildAnnouncements(innerStack)); _innerPages.Add(BuildEvents(innerStack)); _innerPages.Add(BuildMembers(innerStack)); _innerPages.Add(BuildRoles(innerStack)); _innerPages.Add(BuildRequests(innerStack)); _innerPages.Add(BuildAudit(innerStack)); _innerPages.Add(BuildSettings(innerStack));
         _inner.TabChanged += i => { for (var p = 0; p < _innerPages.Count; p++) _innerPages[p].Visible = p == i; };
         _innerPages[0].Visible = true;
 
@@ -367,7 +377,8 @@ public partial class GroupsWindow : Node
         create.AddChild(Act("Criar grupo", UiStyle.ButtonKind.Primary, Create));
 
         _status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(500, 0) }; _status.AddThemeColorOverride("font_color", UiStyle.AccentText); _status.AddThemeFontSizeOverride("font_size", 16); content.AddChild(_status);
-        _tabs.TabChanged += i => { _minePage.Visible = i == 0; _searchPage.Visible = i == 1; _createPage.Visible = i == 2; if (i == 1) Search(); };
+        _noticesPage = BuildNotices(stack);
+        _tabs.TabChanged += i => { _minePage.Visible = i == 0; _searchPage.Visible = i == 1; _createPage.Visible = i == 2; _noticesPage.Visible = i == 3; if (i == 1) Search(); if (i == 3) LoadNotices(); };
         AddChild(_window);
     }
 

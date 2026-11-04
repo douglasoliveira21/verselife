@@ -9,6 +9,8 @@ namespace LifeVerse.Client.Scripts;
 public partial class NotificationClient : Node
 {
     [Signal] public delegate void NotifiedEventHandler(string text);
+    /// <summary>Every event as the API sent it, for windows that update themselves live (the group chat).</summary>
+    [Signal] public delegate void RawEventHandler(string json);
     private WebSocketPeer? _socket;
     private double _wait;
     private double _backoff = 2;
@@ -29,7 +31,10 @@ public partial class NotificationClient : Node
             case WebSocketPeer.State.Open:
                 _backoff = 2;
                 while (_socket.GetAvailablePacketCount() > 0)
-                    if (NotificationFormatter.Describe(_socket.GetPacket().GetStringFromUtf8()) is { } text) EmitSignal(SignalName.Notified, text);
+                {
+                    var json = _socket.GetPacket().GetStringFromUtf8(); EmitSignal(SignalName.Raw, json);
+                    if (NotificationFormatter.Describe(json) is { } text) EmitSignal(SignalName.Notified, text);
+                }
                 break;
             case WebSocketPeer.State.Closed:
                 _socket = null; _wait = _backoff; _backoff = Math.Min(_backoff * 2, 60);

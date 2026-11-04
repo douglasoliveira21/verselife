@@ -53,3 +53,31 @@ public sealed class GroupAuditEntry
     public string DetailJson { get; set; } = "{}";
     public DateTimeOffset CreatedAt { get; set; }
 }
+
+/// <summary>A notice from the leaders to every member. Pinned ones stay on top.</summary>
+public sealed class GroupAnnouncement
+{
+    public Guid Id { get; set; }
+    public Guid GroupId { get; set; }
+    public Guid AuthorUserId { get; set; }
+    public required string Title { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public bool Pinned { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? EditedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+/// <summary>Something a group wants a member to know, kept until it is read (a push only reaches people who are connected).</summary>
+public sealed class GroupNotification
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid GroupId { get; set; }
+    /// <summary>group_announcement, group_event or group_event_cancelled.</summary>
+    public required string Type { get; set; }
+    public required string Title { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ReadAt { get; set; }
+}

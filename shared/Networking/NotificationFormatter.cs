@@ -19,12 +19,24 @@ public static class NotificationFormatter
                 "message" => $"Nova mensagem: {Clip(Text(data, "content"), 80)}",
                 "friend_request" => "Você recebeu um pedido de amizade.",
                 "friend_accepted" => "Seu pedido de amizade foi aceito.",
-                "group_invite" => "Você foi convidado para um grupo.",
+                "group_invite" => Text(data, "groupName") is { Length: > 0 } invited ? $"Você foi convidado para o grupo {invited}." : "Você foi convidado para um grupo.",
+                "group_join_request" => $"Novo pedido para entrar em {Group(data)}.",
+                "group_request_decided" => data.ValueKind == JsonValueKind.Object && data.TryGetProperty("approved", out var approved) && approved.ValueKind == JsonValueKind.True ? $"Você entrou em {Group(data)}." : $"Seu pedido para entrar em {Group(data)} foi recusado.",
+                "group_kicked" => $"Você foi removido de {Group(data)}.",
+                "group_banned" => $"Você foi banido de {Group(data)}.",
+                "group_role_changed" => $"Seu cargo em {Group(data)} agora é {Text(data, "role")}.",
+                "group_leader_changed" => $"Você é o novo líder de {Group(data)}.",
+                "group_dissolved" => $"{Group(data)} foi dissolvido.",
+                "group_announcement" => $"{Group(data)} — anúncio: {Clip(Text(data, "title"), 60)}",
+                "group_event" => $"{Group(data)} — novo evento: {Clip(Text(data, "name"), 60)}",
+                "group_event_cancelled" => $"{Group(data)} — evento cancelado: {Clip(Text(data, "name"), 60)}",
                 _ => null
             };
         }
         catch (JsonException) { return null; }
     }
+
+    private static string Group(JsonElement data) => Text(data, "groupName") is { Length: > 0 } name ? name : "um grupo";
 
     private static string Text(JsonElement data, string name) =>
         data.ValueKind == JsonValueKind.Object && data.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;

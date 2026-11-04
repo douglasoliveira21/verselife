@@ -1,11 +1,11 @@
 # Grupos e Organizações 2.0
 
-Plano em 5 fases. Este documento descreve o que existe hoje (**Fase 1 – núcleo**) e o que falta.
+Plano em 5 fases. Este documento descreve o que existe hoje (**Fases 1 e 2**) e o que falta.
 
 | Fase | Conteúdo | Estado |
 |---|---|---|
 | 1 | Núcleo: criação, identidade, cargos e permissões, convites, pedidos, público/privado, moderação, histórico, transferência de liderança, dissolução, anti-abuso, janela de administração | feito |
-| 2 | Comunicação: chat de grupo (respeitando silenciamento), anúncios, eventos exclusivos, notificações | pendente |
+| 2 | Comunicação: chat de grupo (respeitando silenciamento), anúncios, eventos exclusivos, notificações | feito |
 | 3 | Propriedades: terrenos do grupo, construção compartilhada, administração coletiva, acesso por grupo | pendente |
 | 4 | Economia: tesouraria, contribuições voluntárias, lojas do grupo, marketplace, auditoria financeira | pendente |
 | 5 | Interface de administração completa e integração final | pendente |
@@ -37,9 +37,19 @@ Notificações: `group_invite`, `group_join_request`, `group_request_decided`, `
 
 Menu Comunicar → **Grupos e organizações…** (`GroupsWindow`): abas Meus grupos / Procurar / Criar; no grupo: Membros, Cargos, Pedidos e banidos, Histórico, Ajustes (inclui liderança e dissolução).
 
-## Limitações conhecidas da Fase 1
+## Fase 2 – Comunicação
 
-- O silenciamento é registrado e exibido, mas só tem efeito quando o chat do grupo existir (Fase 2).
+- **Chat do grupo** (`/chat`): só membros leem e escrevem; quem está silenciado não escreve (`muted`); até 1000 caracteres, 20 mensagens por 30 s por pessoa, `clientMessageId` evita duplicar. Cada pessoa apaga as próprias mensagens; quem tem `moderate_chat` apaga as de cargo menor (fica no histórico como `message_deleted`). As mensagens chegam ao vivo pelo WebSocket de notificações (`group_message`). As rotas antigas `/social/messages` com `groupId` agora também exigem ser membro (leitura) e não estar silenciado (envio).
+- **Anúncios** (`/announcements`, permissão `announce`): título até 80, texto até 2000, até 3 fixados, 10 por hora por grupo. Todos os membros recebem aviso.
+- **Eventos exclusivos** (`/events`, permissão `manage_events`): são `discovery.events` com `group_id`, nunca públicos; só membros veem, entram e saem; capacidade até 5000, duração até 7 dias, até 20 futuros por grupo, a ilha precisa ser uma onde quem cria pode entrar. Sair, ser expulso/banido ou o grupo acabar tira a pessoa dos eventos; cancelar avisa quem tinha vaga. A rota pública de entrar em evento recusa eventos de grupo para quem não é membro.
+- **Notificações**: anúncios e eventos viram `social.group_notifications` (guardadas até ler; lidas há mais de 30 dias somem) além do aviso ao vivo. `GET /notifications`, `POST /notifications/read`, `PUT /{id}/notification-settings` (silenciar os avisos de um grupo). Eventos ao vivo novos: `group_message`, `group_announcement`, `group_event`, `group_event_cancelled`; todos os eventos de grupo agora aparecem como aviso na tela.
+- **Permissões novas**: `announce`, `manage_events`, `moderate_chat` (Administrador tem as três, Moderador tem `moderate_chat`; a migração `Phase45GroupsCommunication` acrescenta aos grupos que já existem).
+- **Cliente**: no grupo, abas Chat, Anúncios e Eventos; no topo, aba Avisos. Mensagens de outros grupos contam como "nova(s)" na lista.
+
+## Limitações conhecidas
+
+- O chat do grupo guarda só texto; não há anexos, reações ou respostas.
+- Anúncios e eventos de grupo não aparecem fora do grupo (busca pública, mapa).
 - A dissolução só checa terrenos; tesouraria/lojas entram nas fases 3–4.
 - Imagem do grupo: a API aceita URL https; ainda não há envio de arquivo na interface.
 - Testes contra PostgreSQL real continuam opcionais (sem credenciais aqui).

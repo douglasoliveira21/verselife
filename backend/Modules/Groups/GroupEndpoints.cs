@@ -61,6 +61,29 @@ public static class GroupEndpoints
         g.MapPost("/{groupId:guid}/leave", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.LeaveAsync(db, me, groupId, t.GetUtcNow(), ct)));
         g.MapPost("/{groupId:guid}/transfer", async (Guid groupId, ConfirmRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : r.UserId is null ? Results.BadRequest(new { error = "bad_target" }) : Answer(await GroupService.TransferLeadershipAsync(db, me, groupId, r.UserId.Value, r.Confirm, t.GetUtcNow(), Push(hub, ct), ct)));
         g.MapPost("/{groupId:guid}/dissolve", async (Guid groupId, ConfirmRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.DissolveAsync(db, me, groupId, r.Confirm, t.GetUtcNow(), Push(hub, ct), ct)));
+
+        // chat of the group
+        g.MapGet("/{groupId:guid}/chat", async (Guid groupId, DateTimeOffset? before, int? take, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.ChatAsync(db, me, groupId, before, take ?? 50, t.GetUtcNow(), ct)));
+        g.MapPost("/{groupId:guid}/chat", async (Guid groupId, ChatRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.SendChatAsync(db, me, groupId, r.Content, r.ClientMessageId, t.GetUtcNow(), Push(hub, ct), ct)));
+        g.MapDelete("/{groupId:guid}/chat/{messageId:guid}", async (Guid groupId, Guid messageId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.DeleteChatMessageAsync(db, me, groupId, messageId, t.GetUtcNow(), ct)));
+
+        // announcements
+        g.MapGet("/{groupId:guid}/announcements", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.AnnouncementsAsync(db, me, groupId, t.GetUtcNow(), ct)));
+        g.MapPost("/{groupId:guid}/announcements", async (Guid groupId, AnnouncementRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.PostAnnouncementAsync(db, me, groupId, r, t.GetUtcNow(), Push(hub, ct), ct), created: true));
+        g.MapPut("/{groupId:guid}/announcements/{announcementId:guid}", async (Guid groupId, Guid announcementId, AnnouncementRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.UpdateAnnouncementAsync(db, me, groupId, announcementId, r, t.GetUtcNow(), ct)));
+        g.MapDelete("/{groupId:guid}/announcements/{announcementId:guid}", async (Guid groupId, Guid announcementId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.DeleteAnnouncementAsync(db, me, groupId, announcementId, t.GetUtcNow(), ct)));
+
+        // events only for members
+        g.MapGet("/{groupId:guid}/events", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.EventsAsync(db, me, groupId, t.GetUtcNow(), ct)));
+        g.MapPost("/{groupId:guid}/events", async (Guid groupId, GroupEventRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.CreateEventAsync(db, me, groupId, r, t.GetUtcNow(), Push(hub, ct), ct), created: true));
+        g.MapPost("/{groupId:guid}/events/{eventId:guid}/join", async (Guid groupId, Guid eventId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.JoinEventAsync(db, me, groupId, eventId, t.GetUtcNow(), ct)));
+        g.MapDelete("/{groupId:guid}/events/{eventId:guid}/join", async (Guid groupId, Guid eventId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.LeaveEventAsync(db, me, groupId, eventId, t.GetUtcNow(), ct)));
+        g.MapDelete("/{groupId:guid}/events/{eventId:guid}", async (Guid groupId, Guid eventId, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.CancelEventAsync(db, me, groupId, eventId, t.GetUtcNow(), Push(hub, ct), ct)));
+
+        // notifications
+        g.MapGet("/notifications", async (bool? unread, int? take, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.NotificationsAsync(db, me, unread == true, take ?? 50, t.GetUtcNow(), ct)));
+        g.MapPost("/notifications/read", async (ReadRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.MarkNotificationsReadAsync(db, me, r.Ids, r.GroupId, t.GetUtcNow(), ct)));
+        g.MapPut("/{groupId:guid}/notification-settings", async (Guid groupId, MutedRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.SetNotificationsMutedAsync(db, me, groupId, r.Muted, t.GetUtcNow(), ct)));
         return endpoints;
     }
 
@@ -76,7 +99,7 @@ public static class GroupEndpoints
     public static IResult Answer(GroupResult result, bool created = false) => result.Ok ? created ? Results.Created(string.Empty, result.Data) : Results.Ok(result.Data ?? new { }) : result.Error switch
     {
         "not_found" => Results.NotFound(new { error = result.Error }),
-        "forbidden" or "outranked" or "cannot_grant" => Results.Json(new { error = result.Error }, statusCode: 403),
+        "forbidden" or "outranked" or "cannot_grant" or "muted" => Results.Json(new { error = result.Error }, statusCode: 403),
         "rate_limited" => Results.Json(new { error = result.Error }, statusCode: 429),
         var e when e is not null && (e.StartsWith("bad_", StringComparison.Ordinal) || e is "confirmation_needed") => Results.BadRequest(new { error = e }),
         _ => Results.Conflict(new { error = result.Error, detail = result.Data })

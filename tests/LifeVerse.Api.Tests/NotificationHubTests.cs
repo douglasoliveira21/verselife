@@ -102,6 +102,11 @@ public sealed class NotificationFormatterTests
     [InlineData("""{"type":"friend_accepted","data":{}}""", "Seu pedido de amizade foi aceito.")]
     [InlineData("""{"type":"group_invite","data":{}}""", "Você foi convidado para um grupo.")]
     [InlineData("""{"type":"message","data":{"content":"oi"}}""", "Nova mensagem: oi")]
+    [InlineData("""{"type":"group_announcement","data":{"groupName":"Clube","title":"Reunião"}}""", "Clube — anúncio: Reunião")]
+    [InlineData("""{"type":"group_event","data":{"groupName":"Clube","name":"Caça"}}""", "Clube — novo evento: Caça")]
+    [InlineData("""{"type":"group_request_decided","data":{"groupName":"Clube","approved":true}}""", "Você entrou em Clube.")]
+    [InlineData("""{"type":"group_request_decided","data":{"groupName":"Clube","approved":false}}""", "Seu pedido para entrar em Clube foi recusado.")]
+    [InlineData("""{"type":"group_kicked","data":{}}""", "Você foi removido de um grupo.")]
     public void KnownEventsBecomeShortText(string json, string expected) => Assert.Equal(expected, LifeVerse.Shared.Networking.NotificationFormatter.Describe(json));
 
     [Theory]

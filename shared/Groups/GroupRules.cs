@@ -6,7 +6,8 @@ namespace LifeVerse.Shared.Groups;
 public static class GroupPermissions
 {
     public const string Invite = "invite", ApproveRequests = "approve_requests", Kick = "kick", Ban = "ban", Mute = "mute",
-        EditProfile = "edit_profile", ManageRoles = "manage_roles", AssignRoles = "assign_roles", ViewAudit = "view_audit";
+        EditProfile = "edit_profile", ManageRoles = "manage_roles", AssignRoles = "assign_roles", ViewAudit = "view_audit",
+        Announce = "announce", ManageEvents = "manage_events", ModerateChat = "moderate_chat";
 
     /// <summary>Every permission with the name shown to people, in the order the role editor lists them.</summary>
     public static readonly IReadOnlyList<(string Key, string Label, string Help)> All =
@@ -19,7 +20,10 @@ public static class GroupPermissions
         (EditProfile, "Editar o perfil do grupo", "Mudar nome, descrição, imagem, cores e como se entra."),
         (ManageRoles, "Gerenciar cargos", "Criar, mudar e apagar cargos abaixo do seu."),
         (AssignRoles, "Dar cargos aos membros", "Mudar o cargo de membros abaixo do seu."),
-        (ViewAudit, "Ver o histórico", "Ler o que foi feito na administração do grupo.")
+        (ViewAudit, "Ver o histórico", "Ler o que foi feito na administração do grupo."),
+        (Announce, "Publicar anúncios", "Escrever, fixar e apagar anúncios do grupo."),
+        (ManageEvents, "Gerenciar eventos", "Criar e cancelar eventos exclusivos do grupo."),
+        (ModerateChat, "Moderar o chat", "Apagar mensagens de membros com cargo abaixo do seu.")
     ];
 
     public static readonly IReadOnlySet<string> Known = All.Select(p => p.Key).ToHashSet();
@@ -38,6 +42,8 @@ public static class GroupRules
 {
     public const int LeaderRank = 1000, MemberRank = 0, MaxCustomRank = 99, ModeratorRank = 40, AdminRank = 80;
     public const int MaxRoles = 20, MaxPendingInvites = 100, MaxPendingRequestsPerUser = 10, MaxGroupsCreated = 5, MaxMemberships = 30, DefaultMemberLimit = 500, MaxMemberLimit = 5_000;
+    public const int MaxChatLength = 1000, ChatBurst = 20, MaxAnnouncementTitle = 80, MaxAnnouncementBody = 2000, MaxPinned = 3, MaxAnnouncementsPerHour = 10, MaxUpcomingEvents = 20, MaxEventCapacity = 5_000;
+    public static readonly TimeSpan ChatBurstWindow = TimeSpan.FromSeconds(30);
     public const int ModerationBurstLimit = 30; // moderation actions one person may take in ten minutes
     public static readonly TimeSpan ModerationBurstWindow = TimeSpan.FromMinutes(10);
 
@@ -91,8 +97,8 @@ public static class GroupRules
     public static readonly IReadOnlyList<(string Key, string Name, int Rank, string[] Permissions)> StartingRoles =
     [
         ("owner", "Líder", LeaderRank, [.. GroupPermissions.Known]),
-        ("admin", "Administrador", AdminRank, [GroupPermissions.Invite, GroupPermissions.ApproveRequests, GroupPermissions.Kick, GroupPermissions.Ban, GroupPermissions.Mute, GroupPermissions.EditProfile, GroupPermissions.ManageRoles, GroupPermissions.AssignRoles, GroupPermissions.ViewAudit]),
-        ("moderator", "Moderador", ModeratorRank, [GroupPermissions.Invite, GroupPermissions.ApproveRequests, GroupPermissions.Kick, GroupPermissions.Mute]),
+        ("admin", "Administrador", AdminRank, [GroupPermissions.Invite, GroupPermissions.ApproveRequests, GroupPermissions.Kick, GroupPermissions.Ban, GroupPermissions.Mute, GroupPermissions.EditProfile, GroupPermissions.ManageRoles, GroupPermissions.AssignRoles, GroupPermissions.ViewAudit, GroupPermissions.Announce, GroupPermissions.ManageEvents, GroupPermissions.ModerateChat]),
+        ("moderator", "Moderador", ModeratorRank, [GroupPermissions.Invite, GroupPermissions.ApproveRequests, GroupPermissions.Kick, GroupPermissions.Mute, GroupPermissions.ModerateChat]),
         ("member", "Membro", MemberRank, [])
     ];
 }

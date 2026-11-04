@@ -867,6 +867,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("ends_at");
 
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
                     b.Property<bool>("IsPublic")
                         .HasColumnType("boolean")
                         .HasColumnName("is_public");
@@ -1005,6 +1009,56 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("friendships", "social");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupAnnouncement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AuthorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_user_id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("edited_at");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<bool>("Pinned")
+                        .HasColumnType("boolean")
+                        .HasColumnName("pinned");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "CreatedAt");
+
+                    b.ToTable("group_announcements", "social");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.GroupAuditEntry", b =>
@@ -1193,6 +1247,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("muted_until");
 
+                    b.Property<bool>("NotificationsMuted")
+                        .HasColumnType("boolean")
+                        .HasColumnName("notifications_muted");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -1217,6 +1275,56 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("group_members", "social");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupNotification", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId");
+
+                    b.HasIndex("UserId", "ReadAt", "CreatedAt");
+
+                    b.ToTable("group_notifications", "social");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.GroupRole", b =>
@@ -3796,6 +3904,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupAnnouncement", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.SocialGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.GroupAuditEntry", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.SocialGroup", null)
@@ -3843,6 +3960,15 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasOne("LifeVerse.Api.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupNotification", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.SocialGroup", null)
+                        .WithMany()
+                        .HasForeignKey("GroupId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

@@ -66,6 +66,8 @@ public sealed class GroupMember
     /// <summary>The cargo of the member. Members from before groups had cargos have none yet and count as their key says.</summary>
     public Guid? RoleId { get; set; }
     public DateTimeOffset? MutedUntil { get; set; }
+    /// <summary>The member asked not to be told about announcements, events and chat of this group.</summary>
+    public bool NotificationsMuted { get; set; }
     public DateTimeOffset JoinedAt { get; set; }
 }
 

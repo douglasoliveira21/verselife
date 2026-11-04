@@ -22,7 +22,7 @@ public sealed record RoleRequest(string? Name, int? Rank, string[]? Permissions,
 /// promotes above themselves, nobody hands out a permission they lack), the limits, and then writes what happened to the audit history.
 /// Nothing here trusts the client; the client only asks.
 /// </summary>
-public static class GroupService
+public static partial class GroupService
 {
     private static readonly string[] ModerationActions = ["member_kicked", "member_banned", "member_muted", "role_assigned"];
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
@@ -178,7 +178,7 @@ public static class GroupService
         return await CardsAsync(db, list, me, now, ct);
     }
 
-    public sealed record GroupView(GroupCard Card, string? MyRole, int MyRank, string[] MyPermissions, bool IsLeader, DateTimeOffset CreatedAt, string LeaderName, DateTimeOffset? MutedUntil);
+    public sealed record GroupView(GroupCard Card, string? MyRole, int MyRank, string[] MyPermissions, bool IsLeader, DateTimeOffset CreatedAt, string LeaderName, DateTimeOffset? MutedUntil, bool NotificationsMuted = false);
 
     /// <summary>A group as one person sees it. Members see everything about themselves; others see the public profile of a public group, and of a private group only when invited.</summary>
     public static async Task<GroupResult> ViewAsync(LifeVerseDbContext db, Guid me, Guid groupId, DateTimeOffset now, CancellationToken ct)
@@ -189,7 +189,7 @@ public static class GroupService
         var card = (await CardsAsync(db, [ctx.Group], me, now, ct))[0];
         var leader = await db.Users.AsNoTracking().Where(u => u.Id == ctx.Group.OwnerUserId).Select(u => u.Username).SingleOrDefaultAsync(ct) ?? "?";
         var role = ctx.Member is null ? null : RoleOf(ctx.Member, ctx.Roles);
-        return GroupResult.Done(new GroupView(card, role?.Name, role?.Rank ?? -1, ctx.Actor is null ? [] : ctx.Actor.IsLeader ? [.. GroupPermissions.Known] : [.. ctx.Actor.Permissions], ctx.Actor?.IsLeader == true, ctx.Group.CreatedAt, leader, ctx.Member?.MutedUntil));
+        return GroupResult.Done(new GroupView(card, role?.Name, role?.Rank ?? -1, ctx.Actor is null ? [] : ctx.Actor.IsLeader ? [.. GroupPermissions.Known] : [.. ctx.Actor.Permissions], ctx.Actor?.IsLeader == true, ctx.Group.CreatedAt, leader, ctx.Member?.MutedUntil, ctx.Member?.NotificationsMuted == true));
     }
 
     // ---- coming in ------------------------------------------------------------------------------------------------------------------------------
@@ -335,7 +335,7 @@ public static class GroupService
     public static async Task<GroupResult> KickAsync(LifeVerseDbContext db, Guid me, Guid groupId, Guid targetUser, string? reason, DateTimeOffset now, GroupNotifier? notify, CancellationToken ct)
     {
         var (ctx, target, _, error) = await ForModerationAsync(db, me, groupId, targetUser, GroupPermissions.Kick, now, ct); if (error is not null) return error;
-        db.GroupMembers.Remove(target!); Log(db, groupId, me, "member_kicked", targetUser, new { reason = Clean(reason) }, now);
+        db.GroupMembers.Remove(target!); await DropEventPlacesAsync(db, groupId, targetUser, ct); Log(db, groupId, me, "member_kicked", targetUser, new { reason = Clean(reason) }, now);
         var saved = await SaveAsync(db, ct); if (saved.Ok) await TellAsync(notify, targetUser, "group_kicked", new { groupId, groupName = ctx!.Group.Name }); return saved;
     }
 
@@ -343,7 +343,7 @@ public static class GroupService
     {
         if (days is < 1 or > 3650) return GroupResult.Fail("bad_duration");
         var (ctx, target, _, error) = await ForModerationAsync(db, me, groupId, targetUser, GroupPermissions.Ban, now, ct); if (error is not null) return error;
-        db.GroupMembers.Remove(target!);
+        db.GroupMembers.Remove(target!); await DropEventPlacesAsync(db, groupId, targetUser, ct);
         db.GroupBans.Add(new GroupBan { Id = Guid.NewGuid(), GroupId = groupId, UserId = targetUser, BannedByUserId = me, Reason = Clean(reason), CreatedAt = now, ExpiresAt = days is { } d ? now.AddDays(d) : null });
         Log(db, groupId, me, "member_banned", targetUser, new { reason = Clean(reason), days }, now);
         var saved = await SaveAsync(db, ct); if (saved.Ok) await TellAsync(notify, targetUser, "group_banned", new { groupId, groupName = ctx!.Group.Name, days }); return saved;
@@ -492,7 +492,7 @@ public static class GroupService
     {
         var ctx = await LoadAsync(db, groupId, me, now, ct); if (ctx?.Member is null) return GroupResult.Fail("not_found");
         if (ctx.Actor!.IsLeader) return GroupResult.Fail("leader_cannot_leave");
-        db.GroupMembers.Remove(ctx.Member); Log(db, groupId, me, "member_left", me, new { }, now); return await SaveAsync(db, ct);
+        db.GroupMembers.Remove(ctx.Member); await DropEventPlacesAsync(db, groupId, me, ct); Log(db, groupId, me, "member_left", me, new { }, now); return await SaveAsync(db, ct);
     }
 
     /// <summary>Hands the group to another member. Only the leader, only to a member in good standing, and only after writing the name of the group to be sure. The old leader becomes an administrator.</summary>
@@ -532,6 +532,8 @@ public static class GroupService
         foreach (var i in await db.GroupInvites.Where(i => i.GroupId == groupId && i.Status == "pending").ToListAsync(ct)) i.Status = "declined";
         foreach (var r in await db.GroupJoinRequests.Where(r => r.GroupId == groupId && r.Status == "pending").ToListAsync(ct)) { r.Status = "cancelled"; r.DecidedAt = now; }
         foreach (var p in await db.IslandPermissions.Where(p => p.GroupId == groupId && p.RevokedAt == null).ToListAsync(ct)) p.RevokedAt = now; // what the group was allowed on islands ends with it
+        await EndGroupEventsAsync(db, groupId, ct);
+        foreach (var a in await db.GroupAnnouncements.Where(a => a.GroupId == groupId && a.DeletedAt == null).ToListAsync(ct)) a.DeletedAt = now;
         ctx.Group.DeletedAt = now; ctx.Group.UpdatedAt = now;
         Log(db, groupId, me, "group_dissolved", null, new { members = members.Count }, now);
         var saved = await SaveAsync(db, ct); if (!saved.Ok) return saved;
