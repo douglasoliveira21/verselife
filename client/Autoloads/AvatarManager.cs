@@ -20,6 +20,25 @@ public partial class AvatarManager : Node
         _http.RequestCompleted += OnRequestCompleted;
     }
 
+    /// Tests: answers avatar requests without a network: (method, path, body) -> (status, body). The path is what follows /api/v1/users/me/avatar.
+    public Func<Godot.HttpClient.Method, string, string?, (int Status, string Body)>? Transport { get; set; }
+
+    /// Sends a request to /api/v1/users/me/avatar{path} (looks use /looks...) and says what came back; each call has its own connection.
+    public void Call(Godot.HttpClient.Method method, string path, string? body, Action<int, string> done)
+    {
+        if (Transport is not null) { var (status, text) = Transport(method, path, body); done(status, text); return; }
+        var session = GetNodeOrNull<SessionManager>("/root/SessionManager"); var app = GetNodeOrNull<AppManager>("/root/AppManager");
+        if (session is null || app is null || !session.IsAuthenticated) { done(401, string.Empty); return; }
+        var http = new HttpRequest { Timeout = 20 }; AddChild(http);
+        http.RequestCompleted += (result, code, _, bytes) => { http.QueueFree(); done(result == (long)HttpRequest.Result.Success ? (int)code : 0, Encoding.UTF8.GetString(bytes)); };
+        if (http.Request(app.ApiBaseUrl + "/api/v1/users/me/avatar" + path, ["Content-Type: application/json", $"Authorization: Bearer {session.AccessToken}"], method, body ?? string.Empty) != Error.Ok) { http.QueueFree(); done(0, string.Empty); }
+    }
+
+    /// The avatar the server sent back, or null when the text is not one.
+    public static AvatarAppearanceData? ParseAppearance(string json) { try { return JsonSerializer.Deserialize<AvatarAppearanceData>(json); } catch (JsonException) { return null; } }
+
+    public void SetCurrent(AvatarAppearanceData value) => Current = value;
+
     public Error Load()
     {
         _saving = false;

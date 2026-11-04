@@ -15,6 +15,7 @@ public static class UserEndpoints
         group.MapGet("/avatar", GetAvatarAsync).Produces<AvatarResponse>().ProducesProblem(404);
         group.MapPut("/avatar", SaveAvatarAsync).Produces<AvatarResponse>().ProducesValidationProblem().ProducesProblem(404);
         group.MapPut("/profile", UpdateProfileAsync);
+        group.MapAvatarLookEndpoints();
         endpoints.MapGet("/api/v1/users/{userId:guid}/profile", PublicProfileAsync).RequireAuthorization().WithTags("Users");
         return endpoints;
     }
@@ -46,7 +47,14 @@ public static class UserEndpoints
         var avatar = await db.Avatars.Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.UserId == userId, ct);
         if (avatar is null) return Results.NotFound();
-        var now = timeProvider.GetUtcNow();
+        ApplyAvatar(db, avatar, request, timeProvider.GetUtcNow());
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ToResponse(avatar));
+    }
+
+    /// <summary>Writes an already validated appearance into the avatar (the caller saves). Used by saving and by applying a saved look.</summary>
+    public static void ApplyAvatar(LifeVerseDbContext db, Avatar avatar, SaveAvatarRequest request, DateTimeOffset now)
+    {
         avatar.DisplayName = request.DisplayName.Trim();
         avatar.BaseModel = request.BaseModel;
         avatar.UpdatedAt = now;
@@ -82,14 +90,12 @@ public static class UserEndpoints
                 equipped.EquippedAt = now;
             }
         }
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(ToResponse(avatar));
     }
 
     private static bool TryGetUserId(HttpContext context, out Guid userId) =>
         Guid.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out userId);
 
-    private static AvatarResponse ToResponse(Avatar avatar)
+    public static AvatarResponse ToResponse(Avatar avatar)
     {
         var appearance = avatar.Appearance;
         return new AvatarResponse(avatar.Id, avatar.DisplayName, avatar.BaseModel,

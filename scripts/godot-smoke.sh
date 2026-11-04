@@ -24,6 +24,7 @@ run client res://Tests/TerrainEditorSmoke.tscn terrain_editor_smoke
 run client res://Tests/BuildSmoke.tscn build_smoke
 run client res://Tests/BuildLoadSmoke.tscn build_load_smoke
 run client res://Tests/AvatarGroundingSmoke.tscn avatar_grounding
+run client res://Tests/Avatar2Smoke.tscn avatar2_smoke
 run client res://Tests/InventorySmoke.tscn inventory_smoke
 run client res://Tests/PeopleSmoke.tscn people_smoke
 run client res://Tests/VehicleSmoke.tscn vehicle_smoke

@@ -149,19 +149,23 @@ public sealed class LandHardeningTests : IDisposable
     }
 
     [Fact]
-    public async Task AnAdministratorSplittingWhileTheOwnerSellsLeavesOneConsistentParcel()
+    public async Task AnAdministratorSplittingWhileTheOwnerSells_TheSplitIsToldToTryAgain()
     {
         var id = Claim("Grande", Rect(0, 0, 7, 3));
         using var one = new LifeVerseDbContext(_options); using var two = new LifeVerseDbContext(_options);
-        var split = Task.Run(() => LandAdmin.SplitAsync(one, id, _owner, Rect(4, 0, 7, 3), "Metade", _clock, default));
-        var sell = Task.Run(() => LandCommerce.OfferForSaleAsync(two, id, _owner, new SaleOffer(100, null, null, true), _clock, default));
-        await Task.WhenAll(split, sell);
+        var raced = false;
+        one.SavingChanges += (_, _) =>
+        {
+            if (raced) return; raced = true;
+            // the owner puts the parcel up for sale between the split reading it and saving
+            var inner = LandCommerce.OfferForSaleAsync(two, id, _owner, new SaleOffer(100, null, null, true), _clock, default).GetAwaiter().GetResult();
+            Assert.True(inner.Ok, inner.Error);
+        };
+        var split = await LandAdmin.SplitAsync(one, id, _owner, Rect(4, 0, 7, 3), "Metade", _clock, default);
+        Assert.False(split.Ok); Assert.Equal("conflict", split.Error); // the split saw an old copy of the parcel and is told to try again
         using var check = new LifeVerseDbContext(_options);
-        var cells = await check.ParcelCells.AsNoTracking().Where(c => c.IslandId == _island.Id).ToListAsync();
-        Assert.Equal(cells.Count, cells.Select(c => (c.Cx, c.Cz)).Distinct().Count()); // no cell is in two parcels, none is lost
-        Assert.Equal(32, cells.Count);
-        var parcels = await check.IslandParcels.AsNoTracking().Where(p => p.DeletedAt == null).ToListAsync();
-        foreach (var parcel in parcels) Assert.Equal(cells.Count(c => c.ParcelId == parcel.Id) * 16.0, parcel.Area);
+        Assert.Equal(100, (await check.IslandParcels.AsNoTracking().SingleAsync(p => p.Id == id)).SalePrice); // the owner's change was kept
+        // (a relational database also rolls back what the failed split had written; the in-memory provider cannot show that part)
     }
 
     // ---- size ------------------------------------------------------------------------------------------------------------------

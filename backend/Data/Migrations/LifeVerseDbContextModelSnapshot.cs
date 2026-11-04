@@ -380,6 +380,52 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("avatar_appearances", "identity");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarLook", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ShareCode")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("share_code");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("snapshot_json");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ShareCode")
+                        .IsUnique();
+
+                    b.HasIndex("AvatarId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("avatar_looks", "identity");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.BuildObject", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3154,6 +3200,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Avatar");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarLook", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Avatar", null)
+                        .WithMany()
+                        .HasForeignKey("AvatarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.BuildObject", b =>

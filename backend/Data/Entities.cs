@@ -70,6 +70,19 @@ public sealed class AvatarAppearance
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+/// <summary>A saved look: a named snapshot of the whole appearance that can be put on again, duplicated and shared with a code.</summary>
+public sealed class AvatarLook
+{
+    public Guid Id { get; set; }
+    public Guid AvatarId { get; set; }
+    public required string Name { get; set; }
+    public required string SnapshotJson { get; set; }
+    /// <summary>When set, anybody with the code can copy this look.</summary>
+    public string? ShareCode { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 public sealed class EquippedItem
 {
     public Guid Id { get; set; }

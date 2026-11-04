@@ -25,3 +25,28 @@ Face, height, and proportion settings are reserved in the appearance schema but 
 ## Controls and interactions
 
 Movement is camera-relative and uses `CharacterBody3D`, floor snapping, a 50-degree floor angle, collision, gravity, jump, run, flight, landing, water volumes, and surface speed metadata. `SpringArm3D` prevents the third-person camera crossing walls. First-person, cursor release, sensitivity, inversion, object raycast, contextual seating, stand-up, wave, and dance are implemented.
+
+## Avatar 2.0 — fase 1: corpo, rosto, roupas por camada e looks (entregue)
+
+O Avatar 2.0 será entregue em fases. Esta é a primeira; o corpo continua sendo o humanoide procedural (peças rígidas), então tudo aqui é feito sobre ele.
+
+**Roadmap das próximas fases** (nada disto existe ainda):
+2. Importar avatares GLB/glTF: validar e mapear esqueleto, ossos, skinning e proporções.
+3. Roupas com rigging e deformação, detecção de incompatibilidade roupa × esqueleto, acessórios presos a ossos.
+4. Importar animações compatíveis, Animation Override e biblioteca de animações (andar, correr, repouso, dança, sentar, gestos).
+5. Itens do inventário global como roupas (propriedade e permissão validadas no servidor, economia), LOD, carregamento progressivo por distância e orçamento de renderização por avatar.
+
+**Regras compartilhadas** (`shared/Avatar/AvatarRules.cs`, usadas pela API, pelo servidor de ilha e pelo cliente):
+- **Corpo:** 7 controles com limites — altura, ombros, tronco, braços, pernas, cabeça, quadril. **Rosto:** 7 — olhos (tamanho e distância), nariz, boca, maxilar, sobrancelhas, largura da cabeça. A API **recusa** chave desconhecida, não numérico ou fora do limite; o cliente **lê com tolerância** (limita ao intervalo). Só o que difere do padrão é gravado.
+- **Roupas por camada e slot:** `top`, `jacket` (camada de fora, exige um top por baixo), `bottom`, `shoes`, `hat`, `glasses`, `neck`, `ears`, `gloves`, `back` e o `accessory` antigo. Catálogo novo: vestido (cobre `bottom`), saia, casaco longo, colete, sandálias, boné, gorro (esconde o cabelo), óculos quadrados, colar, cachecol, argolas, luvas, mochila.
+- **Conflitos:** slot duplicado, item desconhecido, slot obrigatório ausente, item num slot coberto por outro, "coberto" sem quem cubra, camada de fora sem top. A API devolve a razão; o editor aplica `Resolve` (a escolha mais recente vence: pôr calça tira o vestido, pôr vestido cobre a calça).
+
+**Looks salvos** (migração `Phase39AvatarLooks`, tabela `identity.avatar_looks`): até 20 por avatar, nome de 1–40 caracteres único por avatar. Rotas em `/api/v1/users/me/avatar/looks`: listar, salvar o atual, aplicar, duplicar ("X (cópia)"), renomear, excluir, compartilhar (código de 8 caracteres) e parar de compartilhar, importar por código. O look guarda a aparência inteira (menos o nome e a câmera, que são da pessoa) e **é validado de novo ao aplicar e ao importar**, então um look antigo ou adulterado que fure as regras nunca é aplicado. Itens ainda são só os do catálogo (sem inventário, ver fase 5), então compartilhar não dá acesso a nada que se pague.
+
+**Editor** (tela do personagem): controles de corpo e rosto, um menu por slot extra, gerenciador de looks (lista, nome, Salvar/Aplicar/Duplicar/Excluir, Compartilhar com código copiado para a área de transferência, Importar). A prévia 3D já girava e dava zoom. Também foram adicionados cabelos "longo" e "rabo de cavalo" ao menu, que a API já aceitava.
+
+**Sincronização e persistência:** a aparência continua indo ao servidor de ilha na admissão (os outros jogadores a veem ao entrar ou reconectar); mudar o visual dentro de uma ilha ainda exige reconectar. Tudo é gravado no perfil do avatar.
+
+**Testes:** `AvatarLooksTests` (23: limites dos controles, leitura tolerante, conflitos de roupa, `Resolve`, salvar/aplicar/duplicar/renomear/excluir, limite de 20, isolamento entre pessoas, compartilhar/importar, look que quebra as regras) e `Avatar2Smoke` no cliente (corpo e rosto desenhados e com os pés no chão, roupas, conflitos no editor, gerenciador de looks).
+
+**Limitações desta fase:** não há importação de GLB, rigging, animações customizadas, LOD nem inventário; o visual não muda para os outros sem reconexão; os controles do rosto são peças simples do boneco procedural; não verifiquei visualmente o editor com capturas de tela.

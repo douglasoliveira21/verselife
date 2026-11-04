@@ -1,6 +1,7 @@
 using Godot;
 using LifeVerse.Client.Autoloads;
 using LifeVerse.Client.Models;
+using LifeVerse.Shared.Avatar;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -17,8 +18,6 @@ public partial class CharacterCreator : Control
     private ColorPickerButton _hair = null!;
     private ColorPickerButton _eyes = null!;
     private OptionButton _beard = null!;
-    private HSlider _height = null!;
-    private HSlider _shoulder = null!;
     private HSlider _sensitivity = null!;
     private CheckBox _invertY = null!;
     private Label _message = null!;
@@ -49,12 +48,13 @@ public partial class CharacterCreator : Control
         _preview = GetNode<AvatarRig>("Layout/Preview/SubViewport/AvatarRig");
         _camera = GetNode<Camera3D>("Layout/Preview/SubViewport/Camera3D");
         Fill(_baseModel, ("Classic", "human_a"), ("Athletic", "human_b"));
-        Fill(_hairStyle, ("Short", "short"), ("Bob", "bob"), ("Mohawk", "mohawk"), ("Bald", "bald"));
-        Fill(_top, ("Basic tee", "tee_basic"), ("Basic jacket", "jacket_basic"));
-        Fill(_bottom, ("Basic pants", "pants_basic"), ("Basic shorts", "shorts_basic"));
-        Fill(_shoes, ("Sneakers", "sneakers_basic"), ("Boots", "boots_basic"));
+        Fill(_hairStyle, ("Short", "short"), ("Bob", "bob"), ("Mohawk", "mohawk"), ("Bald", "bald"), ("Long", "long"), ("Ponytail", "ponytail"));
+        Fill(_top, ("Basic tee", "tee_basic"), ("Basic jacket", "jacket_basic"), ("Vestido", "dress_basic"));
+        Fill(_bottom, ("Basic pants", "pants_basic"), ("Basic shorts", "shorts_basic"), ("Saia", "skirt_basic"), ("Coberto pelo vestido", "covered"));
+        Fill(_shoes, ("Sneakers", "sneakers_basic"), ("Boots", "boots_basic"), ("Sandálias", "sandals_basic"));
         Fill(_accessory, ("None", "none"), ("Round glasses", "glasses_round"), ("Basic hat", "hat_basic"));
-        foreach (var option in new[] { _baseModel, _hairStyle, _top, _bottom, _shoes, _accessory }) option.ItemSelected += _ => RefreshPreview();
+        foreach (var option in new[] { _baseModel, _hairStyle, _shoes, _accessory }) option.ItemSelected += _ => RefreshPreview();
+        _top.ItemSelected += _ => OnWearChanged("top"); _bottom.ItemSelected += _ => OnWearChanged("bottom");
         _displayName.TextChanged += _ => RefreshPreview();
         _skin.ColorChanged += _ => RefreshPreview();
         _hair.ColorChanged += _ => RefreshPreview();
@@ -83,6 +83,7 @@ public partial class CharacterCreator : Control
         SetBusy(false, success ? "" : message);
         var value = success ? _manager.Current : AvatarManager.CreateDefault();
         _lastSaved = value.Copy(); _undoValue = value.Copy(); ApplyToForm(value);
+        if (success) LoadLooks();
     }
 
     private void OnSaved(bool success, string message)
@@ -110,7 +111,7 @@ public partial class CharacterCreator : Control
         _skin.Color = Color.FromHtml(value.SkinColor); _hair.Color = Color.FromHtml(value.HairColor);
         if (IsInstanceValid(_eyes)) _eyes.Color = Color.FromHtml(value.EyeColor);
         if (IsInstanceValid(_beard)) Select(_beard, value.BeardStyle);
-        var body = ParseBody(value.BodySettingsJson); if (IsInstanceValid(_height)) _height.Value = body.height; if (IsInstanceValid(_shoulder)) _shoulder.Value = body.shoulder;
+        ApplyAvatar2(value);
         _sensitivity.Value = value.CameraSensitivity; _invertY.ButtonPressed = value.InvertCameraY;
         RefreshPreview();
     }
@@ -120,16 +121,9 @@ public partial class CharacterCreator : Control
         DisplayName = _displayName.Text.Trim(), BaseModel = Value(_baseModel), HairStyle = Value(_hairStyle),
         SkinColor = "#" + _skin.Color.ToHtml(false), HairColor = "#" + _hair.Color.ToHtml(false),
         EyeColor = IsInstanceValid(_eyes) ? "#" + _eyes.Color.ToHtml(false) : "#4A3326", BeardStyle = IsInstanceValid(_beard) ? Value(_beard) : "none",
-        BodySettingsJson = $"{{\"height\":{(_height?.Value ?? 1):0.###},\"shoulder\":{(_shoulder?.Value ?? 1):0.###}}}",
-        FaceSettingsJson = "{\"eyeScale\":1}", OutfitsJson = "[]", AttachmentsJson = "[]",
+        BodySettingsJson = BodyJson(), FaceSettingsJson = FaceJson(), OutfitsJson = "[]", AttachmentsJson = "[]",
         CameraSensitivity = (float)_sensitivity.Value, InvertCameraY = _invertY.ButtonPressed,
-        EquippedItems =
-        [
-            new EquippedItemData { Slot = "top", ItemKey = Value(_top), TintColor = "#3AAFC1" },
-            new EquippedItemData { Slot = "bottom", ItemKey = Value(_bottom), TintColor = "#263B56" },
-            new EquippedItemData { Slot = "shoes", ItemKey = Value(_shoes), TintColor = "#E7E9EE" },
-            new EquippedItemData { Slot = "accessory", ItemKey = Value(_accessory), TintColor = "#E9C46A" }
-        ]
+        EquippedItems = ReadWorn()
     };
 
     private void RefreshPreview()
@@ -142,23 +136,16 @@ public partial class CharacterCreator : Control
         var fields = GetNode<VBoxContainer>("Layout/Panel/Margin/Fields");
         _eyes = new ColorPickerButton { Name = "EyeColorAdvanced", CustomMinimumSize = new Vector2(0, 34) };
         _beard = new OptionButton { Name = "BeardStyleAdvanced" }; Fill(_beard, ("None", "none"), ("Stubble", "stubble"), ("Short beard", "short"), ("Full beard", "full"));
-        _height = Slider("Height", .85, 1.15, 1); _shoulder = Slider("Shoulders", .9, 1.1, 1);
         fields.AddChild(new Label { Text = "Eye color" }); fields.AddChild(_eyes);
         fields.AddChild(new Label { Text = "Beard" }); fields.AddChild(_beard);
-        fields.AddChild(new Label { Text = "Body proportions" }); fields.AddChild(_height); fields.AddChild(_shoulder);
-        _eyes.ColorChanged += _ => RefreshPreview(); _beard.ItemSelected += _ => RefreshPreview(); _height.ValueChanged += _ => RefreshPreview(); _shoulder.ValueChanged += _ => RefreshPreview();
+        AddAvatar2Controls(fields);
+        _eyes.ColorChanged += _ => RefreshPreview(); _beard.ItemSelected += _ => RefreshPreview();
         var buttons = GetNode<HBoxContainer>("Layout/Panel/Margin/Fields/Buttons");
         var undo = new Button { Text = "Undo" }; var restore = new Button { Text = "Restore" }; buttons.AddChild(undo); buttons.AddChild(restore);
         undo.Pressed += () => ApplyToForm(_undoValue.Copy()); restore.Pressed += () => ApplyToForm(_lastSaved.Copy());
     }
 
     private static HSlider Slider(string name, double min, double max, double value) => new() { Name = name, MinValue = min, MaxValue = max, Step = .01, Value = value };
-    private static (double height, double shoulder) ParseBody(string json)
-    {
-        try { using var doc = System.Text.Json.JsonDocument.Parse(json); var root = doc.RootElement; return (root.TryGetProperty("height", out var h) ? h.GetDouble() : 1, root.TryGetProperty("shoulder", out var s) ? s.GetDouble() : 1); }
-        catch { return (1, 1); }
-    }
-
     private void PreviewInput(InputEvent input)
     {
         if (input is InputEventMouseButton button)

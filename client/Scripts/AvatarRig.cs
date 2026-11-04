@@ -2,6 +2,7 @@ using Godot;
 using LifeVerse.Client.Models;
 using LifeVerse.Shared.Gameplay;
 using System.Text.Json;
+using LifeVerse.Shared.Avatar;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -53,9 +54,9 @@ public partial class AvatarRig : Node3D
         }
         _visual = new Node3D { Name = "Visual" };
         AddChild(_visual);
-        var height = JsonNumber(data.BodySettingsJson, "height", 1f, .85f, 1.15f);
-        var shoulder = JsonNumber(data.BodySettingsJson, "shoulder", 1f, .9f, 1.1f);
-        var scaleFactor = (data.BaseModel == "human_b" ? new Vector3(1.06f, 1.04f, 1.06f) : Vector3.One) * new Vector3(shoulder, height, shoulder);
+        var body = AvatarRules.ReadSettings(data.BodySettingsJson, AvatarRules.BodyRanges);
+        var face = AvatarRules.ReadSettings(data.FaceSettingsJson, AvatarRules.FaceRanges);
+        var scaleFactor = (data.BaseModel == "human_b" ? new Vector3(1.06f, 1.04f, 1.06f) : Vector3.One) * new Vector3(body["shoulder"], body["height"], body["shoulder"]);
         _visual.Scale = scaleFactor;
         var skin = Material(data.SkinColor);
         var hair = Material(data.HairColor);
@@ -69,8 +70,9 @@ public partial class AvatarRig : Node3D
         var torso = Part(hips, "Torso", new Vector3(0, 0.48f, 0), new Vector3(0.62f, 0.72f, 0.32f), top);
         var neck = Part(torso, "Neck", new Vector3(0, 0.47f, 0), new Vector3(0.18f, 0.2f, 0.18f), skin);
         var head = Sphere(neck, "Head", new Vector3(0, 0.28f, 0), new Vector3(0.28f, 0.34f, 0.27f), skin);
-        AddFace(head, data);
-        AddHair(head, data.HairStyle, hair);
+        AddFace(head, data, face);
+        AddFaceFeatures(head, face, data.SkinColor);
+        if (AvatarRules.HairVisible(data.EquippedItems.Select(x => (x.Slot, x.ItemKey)))) AddHair(head, data.HairStyle, hair);
         AddBeard(head, data.BeardStyle, hair);
         AddAccessory(head, data.Item("accessory", "none"), data.Tint("accessory", "#FFFFFF"));
         AddAttachments(_visual, data.AttachmentsJson);
@@ -80,6 +82,8 @@ public partial class AvatarRig : Node3D
         Limb(hips, "LeftUpperLeg", "LeftLowerLeg", new Vector3(-0.17f, -0.18f, 0), new Vector3(0, -0.55f, 0), bottom, bottomItem == "pants_basic" ? bottom : skin, shoes, true);
         Limb(hips, "RightUpperLeg", "RightLowerLeg", new Vector3(0.17f, -0.18f, 0), new Vector3(0, -0.55f, 0), bottom, bottomItem == "pants_basic" ? bottom : skin, shoes, true);
 
+        ApplyBodyShape(hips, torso, head, body, face);
+        AddWearables(hips, torso, head, data, face);
         var top3 = AlignFeetToGround(hips, scaleFactor);
 
         var voice = new VoiceIndicator { Name = "VoiceIndicator", Position = new Vector3(0, top3 + .42f, 0), Active = _voiceActive };
@@ -263,12 +267,12 @@ public partial class AvatarRig : Node3D
         if (style == "ponytail") Part(head, "Ponytail", new Vector3(0, -.08f, .26f), new Vector3(.18f, .42f, .18f), material);
     }
 
-    private static void AddFace(Node3D head, AvatarAppearanceData data)
+    private static void AddFace(Node3D head, AvatarAppearanceData data, IReadOnlyDictionary<string, float> face)
     {
         var eye = Material(data.EyeColor);
-        var eyeScale = JsonNumber(data.FaceSettingsJson, "eyeScale", 1f, .8f, 1.2f);
-        Sphere(head, "EyeLeft", new Vector3(-.105f, .05f, -.255f), new Vector3(.055f, .055f, .025f) * eyeScale, eye);
-        Sphere(head, "EyeRight", new Vector3(.105f, .05f, -.255f), new Vector3(.055f, .055f, .025f) * eyeScale, eye);
+        var eyeScale = face["eyeScale"]; var spacing = face["eyeSpacing"];
+        Sphere(head, "EyeLeft", new Vector3(-.105f * spacing, .05f, -.255f), new Vector3(.055f, .055f, .025f) * eyeScale, eye);
+        Sphere(head, "EyeRight", new Vector3(.105f * spacing, .05f, -.255f), new Vector3(.055f, .055f, .025f) * eyeScale, eye);
     }
 
     private static void AddBeard(Node3D head, string style, Material material)

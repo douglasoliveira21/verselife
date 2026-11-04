@@ -2,6 +2,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 COPY Directory.Build.props ./
 COPY global.json ./
+COPY shared/ shared/
 COPY backend/LifeVerse.Api.csproj backend/
 RUN dotnet restore backend/LifeVerse.Api.csproj
 COPY backend/ backend/
