@@ -70,9 +70,11 @@ public partial class AvatarRig : Node3D
         var torso = Part(hips, "Torso", new Vector3(0, 0.48f, 0), new Vector3(0.62f, 0.72f, 0.32f), top);
         var neck = Part(torso, "Neck", new Vector3(0, 0.47f, 0), new Vector3(0.18f, 0.2f, 0.18f), skin);
         var head = Sphere(neck, "Head", new Vector3(0, 0.28f, 0), new Vector3(0.28f, 0.34f, 0.27f), skin);
-        AddFace(head, data, face);
+        // an own pair of eyes or own hair replaces the catalog ones, but only where own pieces are drawn (close enough); far away the catalog ones stay
+        var worn = data.EquippedItems.Select(x => (x.Slot, x.ItemKey)).ToList(); Func<string, string, WearableItem?>? drawn = _detail >= AvatarDetail.Full ? data.CustomItem : null;
+        if (AvatarRules.EyesVisible(worn, drawn)) AddFace(head, data, face);
         AddFaceFeatures(head, face, data.SkinColor);
-        if (AvatarRules.HairVisible(data.EquippedItems.Select(x => (x.Slot, x.ItemKey)), data.CustomItem)) AddHair(head, data.HairStyle, hair);
+        if (AvatarRules.HairVisible(worn, drawn)) AddHair(head, data.HairStyle, hair);
         AddBeard(head, data.BeardStyle, hair);
         AddAccessory(head, data.Item("accessory", "none"), data.Tint("accessory", "#FFFFFF"));
         AddAttachments(_visual, data.AttachmentsJson);

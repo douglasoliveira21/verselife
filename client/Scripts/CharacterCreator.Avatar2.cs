@@ -19,12 +19,12 @@ public partial class CharacterCreator
     private static readonly string[] FaceOrder = ["eyeScale", "eyeSpacing", "noseSize", "mouthWidth", "jawWidth", "browHeight", "headWidth"];
     private static readonly Dictionary<string, string> BodyLabels = new() { ["height"] = "Altura", ["shoulder"] = "Ombros", ["torso"] = "Tronco", ["arms"] = "Braços", ["legs"] = "Pernas", ["head"] = "Cabeça", ["hips"] = "Quadril" };
     private static readonly Dictionary<string, string> FaceLabels = new() { ["eyeScale"] = "Tamanho dos olhos", ["eyeSpacing"] = "Distância entre os olhos", ["noseSize"] = "Nariz", ["mouthWidth"] = "Boca", ["jawWidth"] = "Maxilar", ["browHeight"] = "Sobrancelhas", ["headWidth"] = "Largura da cabeça" };
-    private static readonly string[] ExtraSlots = ["jacket", "hat", "glasses", "neck", "ears", "gloves", "back"];
-    private static readonly Dictionary<string, string> SlotLabels = new() { ["jacket"] = "Casaco (camada de fora)", ["hat"] = "Chapéu", ["glasses"] = "Óculos", ["neck"] = "Pescoço", ["ears"] = "Orelhas", ["gloves"] = "Luvas", ["back"] = "Costas" };
+    private static readonly string[] ExtraSlots = ["jacket", "hat", "glasses", "neck", "ears", "gloves", "back", "hair", "eyes"];
+    private static readonly Dictionary<string, string> SlotLabels = new() { ["jacket"] = "Casaco (camada de fora)", ["hat"] = "Chapéu", ["glasses"] = "Óculos", ["neck"] = "Pescoço", ["ears"] = "Orelhas", ["gloves"] = "Luvas", ["back"] = "Costas", ["hair"] = "Cabelo seu (peça própria)", ["eyes"] = "Olhos seus (peça própria)" };
     private static readonly Dictionary<string, string> DefaultTints = new()
     {
         ["top"] = "#3AAFC1", ["bottom"] = "#263B56", ["shoes"] = "#E7E9EE", ["accessory"] = "#E9C46A", ["jacket"] = "#5B4636", ["hat"] = "#B23A48",
-        ["glasses"] = "#222222", ["neck"] = "#E9C46A", ["ears"] = "#E9C46A", ["gloves"] = "#222222", ["back"] = "#7A5C3E"
+        ["glasses"] = "#222222", ["neck"] = "#E9C46A", ["ears"] = "#E9C46A", ["gloves"] = "#222222", ["back"] = "#7A5C3E", ["hair"] = "#FFFFFF", ["eyes"] = "#FFFFFF"
     };
 
     private readonly Dictionary<string, HSlider> _body = [], _face = [];

@@ -40,6 +40,7 @@ public partial class AvatarRig
     private readonly List<Follower> _followers = [];
     private IReadOnlyList<WornWearable> _worn = [];
     private int _wearToken;
+    private string _hairColor = "#2B1B14", _eyeColor = "#4A3326";
     private readonly Dictionary<Guid, string> _wearStatus = [];
 
     /// <summary>How many custom items are on the avatar right now.</summary>
@@ -50,7 +51,7 @@ public partial class AvatarRig
 
     private void StartWearables(AvatarAppearanceData data)
     {
-        var token = ++_wearToken;
+        var token = ++_wearToken; _hairColor = data.HairColor; _eyeColor = data.EyeColor;
         ClearPlaced(); _fetched.Clear(); _wearStatus.Clear();
         _worn = _detail >= AvatarDetail.Full ? data.CustomWearables : []; // custom items are only fetched and drawn for avatars that are close and in budget
         foreach (var item in _worn) { _wearStatus[item.Id] = "loading"; _ = LoadWearableAsync(item, token); }
@@ -113,6 +114,20 @@ public partial class AvatarRig
         return document.AppendFromBuffer(bytes, string.Empty, state) == Error.Ok ? document.GenerateScene(state) : null;
     }
 
+    /// <summary>Multiplies the colour of every material of a piece by a colour of the avatar (its hair or its eyes), on copies, so the cached file is not changed.</summary>
+    internal static void TintMaterials(Node node, Color tint)
+    {
+        if (node is MeshInstance3D { Mesh: not null } mesh)
+            for (var surface = 0; surface < mesh.Mesh.GetSurfaceCount(); surface++)
+            {
+                // a piece with no material of its own is white by default, so it takes the colour as it is
+                var material = mesh.GetActiveMaterial(surface) as BaseMaterial3D;
+                var copy = material?.Duplicate() as BaseMaterial3D ?? new StandardMaterial3D();
+                copy.AlbedoColor = (material?.AlbedoColor ?? Colors.White) * tint; mesh.SetSurfaceOverrideMaterial(surface, copy);
+            }
+        foreach (var child in node.GetChildren()) TintMaterials(child, tint);
+    }
+
     private static Basis EulerDegrees(float[] values) => values.Length == 3 ? Basis.FromEuler(new Vector3(Mathf.DegToRad(values[0]), Mathf.DegToRad(values[1]), Mathf.DegToRad(values[2]))) : Basis.Identity;
     private static Vector3 Vec(float[] values) => values.Length == 3 ? new Vector3(values[0], values[1], values[2]) : Vector3.Zero;
 
@@ -121,6 +136,7 @@ public partial class AvatarRig
     {
         var bone = string.IsNullOrEmpty(item.AttachBone) ? "head" : item.AttachBone;
         var scene = Instantiate(bytes) as Node3D; if (scene is null) return "O engine não conseguiu ler este item.";
+        if (item.Tint is "hair" or "eyes") TintMaterials(scene, Color.FromHtml(item.Tint == "hair" ? _hairColor : _eyeColor));
         var holder = new Node3D { Name = "Wearable_" + item.Slot }; AddChild(holder); holder.AddChild(scene); _placed.Add(holder);
         var k = VisibleHeight / StandardHeight;
         var follower = new Follower { Item = holder, Offset = Vec(item.Offset), ItemRot = EulerDegrees(item.Rotation), Scale = k * (item.Scale > 0 ? item.Scale : 1f), RigRot = GlobalBasis.Orthonormalized() };

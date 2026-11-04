@@ -131,6 +131,27 @@ public partial class AvatarWearablesSmoke : Node
             await Task.Delay(400); await Frames(4);
             Require(rig.WearablesShown == 0, "an old download that finishes late is ignored");
 
+            // ---- own hair and eyes replace the catalog ones and take the colours of the avatar; far away the catalog ones come back
+            AvatarRig.WearableProvider = (id, _) => Task.FromResult(provided.GetValueOrDefault(id));
+            var hairId = Guid.NewGuid(); var hairGlb = WearableTemplate.Attachment(WearableTemplate.Extras("hair", bone: "head", offset: [0, .12f, 0], tint: "hair"), .3f); provided[hairId] = hairGlb;
+            var eyesId = Guid.NewGuid(); var eyesGlb = WearableTemplate.Attachment(WearableTemplate.Extras("eyes", bone: "head", offset: [0, .06f, .09f], tint: "eyes"), .05f); provided[eyesId] = eyesGlb;
+            var hairPiece = Piece(hairId, hairGlb, "hair", "attachment", "head", [0, .12f, 0]); hairPiece.Tint = "hair"; hairPiece.HidesHair = true;
+            var eyesPiece = Piece(eyesId, eyesGlb, "eyes", "attachment", "head", [0, .06f, .09f]); eyesPiece.Tint = "eyes";
+            var own = Look(null, 1, hairPiece, eyesPiece); own.HairColor = "#FF0000"; own.EyeColor = "#00FF00";
+            own.EquippedItems.Add(new() { Slot = "hair", ItemKey = hairPiece.Key }); own.EquippedItems.Add(new() { Slot = "eyes", ItemKey = eyesPiece.Key });
+            rig.ApplyAppearance(own); await Frames(6);
+            Require(rig.WearablesShown == 2 && rig.WearableStatus[hairId] == "ready" && rig.WearableStatus[eyesId] == "ready", $"own hair and eyes are on the avatar: {rig.WearableStatus[hairId]} / {rig.WearableStatus[eyesId]}");
+            Require(rig.FindChild("Hair", true, false) is null && rig.FindChild("EyeLeft", true, false) is null && rig.FindChild("EyeRight", true, false) is null, "the catalog hair and eyes are replaced");
+            static Color ColourOf(Node node) { if (node is MeshInstance3D { Mesh: not null } m && m.GetSurfaceOverrideMaterial(0) is BaseMaterial3D b) return b.AlbedoColor; foreach (var c in node.GetChildren()) { var found = ColourOf(c); if (found != default) return found; } return default; }
+            var hairNode = rig.PlacedWearables[0]; var eyesNode = rig.PlacedWearables[1]; // placed in the order they are worn
+            Require(ColourOf(hairNode).R > .95f && ColourOf(hairNode).G < .05f, $"the hair piece takes the hair colour: {ColourOf(hairNode)}");
+            Require(ColourOf(eyesNode).G > .95f && ColourOf(eyesNode).R < .05f, $"the eyes piece takes the eye colour: {ColourOf(eyesNode)}");
+            Require(Mathf.Abs(((Node3D)hairNode).GlobalPosition.Y - (1.55f + .12f) * k) < .12f, $"the hair sits on the head: {((Node3D)hairNode).GlobalPosition}");
+            rig.SetDetail(AvatarDetail.Reduced); await Frames(6);
+            Require(rig.FindChild("Hair", true, false) is not null && rig.FindChild("EyeLeft", true, false) is not null && rig.WearablesShown == 0, "far away, where own pieces are not drawn, the catalog hair and eyes stay");
+            rig.SetDetail(AvatarDetail.Full); await Frames(6);
+            Require(rig.WearablesShown == 2 && rig.FindChild("Hair", true, false) is null, "close again, the own pieces are back");
+
             // taking everything off leaves a clean avatar
             AvatarRig.WearableProvider = (id, _) => Task.FromResult(provided.GetValueOrDefault(id));
             rig.ApplyAppearance(Look(null, 1, Piece(hatId, hat, "hat", "attachment", "head", [0, .15f, 0]))); await Frames(6);

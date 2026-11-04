@@ -17,6 +17,8 @@ public sealed class WearableReport
     public string Layer { get; set; } = "base";
     public string[] Covers { get; set; } = [];
     public bool HidesHair { get; set; }
+    /// <summary>For a piece of hair or eyes: which colour of the avatar tints it ("hair" or "eyes"); empty when the file keeps its own colours.</summary>
+    public string Tint { get; set; } = string.Empty;
     /// <summary>For an attachment: the standard bone it is fixed to, and where and how big it sits there.</summary>
     public string AttachBone { get; set; } = string.Empty;
     public float[] Offset { get; set; } = [0, 0, 0];
@@ -36,7 +38,7 @@ public sealed class WearableReport
 
     public string ToJson() => JsonSerializer.Serialize(new
     {
-        ok = Ok, kind = Kind.ToString().ToLowerInvariant(), slot = Slot, layer = Layer, covers = Covers, hidesHair = HidesHair, attachBone = AttachBone, offset = Offset, rotation = Rotation, scale = Scale,
+        ok = Ok, kind = Kind.ToString().ToLowerInvariant(), slot = Slot, layer = Layer, covers = Covers, hidesHair = HidesHair, tint = Tint, attachBone = AttachBone, offset = Offset, rotation = Rotation, scale = Scale,
         sizeBytes = SizeBytes, triangles = Triangles, vertices = Vertices, joints = Joints, fitDeviation = FitDeviation, bones = Bones,
         issues = Issues.Select(i => new { code = i.Code, message = i.Message, error = i.IsError })
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -58,7 +60,10 @@ public static class WearableValidator
     public const float WarnDeviation = .08f, MaxDeviation = .25f;
 
     public static readonly string[] ClothingSlots = ["top", "jacket", "bottom", "shoes", "gloves"];
-    public static readonly string[] AttachmentSlots = ["hat", "glasses", "neck", "ears", "back", "accessory"];
+    public static readonly string[] AttachmentSlots = ["hat", "glasses", "neck", "ears", "back", "accessory", "hair", "eyes"];
+
+    /// <summary>The slots of a person's own hair and eyes: rigid pieces that go on the head and replace the ones of the catalog.</summary>
+    public static bool IsFace(string slot) => slot is "hair" or "eyes";
 
     private static readonly string[] Arms = ["upper_arm_l", "lower_arm_l", "hand_l", "upper_arm_r", "lower_arm_r", "hand_r"];
     private static readonly string[] Legs = ["upper_leg_l", "lower_leg_l", "foot_l", "upper_leg_r", "lower_leg_r", "foot_r"];
@@ -98,7 +103,9 @@ public static class WearableValidator
         if (!AvatarRules.Slots.Contains(slot)) report.Error("bad_slot", $"“{slot}” is not a slot of the avatar. The slots are: {string.Join(", ", AvatarRules.Slots)}.");
         report.Layer = Text(meta.Value, "layer") is { Length: > 0 } layer ? layer : slot == "jacket" ? "outer" : "base";
         if (report.Layer is not ("base" or "outer")) report.Error("bad_layer", "The layer is “base” or “outer”.");
-        report.HidesHair = meta.Value.TryGetProperty("hidesHair", out var hides) && hides.ValueKind == JsonValueKind.True;
+        report.HidesHair = slot == "hair" || meta.Value.TryGetProperty("hidesHair", out var hides) && hides.ValueKind == JsonValueKind.True; // own hair always replaces the catalog hair
+        report.Tint = Text(meta.Value, "tint");
+        if (report.Tint.Length > 0 && report.Tint != slot) report.Error("bad_tint", slot is "hair" or "eyes" ? $"“tint” of a piece for {slot} can only be “{slot}” (the colour chosen in the editor) or left out." : "“tint” is only for pieces of hair and eyes.");
         report.Covers = meta.Value.TryGetProperty("covers", out var covers) && covers.ValueKind == JsonValueKind.Array ? [.. covers.EnumerateArray().Select(c => c.GetString() ?? string.Empty)] : [];
         foreach (var covered in report.Covers) if (!AvatarRules.Slots.Contains(covered) || covered == slot) report.Error("bad_covers", $"“{covered}” cannot be covered by an item of slot {slot}.");
 
@@ -126,6 +133,7 @@ public static class WearableValidator
         var bone = Text(meta, "bone"); if (bone.Length == 0) bone = DefaultBone(report.Slot);
         if (!BoneMapper.Standard.Contains(bone)) report.Error("bad_bone", $"“{bone}” is not a bone of the standard skeleton. Use one of: {string.Join(", ", BoneMapper.Standard)}.");
         report.AttachBone = bone;
+        if (IsFace(report.Slot) && bone != "head") report.Error("wrong_bone", $"Hair and eyes are fixed to the head, not to “{bone}”.");
         float[] Vec(string name, float limit)
         {
             if (!meta.TryGetProperty(name, out var v) || v.ValueKind != JsonValueKind.Array) return [0, 0, 0];
@@ -161,7 +169,8 @@ public static class WearableValidator
         else if (min.X <= max.X)
         {
             var size = (max - min) * report.Scale; var largest = Math.Max(size.X, Math.Max(size.Y, size.Z));
-            if (largest > 1.5f) report.Error("too_large", $"The piece is {largest:0.##} units across; a worn piece must be under 1.5 (metres, after its scale).");
+            if (report.Slot == "eyes" && largest > .4f) report.Error("too_large", $"A pair of eyes is {largest:0.##} units across; it must be under 0.4 (metres, after its scale).");
+            else if (largest > 1.5f) report.Error("too_large", $"The piece is {largest:0.##} units across; a worn piece must be under 1.5 (metres, after its scale).");
             else if (largest < .005f) report.Error("too_small", "The piece is smaller than half a centimetre.");
             if (gltf.Count("animations") > 0) report.Warn("animations_ignored", "The animations inside the file are ignored.");
         }
@@ -282,13 +291,14 @@ public static class WearableValidator
 /// <summary>Small valid garments and rigid pieces for the tests and as examples for the people who make them.</summary>
 public static class WearableTemplate
 {
-    public static string Extras(string slot, string? layer = null, string[]? covers = null, string? bone = null, bool hidesHair = false, float[]? offset = null, float scale = 1f)
+    public static string Extras(string slot, string? layer = null, string[]? covers = null, string? bone = null, bool hidesHair = false, float[]? offset = null, float scale = 1f, string? tint = null)
     {
         var parts = new List<string> { $"\"slot\":\"{slot}\"" };
         if (layer is not null) parts.Add($"\"layer\":\"{layer}\"");
         if (covers is not null) parts.Add("\"covers\":[" + string.Join(",", covers.Select(c => $"\"{c}\"")) + "]");
         if (bone is not null) parts.Add($"\"bone\":\"{bone}\"");
         if (hidesHair) parts.Add("\"hidesHair\":true");
+        if (tint is not null) parts.Add($"\"tint\":\"{tint}\"");
         if (offset is not null) parts.Add("\"offset\":[" + string.Join(",", offset.Select(o => o.ToString(System.Globalization.CultureInfo.InvariantCulture))) + "]");
         if (scale != 1f) parts.Add($"\"scale\":{scale.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         return "{\"lifeverse\":{" + string.Join(",", parts) + "}}";

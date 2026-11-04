@@ -40,7 +40,7 @@ public static class AvatarRules
     public static readonly string[] RequiredSlots = ["top", "bottom", "shoes"];
 
     /// <summary>The order the slots are drawn and listed in. "jacket" is the outer layer over "top".</summary>
-    public static readonly string[] Slots = ["top", "jacket", "bottom", "shoes", "hat", "glasses", "neck", "ears", "gloves", "back", "accessory"];
+    public static readonly string[] Slots = ["top", "jacket", "bottom", "shoes", "hat", "glasses", "neck", "ears", "gloves", "back", "accessory", "hair", "eyes"];
 
     public static readonly IReadOnlyList<WearableItem> Catalog =
     [
@@ -54,6 +54,7 @@ public static class AvatarRules
         new("ears", "none", "Sem brincos"), new("ears", "earrings_hoop", "Argolas"),
         new("gloves", "none", "Sem luvas"), new("gloves", "gloves_basic", "Luvas"),
         new("back", "none", "Sem mochila"), new("back", "backpack_basic", "Mochila"),
+        new("hair", "none", "Cabelo do catálogo"), new("eyes", "none", "Olhos do catálogo"),
         new("accessory", "none", "Nenhum"), new("accessory", "glasses_round", "Óculos redondos"), new("accessory", "hat_basic", "Chapéu")
     ];
 
@@ -179,5 +180,12 @@ public static class AvatarRules
     }
 
     /// <summary>Whether the hair is drawn: a hat that hides it (a beanie) leaves only the face.</summary>
+    /// <summary>
+    /// Whether the eyes of the standard face are drawn: a person's own eyes ("custom:" piece in the eyes slot) replace them. Pass no resolver when the
+    /// custom pieces are not drawn (an avatar far away), so the catalog eyes stay.
+    /// </summary>
+    public static bool EyesVisible(IEnumerable<(string Slot, string Key)> worn, Func<string, string, WearableItem?>? custom = null) =>
+        !worn.Any(w => w.Slot == "eyes" && IsCustom(w.Key) && Look(w.Slot, w.Key, custom) is not null);
+
     public static bool HairVisible(IEnumerable<(string Slot, string Key)> worn, Func<string, string, WearableItem?>? custom = null) => !worn.Any(w => Look(w.Slot, w.Key, custom) is { HidesHair: true });
 }

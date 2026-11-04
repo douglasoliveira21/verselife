@@ -98,6 +98,8 @@ public sealed class WornWearable
     [JsonPropertyName("offset")] public float[] Offset { get; set; } = [0, 0, 0];
     [JsonPropertyName("rotation")] public float[] Rotation { get; set; } = [0, 0, 0];
     [JsonPropertyName("scale")] public float Scale { get; set; } = 1f;
+    /// <summary>For hair and eyes of the person: "hair" or "eyes" when the piece takes the colour of the avatar's hair or eyes.</summary>
+    [JsonPropertyName("tint")] public string Tint { get; set; } = string.Empty;
 }
 
 public sealed class EquippedItemData

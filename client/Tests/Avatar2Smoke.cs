@@ -94,11 +94,12 @@ public partial class Avatar2Smoke : Node
                 }
                 if (method == Godot.HttpClient.Method.Delete && path.StartsWith("/animations/")) { animFiles.RemoveAt(0); return (200, "{}"); }
                 if (method == Godot.HttpClient.Method.Put && path == "/animation-overrides") { savedOverrides = body!; return (200, "{}"); }
-                if (method == Godot.HttpClient.Method.Get && path == "/wearables") return (200, "[" + string.Join(",", wear.Select(w => $"{{\"id\":\"{w.Id}\",\"name\":\"{w.Name}\",\"slot\":\"{w.Slot}\",\"layer\":\"base\",\"kind\":\"{w.Kind}\",\"triangles\":12,\"key\":\"custom:{w.Id}\",\"hash\":\"{new string('b', 64)}\",\"covers\":[{w.Covers}],\"hidesHair\":false,\"attachBone\":\"head\",\"offset\":[0,0.15,0],\"rotation\":[0,0,0],\"scale\":1}}")) + "]");
+                if (method == Godot.HttpClient.Method.Get && path == "/wearables") return (200, "[" + string.Join(",", wear.Select(w => $"{{\"id\":\"{w.Id}\",\"name\":\"{w.Name}\",\"slot\":\"{w.Slot}\",\"layer\":\"base\",\"kind\":\"{w.Kind}\",\"triangles\":12,\"key\":\"custom:{w.Id}\",\"hash\":\"{new string('b', 64)}\",\"covers\":[{w.Covers}],\"hidesHair\":false,\"attachBone\":\"head\",\"offset\":[0,0.15,0],\"rotation\":[0,0,0],\"scale\":1,\"tint\":\"{(w.Slot == "hair" ? "hair" : string.Empty)}\"}}")) + "]");
                 if (method == Godot.HttpClient.Method.Post && path == "/wearables")
                 {
                     if (body!.Contains("ruim.glb")) return (422, "{\"error\":\"invalid_wearable\",\"report\":{\"ok\":false,\"issues\":[{\"code\":\"wrong_region\",\"message\":\"30% of the weight is on legs.\",\"error\":true}]}}");
                     if (body.Contains("vestido.glb")) wear.Add((Guid.NewGuid(), "Vestido meu", "top", "clothing", "\"bottom\""));
+                    else if (body.Contains("cabelo.glb")) wear.Add((Guid.NewGuid(), "Cabelo meu", "hair", "attachment", string.Empty));
                     else wear.Add((Guid.NewGuid(), "Chapeu meu", "hat", "attachment", string.Empty));
                     return (200, "{\"item\":{},\"report\":{\"ok\":true,\"issues\":[]}}");
                 }
@@ -217,6 +218,17 @@ public partial class Avatar2Smoke : Node
             Require(creator.FormForTesting().Item("top", "") == "tee_basic", "choosing shorts takes the custom dress off");
             creator.DeleteWearableForTesting();
             Require(creator.Wearables.Count == 1, "deleting removes the item");
+
+            // own hair and eyes: the slots have their menu, the item is worn like any other and the preview is told to tint it
+            Require(creator.MenuItemCountForTesting("hair") == 1 && creator.MenuItemCountForTesting("eyes") == 1, "hair and eyes have a menu with only the catalog entry");
+            creator.ImportWearable("cabelo.glb", [1]);
+            var hairIndex = creator.Wearables.ToList().FindIndex(w => w.Slot == "hair");
+            Require(hairIndex >= 0 && creator.Wearables[hairIndex].Tint == "hair" && creator.MenuItemCountForTesting("hair") == 2, "an own hair piece is listed with its tint and joins its menu");
+            creator.SelectWearableForTesting(hairIndex); creator.WearForTesting();
+            var hairWorn = creator.FormForTesting();
+            Require(hairWorn.Item("hair", "") == AvatarRules.CustomKey(creator.Wearables[hairIndex].Id) && hairWorn.CustomWearables.Any(w => w.Slot == "hair" && w.Tint == "hair"), "wearing it puts it on the form and the preview is told to tint it with the hair colour");
+            creator.TakeOffForTesting(); Require(creator.FormForTesting().Item("hair", "none") == "none", "taking it off goes back to the catalog hair");
+            foreach (var kind in new[] { "hair", "eyes", "accessory", "clothing" }) Require(WearableValidator.Validate(CharacterCreator.ExampleFile(kind)).Ok, $"the example of {kind} is a valid item");
 
             // ---- animations
             creator.LoadAnimations();

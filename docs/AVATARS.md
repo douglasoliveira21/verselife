@@ -141,3 +141,21 @@ Os looks salvos agora guardam também **qual corpo personalizado estava em uso**
 - **Looks antigos** (salvos antes) não têm esses campos e continuam deixando o corpo e as animações como estão.
 - **Compartilhar/importar**: o código **não leva** corpo nem arquivos de animação de quem compartilhou (são dele): a cópia importada se comporta como um look antigo e não mexe no corpo nem nas animações de quem a veste. Duplicar mantém tudo.
 - **Testes**: `AvatarLooksFullTests` (9: salvar e restaurar, voltar ao corpo padrão, corpo apagado, animação apagada, corpo de outra pessoa forjado, look antigo, importação sem corpo, duplicar) e a extensão do `Avatar2Smoke`.
+
+## Avatar 2.0 — cabelo e olhos próprios (entregue)
+
+A pessoa pode trazer o **próprio cabelo** e os **próprios olhos**, como peças rígidas presas à cabeça que **trocam** os do catálogo. Não há tabela nem rota nova: são itens personalizados (`POST /api/v1/users/me/avatar/wearables`, mesmas regras de dono, inventário, hash e orçamento) em dois slots novos, `hair` e `eyes`, que entram em `AvatarRules.Slots` (com a entrada "do catálogo" `none`). Em corpo padrão e em corpo personalizado.
+
+**O que o arquivo diz** (`extras.lifeverse`): `{"slot": "hair", "bone": "head", "offset": [0, 0.12, 0], "tint": "hair"}` ou `{"slot": "eyes", "tint": "eyes", ...}`.
+- Só **peça rígida** (roupa com esqueleto para cabelo ou olhos dá `slot_kind`) e só no osso **cabeça** (`wrong_bone`).
+- `tint` é opcional: `"hair"` num cabelo (ou `"eyes"` em olhos) faz a peça **tomar a cor de cabelo (ou de olhos) escolhida no editor**, multiplicando a cor dos materiais; sem `tint` o arquivo mantém as próprias cores. Qualquer outro valor, ou em outro slot, é `bad_tint`.
+- Cabelo sempre **esconde o cabelo do catálogo** (`hidesHair` é forçado). Olhos próprios escondem os olhos padrão (`AvatarRules.EyesVisible`). Olhos têm no máximo 0,4 m; o cabelo, como toda peça, 1,5 m.
+- Chapéu, óculos etc. continuam valendo por cima.
+
+**No jogo.** A peça é baixada, conferida pelo hash e fixada ao osso da cabeça, como qualquer peça rígida; o cabelo e os olhos do catálogo só somem **onde a peça é desenhada** (avatares perto, nível de detalhe completo). De longe, onde itens próprios não são baixados, o avatar mostra o cabelo e os olhos do catálogo. A cor vem do cabelo/olhos do avatar, então quem vê o outro jogador vê a cor certa (o servidor manda `tint` com os itens vestidos).
+
+**Editor.** Dois menus novos, "Cabelo seu (peça própria)" e "Olhos seus (peça própria)", e dois exemplos para salvar ("Exemplo de cabelo…", "Exemplo de olhos…") já com os extras preenchidos. Looks salvos guardam essas peças como qualquer item personalizado; apagar a peça tira do avatar.
+
+**Testes:** `CustomHairEyesTests` (19: slots, cabelo e olhos aceitos, osso, tint, tamanho, não-roupa, `EyesVisible`, só itens seus no slot certo, chapéu por cima, o que os outros recebem, look, apagar), a seção nova do `AvatarWearablesSmoke` (peças substituem os do catálogo, tomam as cores, ficam na cabeça, voltam ao catálogo de longe) e a do `Avatar2Smoke` (menus, vestir, exemplos válidos).
+
+**Limitações:** os controles de rosto (tamanho e distância dos olhos) não mexem na peça de olhos; se o arquivo do cabelo ou dos olhos falha ao baixar, o avatar fica sem cabelo/olhos até a peça chegar (o do catálogo não volta sozinho); a peça não acompanha expressões nem piscar; nada foi verificado em captura de tela, só por números.

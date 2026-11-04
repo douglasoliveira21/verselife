@@ -7,7 +7,7 @@ using LifeVerse.Shared.Avatar;
 namespace LifeVerse.Client.Scripts;
 
 /// <summary>One custom item as the server lists it.</summary>
-public sealed record WearableEntry(Guid Id, string Name, string Slot, string Layer, string Kind, int Triangles, string Key, string Hash, string[] Covers, bool HidesHair, string AttachBone, float[] Offset, float[] Rotation, float Scale);
+public sealed record WearableEntry(Guid Id, string Name, string Slot, string Layer, string Kind, int Triangles, string Key, string Hash, string[] Covers, bool HidesHair, string AttachBone, float[] Offset, float[] Rotation, float Scale, string Tint = "");
 
 /// <summary>
 /// "Roupas e acessórios personalizados": import a GLB (clothing rigged to the standard skeleton, or a rigid piece fixed to a bone), see why the
@@ -26,11 +26,12 @@ public partial class CharacterCreator
     private void BuildWearablesManager(VBoxContainer fields)
     {
         fields.AddChild(new Label { Text = "Roupas e acessórios personalizados (GLB)" });
-        var hint = new Label { Text = "Roupa com esqueleto (só em corpo personalizado) ou peça rígida presa a um osso. O arquivo diz para qual slot serve; o servidor confere tudo.", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(280, 0) };
+        var hint = new Label { Text = "Roupa com esqueleto (só em corpo personalizado) ou peça rígida presa a um osso, inclusive cabelo e olhos seus (que trocam os do catálogo). O arquivo diz para qual slot serve; o servidor confere tudo.", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(280, 0) };
         hint.AddThemeFontSizeOverride("font_size", 14); fields.AddChild(hint);
         var top = new HBoxContainer(); fields.AddChild(top);
         Button Add(HBoxContainer row, string text, System.Action pressed) { var b = new Button { Text = text, SizeFlagsHorizontal = SizeFlags.ExpandFill }; b.Pressed += pressed; row.AddChild(b); return b; }
-        Add(top, "Importar item…", PickWearable); Add(top, "Exemplo de acessório…", () => PickExample(false)); Add(top, "Exemplo de roupa…", () => PickExample(true));
+        Add(top, "Importar item…", PickWearable); Add(top, "Exemplo de acessório…", () => PickExample("accessory")); Add(top, "Exemplo de roupa…", () => PickExample("clothing"));
+        var faceRow = new HBoxContainer(); fields.AddChild(faceRow); Add(faceRow, "Exemplo de cabelo…", () => PickExample("hair")); Add(faceRow, "Exemplo de olhos…", () => PickExample("eyes"));
         _wearables = new ItemList { Name = "Wearables", CustomMinimumSize = new Vector2(0, 100), SizeFlagsHorizontal = SizeFlags.ExpandFill }; fields.AddChild(_wearables);
         var row = new HBoxContainer(); fields.AddChild(row);
         Add(row, "Vestir", WearSelected); Add(row, "Tirar", TakeOffSelected); Add(row, "Excluir", DeleteWearable);
@@ -59,7 +60,7 @@ public partial class CharacterCreator
                 if (!Guid.TryParse(Text("id"), out var id)) continue;
                 _wearableEntries.Add(new WearableEntry(id, Text("name"), Text("slot"), Text("layer") is { Length: > 0 } layer ? layer : "base", Text("kind"), item.TryGetProperty("triangles", out var t) ? t.GetInt32() : 0, Text("key"), Text("hash"),
                     item.TryGetProperty("covers", out var c) && c.ValueKind == JsonValueKind.Array ? [.. c.EnumerateArray().Select(x => x.GetString() ?? string.Empty)] : [],
-                    item.TryGetProperty("hidesHair", out var h) && h.ValueKind == JsonValueKind.True, Text("attachBone"), Numbers("offset", [0, 0, 0]), Numbers("rotation", [0, 0, 0]), item.TryGetProperty("scale", out var s) && s.TryGetSingle(out var sv) ? sv : 1f));
+                    item.TryGetProperty("hidesHair", out var h) && h.ValueKind == JsonValueKind.True, Text("attachBone"), Numbers("offset", [0, 0, 0]), Numbers("rotation", [0, 0, 0]), item.TryGetProperty("scale", out var s) && s.TryGetSingle(out var sv) ? sv : 1f, Text("tint")));
             }
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException or FormatException) { _wearableEntries.Clear(); }
@@ -92,7 +93,7 @@ public partial class CharacterCreator
         var worn = new List<WornWearable>();
         foreach (var item in ReadWorn().Where(i => AvatarRules.IsCustom(i.ItemKey)))
             if (_wearableEntries.FirstOrDefault(w => w.Key == item.ItemKey) is { } w)
-                worn.Add(new WornWearable { Id = w.Id, Key = w.Key, Hash = w.Hash, Slot = w.Slot, Layer = w.Layer, Kind = w.Kind, HidesHair = w.HidesHair, Covers = w.Covers, AttachBone = w.AttachBone, Offset = w.Offset, Rotation = w.Rotation, Scale = w.Scale });
+                worn.Add(new WornWearable { Id = w.Id, Key = w.Key, Hash = w.Hash, Slot = w.Slot, Layer = w.Layer, Kind = w.Kind, HidesHair = w.HidesHair, Covers = w.Covers, AttachBone = w.AttachBone, Offset = w.Offset, Rotation = w.Rotation, Scale = w.Scale, Tint = w.Tint });
         return JsonSerializer.Serialize(worn);
     }
 
@@ -134,21 +135,34 @@ public partial class CharacterCreator
         _wearableOpen.PopupCentered(new Vector2I(900, 560));
     }
 
-    private bool _exampleIsClothing;
+    private string _exampleKind = "accessory";
 
-    private void PickExample(bool clothing)
+    /// <summary>The reference file for a kind of item (clothing, accessory, hair or eyes): what the file says it is, and where it sits.</summary>
+    public static byte[] ExampleFile(string kind) => kind switch
     {
-        _exampleIsClothing = clothing;
+        "clothing" => WearableTemplate.Clothing("top", WearableTemplate.ShirtBones),
+        "hair" => WearableTemplate.Attachment(WearableTemplate.Extras("hair", bone: "head", offset: [0, .12f, 0], tint: "hair"), .3f),
+        "eyes" => WearableTemplate.Attachment(WearableTemplate.Extras("eyes", bone: "head", offset: [0, .06f, .09f], tint: "eyes"), .05f),
+        _ => WearableTemplate.Attachment(WearableTemplate.Extras("hat", bone: "head", offset: [0, .15f, 0]))
+    };
+
+    private static string ExampleSaved(string kind) => kind switch
+    {
+        "clothing" => "Exemplo de roupa salvo: o esqueleto padrão, com a camiseta presa aos ossos do tronco e dos braços. O slot fica nos extras do arquivo.",
+        "hair" => "Exemplo de cabelo salvo: uma peça rígida presa à cabeça, no slot \"hair\". Ela troca o cabelo do catálogo e, com \"tint\": \"hair\", pega a cor de cabelo escolhida no editor.",
+        "eyes" => "Exemplo de olhos salvo: uma peça pequena presa à cabeça, no slot \"eyes\". Ela troca os olhos do catálogo e, com \"tint\": \"eyes\", pega a cor de olhos escolhida.",
+        _ => "Exemplo de acessório salvo: uma peça rígida presa ao osso da cabeça. O arquivo diz o slot, o osso e a posição."
+    };
+
+    private void PickExample(string kind)
+    {
+        _exampleKind = kind;
         _wearableSave ??= MakeDialog(FileDialog.FileModeEnum.SaveFile, "Salvar exemplo", path =>
         {
-            try
-            {
-                System.IO.File.WriteAllBytes(path, _exampleIsClothing ? WearableTemplate.Clothing("top", WearableTemplate.ShirtBones) : WearableTemplate.Attachment(WearableTemplate.Extras("hat", bone: "head", offset: [0, .15f, 0])));
-                _wearableMessage.Text = _exampleIsClothing ? "Exemplo de roupa salvo: o esqueleto padrão, com a camiseta presa aos ossos do tronco e dos braços. O slot fica nos extras do arquivo." : "Exemplo de acessório salvo: uma peça rígida presa ao osso da cabeça. O slot, o osso e a posição ficam nos extras do arquivo.";
-            }
+            try { System.IO.File.WriteAllBytes(path, ExampleFile(_exampleKind)); _wearableMessage.Text = ExampleSaved(_exampleKind); }
             catch (Exception exception) when (exception is System.IO.IOException or UnauthorizedAccessException) { _wearableMessage.Text = "Não foi possível salvar nesse lugar."; }
         });
-        _wearableSave.CurrentFile = clothing ? "lifeverse-exemplo-roupa.glb" : "lifeverse-exemplo-acessorio.glb"; _wearableSave.PopupCentered(new Vector2I(900, 560));
+        _wearableSave.CurrentFile = $"lifeverse-exemplo-{kind switch { "clothing" => "roupa", "hair" => "cabelo", "eyes" => "olhos", _ => "acessorio" }}.glb"; _wearableSave.PopupCentered(new Vector2I(900, 560));
     }
 
     /// <summary>Sends a GLB item to the server and shows what came back: the item, or the reasons it was refused.</summary>

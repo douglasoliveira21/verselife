@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Users;
 
-public sealed record WearableSummary(Guid Id, string Name, string Slot, string Layer, string Kind, int Triangles, int SizeBytes, string Key, DateTimeOffset CreatedAt, string[] Covers, bool HidesHair, string Hash, string AttachBone, float[] Offset, float[] Rotation, float Scale);
+public sealed record WearableSummary(Guid Id, string Name, string Slot, string Layer, string Kind, int Triangles, int SizeBytes, string Key, DateTimeOffset CreatedAt, string[] Covers, bool HidesHair, string Hash, string AttachBone, float[] Offset, float[] Rotation, float Scale, string Tint = "");
 
 /// <summary>
 /// Clothes and accessories a person brought: a GLB is checked (see <see cref="WearableValidator"/>), stored by hash and listed. It is worn by
@@ -70,7 +70,7 @@ public static class AvatarWearables
 
     private static WearableSummary Summary(AvatarWearable w)
     {
-        string bone = string.Empty; float[] offset = [0, 0, 0], rotation = [0, 0, 0]; var scale = 1f;
+        string bone = string.Empty, tint = string.Empty; float[] offset = [0, 0, 0], rotation = [0, 0, 0]; var scale = 1f;
         try
         {
             using var report = JsonDocument.Parse(w.ReportJson); var root = report.RootElement;
@@ -78,9 +78,10 @@ public static class AvatarWearables
             if (root.TryGetProperty("offset", out var o) && o.ValueKind == JsonValueKind.Array) offset = [.. o.EnumerateArray().Select(x => x.GetSingle())];
             if (root.TryGetProperty("rotation", out var r) && r.ValueKind == JsonValueKind.Array) rotation = [.. r.EnumerateArray().Select(x => x.GetSingle())];
             if (root.TryGetProperty("scale", out var s) && s.TryGetSingle(out var sv)) scale = sv;
+            if (root.TryGetProperty("tint", out var t) && t.ValueKind == JsonValueKind.String) tint = t.GetString() ?? string.Empty;
         }
         catch (JsonException) { }
-        return new(w.Id, w.Name, w.Slot, w.Layer, w.Kind, w.Triangles, w.SizeBytes, AvatarRules.CustomKey(w.Id), w.CreatedAt, w.Covers(), w.HidesHairFlag(), w.ContentHash, bone, offset, rotation, scale);
+        return new(w.Id, w.Name, w.Slot, w.Layer, w.Kind, w.Triangles, w.SizeBytes, AvatarRules.CustomKey(w.Id), w.CreatedAt, w.Covers(), w.HidesHairFlag(), w.ContentHash, bone, offset, rotation, scale, tint);
     }
 
     /// <summary>The items a person may wear: those they hold in their inventory (what they uploaded, bought in the marketplace or were given), not deleted.</summary>
@@ -246,7 +247,7 @@ public static class AvatarWearables
         return JsonSerializer.Serialize(rows.Select(r =>
         {
             using var report = JsonDocument.Parse(r.ReportJson); var root = report.RootElement;
-            return new { id = r.Id, key = AvatarRules.CustomKey(r.Id), triangles = r.Triangles, hash = r.ContentHash, slot = r.Slot, layer = r.Layer, kind = r.Kind, hidesHair = r.HidesHairFlag(), covers = r.Covers(), attachBone = root.TryGetProperty("attachBone", out var b) ? b.GetString() : string.Empty, offset = root.TryGetProperty("offset", out var o) ? o.Clone() : default, rotation = root.TryGetProperty("rotation", out var ro) ? ro.Clone() : default, scale = root.TryGetProperty("scale", out var s) && s.TryGetSingle(out var sv) ? sv : 1f };
+            return new { id = r.Id, key = AvatarRules.CustomKey(r.Id), triangles = r.Triangles, hash = r.ContentHash, slot = r.Slot, layer = r.Layer, kind = r.Kind, hidesHair = r.HidesHairFlag(), tint = r.TintOf(), covers = r.Covers(), attachBone = root.TryGetProperty("attachBone", out var b) ? b.GetString() : string.Empty, offset = root.TryGetProperty("offset", out var o) ? o.Clone() : default, rotation = root.TryGetProperty("rotation", out var ro) ? ro.Clone() : default, scale = root.TryGetProperty("scale", out var s) && s.TryGetSingle(out var sv) ? sv : 1f };
         }), Options);
     }
 
@@ -263,5 +264,6 @@ public static class AvatarWearables
 public static class AvatarWearableExtensions
 {
     public static string[] Covers(this AvatarWearable w) { try { using var d = JsonDocument.Parse(w.ReportJson); return d.RootElement.TryGetProperty("covers", out var c) && c.ValueKind == JsonValueKind.Array ? [.. c.EnumerateArray().Select(x => x.GetString() ?? string.Empty)] : []; } catch (JsonException) { return []; } }
+    public static string TintOf(this AvatarWearable w) { try { using var d = JsonDocument.Parse(w.ReportJson); return d.RootElement.TryGetProperty("tint", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() ?? string.Empty : string.Empty; } catch (JsonException) { return string.Empty; } }
     public static bool HidesHairFlag(this AvatarWearable w) { try { using var d = JsonDocument.Parse(w.ReportJson); return d.RootElement.TryGetProperty("hidesHair", out var h) && h.ValueKind == JsonValueKind.True; } catch (JsonException) { return false; } }
 }
