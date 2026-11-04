@@ -56,6 +56,7 @@ public partial class ModelImportDialog : Node
         _placement = PlacementSize;
         _window = new FloatingWindow("Importar modelo 3D", icon: "cube") { Visible = false, Name = "ModelImport" };
         _window.Place(.5f, .5f, -650, -290, 650, 290);
+        _window.PivotOffset = new Vector2(650, 290); _window.Scale = new Vector2(.62f, .62f);
         var content = _window.Content; content.AddThemeConstantOverride("separation", 12);
 
         var main = new HBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill }; main.AddThemeConstantOverride("separation", 14); content.AddChild(main);

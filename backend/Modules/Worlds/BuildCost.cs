@@ -40,33 +40,86 @@ public static class BuildCost
         return (int)Math.Max(2, Math.Round(basic));
     }
 
-    /// <summary>The cost of one object: geometry (a point per 20 triangles), physics, textures and light, and contents.</summary>
-    public static int Of(string primitiveType, string? geometryJson, string? materialJson, string? physicsJson, string? contentJson)
+    /// <summary>The parts an object's cost is made of, so it is clear what makes a build heavy.</summary>
+    public sealed record CostParts(int Geometry, int Physics, int Collision, int Textures, int Effects, int Scripts, int Animations, int Content)
+    {
+        public int Total => Geometry + Physics + Collision + Textures + Effects + Scripts + Animations + Content;
+    }
+
+    public const int ScriptCost = 8, AnimationCost = 3;
+
+    /// <summary>The cost of one object: geometry (a point per 20 triangles), solid physics, the complexity of its collision shape, textures, light and see-through or glowing materials, and what it carries (scripts weigh most, then animations).</summary>
+    public static int Of(string primitiveType, string? geometryJson, string? materialJson, string? physicsJson, string? contentJson) =>
+        Math.Min(MaxObjectCost, Breakdown(primitiveType, geometryJson, materialJson, physicsJson, contentJson).Total);
+
+    public static CostParts Breakdown(string primitiveType, string? geometryJson, string? materialJson, string? physicsJson, string? contentJson)
     {
         var geometry = Math.Max(1, Triangles(primitiveType, geometryJson) / 20);
-        var physics = 0;
+        var physics = 0; var solid = true;
         try
         {
             using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(physicsJson) ? "{}" : physicsJson);
-            var solid = !(document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("collision", out var c) && c.ValueKind == JsonValueKind.False);
+            solid = !(document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("collision", out var c) && c.ValueKind == JsonValueKind.False);
             physics = solid ? (primitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase) ? 2 : 1) : 0;
         }
         catch (JsonException) { physics = 1; }
-        var textures = MaterialAssets.TextureIds(materialJson).Count * 3;
+        // a hollow, twisted or cut shape needs a collision mesh of its own instead of a simple box
+        var collision = solid && ComplexCollision(geometryJson) ? 1 : 0;
+        var textures = MaterialAssets.TextureIds(materialJson).Count * 3; var effects = 0;
         try
         {
             using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(materialJson) ? "{}" : materialJson);
             if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
-                if (document.RootElement.TryGetProperty("builtin", out _)) textures += 1;
-                if (document.RootElement.TryGetProperty("light", out _)) textures += 5;
-                if (document.RootElement.TryGetProperty("faces", out var faces) && faces.ValueKind == JsonValueKind.Array) textures += Math.Min(faces.GetArrayLength(), 32);
+                var root = document.RootElement;
+                if (root.TryGetProperty("builtin", out _)) textures += 1;
+                if (root.TryGetProperty("light", out _)) textures += 5;
+                if (root.TryGetProperty("faces", out var faces) && faces.ValueKind == JsonValueKind.Array) textures += Math.Min(faces.GetArrayLength(), 32);
+                if (root.TryGetProperty("transparency", out var alpha) && alpha.ValueKind == JsonValueKind.Number && alpha.TryGetDouble(out var a) && a < .999) effects += 1; // see-through surfaces cost more to draw
+                if (root.TryGetProperty("emission", out _)) effects += 1;
             }
         }
         catch (JsonException) { }
-        var contents = Math.Min(ContentAssets.AssetIds(contentJson).Count, ContentAssets.MaxEntries);
-        return Math.Min(MaxObjectCost, geometry + physics + textures + contents);
+        int scripts = 0, animations = 0, content = 0;
+        foreach (var category in ContentCategories(contentJson).Take(ContentAssets.MaxEntries))
+        {
+            if (category == "scripts") scripts += ScriptCost; else if (category == "animations") animations += AnimationCost; else content += 1;
+        }
+        return new CostParts(geometry, physics, collision, textures, effects, scripts, animations, content);
     }
+
+    private static bool ComplexCollision(string? geometryJson)
+    {
+        if (string.IsNullOrWhiteSpace(geometryJson)) return false;
+        try
+        {
+            using var document = JsonDocument.Parse(geometryJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return false;
+            double Read(string key, double fallback) => document.RootElement.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var n) && double.IsFinite(n) ? n : fallback;
+            return Read("hollow", 0) > 0 || Read("twist", 0) != 0 || Read("cutStart", 0) > 0 || Read("cutEnd", 1) < 1;
+        }
+        catch (JsonException) { return false; }
+    }
+
+    /// <summary>The category of every well-formed entry of an object's content (scripts, sounds, textures…), in order.</summary>
+    public static IEnumerable<string> ContentCategories(string? contentJson)
+    {
+        if (string.IsNullOrWhiteSpace(contentJson)) yield break;
+        JsonDocument? document = null;
+        try { document = JsonDocument.Parse(contentJson); } catch (JsonException) { }
+        if (document is null) yield break;
+        using (document)
+        {
+            if (document.RootElement.ValueKind != JsonValueKind.Array) yield break;
+            foreach (var entry in document.RootElement.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object || !entry.TryGetProperty("assetId", out var asset) || !Guid.TryParse(asset.GetString(), out _)) continue;
+                yield return entry.TryGetProperty("category", out var category) && category.ValueKind == JsonValueKind.String ? category.GetString() ?? "" : "";
+            }
+        }
+    }
+
+    public static bool HasScripts(string? contentJson) => ContentCategories(contentJson).Any(c => c == "scripts");
 
     /// <summary>A limit stored in an island's resource limits JSON (for example "cost"), or the default.</summary>
     public static int Limit(string? resourceLimitsJson, string key, int fallback)

@@ -19,6 +19,8 @@ public partial class NetworkManager : Node
     [Signal] public delegate void TerrainPermissionChangedEventHandler(bool canEdit);
     [Signal] public delegate void TerrainEditRejectedEventHandler(string code);
     [Signal] public delegate void VehicleMessageEventHandler(string text);
+    /// The island answered a teleport request: where we landed and which way we face, or why not.
+    [Signal] public delegate void TeleportResultEventHandler(bool ok, string code, float x, float z, float yaw);
     public VehicleClient Vehicles { get; private set; } = null!;
     public VoiceChat Voice { get; private set; } = null!;
     /// The other avatars on the island with their names and where they stand, for matching a right click to a person.
@@ -182,6 +184,13 @@ public partial class NetworkManager : Node
     {
         if (!Enum.IsDefined((TerrainTool)tool) || GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain") is not { } terrain) return;
         if (!terrain.ApplyEdit((TerrainTool)tool, x, z, radius, strength, layer, revision)) _bridge.RpcId(1, NetworkBridge.MethodName.RequestTerrain);
+    }
+    /// Asks the island to teleport us to a parcel (its arrival point decides) or, without a parcel, to a spot. The server decides and answers with TeleportResult.
+    public void RequestTeleport(string parcelId, float x, float z) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.RequestTeleport, parcelId ?? string.Empty, x, z); }
+    public void OnTeleportResult(bool ok, string code, float x, float z, float yaw)
+    {
+        if (ok) _localPlayer?.FaceYaw(Mathf.DegToRad(yaw));
+        EmitSignal(SignalName.TeleportResult, ok, code, x, z, yaw);
     }
     public void OnTerrainEditRejected(string code) => EmitSignal(SignalName.TerrainEditRejected, code);
     public void TouchObject(Guid objectId) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.TouchObject, objectId.ToString()); }

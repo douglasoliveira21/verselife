@@ -6,6 +6,7 @@ using LifeVerse.Api.Modules.Identity;
 using LifeVerse.Api.Modules.Platform;
 using LifeVerse.Api.Modules.Users;
 using LifeVerse.Api.Modules.Worlds;
+using LifeVerse.Api.Modules.Land;
 using LifeVerse.Api.Modules.Assets;
 using LifeVerse.Api.Modules.Inventory;
 using LifeVerse.Api.Modules.Scripting;
@@ -56,6 +57,7 @@ builder.Services.AddSingleton(builder.Configuration.GetSection("LuaRuntime").Get
 builder.Services.AddSingleton<LuaSandboxService>();
 builder.Services.AddSingleton<ScriptMessagingService>();
 builder.Services.AddHostedService<WorldManagerHostedService>();
+builder.Services.AddHostedService<LandRentalWorker>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
@@ -130,6 +132,7 @@ app.MapUserEndpoints();
 app.MapPlatformEndpoints();
 app.MapWorldEndpoints();
 app.MapParcelEndpoints();
+app.MapLandEndpoints();
 app.MapVehicleEndpoints();
 app.MapBuildEndpoints();
 app.MapAssetEndpoints();
@@ -150,6 +153,8 @@ if (!app.Environment.IsEnvironment("Testing"))
     var db = scope.ServiceProvider.GetRequiredService<LifeVerseDbContext>();
     await db.Database.MigrateAsync();
     await BuildCostBackfill.RunAsync(db);
+    await BuildCostBackfill.RepriceAsync(db);
+    await LifeVerse.Api.Modules.Land.ParcelCellBackfill.RunAsync(db);
 }
 
 await app.RunAsync();

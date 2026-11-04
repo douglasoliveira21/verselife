@@ -48,7 +48,7 @@ public partial class MiniMap : Control
         var map = _terrain.Map;
         var count = map.VertexCount;
         var image = Image.CreateEmpty(count, count, false, Image.Format.Rgb8);
-        Color[] layers = [new("#5a9a47"), new("#8a6a48"), new("#d8c995"), new("#8d8d90")];
+        Color[] layers = [.. IslandTerrain.Layers.Select(l => l.Map)];
         for (var z = 0; z < count; z++)
         for (var x = 0; x < count; x++)
         {

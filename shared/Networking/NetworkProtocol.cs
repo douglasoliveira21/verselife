@@ -7,7 +7,7 @@ public static class NetworkProtocol
     // v4 adds touching scripted objects.
     // v5 adds server-driven vehicles (enter, exit, drive input, vehicle snapshots).
     // v6 adds proximity voice chat (Opus packets relayed by the island server).
-    public const int Version = 6;
+    public const int Version = 7;
     public const int MaxVehicles = 64;
     public const int MaxTerrainEditsPerSecond = 20;
     public const int MaxTerrainImportBytes = 300_000;

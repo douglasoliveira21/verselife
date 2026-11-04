@@ -161,6 +161,98 @@ public sealed class IslandParcel
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+
+    // ---- for sale (null price: not for sale)
+    public long? SalePrice { get; set; }
+    /// <summary>When set, only this person may buy.</summary>
+    public Guid? SaleBuyerUserId { get; set; }
+    public string SaleDescription { get; set; } = string.Empty;
+    /// <summary>Whether the seller's objects on the parcel go to the buyer with it.</summary>
+    public bool SaleIncludesObjects { get; set; } = true;
+
+    // ---- offered for rent (null price: not offered)
+    public long? RentPrice { get; set; }
+    public int RentPeriodDays { get; set; } = 30;
+    public int RentMinPeriods { get; set; } = 1;
+    public int RentMaxPeriods { get; set; } = 12;
+    public long RentDeposit { get; set; }
+    public int RentGraceDays { get; set; } = 3;
+    public bool RentAutoRenewAllowed { get; set; } = true;
+
+    /// <summary>Who may walk in: public (everyone), list (the owner, the tenant and the people on the access list) or private (the owner and the tenant).</summary>
+    public string AccessMode { get; set; } = "public";
+
+    /// <summary>Who may build: owner (the owner and tenant), list (also the people on the builders list), everyone, or nobody (only island administrators).</summary>
+    public string BuildMode { get; set; } = "owner";
+    /// <summary>Objects of people who may not build here are sent back after this many minutes; null: never.</summary>
+    public int? AutoReturnMinutes { get; set; }
+
+    /// <summary>Which way people face when they arrive at SpawnX/SpawnZ, in degrees.</summary>
+    public float ArrivalYaw { get; set; }
+    /// <summary>free (people land where they ask), forced (always at the arrival point) or disabled (teleporting here is refused).</summary>
+    public string TeleportMode { get; set; } = "free";
+    /// <summary>The parcel's music: { musicUrl, volume, autoplay, name } or {}.</summary>
+    public string MediaJson { get; set; } = "{}";
+}
+
+/// <summary>One line of a parcel's access list: a person allowed in (kind allow) or kept out (kind ban), for ever or until a time.</summary>
+public sealed class ParcelAccess
+{
+    public Guid Id { get; set; }
+    public Guid ParcelId { get; set; }
+    public Guid UserId { get; set; }
+    /// <summary>allow or ban (who may enter) or build (who may build, when the parcel's build mode is "list").</summary>
+    public required string Kind { get; set; }
+    public Guid GrantedByUserId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}
+
+/// <summary>A rental of a parcel: the tenant may build in it while the contract is active. Status: active, grace (overdue, no building) or ended.</summary>
+public sealed class ParcelRental
+{
+    public Guid Id { get; set; }
+    public Guid ParcelId { get; set; }
+    public Guid LandlordUserId { get; set; }
+    public Guid TenantUserId { get; set; }
+    public long PricePerPeriod { get; set; }
+    public int PeriodDays { get; set; }
+    public long DepositCoins { get; set; }
+    public int GraceDays { get; set; }
+    public int Periods { get; set; }
+    public bool AutoRenew { get; set; }
+    public required string Status { get; set; }
+    public string? EndReason { get; set; }
+    public DateTimeOffset StartsAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? GraceUntil { get; set; }
+    public DateTimeOffset? EndedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>What happened to a parcel in money terms: sales, rent payments, deposits and refunds.</summary>
+public sealed class ParcelTransaction
+{
+    public Guid Id { get; set; }
+    public Guid ParcelId { get; set; }
+    public required string Type { get; set; }
+    public Guid? FromUserId { get; set; }
+    public Guid? ToUserId { get; set; }
+    public long Amount { get; set; }
+    public string DataJson { get; set; } = "{}";
+    public Guid? LedgerTransactionId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>One 4 x 4 m cell of the territorial grid and the parcel that owns it. The key (island, cx, cz) makes overlap impossible.</summary>
+public sealed class ParcelCell
+{
+    public Guid IslandId { get; set; }
+    public int Cx { get; set; }
+    public int Cz { get; set; }
+    public Guid ParcelId { get; set; }
 }
 
 public sealed class ParcelChange

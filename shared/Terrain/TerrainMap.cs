@@ -3,10 +3,11 @@ using System.Text.Json;
 
 namespace LifeVerse.Shared.Terrain;
 
-public enum TerrainTool : byte { Raise, Lower, Flatten, Smooth, Paint, Noise }
+/// <summary>Raise, Lower, Flatten (to the height under the brush), Smooth, Paint, Noise (roughness); then Level (to a chosen height), Restore (back toward the reference ground) and Erode.</summary>
+public enum TerrainTool : byte { Raise, Lower, Flatten, Smooth, Paint, Noise, Level, Restore, Erode }
 
 /// <summary>
-/// Engine-independent island heightmap plus four texture layers. The island server owns the
+/// Engine-independent island heightmap plus eight texture layers. The island server owns the
 /// authoritative copy; clients only replay edits the server accepted. The default is flat ground
 /// covered by layer 0, like a freshly created region.
 /// </summary>
@@ -14,7 +15,7 @@ public sealed class TerrainMap
 {
     public const int DefaultCells = 128;
     public const float DefaultCellSize = 2f;
-    public const int LayerCount = 4;
+    public const int LayerCount = 8;
     public const float MinHeight = -8f;
     public const float MaxHeight = 48f;
     public const float MaxBrushRadius = 24f;
@@ -28,7 +29,8 @@ public sealed class TerrainMap
     public const float OceanMargin = 192f;
     private const int MinUnits = -8000; // MinHeight in millimetres
     private const int MaxCells = 256;
-    private const uint Magic = 0x3254564C; // "LVT2": LVT1 plus the sea level
+    private const uint Magic = 0x3354564C; // "LVT3": LVT2 with the number of texture layers, which grew from 4 to 8
+    private const uint MagicV2 = 0x3254564C; // "LVT2": LVT1 plus the sea level (4 layers)
     private const uint MagicV1 = 0x3154564C; // "LVT1"
 
     private readonly float[] _heights;
@@ -98,43 +100,95 @@ public sealed class TerrainMap
 
     /// <summary>
     /// Applies one brush dab at a world position. <paramref name="strength"/> is metres for raise/lower/noise
-    /// and a 0..1 blend for flatten/smooth/paint. Heights are kept on a 1 mm grid so replays stay identical.
+    /// and a 0..1 blend for the other tools. Heights are kept on a 1 mm grid so replays stay identical.
     /// </summary>
-    public bool Apply(TerrainTool tool, float worldX, float worldZ, float radius, float strength, int layer = 0)
+    public bool Apply(TerrainTool tool, float worldX, float worldZ, float radius, float strength, int layer = 0) =>
+        Apply(tool, worldX, worldZ, radius, strength, layer, BrushOptions.Default, null);
+
+    /// <summary>
+    /// The full brush: a round or square footprint, an edge from soft to hard, a height to level to, a test for which vertices may change
+    /// (the parcels a person may edit; vertices that fail it are left exactly as they are) and the ground "Restore" returns to
+    /// (the plain island of the first day when none is given). Raise, lower and noise move by metres; the rest blend by 0 to 1.
+    /// </summary>
+    public bool Apply(TerrainTool tool, float worldX, float worldZ, float radius, float strength, int layer, BrushOptions brush, Func<int, int, bool>? allowed, TerrainMap? reference = null)
     {
         if (!float.IsFinite(worldX) || !float.IsFinite(worldZ) || !float.IsFinite(radius) || !float.IsFinite(strength)) return false;
+        if (!Enum.IsDefined(tool)) return false;
         radius = Math.Clamp(radius, CellSize / 2f, MaxBrushRadius);
         strength = Math.Clamp(strength, 0f, tool is TerrainTool.Raise or TerrainTool.Lower or TerrainTool.Noise ? 2f : 1f);
         layer = Math.Clamp(layer, 0, LayerCount - 1);
+        var hardness = Math.Clamp(brush.Hardness, 0f, 1f);
         var cx = (worldX + HalfExtent) / CellSize;
         var cz = (worldZ + HalfExtent) / CellSize;
         var span = radius / CellSize;
-        var target = tool == TerrainTool.Flatten ? SampleHeight(worldX, worldZ) : 0f;
-        var source = tool == TerrainTool.Smooth ? (float[])_heights.Clone() : _heights;
+        var target = tool == TerrainTool.Flatten ? SampleHeight(worldX, worldZ) : tool == TerrainTool.Level ? (brush.TargetHeight is { } chosen && float.IsFinite(chosen) ? Math.Clamp(chosen, MinHeight, MaxHeight) : SampleHeight(worldX, worldZ)) : 0f;
+        var source = tool is TerrainTool.Smooth or TerrainTool.Erode ? (float[])_heights.Clone() : _heights;
+        var ground = tool == TerrainTool.Restore ? (reference is { } r && r.Cells == Cells ? r : DefaultGround(Cells, CellSize)) : null;
+        var moved = tool == TerrainTool.Erode ? new float[_heights.Length] : null;
         var changed = false;
         for (var z = Math.Max(0, (int)MathF.Floor(cz - span)); z <= Math.Min(Cells, (int)MathF.Ceiling(cz + span)); z++)
         for (var x = Math.Max(0, (int)MathF.Floor(cx - span)); x <= Math.Min(Cells, (int)MathF.Ceiling(cx + span)); x++)
         {
-            var distance = MathF.Sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz)) * CellSize;
+            var distance = brush.Square ? MathF.Max(MathF.Abs(x - cx), MathF.Abs(z - cz)) * CellSize : MathF.Sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz)) * CellSize;
             if (distance > radius) continue;
             var t = 1f - distance / radius;
-            var weight = t * t * (3f - 2f * t);
+            var weight = Lerp(t * t * (3f - 2f * t), 1f, hardness);
             // The outermost ring is the sea floor that continues out to the world limit; it never changes.
             if (IsBorder(x, z)) continue;
+            if (allowed is not null && !allowed(x, z)) continue;
             var index = z * VertexCount + x;
             switch (tool)
             {
                 case TerrainTool.Raise: changed |= SetHeight(index, _heights[index] + strength * weight); break;
                 case TerrainTool.Lower: changed |= SetHeight(index, _heights[index] - strength * weight); break;
                 case TerrainTool.Noise: changed |= SetHeight(index, _heights[index] + (Hash(x, z, Revision) - .5f) * 2f * strength * weight); break;
-                case TerrainTool.Flatten: changed |= SetHeight(index, Lerp(_heights[index], target, strength * weight)); break;
+                case TerrainTool.Flatten or TerrainTool.Level: changed |= SetHeight(index, Lerp(_heights[index], target, strength * weight)); break;
                 case TerrainTool.Smooth: changed |= SetHeight(index, Lerp(source[index], NeighbourAverage(source, x, z), strength * weight)); break;
                 case TerrainTool.Paint: changed |= PaintVertex(index, layer, strength * weight); break;
+                case TerrainTool.Restore:
+                    changed |= SetHeight(index, Lerp(_heights[index], ground!._heights[index], strength * weight));
+                    changed |= BlendSplat(index, ground, strength * weight);
+                    break;
+                case TerrainTool.Erode: Erode(source, moved!, x, z, strength * weight, allowed); break;
                 default: return false;
             }
         }
+        if (moved is not null)
+            for (var i = 0; i < moved.Length; i++) if (moved[i] != 0f) changed |= SetHeight(i, _heights[i] + moved[i]);
         if (changed) Revision++;
         return changed;
+    }
+
+    private const float Talus = .55f; // the steepest slope that stays put: rise over run
+
+    /// <summary>Thermal erosion: where a vertex stands steeper than the talus slope over its lowest neighbour, part of the excess slides down. Material is moved, never made.</summary>
+    private void Erode(float[] heights, float[] moved, int x, int z, float amount, Func<int, int, bool>? allowed)
+    {
+        var index = z * VertexCount + x;
+        var bestExcess = 0f; var bestIndex = -1;
+        for (var oz = -1; oz <= 1; oz++)
+        for (var ox = -1; ox <= 1; ox++)
+        {
+            if (ox == 0 && oz == 0) continue;
+            int nx = x + ox, nz = z + oz;
+            if (nx < 0 || nz < 0 || nx > Cells || nz > Cells || IsBorder(nx, nz) || (allowed is not null && !allowed(nx, nz))) continue;
+            var run = (ox != 0 && oz != 0 ? 1.4142135f : 1f) * CellSize;
+            var excess = heights[index] - heights[nz * VertexCount + nx] - Talus * run;
+            if (excess > bestExcess) { bestExcess = excess; bestIndex = nz * VertexCount + nx; }
+        }
+        if (bestIndex < 0) return;
+        var slide = bestExcess * .5f * amount;
+        moved[index] -= slide; moved[bestIndex] += slide;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int, float), TerrainMap> Grounds = new();
+    private static TerrainMap DefaultGround(int cells, float cellSize) => Grounds.GetOrAdd((cells, cellSize), key => new TerrainMap(key.Item1, key.Item2));
+
+    private bool BlendSplat(int index, TerrainMap other, float amount)
+    {
+        var weights = new float[LayerCount];
+        for (var i = 0; i < LayerCount; i++) weights[i] = Lerp(_splat[index * LayerCount + i], other._splat[index * LayerCount + i], Math.Clamp(amount, 0f, 1f));
+        return StoreWeights(index, weights, -1);
     }
 
     public byte[] Serialize()
@@ -142,7 +196,7 @@ public sealed class TerrainMap
         using var raw = new MemoryStream();
         using (var writer = new BinaryWriter(raw, System.Text.Encoding.UTF8, true))
         {
-            writer.Write(Magic); writer.Write(Cells); writer.Write(CellSize); writer.Write(Revision); writer.Write(SeaLevel);
+            writer.Write(Magic); writer.Write(Cells); writer.Write(CellSize); writer.Write(Revision); writer.Write(SeaLevel); writer.Write(LayerCount);
             // Heights are always whole millimetres (see SetHeight), so storing the integer count is lossless.
             foreach (var height in _heights) writer.Write((ushort)Math.Clamp((int)MathF.Round(height * 1000f) - MinUnits, 0, ushort.MaxValue));
             writer.Write(_splat);
@@ -162,17 +216,24 @@ public sealed class TerrainMap
             var header = new byte[20];
             deflate.ReadExactly(header);
             var magic = BitConverter.ToUInt32(header, 0);
-            if (magic != Magic && magic != MagicV1) return false;
+            if (magic != Magic && magic != MagicV2 && magic != MagicV1) return false;
             var cells = BitConverter.ToInt32(header, 4);
             var cellSize = BitConverter.ToSingle(header, 8);
             if (cells is < 4 or > MaxCells || !float.IsFinite(cellSize) || cellSize is < .25f or > 16f) return false;
             var loaded = new TerrainMap(cells, cellSize) { Revision = BitConverter.ToInt64(header, 12) };
-            if (magic == Magic)
+            var fileLayers = 4; // maps saved before the layers grew have four
+            if (magic != MagicV1)
             {
                 var seaBytes = new byte[4]; deflate.ReadExactly(seaBytes);
                 var sea = BitConverter.ToSingle(seaBytes, 0);
                 if (!float.IsFinite(sea)) return false;
                 loaded.SeaLevel = Math.Clamp(sea, MinSeaLevel, MaxSeaLevel);
+            }
+            if (magic == Magic)
+            {
+                var layerBytes = new byte[4]; deflate.ReadExactly(layerBytes);
+                fileLayers = BitConverter.ToInt32(layerBytes, 0);
+                if (fileLayers is < 1 or > LayerCount) return false;
             }
             var heights = new byte[loaded._heights.Length * 2];
             deflate.ReadExactly(heights);
@@ -180,7 +241,11 @@ public sealed class TerrainMap
             for (var z = 0; z <= cells; z++)
             for (var x = 0; x <= cells; x++)
                 if (loaded.IsBorder(x, z)) loaded._heights[z * loaded.VertexCount + x] = MinHeight; // maps saved before the ocean existed
-            deflate.ReadExactly(loaded._splat);
+            var stored = new byte[loaded._heights.Length * fileLayers];
+            deflate.ReadExactly(stored);
+            Array.Clear(loaded._splat);
+            for (var vertex = 0; vertex < loaded._heights.Length; vertex++)
+                for (var layer = 0; layer < fileLayers; layer++) loaded._splat[vertex * LayerCount + layer] = stored[vertex * fileLayers + layer];
             if (deflate.ReadByte() != -1) return false;
             map = loaded;
             return true;
@@ -206,7 +271,10 @@ public sealed class TerrainMap
     }
 
     /// <summary>State of every sculptable vertex a brush at this position and radius would touch.</summary>
-    public TerrainPatch Capture(float worldX, float worldZ, float radius)
+    public TerrainPatch Capture(float worldX, float worldZ, float radius) => Capture(worldX, worldZ, radius, false, null);
+
+    /// <summary>Like the other capture, for a round or square footprint and only the vertices the test lets through, so undo never touches what the person could not change.</summary>
+    public TerrainPatch Capture(float worldX, float worldZ, float radius, bool square, Func<int, int, bool>? allowed)
     {
         var patch = new TerrainPatch();
         if (!float.IsFinite(worldX) || !float.IsFinite(worldZ) || !float.IsFinite(radius)) return patch;
@@ -214,7 +282,7 @@ public sealed class TerrainMap
         var cx = (worldX + HalfExtent) / CellSize; var cz = (worldZ + HalfExtent) / CellSize; var span = radius / CellSize;
         for (var z = Math.Max(1, (int)MathF.Floor(cz - span)); z <= Math.Min(Cells - 1, (int)MathF.Ceiling(cz + span)); z++)
         for (var x = Math.Max(1, (int)MathF.Floor(cx - span)); x <= Math.Min(Cells - 1, (int)MathF.Ceiling(cx + span)); x++)
-            if (MathF.Sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz)) * CellSize <= radius) CaptureVertex(patch, z * VertexCount + x);
+            if ((square ? MathF.Max(MathF.Abs(x - cx), MathF.Abs(z - cz)) : MathF.Sqrt((x - cx) * (x - cx) + (z - cz) * (z - cz))) * CellSize <= radius && (allowed is null || allowed(x, z))) CaptureVertex(patch, z * VertexCount + x);
         return patch;
     }
 
@@ -297,10 +365,20 @@ public sealed class TerrainMap
         for (var i = 0; i < LayerCount; i++)
             if (i != layer) weights[i] = others > 0 ? weights[i] * remaining / others : 0;
         weights[layer] = target;
-        var result = new byte[LayerCount];
-        var sum = 0;
-        for (var i = 0; i < LayerCount; i++) { result[i] = (byte)MathF.Round(weights[i]); sum += result[i]; }
-        result[layer] = (byte)Math.Clamp(result[layer] + (255 - sum), 0, 255);
+        return StoreWeights(index, weights, layer);
+    }
+
+    /// <summary>Stores layer weights (any scale) as bytes that always add up to 255; the rounding leftover goes to <paramref name="main"/>.</summary>
+    private bool StoreWeights(int index, float[] weights, int main)
+    {
+        var offset = index * LayerCount;
+        var total = 0f; foreach (var w in weights) total += w;
+        if (total <= 0f) { weights = new float[LayerCount]; weights[Math.Max(main, 0)] = 255f; total = 255f; }
+        var scale = MathF.Abs(total - 255f) < .01f ? 1f : 255f / total;
+        var result = new byte[LayerCount]; var sum = 0;
+        for (var i = 0; i < LayerCount; i++) { result[i] = (byte)MathF.Round(weights[i] * scale); sum += result[i]; }
+        if (main < 0) { main = 0; for (var i = 1; i < LayerCount; i++) if (result[i] > result[main]) main = i; } // the dominant layer absorbs the rounding
+        result[main] = (byte)Math.Clamp(result[main] + (255 - sum), 0, 255);
         var changed = false;
         for (var i = 0; i < LayerCount; i++) if (_splat[offset + i] != result[i]) { _splat[offset + i] = result[i]; changed = true; }
         return changed;

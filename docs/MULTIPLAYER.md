@@ -34,3 +34,5 @@ O processo headless é iniciado com `--headless --path island-server`. Ele expõ
 - O avatar inicial continua sendo o placeholder humanoide legalmente original da Fase 02; a rede transporta sua aparência persistida.
 - A colisão autoritativa do servidor é uma simulação cinemática de ilha plana. A integração de geometria/PhysicsServer3D da ilha fica para a fase de mundo avançado.
 - Docker não está instalado no ambiente auditado; por isso o Compose foi validado estaticamente, mas não executado nesta máquina.
+
+- Protocolo **7**: `RequestTeleport(parcelId, x, z)` (cliente → servidor) e `TeleportResult(ok, code, x, z, yaw)` (servidor → cliente), usados pelo teleporte de terrenos. Publique API e servidor de ilhas juntos.

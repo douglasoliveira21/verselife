@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LifeVerse.Api.Data;
+using LifeVerse.Api.Modules.Land;
 
 namespace LifeVerse.Api.Modules.Worlds;
 
@@ -9,8 +10,27 @@ public sealed record ParcelFacts(Guid Id, string Name, Guid OwnerUserId, bool Pu
     /// <summary>Per-parcel cost budget: every object slot of the parcel is worth this many cost points.</summary>
     public const int CostPerObjectSlot = 20;
 
-    public bool Contains(double x, double z) => x >= MinX && x < MaxX && z >= MinZ && z < MaxZ;
-    public int MaxCost => (int)Math.Min(int.MaxValue, (long)MaxObjects * CostPerObjectSlot);
+    /// <summary>The 4 x 4 m cells of the parcel (see LandGrid); without them the parcel is the plain rectangle.</summary>
+    public IReadOnlySet<long>? Cells { get; init; }
+
+    /// <summary>The person renting the parcel right now (contract active), who may build in it.</summary>
+    public Guid? TenantUserId { get; init; }
+
+    public bool Contains(double x, double z) => x >= MinX && x < MaxX && z >= MinZ && z < MaxZ && (Cells is null || Cells.Contains(LandGrid.Key(LandGrid.CellOf(x), LandGrid.CellOf(z))));
+    /// <summary>The cost budget the island's rules give this parcel (by its area); without such a rule every object slot is worth <see cref="CostPerObjectSlot"/> points.</summary>
+    public long? CostBudget { get; init; }
+    public int MaxCost => CostBudget is { } budget ? (int)Math.Min(int.MaxValue, budget) : (int)Math.Min(int.MaxValue, (long)MaxObjects * CostPerObjectSlot);
+
+    /// <summary>owner, list, everyone or nobody (see <see cref="IslandParcel.BuildMode"/>).</summary>
+    public string BuildMode { get; init; } = "owner";
+    /// <summary>People on the builders list, who may build when the mode is "list".</summary>
+    public IReadOnlySet<Guid>? Builders { get; init; }
+    /// <summary>People currently banned from the parcel: they may not build in it either.</summary>
+    public IReadOnlySet<Guid>? Banned { get; init; }
+    /// <summary>Whether people who build here (and are not the owner or tenant) may put scripts in their objects.</summary>
+    public bool AllowScripts { get; init; }
+    /// <summary>Minutes after which objects of people who may not build here are sent back; null: never.</summary>
+    public int? AutoReturnMinutes { get; init; }
 
     public static ParcelFacts? From(IslandParcel parcel)
     {
@@ -19,7 +39,8 @@ public sealed record ParcelFacts(Guid Id, string Name, Guid OwnerUserId, bool Pu
             using var bounds = JsonDocument.Parse(parcel.BoundsJson);
             var b = bounds.RootElement;
             bool Build() { try { using var p = JsonDocument.Parse(parcel.PermissionsJson); return p.RootElement.TryGetProperty("build", out var v) && v.ValueKind == JsonValueKind.True; } catch (JsonException) { return false; } }
-            return new ParcelFacts(parcel.Id, parcel.Name, parcel.OwnerUserId, Build(), parcel.MaxObjects, b.GetProperty("minX").GetDouble(), b.GetProperty("minZ").GetDouble(), b.GetProperty("maxX").GetDouble(), b.GetProperty("maxZ").GetDouble());
+            bool Scripts() { try { using var p = JsonDocument.Parse(parcel.PermissionsJson); return p.RootElement.TryGetProperty("run_scripts", out var v) && v.ValueKind == JsonValueKind.True; } catch (JsonException) { return false; } }
+            return new ParcelFacts(parcel.Id, parcel.Name, parcel.OwnerUserId, Build(), parcel.MaxObjects, b.GetProperty("minX").GetDouble(), b.GetProperty("minZ").GetDouble(), b.GetProperty("maxX").GetDouble(), b.GetProperty("maxZ").GetDouble()) { BuildMode = parcel.BuildMode, AllowScripts = Scripts(), AutoReturnMinutes = parcel.AutoReturnMinutes };
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { return null; }
     }
@@ -44,9 +65,18 @@ public static class BuildRules
     {
         if (isIslandAdmin) return null;
         if (parcel is null) return hasIslandBuild ? null : "forbidden";
-        if (parcel.OwnerUserId == actor || parcel.PublicBuild) return null;
+        if (parcel.Banned?.Contains(actor) == true) return "parcel_banned";
+        if (parcel.BuildMode == "nobody") return "parcel_forbidden"; // closed to everyone but island administrators
+        if (parcel.OwnerUserId == actor || (parcel.TenantUserId is { } tenant && tenant == actor)) return null;
+        if (parcel.PublicBuild || parcel.BuildMode == "everyone") return null;
+        if (parcel.BuildMode == "list" && parcel.Builders?.Contains(actor) == true) return null;
         return "parcel_forbidden";
     }
+
+    /// <summary>Null when this person may put scripts into an object on this spot: the owner, the tenant and administrators always may; others only where the parcel allows scripts.</summary>
+    public static string? CanPutScripts(ParcelFacts? parcel, Guid actor, bool isIslandAdmin) =>
+        isIslandAdmin || parcel is null || parcel.OwnerUserId == actor || parcel.TenantUserId == actor || parcel.AllowScripts ? null : "scripts_not_allowed";
+
 
     /// <summary>Null when the actor may change or delete an object that belongs to <paramref name="objectOwner"/> and stands in <paramref name="parcel"/>.</summary>
     public static string? CanEditObject(Guid actor, Guid objectOwner, bool isIslandAdmin, ParcelFacts? parcel) =>

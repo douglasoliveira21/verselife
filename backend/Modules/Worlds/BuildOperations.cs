@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Text.Json;
 using LifeVerse.Api.Data;
+using LifeVerse.Api.Modules.Land;
 using LifeVerse.Api.Modules.Assets;
 using LifeVerse.Api.Modules.Inventory;
 using LifeVerse.Api.Modules.Platform;
@@ -26,7 +27,7 @@ public static class BuildOperations
         var permissions = await db.IslandPermissions.AsNoTracking().Where(x => x.IslandId == island.Id && x.UserId == actor && x.RevokedAt == null).Select(x => x.Permission).ToListAsync(ct);
         var isAdmin = island.OwnerUserId == actor || permissions.Contains("admin");
         var hasBuild = isAdmin || permissions.Contains("build") || permissions.Contains("edit");
-        var parcels = (await db.IslandParcels.AsNoTracking().Where(x => x.IslandId == island.Id && x.DeletedAt == null).ToListAsync(ct)).Select(ParcelFacts.From).OfType<ParcelFacts>().ToList();
+        var parcels = await LandService.LoadFactsAsync(db, island.Id, ct);
         var now = clock.GetUtcNow();
 
         switch (request.Operation)
@@ -47,6 +48,7 @@ public static class BuildOperations
         if (await ValidateAsync(db, actor, o, null, ct) is { } invalid) return Refuse(400, "invalid_object", invalid);
         var parcel = BuildRules.ParcelAt(parcels, o.PositionX, o.PositionZ);
         if (BuildRules.CanBuildAt(parcel, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);
+        if (BuildCost.HasScripts(o.ContentJson) && BuildRules.CanPutScripts(parcel, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts);
         var cost = BuildCost.Of(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.PhysicsJson, o.ContentJson);
         if (await LimitAsync(db, island, parcel, cost, null, ct) is { } limit) return Refuse(409, limit);
         var item = BuildEndpoints.NewObject(island.Id, actor, o, now);
@@ -67,6 +69,7 @@ public static class BuildOperations
         if (await ValidateAsync(db, actor, o, item, ct) is { } invalid) return Refuse(400, "invalid_object", invalid);
         var there = BuildRules.ParcelAt(parcels, o.PositionX, o.PositionZ);
         if (there?.Id != here?.Id && BuildRules.CanBuildAt(there, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);
+        if (BuildCost.HasScripts(o.ContentJson) && !BuildCost.HasScripts(item.ContentJson) && BuildRules.CanPutScripts(there, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts); // adding the first script
 
         var previousPermissions = item.PermissionsJson; var oldCost = item.Cost;
         BuildEndpoints.Apply(item, o);
@@ -125,6 +128,10 @@ public static class BuildOperations
         return Results.Ok(new { operation = "return", objectIds = items.Select(x => x.Id).ToArray(), returned = items.Count, packages = itemIds.Count });
     }
 
+    /// <summary>Sends objects back to their owners' inventories on behalf of the land system (a rental ended): nothing is deleted for good.</summary>
+    public static Task<IResult> ReturnForLandAsync(Island island, Guid actor, Guid[] objectIds, LifeVerseDbContext db, AssetStorageService storage, DateTimeOffset now, CancellationToken ct) =>
+        ReturnAsync(new ServerBuildOperationRequest(actor, "return", null, null, 0, objectIds), island, actor, true, [], db, storage, now, ct);
+
     // ---- shared ----------------------------------------------------------------------------------------------
 
     private static async Task<string?> ValidateAsync(LifeVerseDbContext db, Guid actor, BuildObjectRequest o, BuildObject? existing, CancellationToken ct) =>
@@ -143,9 +150,9 @@ public static class BuildOperations
         var islandCost = await db.BuildObjects.Where(x => x.IslandId == island.Id && x.DeletedAt == null && x.Id != excluded).SumAsync(x => (int?)x.Cost, ct) ?? 0;
         if (islandCost + newCost > BuildCost.Limit(island.ResourceLimitsJson, "cost", BuildCost.DefaultIslandBudget)) return "cost_limit";
         if (parcel is null) return null;
-        var inParcel = db.BuildObjects.Where(x => x.IslandId == island.Id && x.DeletedAt == null && x.Id != excluded && x.PositionX >= parcel.MinX && x.PositionX < parcel.MaxX && x.PositionZ >= parcel.MinZ && x.PositionZ < parcel.MaxZ);
-        if (countsAsNewObjectInParcel && await inParcel.CountAsync(ct) >= parcel.MaxObjects) return "parcel_object_limit";
-        if (await inParcel.SumAsync(x => (int?)x.Cost, ct) + newCost > parcel.MaxCost) return "parcel_cost_limit";
+        var (inParcelObjects, inParcelCost) = await LandService.UsageAsync(db, island.Id, parcel, excluded, ct);
+        if (countsAsNewObjectInParcel && inParcelObjects >= parcel.MaxObjects) return "parcel_object_limit";
+        if (inParcelCost + newCost > parcel.MaxCost) return "parcel_cost_limit";
         return null;
     }
 
@@ -192,18 +199,18 @@ public static class BuildOperations
         var hasBuild = isAdmin || permissions.Contains("build") || permissions.Contains("edit");
         var live = db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.DeletedAt == null);
         var objects = await live.CountAsync(ct); var cost = await live.SumAsync(o => (int?)o.Cost, ct) ?? 0;
-        var parcels = (await db.IslandParcels.AsNoTracking().Where(p => p.IslandId == islandId && p.DeletedAt == null).ToListAsync(ct)).Select(ParcelFacts.From).OfType<ParcelFacts>().ToList();
+        var parcels = await LandService.LoadFactsAsync(db, islandId, ct);
         var parcel = x is { } px && z is { } pz ? BuildRules.ParcelAt(parcels, px, pz) : null;
         object? parcelInfo = null;
         if (parcel is not null)
         {
-            var inside = live.Where(o => o.PositionX >= parcel.MinX && o.PositionX < parcel.MaxX && o.PositionZ >= parcel.MinZ && o.PositionZ < parcel.MaxZ);
-            parcelInfo = new { id = parcel.Id, name = parcel.Name, mine = parcel.OwnerUserId == user, publicBuild = parcel.PublicBuild, objects = await inside.CountAsync(ct), maxObjects = parcel.MaxObjects, cost = await inside.SumAsync(o => (int?)o.Cost, ct) ?? 0, maxCost = parcel.MaxCost };
+            var (insideObjects, insideCost) = await LandService.UsageAsync(db, islandId, parcel, Guid.Empty, ct);
+            parcelInfo = new { id = parcel.Id, name = parcel.Name, mine = parcel.OwnerUserId == user, publicBuild = parcel.PublicBuild, buildMode = parcel.BuildMode, objects = insideObjects, maxObjects = parcel.MaxObjects, cost = insideCost, maxCost = parcel.MaxCost, allowScripts = parcel.AllowScripts, autoReturnMinutes = parcel.AutoReturnMinutes };
         }
         return Results.Ok(new
         {
             objects, maxObjects = BuildCost.Limit(island.ResourceLimitsJson, "objects", 5000), cost, maxCost = BuildCost.Limit(island.ResourceLimitsJson, "cost", BuildCost.DefaultIslandBudget),
-            canBuildHere = BuildRules.CanBuildAt(parcel, user, isAdmin, hasBuild) is null, isAdmin, parcel = parcelInfo
+            canBuildHere = BuildRules.CanBuildAt(parcel, user, isAdmin, hasBuild) is null, isAdmin, parcel = parcelInfo, canPutScripts = BuildRules.CanPutScripts(parcel, user, isAdmin) is null
         });
     }
 
@@ -214,7 +221,7 @@ public static class BuildOperations
         var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(i => i.Id == islandId && i.DeletedAt == null, ct); if (island is null) return Results.NotFound();
         var item = await db.BuildObjects.AsNoTracking().SingleOrDefaultAsync(o => o.Id == objectId && o.IslandId == islandId, ct); if (item is null) return Results.NotFound();
         var isAdmin = island.OwnerUserId == user || await db.IslandPermissions.AsNoTracking().AnyAsync(p => p.IslandId == islandId && p.UserId == user && p.RevokedAt == null && p.Permission == "admin", ct);
-        var parcels = (await db.IslandParcels.AsNoTracking().Where(p => p.IslandId == islandId && p.DeletedAt == null).ToListAsync(ct)).Select(ParcelFacts.From).OfType<ParcelFacts>().ToList();
+        var parcels = await LandService.LoadFactsAsync(db, islandId, ct);
         if (BuildRules.CanEditObject(user, item.OwnerUserId, isAdmin, BuildRules.ParcelAt(parcels, item.PositionX, item.PositionZ)) is not null) return Results.Forbid();
         var log = await db.BuildOperations.AsNoTracking().Where(o => o.IslandId == islandId && o.ObjectId == objectId).OrderByDescending(o => o.CreatedAt).Take(100)
             .Select(o => new { operation = o.Operation, actorUserId = o.ActorUserId, revision = o.Revision, at = o.CreatedAt }).ToListAsync(ct);

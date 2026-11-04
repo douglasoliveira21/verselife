@@ -91,3 +91,7 @@ Materiais aceitam cor, transparência, emissão, rugosidade e metallic; a físic
 - Desfazer pode ser recusado se outra pessoa mexeu no mesmo objeto depois.
 - Simulação física dinâmica ainda não existe.
 - Verificado por testes unitários da geometria e por um teste no Godot com um "servidor" em memória que impõe revisões; não testado com dois jogadores reais.
+
+## Terrenos
+
+O que cada terreno permite construir (quem constrói, scripts, orçamento, retorno automático de objetos de visitantes) está em [LAND.md](LAND.md); o cartão "Terreno e limites" da aba Geral mostra essas regras do ponto onde a câmera olha.

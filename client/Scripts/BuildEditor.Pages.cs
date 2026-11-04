@@ -18,6 +18,7 @@ public partial class BuildEditor
     {
         _window = new FloatingWindow("Editor de Construção", icon: "hammer", minimizable: true) { Name = "BuildTools", Visible = false };
         _window.Place(0, 0, 18, 56, 1418, 1280);
+        _window.Scale = new Vector2(.55f, .55f); // drawn smaller so it does not cover the world; the layout itself is unchanged
         _window.CloseRequested += () => SetActive(false);
         var content = _window.Content;
         content.AddThemeConstantOverride("separation", 10);

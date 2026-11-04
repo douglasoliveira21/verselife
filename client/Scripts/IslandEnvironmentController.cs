@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Godot;
+using LifeVerse.Shared.Land;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -16,6 +17,8 @@ uniform sampler2D cloud_noise : filter_linear, repeat_enable;
 uniform float day = 1.0;
 uniform float cloud_cover = 0.52;
 uniform float cloud_speed = 0.004;
+uniform vec3 tint : source_color = vec3(1.0);
+uniform float tint_amount = 0.0;
 void sky() {
     vec3 dir = normalize(EYEDIR);
     vec3 sun_dir = normalize(LIGHT0_DIRECTION);
@@ -37,6 +40,7 @@ void sky() {
         vec3 lit = mix(vec3(0.1, 0.11, 0.16), vec3(1.0), day) * mix(0.82, 1.0, 1.0 - n);
         col = mix(col, lit, c * fade * 0.93);
     }
+    col = mix(col, col * tint * 1.6, tint_amount);
     COLOR = col;
 }";
 
@@ -46,6 +50,25 @@ void sky() {
     [Export] public string Weather { get; set; } = "clear";
     [Export] public float WeatherBlend { get; set; } = 1f;
     private DirectionalLight3D _sun = null!;
+
+    // What the parcel the person stands on changes (see LandPresence). It fades in and out over a few seconds; the island's own settings
+    // (and anything the person chose in the Ambiente menu) stay underneath and come back when they leave.
+    private ParcelEnvironment? _parcelLook;
+    private ParcelEnvironment _lastLook = new();
+    private float _blend;
+    public const float BlendSeconds = 3f;
+    /// How far the parcel's look has taken over, 0 to 1.
+    public float ParcelBlend => _blend;
+    public bool ParcelLookActive => _parcelLook is not null;
+    public void SetParcelLook(ParcelEnvironment? look) { _parcelLook = look is { IsEmpty: false } ? look : null; if (_parcelLook is not null) _lastLook = _parcelLook; }
+    /// What is on screen right now: the hour, weather, fog and light after blending.
+    public float HourShown => _lastLook.Hour is { } target && _blend > 0 ? Mathf.PosMod(Hour + ShortestHourDelta(Hour, target) * _blend, 24f) : Hour;
+    public string WeatherShown => _lastLook.Weather is { } weather && _blend >= .5f ? weather : Weather;
+    public float LightShown => Mathf.Lerp(1f, _lastLook.Light ?? 1f, _blend);
+    private static float ShortestHourDelta(float from, float to) { var d = Mathf.PosMod(to - from, 24f); return d > 12f ? d - 24f : d; }
+    private void StepBlend(float delta) => _blend = Mathf.MoveToward(_blend, _parcelLook is null ? 0f : 1f, delta / BlendSeconds);
+    /// Tests: jump straight to the end of the fade.
+    public void FinishBlendForTesting() => _blend = _parcelLook is null ? 0f : 1f;
     private WorldEnvironment _environment = null!;
     private ShaderMaterial? _sky;
     /// 0 at night, 1 in full daylight; the ocean and sky use it to darken.
@@ -60,6 +83,7 @@ void sky() {
     public override void _Process(double delta)
     {
         if (DayNightCycle) Hour = Mathf.PosMod(Hour + (float)delta * TimeScale, 24);
+        StepBlend((float)delta);
         UpdateSun(); ApplyWeather(); UpdateRain();
     }
 
@@ -84,9 +108,9 @@ void sky() {
     private void UpdateRain()
     {
         if (_rainParticles is null) return;
-        var raining = Weather is "rain" or "storm";
+        var raining = WeatherShown is "rain" or "storm";
         _rainParticles.Emitting = raining;
-        _rainParticles.AmountRatio = Weather == "storm" ? 1f : .6f;
+        _rainParticles.AmountRatio = WeatherShown == "storm" ? 1f : .6f;
         if (GetViewport().GetCamera3D() is { } camera) _rainParticles.GlobalPosition = camera.GlobalPosition + Vector3.Up * 14f;
     }
 
@@ -103,18 +127,21 @@ void sky() {
     /// Hour 6 is sunrise, 12 is noon, 18 is sunset; the light is switched off while the sun is below the horizon.
     private void UpdateSun()
     {
-        var elevation = Mathf.Sin((Hour - 6f) / 12f * Mathf.Pi);
+        var hour = HourShown;
+        var elevation = Mathf.Sin((hour - 6f) / 12f * Mathf.Pi);
         var day = Mathf.SmoothStep(-.08f, .3f, elevation);
         DayFactor = day;
         if (_sun is not null)
         {
-            _sun.RotationDegrees = new Vector3(-(Hour - 6f) / 12f * 180f, -28f, 0);
-            _sun.LightEnergy = day * 1.1f;
+            _sun.RotationDegrees = new Vector3(-(hour - 6f) / 12f * 180f, -28f, 0);
+            _sun.LightEnergy = day * 1.1f * LightShown;
             _sun.Visible = elevation > -.05f;
         }
         _sky?.SetShaderParameter("day", day);
-        if (_environment?.Environment is { } env) env.AmbientLightEnergy = Mathf.Lerp(.18f, .75f, day);
+        if (_lastLook.Sky is { } sky && ParcelEnvironment.IsColour(sky)) _sky?.SetShaderParameter("tint", new Color(sky));
+        _sky?.SetShaderParameter("tint_amount", _lastLook.Sky is null ? 0f : .55f * _blend);
+        if (_environment?.Environment is { } env) env.AmbientLightEnergy = Mathf.Lerp(.18f, .75f, day) * LightShown;
     }
 
-    private void ApplyWeather() { if (_environment?.Environment is not { } env) return; var targetDensity = Weather switch { "fog" => .045f, "rain" => .012f, "storm" => .025f, "cloudy" => .006f, _ => 0f }; env.FogEnabled = targetDensity > 0; env.FogDensity = Mathf.Lerp(env.FogDensity, targetDensity, Mathf.Clamp((float)GetProcessDeltaTime() * 2f, 0f, 1f)); env.FogLightColor = Weather is "storm" ? new Color("#46506a") : new Color("#9fb5c9"); _sky?.SetShaderParameter("cloud_cover", Weather switch { "cloudy" => .72f, "rain" => .85f, "storm" => .95f, "fog" => .8f, _ => .5f }); }
+    private void ApplyWeather() { if (_environment?.Environment is not { } env) return; var shown = WeatherShown; var targetDensity = (shown switch { "fog" => .045f, "rain" => .012f, "storm" => .025f, "cloudy" => .006f, _ => 0f }) + (_lastLook.Fog ?? 0f) * .06f * _blend; env.FogEnabled = targetDensity > 0; env.FogDensity = Mathf.Lerp(env.FogDensity, targetDensity, Mathf.Clamp((float)GetProcessDeltaTime() * 2f, 0f, 1f)); env.FogLightColor = shown is "storm" ? new Color("#46506a") : new Color("#9fb5c9"); _sky?.SetShaderParameter("cloud_cover", shown switch { "cloudy" => .72f, "rain" => .85f, "storm" => .95f, "fog" => .8f, _ => .5f }); }
 }

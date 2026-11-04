@@ -94,6 +94,19 @@ public static class UiStyle
         StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter
     };
 
+    // ---- brand -------------------------------------------------------------------------------------------------------
+    /// The LifeVerse mark (lotus) or the full logo (lotus and name), cut out on a transparent background, scaled to this height.
+    public static TextureRect Brand(bool fullLogo, int height)
+    {
+        var texture = GD.Load<Texture2D>(fullLogo ? "res://Assets/brand/logo.png" : "res://Assets/brand/icon.png");
+        var ratio = texture is null ? 1f : texture.GetWidth() / (float)texture.GetHeight();
+        return new TextureRect
+        {
+            Texture = texture, CustomMinimumSize = new Vector2(height * ratio, height), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, TextureFilter = CanvasItem.TextureFilterEnum.LinearWithMipmaps
+        };
+    }
+
     // ---- boxes -------------------------------------------------------------------------------------------------------
     public static StyleBoxFlat Box(Color fill, Color border, int radius = Radius, int borderWidth = 1, float marginX = 12, float marginY = 7, int shadow = 0)
     {

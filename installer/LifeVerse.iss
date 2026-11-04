@@ -15,6 +15,7 @@ AppPublisher=LifeVerse
 DefaultDirName={autopf}\LifeVerse
 DefaultGroupName=LifeVerse
 UninstallDisplayIcon={app}\LifeVerse.exe
+SetupIconFile=..\client\Assets\brand\icon.ico
 OutputDir=..\build\installer
 OutputBaseFilename=LifeVerse-Setup-{#AppVersion}
 Compression=lzma2

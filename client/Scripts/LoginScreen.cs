@@ -56,11 +56,12 @@ public partial class LoginScreen : Control
         GetNode<Panel>("Background").AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color("#0B1118") });
         var card = GetNode<PanelContainer>("Panel");
         card.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.PanelFillSolid, .94f), UiStyle.BorderSoft, UiStyle.RadiusLarge, 1, 0, 0, shadow: 24));
-        card.OffsetLeft = -230; card.OffsetRight = 230; card.OffsetTop = -270; card.OffsetBottom = 270;
+        card.OffsetLeft = -230; card.OffsetRight = 230; card.OffsetTop = -330; card.OffsetBottom = 330;
         var content = GetNode<VBoxContainer>("Panel/Margin/Content");
         content.AddThemeConstantOverride("separation", 14);
 
         var title = GetNode<Label>("Panel/Margin/Content/Title");
+        var logo = UiStyle.Brand(true, 170); logo.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter; content.AddChild(logo); content.MoveChild(logo, title.GetIndex()); title.Visible = false;
         title.Text = "LIFEVERSE"; title.AddThemeFontOverride("font", UiStyle.Bold); title.AddThemeFontSizeOverride("font_size", 38); title.AddThemeColorOverride("font_color", UiStyle.Accent);
         var subtitle = GetNode<Label>("Panel/Margin/Content/Subtitle");
         subtitle.Text = "Entre no seu mundo"; subtitle.AddThemeColorOverride("font_color", UiStyle.TextMuted); subtitle.AddThemeFontSizeOverride("font_size", 18);

@@ -1146,14 +1146,38 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("AccessMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasDefaultValue("public")
+                        .HasColumnName("access_mode");
+
                     b.Property<double>("Area")
                         .HasColumnType("double precision")
                         .HasColumnName("area");
+
+                    b.Property<float>("ArrivalYaw")
+                        .HasColumnType("real")
+                        .HasColumnName("arrival_yaw");
+
+                    b.Property<int?>("AutoReturnMinutes")
+                        .HasColumnType("integer")
+                        .HasColumnName("auto_return_minutes");
 
                     b.Property<string>("BoundsJson")
                         .IsRequired()
                         .HasColumnType("jsonb")
                         .HasColumnName("bounds_json");
+
+                    b.Property<string>("BuildMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasDefaultValue("owner")
+                        .HasColumnName("build_mode");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1186,6 +1210,13 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("max_objects");
 
+                    b.Property<string>("MediaJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("{}")
+                        .HasColumnName("media_json");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -1201,9 +1232,56 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("permissions_json");
 
+                    b.Property<bool>("RentAutoRenewAllowed")
+                        .HasColumnType("boolean")
+                        .HasColumnName("rent_auto_renew_allowed");
+
+                    b.Property<long>("RentDeposit")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rent_deposit");
+
+                    b.Property<int>("RentGraceDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_grace_days");
+
+                    b.Property<int>("RentMaxPeriods")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_max_periods");
+
+                    b.Property<int>("RentMinPeriods")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_min_periods");
+
+                    b.Property<int>("RentPeriodDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_period_days");
+
+                    b.Property<long?>("RentPrice")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rent_price");
+
                     b.Property<int>("Revision")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("revision");
+
+                    b.Property<Guid?>("SaleBuyerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sale_buyer_user_id");
+
+                    b.Property<string>("SaleDescription")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("sale_description");
+
+                    b.Property<bool>("SaleIncludesObjects")
+                        .HasColumnType("boolean")
+                        .HasColumnName("sale_includes_objects");
+
+                    b.Property<long?>("SalePrice")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sale_price");
 
                     b.Property<float>("SpawnX")
                         .HasColumnType("real")
@@ -1216,6 +1294,14 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Property<float>("SpawnZ")
                         .HasColumnType("real")
                         .HasColumnName("spawn_z");
+
+                    b.Property<string>("TeleportMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasDefaultValue("free")
+                        .HasColumnName("teleport_mode");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1855,6 +1941,83 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("object_scripts", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelAccess", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("GrantedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("granted_by_user_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ParcelId", "Kind");
+
+                    b.ToTable("parcel_access", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelCell", b =>
+                {
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<int>("Cx")
+                        .HasColumnType("integer")
+                        .HasColumnName("cx");
+
+                    b.Property<int>("Cz")
+                        .HasColumnType("integer")
+                        .HasColumnName("cz");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.HasKey("IslandId", "Cx", "Cz");
+
+                    b.HasIndex("ParcelId");
+
+                    b.ToTable("parcel_cells", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ParcelChange", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1896,6 +2059,138 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("ParcelId", "CreatedAt");
 
                     b.ToTable("parcel_changes", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelRental", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AutoRenew")
+                        .HasColumnType("boolean")
+                        .HasColumnName("auto_renew");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("DepositCoins")
+                        .HasColumnType("bigint")
+                        .HasColumnName("deposit_coins");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("end_reason");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<int>("GraceDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("grace_days");
+
+                    b.Property<DateTimeOffset?>("GraceUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("grace_until");
+
+                    b.Property<Guid>("LandlordUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("landlord_user_id");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<int>("PeriodDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("period_days");
+
+                    b.Property<int>("Periods")
+                        .HasColumnType("integer")
+                        .HasColumnName("periods");
+
+                    b.Property<long>("PricePerPeriod")
+                        .HasColumnType("bigint")
+                        .HasColumnName("price_per_period");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParcelId", "Status");
+
+                    b.HasIndex("TenantUserId", "Status");
+
+                    b.ToTable("parcel_rentals", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("data_json");
+
+                    b.Property<Guid?>("FromUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("from_user_id");
+
+                    b.Property<Guid?>("LedgerTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ledger_transaction_id");
+
+                    b.Property<Guid>("ParcelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("parcel_id");
+
+                    b.Property<Guid?>("ToUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("to_user_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParcelId", "CreatedAt");
+
+                    b.ToTable("parcel_transactions", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.PhotoSnapshot", b =>
@@ -2647,6 +2942,7 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnName("id");
 
                     b.Property<long>("AvailableCoins")
+                        .IsConcurrencyToken()
                         .HasColumnType("bigint")
                         .HasColumnName("available_coins");
 
@@ -3186,6 +3482,30 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelAccess", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.IslandParcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelCell", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.IslandParcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ParcelChange", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.User", null)
@@ -3194,6 +3514,24 @@ namespace LifeVerse.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("LifeVerse.Api.Data.IslandParcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelRental", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.IslandParcel", null)
+                        .WithMany()
+                        .HasForeignKey("ParcelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ParcelTransaction", b =>
+                {
                     b.HasOne("LifeVerse.Api.Data.IslandParcel", null)
                         .WithMany()
                         .HasForeignKey("ParcelId")

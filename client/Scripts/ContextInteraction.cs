@@ -34,6 +34,8 @@ public sealed class ContextServices
     public Action<Guid, string> ObjectCommand { get; init; } = (_, _) => { };
     public Action StartBuilding { get; init; } = () => { };
     public Action StartPlacing { get; init; } = () => { };
+    public Action<Vector3> AboutLand { get; init; } = _ => { };
+    public Action SelectLand { get; init; } = () => { };
     /// Whether this person owns an object (only then are the editing slices shown; the server checks again whatever the screen says).
     public Func<BuildObjectView, bool> Owns { get; init; } = _ => false;
     public Action<int> EnterVehicle { get; init; } = _ => { };
@@ -134,8 +136,10 @@ public static class InteractionRegistry
     private static List<RadialItem> ForGround(GroundTarget ground, ContextServices s) =>
     [
         new() { Label = "Ir até aqui", Icon = "run", Run = () => s.WalkTo(ground.Point), Tooltip = "Caminha até este ponto" },
+        new() { Label = "Sobre o terreno", Icon = "info", Run = () => s.AboutLand(ground.Point), Tooltip = "Mostra de quem é este terreno, o tamanho e quanto já foi construído" },
         new() { Label = "Construir", Icon = "hammer", Run = s.StartBuilding, Tooltip = "Abre as ferramentas de construção" },
         new() { Label = "Criar objeto", Icon = "cube", Run = s.StartPlacing, Tooltip = "Escolha onde colocar a forma selecionada no editor" },
+        new() { Label = "Selecionar terreno", Icon = "grid", Run = s.SelectLand, Tooltip = "Arraste sobre o chão para selecionar uma área e ver os limites dos terrenos" },
         new() { Label = "Copiar local", Icon = "copy", Run = () => { DisplayServer.ClipboardSet($"{ground.Point.X:0.#}, {ground.Point.Y:0.#}, {ground.Point.Z:0.#}"); s.Tell("Localização copiada."); }, Tooltip = "Copia as coordenadas deste ponto" },
         Close
     ];

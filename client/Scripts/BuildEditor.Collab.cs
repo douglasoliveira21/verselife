@@ -94,6 +94,8 @@ public partial class BuildEditor
         {
             "forbidden" => "Você não tem permissão para construir aqui.",
             "parcel_forbidden" => "Este terreno não permite que você construa.",
+            "parcel_banned" => "Você está banido deste terreno e não pode construir nele.",
+            "scripts_not_allowed" => "Este terreno não permite scripts em objetos de quem não é o dono.",
             "not_owner" => "Este objeto não é seu: só o dono, o dono do terreno ou um administrador podem alterá-lo.",
             "not_allowed_to_return" => "Você não pode devolver esses objetos (só o dono do terreno ou um administrador).",
             "cost_limit" => "O custo total da ilha chegou ao limite; use formas mais simples ou apague algo.",
@@ -144,6 +146,13 @@ public partial class BuildEditor
             var text = $"Ilha: {Short(r.GetProperty("objects").GetInt64())} de {Short(r.GetProperty("maxObjects").GetInt64())} objetos · custo {Short(r.GetProperty("cost").GetInt64())} de {Short(r.GetProperty("maxCost").GetInt64())}";
             if (r.TryGetProperty("parcel", out var parcel) && parcel.ValueKind == JsonValueKind.Object)
                 text += $"\nTerreno \"{parcel.GetProperty("name").GetString()}\"{(parcel.GetProperty("mine").GetBoolean() ? " (seu)" : "")}: {Short(parcel.GetProperty("objects").GetInt64())} de {Short(parcel.GetProperty("maxObjects").GetInt64())} objetos · custo {Short(parcel.GetProperty("cost").GetInt64())} de {Short(parcel.GetProperty("maxCost").GetInt64())}";
+            if (r.TryGetProperty("parcel", out var rules) && rules.ValueKind == JsonValueKind.Object)
+            {
+                var mode = rules.TryGetProperty("buildMode", out var m) ? m.GetString() : "owner";
+                var who = rules.TryGetProperty("publicBuild", out var pb) && pb.ValueKind == JsonValueKind.True ? "todos" : mode switch { "everyone" => "todos", "list" => "o dono e a lista de construtores", "nobody" => "ninguém (só administradores da ilha)", _ => "o dono (e o locatário)" };
+                text += $"\nQuem constrói aqui: {who}" + (rules.TryGetProperty("allowScripts", out var sc) && sc.ValueKind == JsonValueKind.True ? " · scripts liberados" : " · scripts só do dono")
+                    + (rules.TryGetProperty("autoReturnMinutes", out var ar) && ar.ValueKind == JsonValueKind.Number ? $" · retorno automático em {ar.GetInt32()} min" : string.Empty);
+            }
             _limitsLabel.Text = text;
             var canBuild = r.GetProperty("canBuildHere").GetBoolean();
             _buildHereLabel.Text = canBuild ? "✓ Você pode construir aqui." : "✕ Você não pode construir neste ponto.";

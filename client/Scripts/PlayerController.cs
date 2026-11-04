@@ -299,6 +299,9 @@ public partial class PlayerController : CharacterBody3D
     }
 
     public void SetSwimming(bool value) => _volumeSwimming = value;
+    /// Turns the avatar and the camera to face a heading at once (after a teleport to an arrival point).
+    public void FaceYaw(float radians) { _targetBodyYaw = radians; _targetYaw = radians; _cameraYaw = radians; Rotation = new Vector3(0, radians, 0); }
+
     public void Reconcile(Vector3 authoritativePosition, Vector3 authoritativeVelocity, uint acknowledgedInput)
     {
         if (_inVehicle) return;

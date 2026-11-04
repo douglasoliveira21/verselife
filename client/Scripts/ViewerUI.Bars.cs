@@ -20,7 +20,7 @@ public partial class ViewerUI
         bar.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.TopWide);
         _root.AddChild(bar);
         var row = new HBoxContainer { Name = "Row" }; row.AddThemeConstantOverride("separation", 4); bar.AddChild(row);
-        row.AddChild(UiStyle.IconRect("cube", UiStyle.Accent, 30));
+        row.AddChild(UiStyle.Brand(false, 34));
         row.AddChild(new Control { CustomMinimumSize = new Vector2(14, 0) });
 
         var me = AddMenu(row, "Eu",
@@ -47,6 +47,8 @@ public partial class ViewerUI
             ("Ir para uma ilha…", () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); }, false),
             ("-", null, false),
             ("Editar terreno   T", () => _world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.SetActive(true), false),
+            ("Mapa de terrenos e busca…", () => _world.GetNodeOrNull<LandMapWindow>("LandMapWindow")?.Toggle(), false),
+            ("Selecionar terreno (limites e donos)", () => _world.GetNodeOrNull<LandManager>("LandManager")?.SetActive(true), false),
             ("Tirar foto", TakeSnapshot, false));
         var environment = new PopupMenu { Name = "Ambiente" };
         world.AddChild(environment);
@@ -288,6 +290,8 @@ public partial class ViewerUI
             ObjectCommand = (_, command) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.RunCommand(command),
             StartBuilding = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true),
             StartPlacing = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.StartPlacing(),
+            AboutLand = point => _world.GetNodeOrNull<LandManager>("LandManager")?.AboutAt(point),
+            SelectLand = () => _world.GetNodeOrNull<LandManager>("LandManager")?.SetActive(true),
             EnterVehicle = id => _network.EnterVehicle(id),
             ExitVehicle = () => _network.ExitVehicle(),
             IsDriving = id => _network.Vehicles.DrivenBy(_network.OwnPeerId)?.VehicleId == id,
@@ -301,6 +305,14 @@ public partial class ViewerUI
     /// While the build or terrain tools are active a right click belongs to them (the editing camera), not to the menu.
     private bool ToolsOwnTheMouse() => (_world.GetNodeOrNull<BuildEditor>("BuildEditor")?.EditCameraActive ?? false) || (_world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.Active ?? false);
 
+    private static string LandDemo()
+    {
+        static string Runs(int cx0, int cz0, int cx1, int cz1) => "[" + string.Join(",", Enumerable.Range(cz0, cz1 - cz0 + 1).Select(z => $"[{z},{cx0},{cx1}]")) + "]";
+        string Parcel(string name, string owner, string state, bool mine, int cx0, int cz0, int cx1, int cz1, int objects, string extra = "") =>
+            $"{{\"id\":\"{Guid.NewGuid()}\",\"name\":\"{name}\",\"description\":\"Terreno de demonstração.\",\"ownerName\":\"{owner}\",\"mine\":{(mine ? "true" : "false")},\"state\":\"{state}\",\"area\":{(cx1 - cx0 + 1) * (cz1 - cz0 + 1) * 16},\"cells\":{(cx1 - cx0 + 1) * (cz1 - cz0 + 1)},\"maxObjects\":100,\"maxCost\":2000,\"objects\":{objects},\"cost\":{objects * 24},\"revision\":1,\"runs\":{Runs(cx0, cz0, cx1, cz1)}{extra}}}";
+        return "{\"size\":256,\"version\":1,\"parcels\":[" + string.Join(",", Parcel("Praça", "Marina Costa", "own", true, 0, 0, 6, 5, 37, ",\"arrivalX\":12.0,\"arrivalZ\":10.0,\"arrivalYaw\":90,\"teleportMode\":\"forced\",\"environment\":\"{\\\"hour\\\":19.5,\\\"weather\\\":\\\"cloudy\\\",\\\"light\\\":0.8}\",\"media\":\"{\\\"musicUrl\\\":\\\"https://cdn.exemplo.com/lofi.mp3\\\",\\\"volume\\\":0.5,\\\"autoplay\\\":true,\\\"name\\\":\\\"Lofi da praça\\\"}\""), Parcel("Loja do Rafa", "Rafa Lima", "sale", false, 7, 0, 11, 5, 12, ",\"salePrice\":2500,\"saleIncludesObjects\":true,\"saleDescription\":\"Esquina movimentada, perto do píer.\""), Parcel("Pier", "Ilha", "public", false, 0, 6, 11, 8, 3), Parcel("Cofre", "Lua Fox", "restricted", false, 12, 0, 15, 8, 0)) + "]}";
+    }
+
     public void PreviewForTesting(string view = "people")
     {
         _joinWindow.Visible = false;
@@ -311,6 +323,23 @@ public partial class ViewerUI
             var a = Guid.NewGuid(); var b = Guid.NewGuid();
             inventory.PopulateForTesting($"[{{\"id\":\"{a}\",\"name\":\"Construções\"}},{{\"id\":\"{b}\",\"name\":\"Móveis\"}}]",
                 "[" + string.Join(",", new[] { ("Casa Tropical", "models", "model/gltf-binary", 52428800), ("Quiosque", "models", "model/gltf-binary", 31457280), ("Palmeira", "models", "model/gltf-binary", 12582912), ("Textura Areia.jpg", "textures", "image/jpeg", 4194304), ("Textura Água.png", "textures", "image/png", 3145728), ("Som Ondas.ogg", "sounds", "audio/ogg", 6291456) }.Select(x => $"{{\"itemId\":\"{Guid.NewGuid()}\",\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"{x.Item1}\",\"category\":\"{x.Item2}\",\"mimeType\":\"{x.Item3}\",\"contentHash\":\"p{x.Item1}\",\"size\":{x.Item4},\"version\":1,\"favorite\":false,\"deleted\":false,\"folderId\":null}}")) + "]");
+        }
+        if (view == "terrain" && _world.GetNodeOrNull<TerrainEditor>("TerrainEditor") is { } terrainEditor && _world.GetNodeOrNull<IslandTerrain>("IslandTerrain") is { } ground)
+        {
+            for (var i = 0; i < 8; i++) { var x = -28f + (i % 4) * 18f; var z = -10f + (i / 4) * 18f; ground.ApplyEdit(LifeVerse.Shared.Terrain.TerrainTool.Raise, x, z, 7, .35f, 0, 0); ground.ApplyEdit(LifeVerse.Shared.Terrain.TerrainTool.Paint, x, z, 8, 1f, i, 0); }
+            terrainEditor.SetActive(true); terrainEditor.SelectToolForTesting(LifeVerse.Shared.Terrain.TerrainTool.Paint); terrainEditor.SelectLayerForTesting(5);
+            var overview = new Camera3D { Fov = 55, Transform = new Transform3D(Basis.Identity, new Vector3(-10, 60, 40)).LookingAt(new Vector3(-10, 0, 0), Vector3.Back) }; _world.AddChild(overview); overview.MakeCurrent();
+        }
+        if (view is "land" or "land-trade" or "land-admin" or "land-style" or "land-map" && _world.GetNodeOrNull<LandManager>("LandManager") is { } land)
+        {
+            land.Apply(LandDemo());
+            land.SetActive(true);
+            land.SelectCells(LifeVerse.Shared.Land.LandMath.Between(8, 8, 27, 19), true);
+            if (view == "land-admin") { land.AboutAt(new Vector3(8, 0, 8)); land.ShowPageForTesting(3); }
+            if (view == "land-style") { land.AboutAt(new Vector3(8, 0, 8)); land.ShowStyleForTesting(); }
+            if (view == "land-map") { land.SetActive(false); land.ClearSelection(); var map = _world.GetNodeOrNull<LandMapWindow>("LandMapWindow"); map?.Open(); map?.Pick(36, 20); }
+            if (view == "land-trade") { land.AboutAt(new Vector3(36, 0, 8)); land.ShowTradeForTesting(); land.OpenBuyForTesting(); }
+            var overview = new Camera3D { Fov = 55, Transform = new Transform3D(Basis.Identity, new Vector3(30, 80, 50)).LookingAt(new Vector3(30, 0, 14), Vector3.Back) }; _world.AddChild(overview); overview.MakeCurrent();
         }
         if (view.StartsWith("build", StringComparison.Ordinal) && _world.GetNodeOrNull<BuildEditor>("BuildEditor") is { } editor)
         {

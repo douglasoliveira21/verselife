@@ -8,18 +8,36 @@ namespace LifeVerse.Client.Scripts;
 /// HeightMapShape3D so the local avatar walks on exactly what the server simulates.
 public partial class IslandTerrain : Node3D
 {
-    public static readonly string[] LayerNames = ["Grama", "Terra", "Areia", "Rocha"];
+    /// The eight ground materials: name, the two colours of its procedural texture, and its colour on the minimap.
+    public static readonly (string Name, Color Dark, Color Light, Color Map)[] Layers =
+    [
+        ("Grama", new Color("#3f7a35"), new Color("#78ad4e"), new Color("#5a9a47")),
+        ("Terra", new Color("#5b4030"), new Color("#8a6a49"), new Color("#8a6a48")),
+        ("Areia", new Color("#c9b57f"), new Color("#e6d7a5"), new Color("#d8c995")),
+        ("Rocha", new Color("#55565b"), new Color("#9a9a9c"), new Color("#8d8d90")),
+        ("Cascalho", new Color("#6b6a64"), new Color("#aaa69c"), new Color("#9c9890")),
+        ("Neve", new Color("#d9e4ec"), new Color("#ffffff"), new Color("#f2f6f9")),
+        ("Lama", new Color("#35261c"), new Color("#5a4130"), new Color("#4a3628")),
+        ("Grama seca", new Color("#85823f"), new Color("#c4b768"), new Color("#a39b52"))
+    ];
+    public static readonly string[] LayerNames = [.. Layers.Select(l => l.Name)];
     private const string ShaderSource = @"
 shader_type spatial;
-uniform sampler2D grass : source_color, filter_linear_mipmap, repeat_enable;
-uniform sampler2D dirt : source_color, filter_linear_mipmap, repeat_enable;
-uniform sampler2D sand : source_color, filter_linear_mipmap, repeat_enable;
-uniform sampler2D rock : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l0 : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l1 : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l2 : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l3 : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l4 : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l5 : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l6 : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D l7 : source_color, filter_linear_mipmap, repeat_enable;
 uniform float tiles_per_meter = 0.2;
-varying vec4 splat;
+varying vec4 splat_a;
+varying vec4 splat_b;
 varying vec3 world_pos;
 void vertex() {
-    splat = COLOR;
+    splat_a = COLOR;
+    splat_b = vec4(UV, UV2);
     world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 vec3 layer(sampler2D tex, vec2 uv) {
@@ -28,8 +46,17 @@ vec3 layer(sampler2D tex, vec2 uv) {
 }
 void fragment() {
     vec2 uv = world_pos.xz * tiles_per_meter;
-    vec4 w = splat / max(splat.r + splat.g + splat.b + splat.a, 0.001);
-    ALBEDO = layer(grass, uv) * w.r + layer(dirt, uv) * w.g + layer(sand, uv) * w.b + layer(rock, uv) * w.a;
+    float total = max(dot(splat_a, vec4(1.0)) + dot(splat_b, vec4(1.0)), 0.001);
+    vec3 c = vec3(0.0);
+    if (splat_a.r > 0.004) c += layer(l0, uv) * splat_a.r;
+    if (splat_a.g > 0.004) c += layer(l1, uv) * splat_a.g;
+    if (splat_a.b > 0.004) c += layer(l2, uv) * splat_a.b;
+    if (splat_a.a > 0.004) c += layer(l3, uv) * splat_a.a;
+    if (splat_b.r > 0.004) c += layer(l4, uv) * splat_b.r;
+    if (splat_b.g > 0.004) c += layer(l5, uv) * splat_b.g;
+    if (splat_b.b > 0.004) c += layer(l6, uv) * splat_b.b;
+    if (splat_b.a > 0.004) c += layer(l7, uv) * splat_b.a;
+    ALBEDO = c / total;
     ROUGHNESS = 0.95;
     SPECULAR = 0.15;
 }";
@@ -107,6 +134,9 @@ void fragment() {
         return _map.Revision == revision;
     }
 
+    /// How often the ground textures repeat (tiles per metre). A display setting of this computer, not part of the island.
+    public void SetTextureScale(float tilesPerMeter) => _material?.SetShaderParameter("tiles_per_meter", Mathf.Clamp(tilesPerMeter, .03f, 1f));
+
     /// Ground point under a screen position, or null when the ray misses the terrain.
     public Vector3? Raycast(Camera3D camera, Vector2 screenPosition, float distance = 300f)
     {
@@ -121,10 +151,7 @@ void fragment() {
     private void BuildNodes()
     {
         _material = new ShaderMaterial { Shader = new Shader { Code = ShaderSource } };
-        _material.SetShaderParameter("grass", MakeTexture(new Color("#3f7a35"), new Color("#78ad4e"), 11));
-        _material.SetShaderParameter("dirt", MakeTexture(new Color("#5b4030"), new Color("#8a6a49"), 23));
-        _material.SetShaderParameter("sand", MakeTexture(new Color("#c9b57f"), new Color("#e6d7a5"), 37));
-        _material.SetShaderParameter("rock", MakeTexture(new Color("#55565b"), new Color("#9a9a9c"), 41));
+        for (var i = 0; i < Layers.Length; i++) _material.SetShaderParameter($"l{i}", MakeTexture(Layers[i].Dark, Layers[i].Light, 11 + i * 13));
         _visual = new MeshInstance3D { Name = "GeneratedTerrain", MaterialOverride = _material, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
         AddChild(_visual);
         _body = new StaticBody3D { Name = "TerrainCollision" };
@@ -142,6 +169,8 @@ void fragment() {
         var vertices = new Vector3[count * count];
         var normals = new Vector3[vertices.Length];
         var colors = new Color[vertices.Length];
+        var splatB = new Vector2[vertices.Length];
+        var splatC = new Vector2[vertices.Length];
         var mapData = new float[vertices.Length];
         for (var z = 0; z < count; z++)
         for (var x = 0; x < count; x++)
@@ -152,6 +181,7 @@ void fragment() {
             mapData[i] = height;
             normals[i] = new Vector3(_map.HeightAt(x - 1, z) - _map.HeightAt(x + 1, z), 2f * _map.CellSize, _map.HeightAt(x, z - 1) - _map.HeightAt(x, z + 1)).Normalized();
             colors[i] = new Color(_map.SplatAt(x, z, 0) / 255f, _map.SplatAt(x, z, 1) / 255f, _map.SplatAt(x, z, 2) / 255f, _map.SplatAt(x, z, 3) / 255f);
+            splatB[i] = new Vector2(_map.SplatAt(x, z, 4) / 255f, _map.SplatAt(x, z, 5) / 255f); splatC[i] = new Vector2(_map.SplatAt(x, z, 6) / 255f, _map.SplatAt(x, z, 7) / 255f);
         }
         var indices = new int[cells * cells * 6];
         var n = 0;
@@ -167,6 +197,8 @@ void fragment() {
         arrays[(int)Mesh.ArrayType.Vertex] = vertices;
         arrays[(int)Mesh.ArrayType.Normal] = normals;
         arrays[(int)Mesh.ArrayType.Color] = colors;
+        arrays[(int)Mesh.ArrayType.TexUV] = splatB;
+        arrays[(int)Mesh.ArrayType.TexUV2] = splatC;
         arrays[(int)Mesh.ArrayType.Index] = indices;
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);

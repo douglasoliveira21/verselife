@@ -37,6 +37,10 @@ public partial class NetworkBridge : Node
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
     public void SubmitTerrainImport(byte[] heights) => Server.SubmitTerrainImport(Multiplayer.GetRemoteSenderId(), heights);
 
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void RequestTeleport(string parcelId, float x, float z) => Server.RequestTeleport(Multiplayer.GetRemoteSenderId(), parcelId, x, z);
+
+    [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TeleportResult(bool ok, string code, float x, float z, float yaw) { }
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void SeaLevelChanged(float level, long revision) { }
     [Rpc(MultiplayerApi.RpcMode.Authority, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)] public void TerrainPatched(byte[] patch, long revision) { }
 

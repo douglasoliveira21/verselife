@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Godot;
 using LifeVerse.Shared.Building;
+using LifeVerse.Shared.Land;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
 using LifeVerse.Shared.Vehicles;
@@ -31,6 +32,10 @@ public partial class ServerMain : Node
     private long _worldSnapshotVersion;
     private string _terrainJson = "{}";
     private TerrainMap _terrain = new();
+    private LandAccessMap _access = LandAccessMap.Empty;
+    private LandTerrainRights _rights = LandTerrainRights.Empty;
+    private long _landCursor;
+    private readonly Dictionary<Guid, DateTimeOffset> _lastPushLog = [];
     private bool _terrainDirty;
     private string _environmentJson = "{}";
     private double _worldSaveAccumulator;
@@ -60,6 +65,7 @@ public partial class ServerMain : Node
             Multiplayer.PeerConnected += OnPeerConnected;
             Multiplayer.PeerDisconnected += OnPeerDisconnected;
             _ = HeartbeatLoopAsync(_shutdown.Token);
+            _ = LandSyncLoopAsync(_shutdown.Token);
             _ready = true;
             Log("server_started", new { _config.InstanceId, _config.IslandId, _config.GamePort, _config.HealthPort, enet = "listening", _config.ProtocolVersion });
         }
@@ -83,6 +89,7 @@ public partial class ServerMain : Node
         {
             if (PinDriver(player)) continue;
             player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin, _scripting?.Obstacles);
+            if (_access.HasZones) KeepOutOfClosedLand(player);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with
             {
@@ -124,6 +131,7 @@ public partial class ServerMain : Node
     {
         _fleet.Release((int)peerId);
         _voice.Forget((int)peerId);
+        _lastTeleport.Remove((int)peerId);
         if (!_players.Remove((int)peerId, out var player)) return;
         if (player.Authenticated)
         {
@@ -250,7 +258,8 @@ public partial class ServerMain : Node
     {
         actor = null;
         if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return false;
-        if (!player.CanEditTerrain) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return false; }
+        // island editors may sculpt anywhere; people who own, rent or build on parcels may sculpt inside them (see SubmitTerrainEdit)
+        if (!player.CanEditTerrain && !_rights.HasAny(player.UserId)) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return false; }
         var now = DateTimeOffset.UtcNow;
         while (player.TerrainTimes.Count > 0 && now - player.TerrainTimes.Peek() > TimeSpan.FromSeconds(1)) player.TerrainTimes.Dequeue();
         if (player.TerrainTimes.Count >= NetworkProtocol.MaxTerrainEditsPerSecond) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "rate_limit"); return false; }
@@ -259,20 +268,29 @@ public partial class ServerMain : Node
         return true;
     }
 
-    public void SubmitTerrainEdit(int peerId, int tool, float x, float z, float radius, float strength, int layer)
+    public void SubmitTerrainEdit(int peerId, int tool, float x, float z, float radius, float strength, int packedLayer)
     {
         if (!TryBeginTerrainAction(peerId, out var actor)) return;
-        if (!Enum.IsDefined((TerrainTool)tool) || layer is < 0 or >= TerrainMap.LayerCount || !float.IsFinite(x) || !float.IsFinite(z)
+        // the layer number and the brush options (shape, edge, height to level to) arrive together in one integer
+        if (!BrushCodec.TryUnpack(packedLayer, out var layer, out var brush)) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "invalid_edit"); return; }
+        if (!Enum.IsDefined((TerrainTool)tool) || !float.IsFinite(x) || !float.IsFinite(z)
             || Math.Abs(x) > _terrain.HalfExtent + TerrainMap.MaxBrushRadius || Math.Abs(z) > _terrain.HalfExtent + TerrainMap.MaxBrushRadius)
         { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "invalid_edit"); return; }
         // The accepted values are the clamped ones, so every client replays exactly what the server applied.
         radius = Math.Clamp(radius, 1f, TerrainMap.MaxBrushRadius); strength = Math.Clamp(strength, 0f, 1f);
-        var before = _terrain.Capture(x, z, radius);
-        if (!_terrain.Apply((TerrainTool)tool, x, z, radius, strength, layer)) return;
+        // people without island-wide rights change only the ground their parcels own, and nothing that touches a neighbour's boundary
+        var mask = actor.CanEditTerrain ? null : _rights.MaskFor(actor.UserId, _terrain);
+        var before = _terrain.Capture(x, z, radius, brush.Square, mask);
+        if (!_terrain.Apply((TerrainTool)tool, x, z, radius, strength, layer, brush, mask)) return;
         _terrainDirty = true;
         RememberStroke(actor, before);
-        foreach (var target in _players.Values.Where(p => p.Authenticated))
-            _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.TerrainEdited, tool, x, z, radius, strength, layer, _terrain.Revision);
+        if (mask is null && brush.IsDefault && (TerrainTool)tool <= TerrainTool.Noise)
+        {
+            // the plain case: everyone replays the same edit
+            foreach (var target in _players.Values.Where(p => p.Authenticated))
+                _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.TerrainEdited, tool, x, z, radius, strength, layer, _terrain.Revision);
+        }
+        else BroadcastPatch(_terrain.Capture(x, z, radius, brush.Square, mask)); // masked or new kinds of edit: everyone gets the vertices that actually changed
     }
 
     /// Edits made within a short time by the same player form one stroke, so a single undo reverts a whole drag.
@@ -286,7 +304,8 @@ public partial class ServerMain : Node
 
     public void SubmitSeaLevel(int peerId, float level)
     {
-        if (!TryBeginTerrainAction(peerId, out _)) return;
+        if (!TryBeginTerrainAction(peerId, out var seaActor)) return;
+        if (!seaActor.CanEditTerrain) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return; } // the sea belongs to island editors
         if (!_terrain.SetSeaLevel(level)) return;
         _terrainDirty = true;
         foreach (var target in _players.Values.Where(p => p.Authenticated))
@@ -324,6 +343,7 @@ public partial class ServerMain : Node
         if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return;
         if (heights.Length > NetworkProtocol.MaxTerrainImportBytes || DateTimeOffset.UtcNow - player.LastTerrainImport < TimeSpan.FromSeconds(5)) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "rate_limit"); return; }
         if (!TryBeginTerrainAction(peerId, out var actor)) return;
+        if (!actor.CanEditTerrain) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return; } // importing a whole map is for island editors
         actor.LastTerrainImport = DateTimeOffset.UtcNow;
         var undo = _terrain.ImportHeights16(heights);
         if (undo is null) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "invalid_heightmap"); return; }
@@ -491,6 +511,53 @@ public partial class ServerMain : Node
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
         catch (Exception exception) { Log("world_snapshot_save_failed", new { error = exception.Message }); }
+    }
+
+    /// <summary>
+    /// A player standing where they are not allowed (a closed parcel, a ban) is moved to the nearest allowed spot, whatever got them there:
+    /// walking, flying, a teleport, a reconnection or a ban that arrived while they were inside. The client is never asked.
+    /// </summary>
+    private void KeepOutOfClosedLand(ConnectedPlayer player)
+    {
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(); var state = player.State;
+        if (!_access.Denies(player.UserId, state.X, state.Z, nowMs)) return;
+        if (_access.NearestAllowed(player.UserId, state.X, state.Z, nowMs) is not { } spot) return;
+        state.X = (float)spot.X; state.Z = (float)spot.Z; state.Y = _terrain.SampleHeight(state.X, state.Z) + AuthoritativeMovement.GroundOffset;
+        state.VelocityX = state.VelocityY = state.VelocityZ = 0; state.Flying = false; state.Seated = false;
+        var now = DateTimeOffset.UtcNow;
+        if (!_lastPushLog.TryGetValue(player.UserId, out var last) || now - last > TimeSpan.FromSeconds(10)) { _lastPushLog[player.UserId] = now; Log("land_access_pushed", new { player.UserId, x = state.X, z = state.Z }); }
+    }
+
+    /// <summary>Every few seconds: who is kept out of which parcel, and what the land system did to objects behind our back (returned, handed over), told to everyone as ordinary build messages.</summary>
+    private async Task LandSyncLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+        try { do { await SyncLandAsync(ct); } while (await timer.WaitForNextTickAsync(ct)); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception exception) { Log("land_sync_loop_failed", new { error = exception.Message }); }
+    }
+
+    private async Task SyncLandAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var response = await _api.GetAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/land-sync?since={_landCursor}", ct);
+            if (!response.IsSuccessStatusCode) return;
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var root = document.RootElement;
+            if (root.TryGetProperty("access", out var access)) _access = LandAccessMap.Parse(access);
+            if (root.TryGetProperty("terrain", out var terrain)) _rights = LandTerrainRights.Parse(terrain);
+            if (root.TryGetProperty("teleport", out var teleport)) _teleports = LandTeleport.Parse(teleport);
+            if (root.TryGetProperty("events", out var events) && events.ValueKind == JsonValueKind.Array)
+                foreach (var item in events.EnumerateArray())
+                {
+                    var message = item.GetRawText();
+                    _scripting?.OnObjectApplied(message);
+                    foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message);
+                }
+            if (root.TryGetProperty("cursor", out var cursor) && cursor.TryGetInt64(out var value)) _landCursor = value;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException) { Log("land_sync_failed", new { error = exception.Message }); }
     }
 
     private async Task HeartbeatLoopAsync(CancellationToken ct)

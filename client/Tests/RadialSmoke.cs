@@ -54,7 +54,7 @@ public partial class RadialSmoke : Node
             Require(own.Count <= 8 && other.Any(x => x.Label == "Interagir") && other.Any(x => x.Label == "Fechar"), "everyone can interact with an object and close the menu");
             var edit = own.Single(x => x.Label == "Editar").Children!;
             Require(edit.Select(x => x.Label).SequenceEqual(["Mover", "Girar", "Esticar", "Textura", "Duplicar", "Excluir"]), "the edit circle has the editing tools");
-            Require(InteractionRegistry.Build(new GroundTarget(Vector3.Zero), services).Select(x => x.Label).SequenceEqual(["Ir até aqui", "Construir", "Criar objeto", "Copiar local", "Fechar"]), "the ground offers walking, building and its location");
+            Require(InteractionRegistry.Build(new GroundTarget(Vector3.Zero), services).Select(x => x.Label).SequenceEqual(["Ir até aqui", "Sobre o terreno", "Construir", "Criar objeto", "Selecionar terreno", "Copiar local", "Fechar"]), "the ground offers walking, building and its location");
             var avatar = InteractionRegistry.Build(new AvatarTarget(2, "Lucas", Vector3.Zero), services);
             Require(avatar.Any(x => x.Label == "Interagir" && x.Children!.Count > 0) && avatar.Any(x => x.Label == "Mensagem") && avatar.Single(x => x.Label == "Mais opções").Children!.Select(x => x.Label).SequenceEqual(["Buscar na lista", "Bloquear", "Denunciar"]), "another avatar offers talking, gestures and moderation");
 
