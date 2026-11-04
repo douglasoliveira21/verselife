@@ -31,6 +31,7 @@ public static class PlatformEndpoints
         endpoints.MapGet("/api/v1/platform/avatars/{avatarId:guid}/appearance", async (Guid avatarId, HttpContext context, LifeVerseDbContext db, IConfiguration config, CancellationToken ct) =>
         {
             if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+            await AvatarWearables.ReconcileAsync(db, avatarId, ct);
             var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems).SingleOrDefaultAsync(x => x.Id == avatarId, ct);
             return avatar is null ? Results.NotFound() : Results.Ok(new { displayName = avatar.DisplayName, appearanceJson = await AvatarAppearanceJson.BuildAsync(db, avatar, ct) });
         }).WithTags("Platform");
@@ -83,6 +84,7 @@ public static class PlatformEndpoints
         var now = timeProvider.GetUtcNow();
         var validSession = await db.Sessions.AsNoTracking().AnyAsync(x => x.Id == identity.SessionId && x.UserId == identity.UserId && x.RevokedAt == null && x.ExpiresAt > now, ct);
         if (!validSession) return Results.Unauthorized();
+        await AvatarWearables.ReconcileAsync(db, identity.AvatarId, ct);
         var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.Id == identity.AvatarId && x.UserId == identity.UserId, ct);
         if (avatar is null) return Results.Unauthorized();

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Godot;
 using LifeVerse.Client.Models;
 using LifeVerse.Client.Scripts;
+using LifeVerse.Shared.Avatar;
 using LifeVerse.Shared.Gameplay;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
@@ -57,8 +58,30 @@ public partial class NetworkManager : Node
         Multiplayer.ServerDisconnected += () => HandleConnectionLost("server_disconnected");
     }
 
+    private double _detailTimer;
+    /// What the avatars of other players may cost the scene, and how far each level of detail reaches.
+    public DetailBudget AvatarBudget { get; set; } = new();
+    /// How many of the other avatars are drawn at each level right now (for the performance overlay and tests).
+    public IReadOnlyDictionary<AvatarDetail, int> DetailCounts => _remote.Values.GroupBy(r => r.Rig.Detail).ToDictionary(g => g.Key, g => g.Count());
+
+    /// <summary>Decides how much of every other avatar is drawn: nearest first, by distance, by what the camera sees, within a budget of triangles; then tells each avatar.</summary>
+    public void UpdateDetail()
+    {
+        if (_remote.Count == 0) return;
+        var camera = GetViewport().GetCamera3D(); var centre = camera?.GlobalPosition ?? _localPlayer?.GlobalPosition ?? Vector3.Zero;
+        var candidates = _remote.Select(p =>
+        {
+            var position = p.Value.Node.GlobalPosition;
+            var visible = camera is null || camera.IsPositionInFrustum(position + Vector3.Up) || position.DistanceTo(centre) < 4f;
+            return new DetailCandidate(p.Key, position.DistanceTo(centre), visible, p.Value.Rig.FullCost, p.Value.Rig.ReducedCost, false, p.Value.Rig.Detail);
+        }).ToList();
+        var plan = AvatarDetailPlanner.Plan(candidates, AvatarBudget);
+        foreach (var (peer, detail) in plan) if (_remote.TryGetValue(peer, out var remote)) remote.Rig.SetDetail(detail);
+    }
+
     public override void _Process(double delta)
     {
+        _detailTimer += delta; if (_detailTimer >= .25) { _detailTimer = 0; UpdateDetail(); }
         var weight = 1f - MathF.Exp(-12f * (float)delta);
         foreach (var (peer, remote) in _remote)
         {
@@ -68,6 +91,9 @@ public partial class NetworkManager : Node
             if (Voice.PlaybackOf(peer) is null) remote.Rig.SetVoice(IsAuthenticated && Voice.Enabled, 0f, 0f);
         }
     }
+
+    /// Tests: puts another player somewhere at once (the position the snapshots would have moved them to).
+    public void PlaceRemoteForTesting(int peerId, Vector3 position) { if (_remote.TryGetValue(peerId, out var remote)) { remote.Node.GlobalPosition = position; remote.TargetPosition = position; } }
 
     public IEnumerable<Vector3> RemotePositions => _remote.Values.Select(remote => remote.Node.GlobalPosition);
 

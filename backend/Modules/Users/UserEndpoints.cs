@@ -41,6 +41,7 @@ public static class UserEndpoints
     private static async Task<IResult> GetAvatarAsync(HttpContext context, LifeVerseDbContext db, CancellationToken ct)
     {
         if (!TryGetUserId(context, out var userId)) return Results.Unauthorized();
+        await AvatarWearables.ReconcileForUserAsync(db, userId, ct);
         var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.UserId == userId, ct);
         return avatar is null ? Results.NotFound() : Results.Ok(ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct)));
@@ -49,6 +50,7 @@ public static class UserEndpoints
     private static async Task<IResult> SaveAvatarAsync(SaveAvatarRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider timeProvider, CancellationToken ct)
     {
         if (!TryGetUserId(context, out var userId)) return Results.Unauthorized();
+        await AvatarWearables.ReconcileForUserAsync(db, userId, ct);
         var avatar = await db.Avatars.Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.UserId == userId, ct);
         if (avatar is null) return Results.NotFound();

@@ -23,6 +23,8 @@ public sealed class AvatarAppearanceData
     [JsonPropertyName("customModelId")] public Guid? CustomModelId { get; set; }
     [JsonPropertyName("customModelHash")] public string? CustomModelHash { get; set; }
     [JsonPropertyName("customModelScale")] public float CustomModelScale { get; set; } = 1f;
+    /// Triangles of the custom body, so a scene can budget what it draws (0 when the body is the procedural one).
+    [JsonPropertyName("customModelTriangles")] public int CustomModelTriangles { get; set; }
     [JsonPropertyName("customModelBonesJson")] public string CustomModelBonesJson { get; set; } = "{}";
     /// The custom items worn (what to download, the slot, the kind, the bone and placement of a rigid piece), as the server describes them.
     [JsonPropertyName("customWearablesJson")] public string CustomWearablesJson { get; set; } = "[]";
@@ -68,7 +70,7 @@ public sealed class AvatarAppearanceData
         Id = Id, DisplayName = DisplayName, BaseModel = BaseModel, SkinColor = SkinColor,
         HairColor = HairColor, HairStyle = HairStyle, EyeColor = EyeColor, BeardStyle = BeardStyle,
         BodySettingsJson = BodySettingsJson, FaceSettingsJson = FaceSettingsJson, OutfitsJson = OutfitsJson, AttachmentsJson = AttachmentsJson,
-        CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY, CustomModelId = CustomModelId, CustomModelHash = CustomModelHash, CustomModelScale = CustomModelScale, CustomModelBonesJson = CustomModelBonesJson, CustomWearablesJson = CustomWearablesJson, AnimationOverridesJson = AnimationOverridesJson, AnimationFilesJson = AnimationFilesJson,
+        CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY, CustomModelId = CustomModelId, CustomModelHash = CustomModelHash, CustomModelScale = CustomModelScale, CustomModelTriangles = CustomModelTriangles, CustomModelBonesJson = CustomModelBonesJson, CustomWearablesJson = CustomWearablesJson, AnimationOverridesJson = AnimationOverridesJson, AnimationFilesJson = AnimationFilesJson,
         EquippedItems = EquippedItems.Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.ItemKey, TintColor = x.TintColor }).ToList()
     };
 }
@@ -90,6 +92,7 @@ public sealed class WornWearable
     [JsonPropertyName("layer")] public string Layer { get; set; } = "base";
     [JsonPropertyName("kind")] public string Kind { get; set; } = "attachment";
     [JsonPropertyName("hidesHair")] public bool HidesHair { get; set; }
+    [JsonPropertyName("triangles")] public int Triangles { get; set; }
     [JsonPropertyName("covers")] public string[] Covers { get; set; } = [];
     [JsonPropertyName("attachBone")] public string AttachBone { get; set; } = string.Empty;
     [JsonPropertyName("offset")] public float[] Offset { get; set; } = [0, 0, 0];

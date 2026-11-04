@@ -573,6 +573,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
+
                     b.Property<Guid>("AvatarId")
                         .HasColumnType("uuid")
                         .HasColumnName("avatar_id");
@@ -635,6 +639,8 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnName("triangles");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
 
                     b.HasIndex("AvatarId", "ContentHash")
                         .IsUnique();

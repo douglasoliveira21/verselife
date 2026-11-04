@@ -49,6 +49,7 @@ public partial class AvatarRig
         {
             if (source.StartsWith(AnimationStates.BuiltinPrefix, StringComparison.Ordinal)) { _animationStatus[state] = AnimationStates.BuiltinFor(state).Contains(source[AnimationStates.BuiltinPrefix.Length..]) ? "ready" : "Esta animação da biblioteca não existe."; continue; }
             if (!AnimationStates.TryParseCustom(source, out var fileId, out var name) || files.FirstOrDefault(f => f.Id == fileId) is not { } file) { _animationStatus[state] = "O arquivo desta animação não foi informado."; continue; }
+            if (_detail < AvatarDetail.Full) { _animationStatus[state] = "Longe demais: a animação própria só toca de perto."; continue; }
             _animationStatus[state] = "loading"; _ = LoadClipAsync(state, file, name, token);
         }
     }

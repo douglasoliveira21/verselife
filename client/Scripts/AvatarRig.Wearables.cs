@@ -52,7 +52,7 @@ public partial class AvatarRig
     {
         var token = ++_wearToken;
         ClearPlaced(); _fetched.Clear(); _wearStatus.Clear();
-        _worn = data.CustomWearables;
+        _worn = _detail >= AvatarDetail.Full ? data.CustomWearables : []; // custom items are only fetched and drawn for avatars that are close and in budget
         foreach (var item in _worn) { _wearStatus[item.Id] = "loading"; _ = LoadWearableAsync(item, token); }
     }
 

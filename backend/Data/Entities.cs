@@ -107,6 +107,8 @@ public sealed class AvatarWearable
     public required string StorageKey { get; set; }
     public int SizeBytes { get; set; }
     public int Triangles { get; set; }
+    /// <summary>The asset of the inventory this item is: whoever holds an inventory item of this asset may wear the item (the maker, and whoever bought it or was given it).</summary>
+    public Guid? AssetId { get; set; }
     /// <summary>The whole report of the check: it also holds what the item covers, whether it hides the hair and where a rigid piece goes.</summary>
     public string ReportJson { get; set; } = "{}";
     public DateTimeOffset CreatedAt { get; set; }

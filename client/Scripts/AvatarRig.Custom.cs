@@ -53,6 +53,7 @@ public partial class AvatarRig
         if (_customBody is not null && IsInstanceValid(_customBody)) _customBody.QueueFree();
         _customBody = null; _customRoot = null; _customSkeleton = null; _retarget = []; CustomBodyStatus = string.Empty;
         if (data.CustomModelId is not { } id || string.IsNullOrEmpty(data.CustomModelHash)) return;
+        if (_detail < AvatarDetail.Reduced) { CustomBodyStatus = "Longe demais: o corpo padrão é usado até chegar perto."; return; }
         CustomBodyStatus = "loading"; _customScale = data.CustomModelScale > 0 ? data.CustomModelScale : 1f;
         _ = LoadCustomAsync(id, data.CustomModelHash!, token);
     }
@@ -161,7 +162,7 @@ public partial class AvatarRig
         }
     }
 
-    public override void _Process(double delta) { AdvanceClip(delta); RetargetCustom(); FollowWearables(); }
+    public override void _Process(double delta) { if (Throttled) { AdvanceClip(delta); return; } AdvanceClip(delta); RetargetCustom(); FollowWearables(); }
 
     /// <summary>Copies the animated rotations of the procedural body onto the bones of the custom model, in the model's own space.</summary>
     public void RetargetCustom()

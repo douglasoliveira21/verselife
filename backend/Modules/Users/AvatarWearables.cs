@@ -83,10 +83,38 @@ public static class AvatarWearables
         return new(w.Id, w.Name, w.Slot, w.Layer, w.Kind, w.Triangles, w.SizeBytes, AvatarRules.CustomKey(w.Id), w.CreatedAt, w.Covers(), w.HidesHairFlag(), w.ContentHash, bone, offset, rotation, scale);
     }
 
+    /// <summary>The items a person may wear: those they hold in their inventory (what they uploaded, bought in the marketplace or were given), not deleted.</summary>
+    public static async Task<List<AvatarWearable>> OwnedAsync(LifeVerseDbContext db, Guid userId, CancellationToken ct, bool tracking = false)
+    {
+        var owned = db.InventoryItems.Where(i => i.OwnerUserId == userId && i.DeletedAt == null).Select(i => i.AssetId); // (no AsNoTracking here: it would make the whole query untracked)
+        var query = db.AvatarWearables.Where(w => w.DeletedAt == null && w.AssetId != null && owned.Contains(w.AssetId.Value));
+        return await (tracking ? query : query.AsNoTracking()).ToListAsync(ct);
+    }
+
     public static async Task<IReadOnlyList<WearableSummary>> ListAsync(LifeVerseDbContext db, Guid user, CancellationToken ct)
     {
         var avatar = await db.Avatars.AsNoTracking().SingleOrDefaultAsync(a => a.UserId == user, ct); if (avatar is null) return [];
-        return [.. (await db.AvatarWearables.AsNoTracking().Where(w => w.AvatarId == avatar.Id && w.DeletedAt == null).OrderBy(w => w.Slot).ThenBy(w => w.Name).ToListAsync(ct)).Select(Summary)];
+        await EnsureAssetsAsync(db, user, ct);
+        return [.. (await OwnedAsync(db, user, ct)).OrderBy(w => w.Slot).ThenBy(w => w.Name).Select(Summary)];
+    }
+
+    /// <summary>Every item has an asset and an inventory item for its maker (items made before the inventory was involved get theirs now), so it can be kept, copied, given and sold like any other thing.</summary>
+    public static async Task EnsureAssetsAsync(LifeVerseDbContext db, Guid user, CancellationToken ct)
+    {
+        var avatar = await db.Avatars.AsNoTracking().SingleOrDefaultAsync(a => a.UserId == user, ct); if (avatar is null) return;
+        var legacy = await db.AvatarWearables.Where(w => w.AvatarId == avatar.Id && w.AssetId == null && w.DeletedAt == null).ToListAsync(ct);
+        if (legacy.Count == 0) return;
+        foreach (var item in legacy) CreateAsset(db, user, item, item.CreatedAt);
+        await db.SaveChangesAsync(ct);
+    }
+
+    private static void CreateAsset(LifeVerseDbContext db, Guid user, AvatarWearable item, DateTimeOffset now)
+    {
+        var asset = new Asset { Id = Guid.NewGuid(), OwnerUserId = user, CreatorUserId = user, Name = item.Name, Category = item.Kind == "clothing" ? "clothing" : "accessories", Description = $"Item do avatar para o slot {item.Slot}.", Status = "ready", CurrentVersion = 1, CreatedAt = now, UpdatedAt = now };
+        db.Assets.Add(asset);
+        db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = item.ContentHash, StorageKey = item.StorageKey, MimeType = "model/gltf-binary", ByteSize = item.SizeBytes, ValidationJson = item.ReportJson, CreatedAt = now });
+        db.InventoryItems.Add(new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = user, AssetId = asset.Id, DisplayName = item.Name, CreatedAt = now, UpdatedAt = now });
+        item.AssetId = asset.Id;
     }
 
     public static async Task<ModelResult> UploadAsync(LifeVerseDbContext db, AssetStorageService storage, Guid user, string fileName, byte[] bytes, string? name, DateTimeOffset now, CancellationToken ct)
@@ -95,51 +123,85 @@ public static class AvatarWearables
         var avatar = await db.Avatars.AsNoTracking().SingleOrDefaultAsync(a => a.UserId == user, ct); if (avatar is null) return new ModelResult(false, "not_found");
         var report = WearableValidator.Validate(bytes);
         if (!report.Ok) return new ModelResult(false, "invalid_wearable", JsonSerializer.Deserialize<JsonElement>(report.ToJson()));
+        await EnsureAssetsAsync(db, user, ct);
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         var existing = await db.AvatarWearables.SingleOrDefaultAsync(w => w.AvatarId == avatar.Id && w.ContentHash == hash, ct);
-        if (existing is { DeletedAt: null }) return new ModelResult(true, null, new { item = Summary(existing), report = JsonSerializer.Deserialize<JsonElement>(report.ToJson()) });
-        if (await db.AvatarWearables.CountAsync(w => w.AvatarId == avatar.Id && w.DeletedAt == null, ct) >= MaxWearables) return new ModelResult(false, "too_many_items");
+        if (existing is { DeletedAt: null, AssetId: not null } && await db.InventoryItems.AnyAsync(i => i.OwnerUserId == user && i.AssetId == existing.AssetId && i.DeletedAt == null, ct))
+            return new ModelResult(true, null, new { item = Summary(existing), report = JsonSerializer.Deserialize<JsonElement>(report.ToJson()) });
+        if ((await OwnedAsync(db, user, ct)).Count >= MaxWearables) return new ModelResult(false, "too_many_items");
         var key = await storage.PutAsync(user, hash, bytes, ct);
         var item = existing ?? new AvatarWearable { Id = Guid.NewGuid(), AvatarId = avatar.Id, Name = "Item", Slot = report.Slot, ContentHash = hash, StorageKey = key, CreatedAt = now };
         item.DeletedAt = null; item.Name = CleanName(name, fileName!); item.Slot = report.Slot; item.Layer = report.Layer; item.Kind = report.Kind.ToString().ToLowerInvariant(); item.StorageKey = key;
         item.SizeBytes = bytes.Length; item.Triangles = report.Triangles; item.ReportJson = report.ToJson();
         if (existing is null) db.AvatarWearables.Add(item);
+        if (item.AssetId is { } assetId)
+        {
+            // uploaded again after being deleted: the same asset comes back into the inventory
+            var held = await db.InventoryItems.SingleOrDefaultAsync(i => i.OwnerUserId == user && i.AssetId == assetId, ct);
+            if (held is null) db.InventoryItems.Add(new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = user, AssetId = assetId, DisplayName = item.Name, CreatedAt = now, UpdatedAt = now });
+            else { held.DeletedAt = null; held.DisplayName = item.Name; held.UpdatedAt = now; }
+        }
+        else CreateAsset(db, user, item, now);
         try { await db.SaveChangesAsync(ct); }
         catch (Exception exception) when (exception is DbUpdateException or InvalidOperationException) { foreach (var entry in db.ChangeTracker.Entries().ToList()) entry.State = EntityState.Detached; return new ModelResult(false, "conflict"); }
         return new ModelResult(true, null, new { item = Summary(item), report = JsonSerializer.Deserialize<JsonElement>(report.ToJson()) });
     }
 
-    /// <summary>Deletes the item and takes it off the avatar if it was worn.</summary>
+    /// <summary>
+    /// Takes the item out of the inventory of the person and off their avatar. The item itself stays for everybody else who holds it (a buyer keeps what they bought);
+    /// when nobody holds it any more it is gone.
+    /// </summary>
     public static async Task<ModelResult> DeleteAsync(LifeVerseDbContext db, Guid user, Guid id, DateTimeOffset now, CancellationToken ct)
     {
         var avatar = await db.Avatars.Include(a => a.EquippedItems).SingleOrDefaultAsync(a => a.UserId == user, ct); if (avatar is null) return new ModelResult(false, "not_found");
-        var item = await db.AvatarWearables.SingleOrDefaultAsync(w => w.Id == id && w.AvatarId == avatar.Id && w.DeletedAt == null, ct); if (item is null) return new ModelResult(false, "not_found");
-        item.DeletedAt = now;
-        var key = AvatarRules.CustomKey(id);
-        foreach (var worn in avatar.EquippedItems.Where(e => e.ItemKey == key).ToList())
-        {
-            // the slot goes back to a plain choice, and what the item covered is uncovered
-            var fallback = worn.Slot is "top" or "bottom" or "shoes" ? AvatarRules.DefaultFor(worn.Slot) : "none";
-            if (worn.Slot is "top" or "bottom" or "shoes") { worn.ItemKey = fallback; worn.EquippedAt = now; } else db.EquippedItems.Remove(worn);
-            foreach (var covered in item.Covers()) if (avatar.EquippedItems.FirstOrDefault(e => e.Slot == covered && e.ItemKey == "covered") is { } cover) cover.ItemKey = AvatarRules.DefaultFor(covered);
-        }
-        avatar.UpdatedAt = now;
+        var item = (await OwnedAsync(db, user, ct, tracking: true)).SingleOrDefault(w => w.Id == id); if (item is null) return new ModelResult(false, "not_found");
+        foreach (var held in await db.InventoryItems.Where(i => i.OwnerUserId == user && i.AssetId == item.AssetId && i.DeletedAt == null).ToListAsync(ct)) { held.DeletedAt = now; held.UpdatedAt = now; }
+        if (!await db.InventoryItems.AnyAsync(i => i.AssetId == item.AssetId && i.OwnerUserId != user && i.DeletedAt == null, ct)) item.DeletedAt = now;
         await db.SaveChangesAsync(ct);
+        db.ChangeTracker.Clear();
+        await ReconcileAsync(db, avatar.Id, ct);
         return new ModelResult(true);
     }
 
-    public static async Task<string?> ReportAsync(LifeVerseDbContext db, Guid user, Guid id, CancellationToken ct)
+    /// <summary>
+    /// Puts the avatar right when it wears something it no longer holds (it was sold, given away, deleted from the inventory): that slot goes back to a plain choice and what
+    /// the item covered is uncovered. Nothing else changes. Returns whether anything did.
+    /// </summary>
+    public static async Task ReconcileForUserAsync(LifeVerseDbContext db, Guid userId, CancellationToken ct)
     {
-        var avatar = await db.Avatars.AsNoTracking().SingleOrDefaultAsync(a => a.UserId == user, ct); if (avatar is null) return null;
-        return await db.AvatarWearables.AsNoTracking().Where(w => w.Id == id && w.AvatarId == avatar.Id && w.DeletedAt == null).Select(w => w.ReportJson).SingleOrDefaultAsync(ct);
+        var id = await db.Avatars.AsNoTracking().Where(a => a.UserId == userId).Select(a => a.Id).SingleOrDefaultAsync(ct);
+        if (id != Guid.Empty) await ReconcileAsync(db, id, ct);
     }
+
+    public static async Task<bool> ReconcileAsync(LifeVerseDbContext db, Guid avatarId, CancellationToken ct)
+    {
+        var avatar = await db.Avatars.Include(a => a.EquippedItems).SingleOrDefaultAsync(a => a.Id == avatarId, ct); if (avatar is null) return false;
+        await EnsureAssetsAsync(db, avatar.UserId, ct);
+        var worn = avatar.EquippedItems.Where(e => AvatarRules.IsCustom(e.ItemKey)).ToList(); if (worn.Count == 0) return false;
+        var owned = (await OwnedAsync(db, avatar.UserId, ct)).ToDictionary(w => AvatarRules.CustomKey(w.Id));
+        var changed = false;
+        foreach (var piece in worn.Where(e => !owned.TryGetValue(e.ItemKey, out var w) || w.Slot != e.Slot))
+        {
+            var lostId = Guid.Parse(piece.ItemKey.AsSpan(AvatarRules.CustomPrefix.Length));
+            var lost = await db.AvatarWearables.AsNoTracking().SingleOrDefaultAsync(w => w.Id == lostId, ct);
+            if (piece.Slot is "top" or "bottom" or "shoes") piece.ItemKey = AvatarRules.DefaultFor(piece.Slot); else db.EquippedItems.Remove(piece);
+            foreach (var covered in lost?.Covers() ?? []) if (avatar.EquippedItems.FirstOrDefault(e => e.Slot == covered && e.ItemKey == "covered") is { } cover) cover.ItemKey = AvatarRules.DefaultFor(covered);
+            changed = true;
+        }
+        if (changed) { avatar.UpdatedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync(ct); }
+        return changed;
+    }
+
+    public static async Task<string?> ReportAsync(LifeVerseDbContext db, Guid user, Guid id, CancellationToken ct)
+        => (await OwnedAsync(db, user, ct)).SingleOrDefault(w => w.Id == id)?.ReportJson;
 
     private static WearableItem ToItem(AvatarWearable w) { var covers = w.Covers(); return new WearableItem(w.Slot, AvatarRules.CustomKey(w.Id), w.Name, w.Layer, covers.Length == 0 ? null : covers, w.HidesHairFlag()); }
 
     /// <summary>What the rules need to know about the custom items of an avatar: look one up by slot and key.</summary>
     public static async Task<Func<string, string, WearableItem?>> ResolverAsync(LifeVerseDbContext db, Guid avatarId, CancellationToken ct)
     {
-        var items = (await db.AvatarWearables.AsNoTracking().Where(w => w.AvatarId == avatarId && w.DeletedAt == null).ToListAsync(ct)).ToDictionary(w => AvatarRules.CustomKey(w.Id), ToItem);
+        var userId = await db.Avatars.AsNoTracking().Where(a => a.Id == avatarId).Select(a => a.UserId).SingleOrDefaultAsync(ct);
+        var items = (await OwnedAsync(db, userId, ct)).ToDictionary(w => AvatarRules.CustomKey(w.Id), ToItem);
         return (slot, key) => items.TryGetValue(key, out var item) && item.Slot == slot ? item : null;
     }
 
@@ -157,7 +219,7 @@ public static class AvatarWearables
         errors.AddRange(problems.Select(Describe));
         if (customKeys.Count == 0 || errors.Count > 0) return errors;
         var ids = customKeys.Select(k => Guid.Parse(k.AsSpan(AvatarRules.CustomPrefix.Length))).ToList();
-        var rows = await db.AvatarWearables.AsNoTracking().Where(w => ids.Contains(w.Id) && w.AvatarId == avatar.Id && w.DeletedAt == null).ToListAsync(ct);
+        var rows = (await OwnedAsync(db, avatar.UserId, ct)).Where(w => ids.Contains(w.Id)).ToList();
         if (rows.Any(r => r.Kind == "clothing") && avatar.CustomModelId is null) errors.Add("Rigged clothing can only be worn on a custom body. Choose a custom body first, or use rigid accessories.");
         if (rows.Sum(r => (long)r.Triangles) > OutfitTriangleBudget) errors.Add($"The custom items of the outfit add up to more than {OutfitTriangleBudget:N0} triangles.");
         return errors;
@@ -180,11 +242,11 @@ public static class AvatarWearables
         var keys = avatar.EquippedItems.Where(e => AvatarRules.IsCustom(e.ItemKey)).Select(e => e.ItemKey).ToList();
         if (keys.Count == 0) return "[]";
         var ids = keys.Select(k => Guid.Parse(k.AsSpan(AvatarRules.CustomPrefix.Length))).ToList();
-        var rows = await db.AvatarWearables.AsNoTracking().Where(w => ids.Contains(w.Id) && w.AvatarId == avatar.Id && w.DeletedAt == null).ToListAsync(ct);
+        var rows = await db.AvatarWearables.AsNoTracking().Where(w => ids.Contains(w.Id) && w.DeletedAt == null).ToListAsync(ct);
         return JsonSerializer.Serialize(rows.Select(r =>
         {
             using var report = JsonDocument.Parse(r.ReportJson); var root = report.RootElement;
-            return new { id = r.Id, key = AvatarRules.CustomKey(r.Id), hash = r.ContentHash, slot = r.Slot, layer = r.Layer, kind = r.Kind, hidesHair = r.HidesHairFlag(), covers = r.Covers(), attachBone = root.TryGetProperty("attachBone", out var b) ? b.GetString() : string.Empty, offset = root.TryGetProperty("offset", out var o) ? o.Clone() : default, rotation = root.TryGetProperty("rotation", out var ro) ? ro.Clone() : default, scale = root.TryGetProperty("scale", out var s) && s.TryGetSingle(out var sv) ? sv : 1f };
+            return new { id = r.Id, key = AvatarRules.CustomKey(r.Id), triangles = r.Triangles, hash = r.ContentHash, slot = r.Slot, layer = r.Layer, kind = r.Kind, hidesHair = r.HidesHairFlag(), covers = r.Covers(), attachBone = root.TryGetProperty("attachBone", out var b) ? b.GetString() : string.Empty, offset = root.TryGetProperty("offset", out var o) ? o.Clone() : default, rotation = root.TryGetProperty("rotation", out var ro) ? ro.Clone() : default, scale = root.TryGetProperty("scale", out var s) && s.TryGetSingle(out var sv) ? sv : 1f };
         }), Options);
     }
 
