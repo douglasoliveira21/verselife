@@ -36,3 +36,36 @@ public static class ItemRightsEndpoints
 
     private static bool Who(HttpContext c, out Guid user) => Guid.TryParse(c.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out user);
 }
+
+public sealed record OfferRequest(Guid ToUserId, string? Kind, string? Message, bool KeepCopy, string? IdempotencyKey);
+
+/// <summary>Giving items to other people: offers, and the receiver answering them.</summary>
+public static class ItemOfferEndpoints
+{
+    public static IEndpointRouteBuilder MapItemOfferEndpoints(this IEndpointRouteBuilder endpoints)
+    {
+        var group = endpoints.MapGroup("/api/v1/inventory").WithTags("Item offers").RequireAuthorization();
+        group.MapPost("/items/{itemId:guid}/offers", async (Guid itemId, OfferRequest body, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.OfferAsync(db, me, itemId, body.ToUserId, body.Kind, body.Message, body.KeepCopy, body.IdempotencyKey, t.GetUtcNow(), ct), created: true));
+        group.MapGet("/offers", async (string? box, bool? pending, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await ItemTransfers.ListAsync(db, me, box != "outgoing", pending ?? true, t.GetUtcNow(), ct)));
+        group.MapPost("/offers/{offerId:guid}/accept", async (Guid offerId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.AcceptAsync(db, me, offerId, t.GetUtcNow(), ct)));
+        group.MapPost("/offers/{offerId:guid}/reject", async (Guid offerId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.RejectAsync(db, me, offerId, t.GetUtcNow(), ct)));
+        group.MapPost("/offers/{offerId:guid}/cancel", async (Guid offerId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.CancelAsync(db, me, offerId, t.GetUtcNow(), ct)));
+        return endpoints;
+    }
+
+    private static IResult Answer(OfferResult r, bool created = false) => r.Ok ? (created ? Results.Created($"/api/v1/inventory/offers/{r.Offer!.Id}", new { r.Offer.Id, r.Offer.Status, r.Offer.ExpiresAt }) : Results.Ok(new { r.Offer?.Id, r.Offer?.Status, itemId = r.Item?.Id })) : r.Error switch
+    {
+        "not_found" or "recipient_not_found" => Results.NotFound(new { error = r.Error }),
+        "not_allowed" or "keep_copy_needs_copy" => Results.Json(new { error = r.Error }, statusCode: StatusCodes.Status403Forbidden),
+        "stale" or "item_busy" or "offer_closed" or "offer_expired" or "item_unavailable" or "inventory_full" or "key_reused" => Results.Conflict(new { error = r.Error }),
+        "too_many_offers" or "recipient_full" => Results.StatusCode(StatusCodes.Status429TooManyRequests),
+        _ => Results.BadRequest(new { error = r.Error }),
+    };
+
+    private static bool Who(HttpContext c, out Guid user) => Guid.TryParse(c.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value, out user);
+}

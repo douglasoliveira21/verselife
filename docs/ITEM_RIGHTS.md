@@ -28,5 +28,25 @@ Quem decide é sempre o servidor (`ItemRightsService`). O jogo só mostra o que 
 
 **Testes:** `ItemRightsModelTests` e `ItemRightsServiceTests` (modelo, herança, quem tem o quê, recusas com marca na auditoria, mudança desatualizada, histórico) e `ItemRightsPostgresTests` (padrões do banco para itens "antigos"; 20 mudanças simultâneas, uma só vence).
 
+## Fase 2 — cópia, presente e transferência
+
+**Cópia** (`POST /api/v1/inventory/items/{id}/copy`, `ItemTransfers.CopyAsync`): exige o direito **Copiar** (antes bastava ser dono do ativo). Quem copia sendo o dono recebe uma cópia com os mesmos direitos; um membro do grupo recebe uma cópia com os direitos de "próximo dono". A cópia guarda de onde veio (`copied_from_item_id`), entra no histórico como `copy` e na auditoria. Item sem Copiar, de outra pessoa ou em oferta é recusado (e a tentativa fica na auditoria). Limite de 20.000 itens por pessoa.
+
+**Oferta** (`POST /api/v1/inventory/items/{id}/offers`): presente (`gift`) ou transferência (`transfer`), com mensagem de até 200 letras. Só o dono, com o direito **Transferir**; o destinatário precisa existir, estar ativo e não haver bloqueio em nenhum sentido (nesse caso responde como se a pessoa não existisse). A mesma `idempotencyKey` devolve a mesma oferta; reusar a chave para outra coisa é `key_reused`. Máximo de 20 ofertas pendentes enviadas por pessoa e 50 recebidas. A oferta vale **7 dias**.
+
+**O item fica trancado** (`status = offered`) enquanto espera a resposta: ninguém o usa, copia, renomeia, apaga, equipa, coloca no mundo nem oferece de novo (os endpoints antigos de inventário só enxergam itens `active`). Uma segunda oferta do mesmo item é barrada por um índice único e pelo token de versão. Com `keepCopy` (só para quem pode Copiar) o item **não** é trancado: quem dá fica com o seu e o destinatário receberá uma cópia.
+
+**Aceitar** (`POST /offers/{id}/accept`): é uma única alteração do mesmo registro. O item muda de dono, passa a ter os direitos de "próximo dono" (se isso tirar Copiar, o novo dono não consegue copiar), perde o compartilhamento com grupo, a pasta e o favorito, volta a `active`, e o histórico e a auditoria são gravados no mesmo salvamento. Com `keepCopy`, nasce **exatamente uma** cópia. Antes de mover, confere que o item ainda é de quem ofereceu, não foi removido e (no caso da cópia) ainda pode ser copiado; senão a oferta é cancelada (`item_unavailable`). Aceitar de novo devolve o mesmo resultado sem repetir nada. Só o destinatário aceita ou recusa; só quem enviou cancela.
+
+**Recusar e cancelar** liberam o item. **Expirar:** o `ItemOfferWorker` (a cada 5 minutos) e a listagem fecham ofertas vencidas e devolvem os itens; aceitar uma vencida dá `offer_expired`.
+
+**Corridas e duplicação.** `inventory.items.revision` e `inventory.item_offers.revision` são tokens de concorrência: duas respostas ao mesmo tempo não se aplicam juntas (a perdedora recebe `stale` e nada muda). Testado num PostgreSQL de verdade com 20 pedidos simultâneos: 20 aceites/cancelamentos da mesma transferência → o item existe uma vez e está com um só dono; 20 aceites de oferta com cópia → uma cópia; 20 ofertas do mesmo item → uma ganha e 19 recebem `item_busy`; 18 aceites de 3 ofertas de cópia → três cópias, nem uma a mais.
+
+**Endpoints:** `GET /api/v1/inventory/offers?box=incoming|outgoing&pending=true`, `POST …/offers/{id}/accept|reject|cancel`. Erros: 404 não é seu, 403 `not_allowed`/`keep_copy_needs_copy`, 409 `stale`/`item_busy`/`offer_closed`/`offer_expired`/`item_unavailable`/`inventory_full`, 429 limites.
+
+**Testes:** `ItemTransferTests` (18) e 4 testes novos em `ItemRightsPostgresTests`.
+
+**Ainda aberto de propósito:** colocar um item no mundo (`/place`) ainda não consome nem confere os direitos do item (fase 4); a revenda e o preço entram na fase 3.
+
 ## Ainda não (próximas fases)
-2: inventário, cópia e transferência (a cópia atual ainda ignora estes direitos); 3: marketplace; 4: construção e comandos multiplayer; 5: cliente; 6: testes finais de exploração.
+3: marketplace e economia; 4: construção e comandos multiplayer (inclui colocar/pegar itens no mundo); 5: cliente; 6: testes finais de exploração.
