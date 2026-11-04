@@ -38,7 +38,8 @@ public sealed record AvatarResponse(
     Guid? CustomModelId = null,
     string? CustomModelHash = null,
     float CustomModelScale = 1f,
-    string CustomModelBonesJson = "{}");
+    string CustomModelBonesJson = "{}",
+    string CustomWearablesJson = "[]");
 
 public static partial class AvatarCatalog
 {
@@ -47,7 +48,8 @@ public static partial class AvatarCatalog
     public static readonly HashSet<string> BeardStyles = [.. AvatarRules.BeardStyles];
     public static readonly IReadOnlyDictionary<string, HashSet<string>> Items = AvatarRules.Catalog.GroupBy(i => i.Slot).ToDictionary(g => g.Key, g => g.Select(i => i.Key).ToHashSet());
 
-    public static Dictionary<string, string[]> Validate(SaveAvatarRequest request)
+    /// <summary>Checks an appearance against the catalog and the formats. The custom items ("custom:…") are accepted only when a resolver that knows the items of the person is given; their ownership, slot and the outfit as a whole are then checked by <see cref="AvatarWearables.CheckOutfitAsync"/>.</summary>
+    public static Dictionary<string, string[]> Validate(SaveAvatarRequest request, Func<string, string, WearableItem?>? custom = null)
     {
         var errors = new Dictionary<string, string[]>();
         var displayName = request.DisplayName?.Trim() ?? string.Empty;
@@ -72,7 +74,7 @@ public static partial class AvatarCatalog
                 errors["equippedItems"] = ["Equipment entries cannot be null."];
                 return errors;
             }
-            var problems = AvatarRules.CheckEquipment([.. request.EquippedItems.Select(x => (x.Slot ?? string.Empty, x.ItemKey ?? string.Empty))]);
+            var problems = AvatarRules.CheckEquipment([.. request.EquippedItems.Select(x => (x.Slot ?? string.Empty, x.ItemKey ?? string.Empty))], custom);
             if (problems.Count > 0) errors["equippedItems"] = [.. problems.Select(Describe)];
             else if (request.EquippedItems.Any(item => !IsColor(item.TintColor))) errors["equippedItems"] = ["Equipment contains an invalid tint."];
         }

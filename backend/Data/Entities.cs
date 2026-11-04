@@ -91,6 +91,26 @@ public sealed class AvatarModel
     public DateTimeOffset? DeletedAt { get; set; }
 }
 
+/// <summary>An item a person brought to wear: a checked GLB (stored by hash) for one slot, either rigged clothing or a rigid piece fixed to a bone.</summary>
+public sealed class AvatarWearable
+{
+    public Guid Id { get; set; }
+    public Guid AvatarId { get; set; }
+    public required string Name { get; set; }
+    public required string Slot { get; set; }
+    public string Layer { get; set; } = "base";
+    /// <summary>clothing or attachment.</summary>
+    public string Kind { get; set; } = "attachment";
+    public required string ContentHash { get; set; }
+    public required string StorageKey { get; set; }
+    public int SizeBytes { get; set; }
+    public int Triangles { get; set; }
+    /// <summary>The whole report of the check: it also holds what the item covers, whether it hides the hair and where a rigid piece goes.</summary>
+    public string ReportJson { get; set; } = "{}";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
 /// <summary>A saved look: a named snapshot of the whole appearance that can be put on again, duplicated and shared with a code.</summary>
 public sealed class AvatarLook
 {

@@ -19,6 +19,10 @@ public sealed record TemplateOptions
     public bool UpsideDown { get; init; }
     /// <summary>How many copies of the body boxes to put in the mesh (to go over the triangle budget).</summary>
     public int Copies { get; init; } = 1;
+    /// <summary>When set, only the boxes of these bones are in the mesh (a garment covers part of the body); the skeleton stays complete.</summary>
+    public string[]? BoxBones { get; init; }
+    /// <summary>Raw JSON stored in the asset extras (where garments say which slot they are for).</summary>
+    public string? Extras { get; init; }
     /// <summary>Adds a texture that points to another file.</summary>
     public bool ExternalTexture { get; init; }
     /// <summary>Adds an (empty) animation, which the game ignores.</summary>
@@ -97,7 +101,7 @@ public static class HumanoidTemplate
         var positions = new List<float>(); var joints = new List<byte>(); var weights = new List<float>(); var indices = new List<ushort>();
         string Owner(string standard) { var s = standard; while (!indexOf.ContainsKey(s)) s = Bones.First(b => b.Standard == s).Parent!; return s; }
         for (var copy = 0; copy < Math.Max(1, options.Copies); copy++)
-            foreach (var (standard, box) in Boxes)
+            foreach (var (standard, box) in Boxes.Where(b => options.BoxBones is null || options.BoxBones.Contains(b.Key)))
             {
                 var owner = Owner(standard); var j = (byte)indexOf[owner]; var baseIndex = positions.Count / 3;
                 var stretchX = standard is "lower_arm_l" or "hand_l" or "lower_arm_r" or "hand_r" ? options.ArmStretch : 1f;
@@ -166,7 +170,7 @@ public static class HumanoidTemplate
 
         var root = new Dictionary<string, object?>
         {
-            ["asset"] = new { version = "2.0", generator = "LifeVerse humanoid template" },
+            ["asset"] = new Dictionary<string, object?> { ["version"] = "2.0", ["generator"] = "LifeVerse humanoid template", ["extras"] = options.Extras is null ? null : JsonSerializer.Deserialize<JsonElement>(options.Extras) },
             ["scene"] = 0, ["scenes"] = new[] { new { nodes = new[] { 0 } } }, ["nodes"] = nodes, ["meshes"] = meshes,
             ["skins"] = new[] { new { name = "Skeleton", joints = bones.Select(b => nodeIndex[b.Standard]).ToArray(), inverseBindMatrices = accessorInverse, skeleton = 1 } },
             ["materials"] = new[] { new { name = "Skin", pbrMetallicRoughness = new { baseColorFactor = new[] { .8f, .6f, .5f, 1f }, metallicFactor = 0f, roughnessFactor = .8f } } },

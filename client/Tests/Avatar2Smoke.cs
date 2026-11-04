@@ -80,10 +80,20 @@ public partial class Avatar2Smoke : Node
             var manager = GetNode<AvatarManager>("/root/AvatarManager");
             var calls = new List<string>(); var saved = new List<(Guid Id, string Name, string? Code)>(); var lastBody = string.Empty;
             var models = new List<(Guid Id, string Name)>(); Guid? usedModel = null;
+            var wear = new List<(Guid Id, string Name, string Slot, string Kind, string Covers)>();
             manager.Transport = (method, path, body) =>
             {
                 calls.Add($"{method} {path} {body}");
                 string List() => "[" + string.Join(",", saved.Select(l => $"{{\"id\":\"{l.Id}\",\"name\":\"{l.Name}\",\"shareCode\":{(l.Code is null ? "null" : $"\"{l.Code}\"")},\"skinColor\":\"#C98F65\",\"hairStyle\":\"short\"}}")) + "]";
+                if (method == Godot.HttpClient.Method.Get && path == "/wearables") return (200, "[" + string.Join(",", wear.Select(w => $"{{\"id\":\"{w.Id}\",\"name\":\"{w.Name}\",\"slot\":\"{w.Slot}\",\"layer\":\"base\",\"kind\":\"{w.Kind}\",\"triangles\":12,\"key\":\"custom:{w.Id}\",\"hash\":\"{new string('b', 64)}\",\"covers\":[{w.Covers}],\"hidesHair\":false,\"attachBone\":\"head\",\"offset\":[0,0.15,0],\"rotation\":[0,0,0],\"scale\":1}}")) + "]");
+                if (method == Godot.HttpClient.Method.Post && path == "/wearables")
+                {
+                    if (body!.Contains("ruim.glb")) return (422, "{\"error\":\"invalid_wearable\",\"report\":{\"ok\":false,\"issues\":[{\"code\":\"wrong_region\",\"message\":\"30% of the weight is on legs.\",\"error\":true}]}}");
+                    if (body.Contains("vestido.glb")) wear.Add((Guid.NewGuid(), "Vestido meu", "top", "clothing", "\"bottom\""));
+                    else wear.Add((Guid.NewGuid(), "Chapeu meu", "hat", "attachment", string.Empty));
+                    return (200, "{\"item\":{},\"report\":{\"ok\":true,\"issues\":[]}}");
+                }
+                if (method == Godot.HttpClient.Method.Delete && path.StartsWith("/wearables/")) { wear.RemoveAt(0); return (200, "{}"); }
                 if (method == Godot.HttpClient.Method.Get && path == "/models") return (200, "[" + string.Join(",", models.Select(m => $"{{\"id\":\"{m.Id}\",\"name\":\"{m.Name}\",\"triangles\":204,\"joints\":17,\"active\":{(usedModel == m.Id ? "true" : "false")}}}")) + "]");
                 if (method == Godot.HttpClient.Method.Post && path == "/models")
                 {
@@ -170,6 +180,32 @@ public partial class Avatar2Smoke : Node
             Require(creator.CustomIdForTesting is null && creator.FormForTesting().CustomModelId is null, "going back to the standard body clears it");
             creator.SelectModelForTesting(0); creator.UseModelForTesting(); creator.SelectModelForTesting(0); creator.DeleteModelForTesting();
             Require(creator.Models.Count == 0 && creator.CustomIdForTesting is null, "deleting the model in use goes back to the standard body");
+
+            // ---- custom clothes and accessories
+            creator.LoadWearables();
+            creator.ImportWearable("ruim.glb", [1]);
+            Require(creator.WearableMessageForTesting.Contains("recusado") && creator.WearableMessageForTesting.Contains("legs") && creator.Wearables.Count == 0, $"a refused item shows why: {creator.WearableMessageForTesting}");
+            creator.ImportWearable("chapeu.glb", [1]);
+            Require(creator.Wearables.Count == 1 && creator.WearableMessageForTesting.Contains("aceito"), "an accepted item is listed");
+            creator.SelectWearableForTesting(0); creator.WearForTesting();
+            var hatWorn = creator.FormForTesting();
+            Require(hatWorn.Item("hat", "") == AvatarRules.CustomKey(creator.Wearables[0].Id), "wearing the item puts it in the menu of its slot and on the form");
+            Require(hatWorn.CustomWearables.Count == 1 && hatWorn.CustomWearables[0].Hash.Length == 64 && hatWorn.CustomWearables[0].AttachBone == "head" && hatWorn.CustomWearables[0].Offset[1] == .15f, "the preview is told what to download and where to put it");
+            creator.TakeOffForTesting();
+            Require(creator.FormForTesting().Item("hat", "none") == "none" && creator.FormForTesting().CustomWearables.Count == 0, "taking it off empties the slot");
+            creator.ChooseForTesting("bottom", "pants_basic"); // an ordinary outfit again
+            creator.ImportWearable("vestido.glb", [1]); creator.SelectWearableForTesting(1);
+            creator.WearForTesting();
+            Require(creator.WearableMessageForTesting.Contains("corpo personalizado") && creator.FormForTesting().Item("top", "") == "tee_basic", $"rigged clothing is refused on the standard body: {creator.WearableMessageForTesting} / {creator.FormForTesting().Item("top", "")} / custom={creator.CustomIdForTesting}");
+            creator.StandardBodyForTesting(); creator.SelectModelForTesting(0);
+            creator.Import("bom.glb", [1, 2, 3]); creator.SelectModelForTesting(0); creator.UseModelForTesting();
+            creator.SelectWearableForTesting(1); creator.WearForTesting();
+            var dressWorn = creator.FormForTesting().EquippedItems.ToDictionary(x => x.Slot, x => x.ItemKey);
+            Require(AvatarRules.IsCustom(dressWorn["top"]) && dressWorn["bottom"] == "covered", $"a custom dress covers the legs: {dressWorn["top"]}/{dressWorn["bottom"]}");
+            creator.ChooseForTesting("bottom", "shorts_basic");
+            Require(creator.FormForTesting().Item("top", "") == "tee_basic", "choosing shorts takes the custom dress off");
+            creator.DeleteWearableForTesting();
+            Require(creator.Wearables.Count == 1, "deleting removes the item");
 
             manager.Transport = null;
             GD.Print("event=avatar2_smoke result=passed");

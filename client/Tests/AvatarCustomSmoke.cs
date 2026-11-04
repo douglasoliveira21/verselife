@@ -62,7 +62,9 @@ public partial class AvatarCustomSmoke : Node
                 Require(low is > -.03f and < .03f && high is > 1.75f and < 1.85f, $"{naming}: the model is 1.8 m tall and stands on the ground: {low:F3}..{high:F3}");
                 var skeleton = Skeleton(custom)!;
                 var leftHand = skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(BoneIndex(skeleton, "hand_l")); var rightHand = skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(BoneIndex(skeleton, "hand_r"));
-                Require(leftHand.Origin.X < -.3f && rightHand.Origin.X > .3f, $"{naming}: the model faces -Z like the game: left hand at x={leftHand.Origin.X:F2}");
+                var shoulderLeft = skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(BoneIndex(skeleton, "upper_arm_l"));
+                Require(leftHand.Origin.X < -.1f && rightHand.Origin.X > .1f && shoulderLeft.Origin.X < -.1f, $"{naming}: the model faces -Z like the game: left hand at x={leftHand.Origin.X:F2}");
+                Require(leftHand.Origin.Y < shoulderLeft.Origin.Y - .5f, $"{naming}: the arms hang down instead of staying in a T-pose: hand {leftHand.Origin.Y:F2}, shoulder {shoulderLeft.Origin.Y:F2}");
                 var head = skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(BoneIndex(skeleton, "head"));
                 Require(head.Origin.Y > 1.4f, "the head is up");
 

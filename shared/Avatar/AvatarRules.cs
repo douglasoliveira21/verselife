@@ -59,6 +59,14 @@ public static class AvatarRules
 
     public static WearableItem? Find(string slot, string key) => Catalog.FirstOrDefault(i => i.Slot == slot && i.Key == key);
 
+    /// <summary>Items a person brought themselves are worn as "custom:" and the id of the item; what they are is looked up by whoever knows the person's items.</summary>
+    public const string CustomPrefix = "custom:";
+    public static bool IsCustom(string? key) => key is not null && key.StartsWith(CustomPrefix, StringComparison.Ordinal) && Guid.TryParse(key.AsSpan(CustomPrefix.Length), out _);
+    public static string CustomKey(Guid id) => CustomPrefix + id.ToString();
+
+    /// <summary>The catalog, plus the person's own items when a resolver that knows them is given.</summary>
+    public static WearableItem? Look(string slot, string key, Func<string, string, WearableItem?>? custom) => IsCustom(key) ? custom?.Invoke(slot, key) : Find(slot, key);
+
     public static IEnumerable<WearableItem> ItemsFor(string slot) => Catalog.Where(i => i.Slot == slot);
 
     // ---- body and face sliders ------------------------------------------------------------------------------------------------------
@@ -114,15 +122,15 @@ public static class AvatarRules
     /// Everything wrong with a set of worn items: an item that is not in the catalog (or in the wrong slot), a slot used twice, a required slot
     /// missing, an item sitting in a slot another item covers, and an outer layer worn without anything under it. Empty when fine.
     /// </summary>
-    public static List<EquipmentProblem> CheckEquipment(IReadOnlyCollection<(string Slot, string Key)> worn)
+    public static List<EquipmentProblem> CheckEquipment(IReadOnlyCollection<(string Slot, string Key)> worn, Func<string, string, WearableItem?>? custom = null)
     {
         var problems = new List<EquipmentProblem>();
         foreach (var group in worn.GroupBy(w => w.Slot)) if (group.Count() > 1) problems.Add(new("duplicate_slot", group.Key));
         var items = new Dictionary<string, WearableItem>();
         foreach (var (slot, key) in worn)
         {
-            if (Find(slot, key ?? string.Empty) is not { } item) { problems.Add(new("unknown_item", slot ?? string.Empty, key ?? string.Empty)); continue; }
-            items[slot] = item;
+            if (Look(slot ?? string.Empty, key ?? string.Empty, custom) is not { } item) { problems.Add(new("unknown_item", slot ?? string.Empty, key ?? string.Empty)); continue; }
+            items[slot ?? string.Empty] = item;
         }
         foreach (var required in RequiredSlots) if (!items.ContainsKey(required)) problems.Add(new("missing_required", required));
         foreach (var item in items.Values.Where(i => !i.IsEmpty))
@@ -141,25 +149,25 @@ public static class AvatarRules
     /// that slot (and the legs of a dress read "covered"), a slot that is no longer covered gets a plain default back, a missing required slot is
     /// filled, and an unknown item becomes the slot's empty or default choice. The newest change (<paramref name="changed"/>) wins a conflict.
     /// </summary>
-    public static List<(string Slot, string Key)> Resolve(IEnumerable<(string Slot, string Key)> worn, string? changed = null)
+    public static List<(string Slot, string Key)> Resolve(IEnumerable<(string Slot, string Key)> worn, string? changed = null, Func<string, string, WearableItem?>? custom = null)
     {
         var map = new Dictionary<string, string>();
-        foreach (var (slot, key) in worn) if (Find(slot, key) is not null) map[slot] = key;
+        foreach (var (slot, key) in worn) if (Look(slot, key, custom) is not null) map[slot] = key;
         foreach (var required in RequiredSlots) if (!map.ContainsKey(required)) map[required] = DefaultFor(required);
         // a wearable that covers other slots takes them over, except when the covered slot is the one just changed (then the cover is dropped)
         foreach (var slot in map.Keys.ToList())
         {
-            var item = Find(slot, map[slot]);
+            var item = Look(slot, map[slot], custom);
             if (item is null || item.IsEmpty) continue;
             foreach (var covered in item.CoveredSlots)
             {
-                if (map.TryGetValue(covered, out var other) && Find(covered, other) is { IsEmpty: false } && changed == covered) { map[slot] = DefaultFor(slot, notCovering: item.CoveredSlots); break; }
+                if (map.TryGetValue(covered, out var other) && Look(covered, other, custom) is { IsEmpty: false } && changed == covered) { map[slot] = DefaultFor(slot, notCovering: item.CoveredSlots); break; }
                 map[covered] = "covered";
             }
         }
         foreach (var slot in map.Keys.ToList())
-            if (map[slot] == "covered" && !map.Where(p => Find(p.Key, p.Value) is { } w && w.CoveredSlots.Contains(slot)).Any()) map[slot] = DefaultFor(slot);
-        if (Find("top", map["top"]) is { IsEmpty: true } && map.TryGetValue("jacket", out var jacket) && Find("jacket", jacket) is { Layer: "outer" }) map["jacket"] = "none";
+            if (map[slot] == "covered" && !map.Where(p => Look(p.Key, p.Value, custom) is { } w && w.CoveredSlots.Contains(slot)).Any()) map[slot] = DefaultFor(slot);
+        if (Look("top", map["top"], custom) is { IsEmpty: true } && map.TryGetValue("jacket", out var jacket) && Look("jacket", jacket, custom) is { Layer: "outer" }) map["jacket"] = "none";
         return [.. Slots.Where(map.ContainsKey).Select(s => (s, map[s]))];
     }
 
@@ -171,5 +179,5 @@ public static class AvatarRules
     }
 
     /// <summary>Whether the hair is drawn: a hat that hides it (a beanie) leaves only the face.</summary>
-    public static bool HairVisible(IEnumerable<(string Slot, string Key)> worn) => !worn.Any(w => Find(w.Slot, w.Key) is { HidesHair: true });
+    public static bool HairVisible(IEnumerable<(string Slot, string Key)> worn, Func<string, string, WearableItem?>? custom = null) => !worn.Any(w => Look(w.Slot, w.Key, custom) is { HidesHair: true });
 }

@@ -72,7 +72,7 @@ public partial class AvatarRig : Node3D
         var head = Sphere(neck, "Head", new Vector3(0, 0.28f, 0), new Vector3(0.28f, 0.34f, 0.27f), skin);
         AddFace(head, data, face);
         AddFaceFeatures(head, face, data.SkinColor);
-        if (AvatarRules.HairVisible(data.EquippedItems.Select(x => (x.Slot, x.ItemKey)))) AddHair(head, data.HairStyle, hair);
+        if (AvatarRules.HairVisible(data.EquippedItems.Select(x => (x.Slot, x.ItemKey)), data.CustomItem)) AddHair(head, data.HairStyle, hair);
         AddBeard(head, data.BeardStyle, hair);
         AddAccessory(head, data.Item("accessory", "none"), data.Tint("accessory", "#FFFFFF"));
         AddAttachments(_visual, data.AttachmentsJson);
@@ -91,6 +91,7 @@ public partial class AvatarRig : Node3D
         _visual.AddChild(new NamePlate(data.DisplayName, voice) { Name = "DisplayName", Position = new Vector3(0, top3 + .2f, 0) });
         if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(StateName(_state)); }
         StartCustomBody(data);
+        StartWearables(data);
     }
 
     /// Height of the player capsule in Player.tscn; the visible body is scaled to match it.

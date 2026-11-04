@@ -61,6 +61,7 @@ public partial class CharacterCreator
         }
         BuildLooksManager(fields);
         BuildModelsManager(fields);
+        BuildWearablesManager(fields);
     }
 
     // ---- reading and writing the form -----------------------------------------------------------------------------------------------
@@ -73,7 +74,7 @@ public partial class CharacterCreator
         var worn = new List<(string Slot, string Key)> { ("top", Value(_top)), ("bottom", Value(_bottom)), ("shoes", Value(_shoes)), ("accessory", Value(_accessory)) };
         foreach (var slot in ExtraSlots) if (_extra.TryGetValue(slot, out var option) && option.ItemCount > 0) worn.Add((slot, Value(option)));
         // "none" slots are not stored; the server fills nothing in for them
-        return [.. AvatarRules.Resolve(worn).Where(w => w.Slot is "top" or "bottom" or "shoes" || w.Key != "none")
+        return [.. AvatarRules.Resolve(worn, null, CustomResolver).Where(w => w.Slot is "top" or "bottom" or "shoes" || w.Key != "none")
             .Select(w => new EquippedItemData { Slot = w.Slot, ItemKey = w.Key, TintColor = _tints.GetValueOrDefault(w.Slot, "#FFFFFF") })];
     }
 
@@ -97,7 +98,7 @@ public partial class CharacterCreator
         if (_syncing) return;
         var worn = new List<(string Slot, string Key)> { ("top", Value(_top)), ("bottom", Value(_bottom)), ("shoes", Value(_shoes)) };
         foreach (var extra in ExtraSlots) if (_extra.TryGetValue(extra, out var option) && option.ItemCount > 0) worn.Add((extra, Value(option)));
-        var resolved = AvatarRules.Resolve(worn, slot).ToDictionary(x => x.Slot, x => x.Key);
+        var resolved = AvatarRules.Resolve(worn, slot, CustomResolver).ToDictionary(x => x.Slot, x => x.Key);
         _syncing = true;
         Select(_top, resolved["top"]); Select(_bottom, resolved["bottom"]);
         foreach (var extra in ExtraSlots) if (_extra.TryGetValue(extra, out var option)) Select(option, resolved.GetValueOrDefault(extra, "none"));

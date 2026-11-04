@@ -505,6 +505,82 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("avatar_models", "identity");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarWearable", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Layer")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("layer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ReportJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("report_json");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("Slot")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("slot");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("storage_key");
+
+                    b.Property<int>("Triangles")
+                        .HasColumnType("integer")
+                        .HasColumnName("triangles");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AvatarId", "ContentHash")
+                        .IsUnique();
+
+                    b.ToTable("avatar_wearables", "identity");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.BuildObject", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3291,6 +3367,15 @@ namespace LifeVerse.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.AvatarModel", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Avatar", null)
+                        .WithMany()
+                        .HasForeignKey("AvatarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarWearable", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.Avatar", null)
                         .WithMany()

@@ -82,7 +82,7 @@ public static class PlatformEndpoints
         var customModel = await AvatarModels.ActiveAsync(db, avatar, ct);
         var appearance = JsonSerializer.Serialize(new
         {
-            customModelId = customModel?.Id, customModelHash = customModel?.ContentHash, customModelScale = customModel?.ScaleToStandard ?? 1f, customModelBonesJson = customModel?.BoneMapJson ?? "{}",
+            customWearablesJson = await AvatarWearables.WornInfoAsync(db, avatar, ct), customModelId = customModel?.Id, customModelHash = customModel?.ContentHash, customModelScale = customModel?.ScaleToStandard ?? 1f, customModelBonesJson = customModel?.BoneMapJson ?? "{}",
             id = avatar.Id, displayName = avatar.DisplayName, baseModel = avatar.BaseModel,
             skinColor = avatar.Appearance?.SkinColor ?? "#C98F65", hairColor = avatar.Appearance?.HairColor ?? "#2B1B14",
             hairStyle = avatar.Appearance?.HairStyle ?? "short", eyeColor = avatar.Appearance?.EyeColor ?? "#4A3326",

@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Text.Json;
 using LifeVerse.Api.Data;
+using LifeVerse.Shared.Avatar;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Users;
@@ -127,9 +128,9 @@ public static class AvatarLooks
         var look = await db.AvatarLooks.SingleOrDefaultAsync(l => l.Id == id && l.AvatarId == avatar.Id, ct); if (look is null) return new LookResult(false, "not_found");
         if (Read(look.SnapshotJson) is not { } snapshot) return new LookResult(false, "look_invalid");
         var request = ToRequest(avatar, snapshot);
-        if (AvatarCatalog.Validate(request).Count > 0) return new LookResult(false, "look_invalid");
+        if (AvatarCatalog.Validate(request, await AvatarWearables.ResolverAsync(db, avatar.Id, ct)).Count > 0 || (request.EquippedItems.Any(i => AvatarRules.IsCustom(i.ItemKey)) && (await AvatarWearables.CheckOutfitAsync(db, avatar, request.EquippedItems, ct)).Count > 0)) return new LookResult(false, "look_invalid");
         UserEndpoints.ApplyAvatar(db, avatar, request, now);
-        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct)));
+        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct)));
     }
 
     public static async Task<LookResult> DuplicateAsync(LifeVerseDbContext db, Guid user, Guid id, DateTimeOffset now, CancellationToken ct)

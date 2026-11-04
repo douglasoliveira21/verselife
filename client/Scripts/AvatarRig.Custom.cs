@@ -35,6 +35,7 @@ public partial class AvatarRig
     private Quaternion[] _restGlobal = [], _globalNow = [];
     private bool[] _globalDone = [];
     private float _customScale = 1f;
+    private readonly Dictionary<int, Quaternion> _neutral = [];
 
     /// <summary>True while a custom body is on the avatar (the procedural body is hidden).</summary>
     public bool CustomBodyActive => _customBody is not null && IsInstanceValid(_customBody);
@@ -126,11 +127,37 @@ public partial class AvatarRig
         _customBody = holder; _customRoot = scene; _customSkeleton = skeleton; _retarget = [.. table];
         _restGlobal = new Quaternion[skeleton.GetBoneCount()]; _globalNow = new Quaternion[skeleton.GetBoneCount()]; _globalDone = new bool[skeleton.GetBoneCount()];
         for (var bone = 0; bone < _restGlobal.Length; bone++) _restGlobal[bone] = skeleton.GetBoneGlobalRest(bone).Basis.Orthonormalized().GetRotationQuaternion();
+        ComputeNeutralPose(skeleton, scene);
         CustomBodyStatus = "ready";
         RetargetCustom();
+        PlaceWearables(); // pieces and garments that were waiting for the body
     }
 
-    public override void _Process(double delta) => RetargetCustom();
+    /// <summary>
+    /// Models are usually modelled with the arms out (a T-pose) or half down (an A-pose), while the game's animations start from arms hanging down.
+    /// For every arm bone this works out the rotation that brings it (and the forearm below it) to hang straight down; it is applied under every animation.
+    /// </summary>
+    private void ComputeNeutralPose(Skeleton3D skeleton, Node model)
+    {
+        _neutral.Clear();
+        if (model is not Node3D root) return;
+        var skeletonInModel = (root.GlobalBasis.Inverse() * skeleton.GlobalBasis).Orthonormalized().GetRotationQuaternion();
+        var down = skeletonInModel.Inverse() * Vector3.Down;
+        int Find(string standard) { for (var i = 0; i < skeleton.GetBoneCount(); i++) if (BoneMapper.Map(skeleton.GetBoneName(i)) == standard) return i; return -1; }
+        foreach (var side in new[] { "l", "r" })
+        {
+            var upper = Find($"upper_arm_{side}"); var lower = Find($"lower_arm_{side}"); var hand = Find($"hand_{side}");
+            if (upper < 0 || lower < 0 || hand < 0) continue;
+            var upperDirection = skeleton.GetBoneGlobalRest(lower).Origin - skeleton.GetBoneGlobalRest(upper).Origin;
+            var lowerDirection = skeleton.GetBoneGlobalRest(hand).Origin - skeleton.GetBoneGlobalRest(lower).Origin;
+            if (upperDirection.LengthSquared() < 1e-10f || lowerDirection.LengthSquared() < 1e-10f) continue;
+            var upperTurn = new Quaternion(upperDirection.Normalized(), down.Normalized());
+            var lowerTurn = new Quaternion((upperTurn * lowerDirection).Normalized(), down.Normalized()) * upperTurn;
+            _neutral[upper] = upperTurn; _neutral[lower] = lowerTurn;
+        }
+    }
+
+    public override void _Process(double delta) { RetargetCustom(); FollowWearables(); }
 
     /// <summary>Copies the animated rotations of the procedural body onto the bones of the custom model, in the model's own space.</summary>
     public void RetargetCustom()
@@ -145,6 +172,7 @@ public partial class AvatarRig
             var inRig = (GlobalBasis.Inverse() * proxy.GlobalBasis).Orthonormalized().GetRotationQuaternion();
             var inModel = flip.Inverse() * inRig * flip;
             delta[bone] = skeletonInModel.Inverse() * inModel * skeletonInModel;
+            if (_neutral.TryGetValue(bone, out var neutral)) delta[bone] *= neutral; // first the arm is lowered from its modelled pose, then the animation moves it
         }
         Array.Clear(_globalDone);
         for (var bone = 0; bone < _restGlobal.Length; bone++) GlobalOf(skeleton, bone, delta);

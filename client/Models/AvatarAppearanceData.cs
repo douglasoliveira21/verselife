@@ -24,6 +24,20 @@ public sealed class AvatarAppearanceData
     [JsonPropertyName("customModelHash")] public string? CustomModelHash { get; set; }
     [JsonPropertyName("customModelScale")] public float CustomModelScale { get; set; } = 1f;
     [JsonPropertyName("customModelBonesJson")] public string CustomModelBonesJson { get; set; } = "{}";
+    /// The custom items worn (what to download, the slot, the kind, the bone and placement of a rigid piece), as the server describes them.
+    [JsonPropertyName("customWearablesJson")] public string CustomWearablesJson { get; set; } = "[]";
+
+    public IReadOnlyList<WornWearable> CustomWearables
+    {
+        get
+        {
+            try { return System.Text.Json.JsonSerializer.Deserialize<List<WornWearable>>(CustomWearablesJson, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) ?? []; }
+            catch (System.Text.Json.JsonException) { return []; }
+        }
+    }
+
+    /// What the outfit rules need to know about the custom items this avatar wears.
+    public LifeVerse.Shared.Avatar.WearableItem? CustomItem(string slot, string key) => CustomWearables.FirstOrDefault(w => w.Key == key && w.Slot == slot) is { } w ? new LifeVerse.Shared.Avatar.WearableItem(w.Slot, w.Key, w.Key, w.Layer, w.Covers is { Length: > 0 } ? w.Covers : null, w.HidesHair) : null;
 
     public string Item(string slot, string fallback) => EquippedItems.FirstOrDefault(x => x.Slot == slot)?.ItemKey ?? fallback;
     public string Tint(string slot, string fallback) => EquippedItems.FirstOrDefault(x => x.Slot == slot)?.TintColor ?? fallback;
@@ -33,9 +47,26 @@ public sealed class AvatarAppearanceData
         Id = Id, DisplayName = DisplayName, BaseModel = BaseModel, SkinColor = SkinColor,
         HairColor = HairColor, HairStyle = HairStyle, EyeColor = EyeColor, BeardStyle = BeardStyle,
         BodySettingsJson = BodySettingsJson, FaceSettingsJson = FaceSettingsJson, OutfitsJson = OutfitsJson, AttachmentsJson = AttachmentsJson,
-        CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY, CustomModelId = CustomModelId, CustomModelHash = CustomModelHash, CustomModelScale = CustomModelScale, CustomModelBonesJson = CustomModelBonesJson,
+        CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY, CustomModelId = CustomModelId, CustomModelHash = CustomModelHash, CustomModelScale = CustomModelScale, CustomModelBonesJson = CustomModelBonesJson, CustomWearablesJson = CustomWearablesJson,
         EquippedItems = EquippedItems.Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.ItemKey, TintColor = x.TintColor }).ToList()
     };
+}
+
+/// One custom item worn by an avatar, as the server sends it.
+public sealed class WornWearable
+{
+    [JsonPropertyName("id")] public Guid Id { get; set; }
+    [JsonPropertyName("key")] public string Key { get; set; } = string.Empty;
+    [JsonPropertyName("hash")] public string Hash { get; set; } = string.Empty;
+    [JsonPropertyName("slot")] public string Slot { get; set; } = string.Empty;
+    [JsonPropertyName("layer")] public string Layer { get; set; } = "base";
+    [JsonPropertyName("kind")] public string Kind { get; set; } = "attachment";
+    [JsonPropertyName("hidesHair")] public bool HidesHair { get; set; }
+    [JsonPropertyName("covers")] public string[] Covers { get; set; } = [];
+    [JsonPropertyName("attachBone")] public string AttachBone { get; set; } = string.Empty;
+    [JsonPropertyName("offset")] public float[] Offset { get; set; } = [0, 0, 0];
+    [JsonPropertyName("rotation")] public float[] Rotation { get; set; } = [0, 0, 0];
+    [JsonPropertyName("scale")] public float Scale { get; set; } = 1f;
 }
 
 public sealed class EquippedItemData

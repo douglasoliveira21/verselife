@@ -26,7 +26,7 @@ public partial class AvatarRig
     /// <summary>Draws what is worn on top of the body. Every piece is a child of the part it follows, so it moves with the animation.</summary>
     private static void AddWearables(Node3D hips, Node3D torso, Node3D head, AvatarAppearanceData data, IReadOnlyDictionary<string, float> face)
     {
-        string Item(string slot) => data.Item(slot, "none");
+        string Item(string slot) => AvatarRules.IsCustom(data.Item(slot, "none")) ? "none" : data.Item(slot, "none"); // custom items are drawn from their own file
         string TintOf(string slot, string fallback) => data.Tint(slot, fallback);
 
         // outer layer over the top: a coat reaches the knees and covers the arms, a vest only the chest
