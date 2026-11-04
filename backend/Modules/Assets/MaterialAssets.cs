@@ -96,7 +96,7 @@ public static class MaterialAssets
             var mime = await db.AssetVersions.AsNoTracking().Where(v => v.AssetId == assetId && v.Version == asset.CurrentVersion).Select(v => v.MimeType).FirstOrDefaultAsync(ct);
             if (!IsImage(mime)) return "A texture must be a PNG, JPEG or WebP image.";
             if (existing.Contains(assetId)) continue;
-            var hasIt = asset.OwnerUserId == actor || await db.InventoryItems.AsNoTracking().AnyAsync(x => x.OwnerUserId == actor && x.AssetId == assetId && x.DeletedAt == null, ct);
+            var hasIt = asset.OwnerUserId == actor || await db.InventoryItems.AsNoTracking().AnyAsync(x => x.OwnerUserId == actor && x.AssetId == assetId && x.DeletedAt == null && x.Status == "active", ct);
             if (!hasIt) return "You do not have that texture in your inventory.";
         }
         return null;

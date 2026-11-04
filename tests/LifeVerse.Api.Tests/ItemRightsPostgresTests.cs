@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using LifeVerse.Api.Data;
 using LifeVerse.Api.Modules.Inventory;
 using LifeVerse.Shared.Items;
@@ -245,6 +247,31 @@ public sealed class ItemRightsPostgresTests
             Assert.Equal(1, results.Count(s => s == 200)); Assert.Equal(3, await check.BuildObjects.CountAsync(o => o.DeletedAt == null)); // one placement: three objects, not sixty
             var used = await check.InventoryItems.AsNoTracking().SingleAsync(i => i.Id == package); Assert.Equal(("consumed", true), (used.Status, used.DeletedAt is not null));
             Assert.All(await check.BuildObjects.AsNoTracking().ToListAsync(), o => Assert.Equal((6, 4), (o.OwnerRights, o.NextOwnerRights)));
+        }
+        finally { await DropAsync(name); }
+    }
+
+    [PostgresFact]
+    public async Task TheIslandAssetFilesAreFoundOnPostgresByTheirIdInModelsAndMaterials()
+    {
+        var (name, cs) = await CreateAsync();
+        try
+        {
+            var options = new DbContextOptionsBuilder<LifeVerseDbContext>().UseNpgsql(cs).Options; var now = DateTimeOffset.UtcNow; var store = new MemoryStore();
+            var storage = new LifeVerse.Api.Modules.Assets.AssetStorageService(store, Microsoft.Extensions.Logging.Abstractions.NullLogger<LifeVerse.Api.Modules.Assets.AssetStorageService>.Instance);
+            await using var db = new LifeVerseDbContext(options);
+            var owner = new User { Id = Guid.NewGuid(), Username = "dono", NormalizedUsername = "DONO", Email = "d@t.local", NormalizedEmail = "D@T.LOCAL", PasswordHash = "x", CreatedAt = now, UpdatedAt = now }; db.Users.Add(owner);
+            var island = new Island { Id = Guid.NewGuid(), OwnerUserId = owner.Id, Name = "Ilha", Slug = "ilha", IsPublic = true, Size = 400 }; db.Islands.Add(island);
+            Asset MakeAsset(string mime, byte[] bytes) { var a = new Asset { Id = Guid.NewGuid(), OwnerUserId = owner.Id, CreatorUserId = owner.Id, Name = "A", Category = "x", CurrentVersion = 1, CreatedAt = now, UpdatedAt = now }; db.Assets.Add(a); db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = a.Id, Version = 1, ContentHash = a.Id.ToString("N"), StorageKey = "k" + a.Id, MimeType = mime, ByteSize = bytes.Length }); store.Files["k" + a.Id] = bytes; return a; }
+            var model = MakeAsset("model/gltf-binary", [1, 2, 3]); var image = MakeAsset("image/png", [4, 5, 6]); var unused = MakeAsset("model/gltf-binary", [7]);
+            await db.SaveChangesAsync();
+            db.BuildObjects.Add(new BuildObject { Id = Guid.NewGuid(), IslandId = island.Id, CreatorUserId = owner.Id, OwnerUserId = owner.Id, Name = "Peça", PrimitiveType = "mesh", GeometryJson = $"{{\"assetId\":\"{model.Id}\"}}", CreatedAt = now, UpdatedAt = now });
+            db.BuildObjects.Add(new BuildObject { Id = Guid.NewGuid(), IslandId = island.Id, CreatorUserId = owner.Id, OwnerUserId = owner.Id, Name = "Caixa", PrimitiveType = "cube", MaterialJson = $"{{\"map\":\"{image.Id}\"}}", CreatedAt = now, UpdatedAt = now });
+            await db.SaveChangesAsync();
+            var visitor = new DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", Guid.NewGuid().ToString())], "test")) };
+            Assert.False((await LifeVerse.Api.Modules.Assets.MeshAssets.IslandAssetAsync(island.Id, model.Id, visitor, db, storage, default)) is IStatusCodeHttpResult { StatusCode: 404 }); // a model the island uses
+            Assert.False((await LifeVerse.Api.Modules.Assets.MeshAssets.IslandAssetAsync(island.Id, image.Id, visitor, db, storage, default)) is IStatusCodeHttpResult { StatusCode: 404 }); // an image of a material
+            Assert.True((await LifeVerse.Api.Modules.Assets.MeshAssets.IslandAssetAsync(island.Id, unused.Id, visitor, db, storage, default)) is IStatusCodeHttpResult { StatusCode: 404 }); // not used here: not served
         }
         finally { await DropAsync(name); }
     }

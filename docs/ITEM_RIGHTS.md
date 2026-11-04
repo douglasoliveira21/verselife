@@ -118,5 +118,28 @@ O jogo só **mostra e pede**; todas as regras continuam sendo do servidor, e cad
 
 **Ainda aberto:** compartilhar um item com um grupo (a escolha do grupo ainda não tem tela; o servidor já aceita), comprar de presente pela tela do mercado (o servidor já aceita), editar os direitos de um objeto do mundo (o servidor já aceita), e escolher os direitos de um produto ao publicar.
 
-## Ainda não (próximas fases)
-6: testes finais de exploração, concorrência e duplicação, e fechamento da documentação.
+## Fase 6 — exploração, concorrência e duplicação
+
+Esta fase foi escrita para **tentar quebrar** as cinco anteriores. O que encontrou, e foi corrigido:
+
+1. **Item em oferta ou à venda podia entrar num objeto.** A checagem de "você tem esse modelo/script?" só olhava se o item existia; um item reservado (`offered`/`listed`) contava. Aceita a oferta, o objeto ficava com a peça e o novo dono também. Agora só item `active` vale (`MeshAssets`, `MaterialAssets`, `ContentAssets`).
+2. **Corrida entre a checagem e a mudança.** Oferecer/listar/copiar conferiam os direitos numa leitura e alteravam o item numa segunda leitura; entre as duas, o item podia ser **usado ao colocar uma construção** e a oferta o "ressuscitava", duplicando a construção (o teste de caos pegou em cerca de 1 rodada em 4). Agora a segunda leitura é comparada com a versão da primeira (`item_busy` se mudou) e copiar toca no original para que copiar e qualquer mudança dele se revezem.
+3. **Erro 500 em compras simultâneas.** Duas compras criando a mesma conta contábil, ou o PostgreSQL desfazendo uma de duas transações que disputam as mesmas linhas, escapavam como exceção. Agora `RaceFailures.IsRace` reconhece conflito de versão, linha duplicada, deadlock e falha de serialização, olhando a cadeia inteira de exceções, e a resposta é `409 stale` ("tente de novo"), sem cobrar nada.
+4. **Preço sem teto.** O preço × 5% podia estourar. Teto de 1 trilhão de moedas (`MaxPriceCoins`).
+5. **Arquivos de modelo/imagem da ilha** (`MeshAssets.IslandAssetAsync`) procuravam o id com `lower()` em colunas `jsonb`, que o PostgreSQL não aceita: o download falhava. Agora usa o texto da coluna no PostgreSQL (com teste no banco real).
+
+**Testes de exploração** (`ItemRightsExploitTests`, e novos em `ObjectRightsTests`): direitos nunca crescem numa cadeia de donos (todas as formas de pedir mais, inclusive `int.MaxValue` e negativos); o criador que vendeu o item não recupera direitos; uma revenda não promete ao comprador mais do que o item repassa; só o criador vende cópias novas de um ativo; ofertas respondidas pela pessoa errada, reutilizadas, aceitas depois de canceladas ou canceladas depois de aceitas; duas contas ligadas não duplicam um item; ninguém lê, muda, oferece, copia, compartilha ou lista o item de outra pessoa; item apagado não se oferece; cada recusa deixa **uma** linha na auditoria e cada mudança de dono deixa histórico e auditoria no mesmo instante; item usado ao colocar não volta da lixeira; item reservado não responde aos endpoints antigos (renomear, apagar, vestir, colocar); preço absurdo; servir arquivo da ilha só a quem pode entrar e só do que ela usa.
+
+**Testes de caos no PostgreSQL de verdade** (`ItemRightsChaosTests`): 16 pessoas fazendo 150 operações cada, ao acaso e ao mesmo tempo — oferecer, aceitar, recusar, cancelar, pôr à venda, comprar, tirar da venda, tentar copiar, baixar direitos. No fim: nenhum pedido terminou em erro inesperado; cada peça existe **uma** vez; o estado do item bate com as ofertas e vendas abertas; cada troca de dono tem sua linha de histórico e o último dono do histórico é o dono; nenhuma carteira negativa e **nenhuma moeda criada ou destruída** (o que saiu das carteiras são as taxas). Um segundo teste faz 10 pessoas colocarem, devolverem (inteiro ou em partes) e passarem adiante uma construção de 3 objetos sem direito de copiar: objetos no mundo + objetos nas construções do inventário somam sempre 3.
+
+## Resumo para quem opera
+- **Auditoria:** `inventory.item_audit` (tudo que foi feito e tudo que foi recusado, com quem, de quem para quem e o motivo) e `inventory.item_owners` (quem teve cada item). Não têm chave estrangeira para o item, então sobrevivem à remoção dele ou da conta. Exemplos: recusas de um usuário — `select * from inventory.item_audit where actor_user_id = '…' and outcome = 'denied' order by at desc`; caminho de um item — `select * from inventory.item_owners where item_id = '…' order by at`.
+- **Ofertas** vencem em 7 dias (o `ItemOfferWorker` roda a cada 5 minutos e devolve os itens); no máximo 20 ofertas pendentes enviadas e 50 recebidas por pessoa.
+- **Estados do item** (`inventory.items.status`): `active`, `offered` (esperando resposta), `listed` (à venda como revenda) e `consumed` (usado ao colocar uma construção; volta como item novo quando os objetos são devolvidos).
+- **Migrações do recurso:** `Phase52ItemRights`, `Phase53ItemOffers`, `Phase54MarketplaceRights`, `Phase55ObjectRights`.
+
+## Limites conhecidos
+- Objetos e construções feitos **só de formas simples** (cubos, esferas…) não têm nada a proteger: qualquer um que veja o objeto vê suas formas e pode refazê-las. Os direitos protegem o que é referenciado por id (modelos, scripts, conteúdos) e o ciclo de vida do item/construção.
+- Escolher o grupo de um item, comprar de presente pela tela do mercado, editar os direitos de um objeto do mundo e escolher os direitos de um produto ao publicar existem no servidor, mas ainda não têm tela.
+- Texturas (imagens de material) podem aparecer em vários objetos; os objetos herdam os direitos delas, mas elas não são "gastas".
+- Itens e objetos anteriores a este recurso têm todos os direitos.

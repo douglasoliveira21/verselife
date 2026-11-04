@@ -194,7 +194,7 @@ public static class BuildOperations
         item.Revision++; item.UpdatedAt = now;
         ItemRightsService.Audit(db, actor, "rez", "ok", item.Id, item.AssetId, actor, null, $"{created.Count} objects on island {island.Id}{(copyable ? string.Empty : ", item used up")}", now);
         try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateConcurrencyException) { return Refuse(409, "item_busy"); } // the same item was placed, offered or sold at the same moment
+        catch (Exception exception) when (RaceFailures.IsRace(exception)) { return Refuse(409, "item_busy"); } // the same item was placed, offered or sold at the same moment
         return Results.Ok(new { operation = "rez", itemId = item.Id, consumed = !copyable, objects = created.Select(BuildEndpoints.ToResponse).ToArray() });
     }
 

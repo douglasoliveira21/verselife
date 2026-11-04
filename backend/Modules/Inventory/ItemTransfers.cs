@@ -26,7 +26,9 @@ public static class ItemTransfers
     public static async Task<OfferResult> CopyAsync(LifeVerseDbContext db, Guid actor, Guid itemId, DateTimeOffset now, CancellationToken ct)
     {
         var access = await ItemRightsService.RequireAsync(db, actor, itemId, Right.Copy, "copy", now, ct); if (!access.Ok) return new OfferResult(false, access.Error);
-        var source = access.Item!;
+        var source = await db.InventoryItems.FirstOrDefaultAsync(i => i.Id == itemId, ct);
+        if (source is null || source.Revision != access.Item!.Revision || source.Status != ItemRightsService.Active || source.DeletedAt is not null) return new OfferResult(false, "item_busy"); // the rights were checked on an older reading of the item
+        source.Revision++; /* touching the original makes a copy and any change of it (rights, offer, placing) take turns */
         if (await db.InventoryItems.CountAsync(i => i.OwnerUserId == actor && i.DeletedAt == null, ct) >= MaxItemsPerPerson) return new OfferResult(false, "inventory_full");
         var rights = source.OwnerUserId == actor ? new ItemPermissions(source.OwnerRights, ItemRights.None, source.NextOwnerRights).Normalized() : new ItemPermissions(source.OwnerRights, source.GroupRights, source.NextOwnerRights).ForNextOwner();
         var copy = NewItem(source, actor, rights, "Cópia de " + source.DisplayName, now); copy.CopiedFromItemId = source.Id;
@@ -62,12 +64,13 @@ public static class ItemTransfers
         if (await db.ItemOffers.CountAsync(o => o.ToUserId == to && o.Status == "pending", ct) >= MaxIncoming) return new OfferResult(false, "recipient_full");
 
         var item = await db.InventoryItems.FirstAsync(i => i.Id == itemId, ct);
+        if (item.Revision != access.Item!.Revision || item.Status != ItemRightsService.Active || item.DeletedAt is not null || item.OwnerUserId != from) return new OfferResult(false, "item_busy"); // it changed between the check and now (placed, sold, offered): the check no longer holds
         if (!keepCopy) { item.Status = ItemRightsService.Offered; item.Revision++; item.UpdatedAt = now; }
         var text = new string([.. (message ?? string.Empty).Where(c => !char.IsControl(c) || c == ' ')]).Trim(); if (text.Length > MessageLength) text = text[..MessageLength];
         var offer = new ItemOffer { Id = Guid.NewGuid(), ItemId = item.Id, AssetId = item.AssetId, FromUserId = from, ToUserId = to, Kind = kind, Message = text, KeepCopy = keepCopy, Status = "pending", IdempotencyKey = idempotencyKey, CreatedAt = now, ExpiresAt = now + OfferLife };
         db.ItemOffers.Add(offer); ItemRightsService.Audit(db, from, "transfer_offer", "ok", item.Id, item.AssetId, from, to, $"{kind}{(keepCopy ? " keeping a copy" : string.Empty)}", now);
         try { await db.SaveChangesAsync(ct); }
-        catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException)
+        catch (Exception exception) when (RaceFailures.IsRace(exception))
         {
             db.ChangeTracker.Clear(); // another request got there first: the same key gives its offer, anything else means the item is taken
             return await db.ItemOffers.AsNoTracking().FirstOrDefaultAsync(o => o.FromUserId == from && o.IdempotencyKey == idempotencyKey, ct) is { } won ? new OfferResult(true, null, won) : new OfferResult(false, "item_busy");
@@ -112,7 +115,7 @@ public static class ItemTransfers
         ItemRightsService.RecordOwner(db, result, actor, offer.FromUserId, reason, now);
         ItemRightsService.Audit(db, actor, offer.Kind == "gift" ? "gift" : "transfer_accept", "ok", result.Id, result.AssetId, offer.FromUserId, actor, offer.KeepCopy ? $"copy of {item.Id}" : "moved", now);
         try { await db.SaveChangesAsync(ct); return new OfferResult(true, null, offer, result); }
-        catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException) { db.ChangeTracker.Clear(); return new OfferResult(false, "stale"); } // another answer won; nothing here was applied
+        catch (Exception exception) when (RaceFailures.IsRace(exception)) { db.ChangeTracker.Clear(); return new OfferResult(false, "stale"); } // another answer won; nothing here was applied
     }
 
     /// <summary>The receiver says no.</summary>
@@ -136,7 +139,7 @@ public static class ItemTransfers
         if (!offer.KeepCopy && item is { DeletedAt: null } && item.OwnerUserId == offer.FromUserId && item.Status == ItemRightsService.Offered) { item.Status = ItemRightsService.Active; item.Revision++; item.UpdatedAt = now; }
         ItemRightsService.Audit(db, actor ?? to, action, ok ? "ok" : "denied", offer.ItemId, offer.AssetId, from, to, detail, now);
         try { await db.SaveChangesAsync(ct); return new OfferResult(ok, error, offer); }
-        catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException) { db.ChangeTracker.Clear(); return new OfferResult(false, "stale"); }
+        catch (Exception exception) when (RaceFailures.IsRace(exception)) { db.ChangeTracker.Clear(); return new OfferResult(false, "stale"); }
     }
 
     /// <summary>Closes the offers nobody answered in time and gives their items back. Returns how many were closed.</summary>

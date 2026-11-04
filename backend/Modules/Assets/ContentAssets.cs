@@ -64,7 +64,7 @@ public static class ContentAssets
             var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == assetId && x.DeletedAt == null, ct);
             if (asset is null) return "An item in the contents does not exist.";
             if (existing.Contains(assetId)) continue;
-            var hasIt = asset.OwnerUserId == actor || await db.InventoryItems.AsNoTracking().AnyAsync(x => x.OwnerUserId == actor && x.AssetId == assetId && x.DeletedAt == null, ct);
+            var hasIt = asset.OwnerUserId == actor || await db.InventoryItems.AsNoTracking().AnyAsync(x => x.OwnerUserId == actor && x.AssetId == assetId && x.DeletedAt == null && x.Status == "active", ct);
             if (!hasIt) return "You do not have that item in your inventory.";
         }
         return null;

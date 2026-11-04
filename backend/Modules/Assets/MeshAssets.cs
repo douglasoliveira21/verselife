@@ -35,8 +35,26 @@ public static class MeshAssets
         var mime = await db.AssetVersions.AsNoTracking().Where(v => v.AssetId == assetId && v.Version == asset.CurrentVersion).Select(v => v.MimeType).FirstOrDefaultAsync(ct);
         if (mime is null || !mime.StartsWith("model/", StringComparison.Ordinal)) return "The asset is not a 3D model.";
         if (existingAssetId == assetId) return null; // an edit that keeps the same model is always fine
-        var hasIt = asset.OwnerUserId == actor || await db.InventoryItems.AsNoTracking().AnyAsync(x => x.OwnerUserId == actor && x.AssetId == assetId && x.DeletedAt == null, ct);
+        var hasIt = asset.OwnerUserId == actor || await db.InventoryItems.AsNoTracking().AnyAsync(x => x.OwnerUserId == actor && x.AssetId == assetId && x.DeletedAt == null && x.Status == "active", ct);
         return hasIt ? null : "You do not have that 3D model in your inventory.";
+    }
+
+    /// <summary>
+    /// Whether a live object of the island names the asset in its geometry (a model) or its material (an image). The two columns are JSON, which PostgreSQL
+    /// cannot lower-case as text, so there the search is done on their text form; the in-memory database used by the tests compares the strings.
+    /// </summary>
+    private static async Task<bool> UsedAsync(LifeVerseDbContext db, Guid islandId, string needle, bool geometry, CancellationToken ct)
+    {
+        if (db.Database.IsNpgsql())
+        {
+            var pattern = "%" + needle + "%";
+            return geometry
+                ? await db.Database.SqlQuery<Guid>($"SELECT id AS \"Value\" FROM world.objects WHERE island_id = {islandId} AND deleted_at IS NULL AND primitive_type = 'mesh' AND geometry_json::text ILIKE {pattern} LIMIT 1").AnyAsync(ct)
+                : await db.Database.SqlQuery<Guid>($"SELECT id AS \"Value\" FROM world.objects WHERE island_id = {islandId} AND deleted_at IS NULL AND material_json::text ILIKE {pattern} LIMIT 1").AnyAsync(ct);
+        }
+        return geometry
+            ? await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.PrimitiveType == PrimitiveType && o.GeometryJson.ToLower().Contains(needle), ct)
+            : await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.MaterialJson.ToLower().Contains(needle), ct);
     }
 
     public static IEndpointRouteBuilder MapMeshAssetEndpoints(this IEndpointRouteBuilder endpoints)
@@ -46,7 +64,7 @@ public static class MeshAssets
     }
 
     /// <summary>Anyone who may enter an island can fetch the models its meshes use and the images its materials use, so they can see them.</summary>
-    private static async Task<IResult> IslandAssetAsync(Guid islandId, Guid assetId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
+    internal static async Task<IResult> IslandAssetAsync(Guid islandId, Guid assetId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
     {
         if (!Guid.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var user)) return Results.Unauthorized();
         var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(x => x.Id == islandId && x.DeletedAt == null, ct);
@@ -54,8 +72,8 @@ public static class MeshAssets
         var canEnter = island.IsPublic || island.OwnerUserId == user || await db.IslandPermissions.AnyAsync(x => x.IslandId == islandId && x.UserId == user && x.RevokedAt == null && (x.Permission == "enter" || x.Permission == "admin"), ct);
         if (!canEnter) return Results.Forbid();
         var needle = assetId.ToString().ToLowerInvariant();
-        var usedAsMesh = await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.PrimitiveType == PrimitiveType && o.GeometryJson.ToLower().Contains(needle), ct);
-        var usedAsTexture = !usedAsMesh && await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.MaterialJson.ToLower().Contains(needle), ct);
+        var usedAsMesh = await UsedAsync(db, islandId, needle, geometry: true, ct);
+        var usedAsTexture = !usedAsMesh && await UsedAsync(db, islandId, needle, geometry: false, ct);
         if (!usedAsMesh && !usedAsTexture) return Results.NotFound();
         var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == assetId && x.DeletedAt == null, ct);
         if (asset is null) return Results.NotFound();

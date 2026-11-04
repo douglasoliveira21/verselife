@@ -15,6 +15,8 @@ public sealed record StoreRequest(Guid ProductId, Guid? ObjectId, string Display
 public static class EconomyEndpoints
 {
     private const long FeeBps = 500;
+    /// <summary>The most a product can cost. The fee is computed as price x 5 %: far below this, nothing can overflow.</summary>
+    public const long MaxPriceCoins = 1_000_000_000_000;
     public static IEndpointRouteBuilder MapEconomyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var economy = endpoints.MapGroup("/api/v1/economy").WithTags("Economy").RequireAuthorization();
@@ -46,7 +48,7 @@ public static class EconomyEndpoints
     internal static async Task<IResult> PublishAsync(PublishProductRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
         if (!User(context, out var me)) return Results.Unauthorized();
-        if (request.PriceCoins < 0 || request.Name.Trim().Length is < 1 or > 160) return Results.BadRequest();
+        if (request.PriceCoins is < 0 or > MaxPriceCoins || request.Name.Trim().Length is < 1 or > 160) return Results.BadRequest();
         if (request.ItemId is null && !await db.Assets.AnyAsync(x => x.Id == request.AssetId && x.OwnerUserId == me && x.DeletedAt == null, ct)) return Results.BadRequest();
         var now = clock.GetUtcNow(); var listing = await ProductRights.PlanAsync(db, me, request, null, now, ct); if (!listing.Ok) return RightsError(listing.Error);
         var plan = listing.Plan!;
@@ -57,7 +59,7 @@ public static class EconomyEndpoints
         };
         db.MarketplaceProducts.Add(item);
         Inventory.ItemRightsService.Audit(db, me, "product_publish", "ok", plan.Item?.Id, item.AssetId, me, null, $"product {item.Id} price {item.PriceCoins} buyer {LifeVerse.Shared.Items.ItemRights.Letters(item.BuyerRights)} next {LifeVerse.Shared.Items.ItemRights.Letters(item.BuyerNextRights)}{(plan.Item is null ? string.Empty : " resale")}", now);
-        try { await db.SaveChangesAsync(ct); } catch (DbUpdateConcurrencyException) { return RightsError("item_busy"); }
+        try { await db.SaveChangesAsync(ct); } catch (Exception exception) when (Inventory.RaceFailures.IsRace(exception)) { return RightsError("item_busy"); }
         return Results.Created($"/api/v1/economy/products/{item.Id}", item);
     }
 
@@ -65,7 +67,7 @@ public static class EconomyEndpoints
     {
         if (!User(context, out var me)) return Results.Unauthorized();
         var item = await db.MarketplaceProducts.SingleOrDefaultAsync(x => x.Id == id && x.SellerUserId == me && x.GroupId == null && x.Status == "active", ct); if (item is null) return Results.NotFound();
-        if (request.PriceCoins < 0 || request.Name.Trim().Length is < 1 or > 160) return Results.BadRequest();
+        if (request.PriceCoins is < 0 or > MaxPriceCoins || request.Name.Trim().Length is < 1 or > 160) return Results.BadRequest();
         var now = clock.GetUtcNow(); var listing = await ProductRights.PlanAsync(db, me, request, item, now, ct); if (!listing.Ok) return RightsError(listing.Error);
         var before = $"{LifeVerse.Shared.Items.ItemRights.Letters(item.BuyerRights)}/{LifeVerse.Shared.Items.ItemRights.Letters(item.BuyerNextRights)}"; var plan = listing.Plan!;
         item.Name = request.Name.Trim(); item.Description = request.Description[..Math.Min(4000, request.Description.Length)]; item.Category = request.Category.Trim()[..Math.Min(48, request.Category.Trim().Length)];
@@ -82,7 +84,7 @@ public static class EconomyEndpoints
         var item = await db.MarketplaceProducts.SingleOrDefaultAsync(x => x.Id == id && x.SellerUserId == me, ct); if (item is null) return Results.NotFound();
         if (item.Status == "active") await ProductRights.ReleaseAsync(db, item, clock.GetUtcNow(), ct); // a resale gives its item back
         if (item.Status != "sold") item.Status = "inactive";
-        try { await db.SaveChangesAsync(ct); } catch (DbUpdateConcurrencyException) { return RightsError("stale"); }
+        try { await db.SaveChangesAsync(ct); } catch (Exception exception) when (Inventory.RaceFailures.IsRace(exception)) { return RightsError("stale"); }
         return Results.NoContent();
     }
 
@@ -122,7 +124,7 @@ public static class EconomyEndpoints
         Inventory.ItemRightsService.Audit(db, me, "purchase", "ok", item.Id, item.AssetId, product.SellerUserId, recipient, $"product {product.Id} {product.PriceCoins} coins; holds {LifeVerse.Shared.Items.ItemRights.Letters(item.OwnerRights)}, passes on {LifeVerse.Shared.Items.ItemRights.Letters(item.NextOwnerRights)}{(product.SourceItemId is null ? string.Empty : " (resale)")}", now);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Results.Ok(order);
         }
-        catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException) { db.ChangeTracker.Clear(); return Results.Conflict(new { error = "stale" }); } // somebody else got there first (the last unit, the same coins, the same account): nothing was charged and nothing was delivered
+        catch (Exception exception) when (Inventory.RaceFailures.IsRace(exception)) { db.ChangeTracker.Clear(); return Results.Conflict(new { error = "stale" }); } // somebody else got there first (the last unit, the same coins, the same account): nothing was charged and nothing was delivered
     }
 
     private static async Task<Wallet> EnsureWallet(LifeVerseDbContext db, Guid userId, CancellationToken ct) { var wallet = await db.Wallets.SingleOrDefaultAsync(x => x.UserId == userId, ct); if (wallet is not null) return wallet; wallet = new Wallet { Id = Guid.NewGuid(), UserId = userId, AvailableCoins = 0, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow }; db.Wallets.Add(wallet); await db.SaveChangesAsync(ct); return wallet; }

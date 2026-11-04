@@ -128,7 +128,7 @@ public static class ItemRightsService
     private static async Task<(bool Ok, string? Error)> Save(LifeVerseDbContext db, CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); return (true, null); }
-        catch (DbUpdateConcurrencyException) { db.ChangeTracker.Clear(); return (false, "stale"); } // somebody else changed the item at the same moment: nothing here was applied
+        catch (Exception exception) when (RaceFailures.IsRace(exception)) { db.ChangeTracker.Clear(); return (false, "stale"); } // somebody else changed the item at the same moment: nothing here was applied
     }
 
     // ---- history and audit ----------------------------------------------------------------------------------------------------------------
@@ -156,5 +156,21 @@ public static class ItemRightsService
         var creator = lines[0].UserId;
         string? Name(Guid? id) => id is not { } who ? null : who == viewer || isOwner || who == creator || who == item.OwnerUserId ? names.GetValueOrDefault(who) ?? "conta removida" : "proprietário anterior";
         return [.. lines.Select(l => new OwnerLine(l.At, l.Reason, Name(l.UserId), Name(l.FromUserId)))];
+    }
+}
+
+/// <summary>What counts as "somebody else got there first" when saving a change that races with others.</summary>
+public static class RaceFailures
+{
+    /// <summary>
+    /// A change lost a race: another request changed the same row (a version check failed), the same unique line was written twice, or PostgreSQL ended one of two
+    /// requests that wanted the same rows in opposite orders (deadlock, or a serialization failure). Nothing of the losing request was applied; it can be asked again.
+    /// </summary>
+    public static bool IsRace(Exception exception)
+    {
+        // the database layer may wrap the real cause ("an exception has been raised that is likely due to a transient failure"): look through the whole chain
+        for (var e = exception; e is not null; e = e.InnerException)
+            if (e is Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException or Microsoft.EntityFrameworkCore.DbUpdateException or Npgsql.PostgresException { SqlState: "40P01" or "40001" or "23505" } or Npgsql.NpgsqlException { IsTransient: true }) return true;
+        return false;
     }
 }

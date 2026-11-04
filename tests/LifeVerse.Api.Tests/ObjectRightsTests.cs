@@ -278,4 +278,74 @@ public sealed class ObjectRightsTests : IDisposable
     {
         var (asset, _) = Model(ItemRights.Modify | ItemRights.Transfer, ItemRights.All); var id = await Create(_builder, MeshOf(asset)); Assert.Contains("\"copy\":true", (await Obj(id)).PermissionsJson); // that text is about what others may do; the rights live in their own columns
     }
+
+    // ---- exploitation attempts ------------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task AnItemOnOfferCannotBeBuiltIntoAnObjectBeforeTheAnswer()
+    {
+        var (asset, item) = Model(ItemRights.Modify | ItemRights.Transfer, ItemRights.All); var other = Person();
+        Assert.True((await ItemTransfers.OfferAsync(_db, _builder, item.Id, other, "gift", null, false, "chave-exploit-1", _now, default)).Ok);
+        var (status, body) = await Send(_builder, "create", MeshOf(asset)); Assert.Equal((400, "invalid_object"), (status, Code(body))); // it would stay behind when the item moves
+        Assert.Equal(0, await _db.BuildObjects.CountAsync());
+        var (script, scriptItem) = Script(ItemRights.Modify | ItemRights.Transfer, ItemRights.All); await ItemTransfers.OfferAsync(_db, _builder, scriptItem.Id, other, "gift", null, false, "chave-exploit-2", _now, default);
+        var id = await Create(_builder, Cube()); var (s2, b2) = await Send(_builder, "update", Cube(content: Contents(script)), id, await Rev(id)); Assert.Equal((400, "invalid_object"), (s2, Code(b2)));
+    }
+
+    [Fact]
+    public async Task AnItemForSaleCannotBeBuiltIntoAnObjectEither()
+    {
+        var (asset, item) = Model(ItemRights.Modify | ItemRights.Transfer | ItemRights.Resell, ItemRights.All); Assert.Equal(201, await PublishAs(item, 100));
+        var (status, body) = await Send(_builder, "create", MeshOf(asset)); Assert.Equal((400, "invalid_object"), (status, Code(body)));
+    }
+
+    private Guid Person() { var id = Guid.NewGuid(); _db.Users.Add(new User { Id = id, Username = "p" + id.ToString("N")[..8], NormalizedUsername = "P" + id.ToString("N")[..8].ToUpperInvariant(), Email = id.ToString("N")[..8] + "@t.local", NormalizedEmail = id.ToString("N")[..8].ToUpperInvariant() + "@T.LOCAL", PasswordHash = "x", CreatedAt = _now, UpdatedAt = _now }); _db.SaveChanges(); return id; }
+
+    private async Task<int> PublishAs(InventoryItem item, long price)
+    {
+        var context = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", _builder.ToString())], "test")) };
+        var result = await LifeVerse.Api.Modules.Economy.EconomyEndpoints.PublishAsync(new LifeVerse.Api.Modules.Economy.PublishProductRequest(item.AssetId, "Revenda", "", "x", price, null, null, null, null, item.Id, null), context, _db, TimeProvider.System, default);
+        return result is IStatusCodeHttpResult { StatusCode: { } code } ? code : 0;
+    }
+
+    [Fact]
+    public async Task APriceThatCouldOverflowTheFeeIsRefused()
+    {
+        var item = Model(ItemRights.Modify | ItemRights.Transfer | ItemRights.Resell, ItemRights.All).Item;
+        Assert.Equal(400, await PublishAs(item, long.MaxValue)); Assert.Equal(400, await PublishAs(item, LifeVerse.Api.Modules.Economy.EconomyEndpoints.MaxPriceCoins + 1)); Assert.Equal(400, await PublishAs(item, -1));
+        Assert.Equal("active", (await _db.InventoryItems.AsNoTracking().SingleAsync(i => i.Id == item.Id)).Status); Assert.Equal(201, await PublishAs(item, LifeVerse.Api.Modules.Economy.EconomyEndpoints.MaxPriceCoins));
+    }
+
+    [Fact]
+    public async Task AnItemUsedUpByPlacingItCannotBeBroughtBackFromTheBinAndLockedItemsRefuseTheOldEndpoints()
+    {
+        var package = await SavePackage(_builder, ItemRights.Modify | ItemRights.Transfer, ItemRights.Transfer, Cube(0, 0)); Assert.Equal(200, (await Send(_builder, "rez", package: package.Id)).Status);
+        var restore = await AssetEndpoints.RestoreItemAsync(package.Id, As(_builder), _db, default); Assert.Equal(404, (restore as IStatusCodeHttpResult)?.StatusCode);
+        Assert.Equal(1, await _db.BuildObjects.CountAsync(o => o.DeletedAt == null)); Assert.True((await _db.InventoryItems.AsNoTracking().SingleAsync(i => i.Id == package.Id)).DeletedAt is not null);
+        // an item waiting for an answer does not answer to the old endpoints either: rename, move, delete, wear, place
+        var (_, item) = Model(ItemRights.All, ItemRights.All); await ItemTransfers.OfferAsync(_db, _builder, item.Id, Person(), "gift", null, false, "chave-exploit-3", _now, default);
+        Assert.Equal(404, (await AssetEndpoints.UpdateItemAsync(item.Id, new InventoryItemUpdateRequest("Outro", null), As(_builder), _db, TimeProvider.System, default) as IStatusCodeHttpResult)?.StatusCode);
+        Assert.Equal(404, (await AssetEndpoints.DeleteItemAsync(item.Id, As(_builder), _db, TimeProvider.System, default) as IStatusCodeHttpResult)?.StatusCode);
+        Assert.Equal(404, (await AssetEndpoints.EquipAsync(item.Id, new EquipAssetRequest("hat"), As(_builder), _db, TimeProvider.System, default) as IStatusCodeHttpResult)?.StatusCode);
+        Assert.Equal(404, (await AssetEndpoints.PlaceAsync(item.Id, new PlaceAssetRequest(_island.Id, 0, 0, 0, 0, 0, 0), As(_builder), _db, TimeProvider.System, default) as IStatusCodeHttpResult)?.StatusCode);
+        var stored = await _db.InventoryItems.AsNoTracking().SingleAsync(i => i.Id == item.Id); Assert.Equal(("offered", true), (stored.Status, stored.DeletedAt is null));
+    }
+
+    [Fact]
+    public async Task AnItemThatCannotBeCopiedCannotBePlacedByTheOldEndpointToGetAFreeCopy()
+    {
+        var (_, item) = Model(ItemRights.Modify | ItemRights.Transfer, ItemRights.All);
+        var result = await AssetEndpoints.PlaceAsync(item.Id, new PlaceAssetRequest(_island.Id, 0, 0, 0, 0, 0, 0), As(_builder), _db, TimeProvider.System, default); Assert.Equal(409, (result as IStatusCodeHttpResult)?.StatusCode);
+        Assert.Equal(0, await _db.WorldAssetInstances.CountAsync());
+    }
+
+    [Fact]
+    public async Task AnAssetFileIsServedOnlyToThoseWhoCanEnterAndOnlyForWhatTheIslandUses()
+    {
+        var (asset, _) = Model(ItemRights.Standard, ItemRights.Standard); _store.Files["k" + asset.Id] = [1, 2, 3, 4]; _db.AssetVersions.Local.First(v => v.AssetId == asset.Id).StorageKey = "k" + asset.Id; await _db.SaveChangesAsync();
+        Assert.Equal(404, (await MeshAssets.IslandAssetAsync(_island.Id, asset.Id, As(_builder), _db, _storage, default) as IStatusCodeHttpResult)?.StatusCode); // not used by the island: not served
+        await Create(_builder, MeshOf(asset)); var served = await MeshAssets.IslandAssetAsync(_island.Id, asset.Id, As(_builder), _db, _storage, default); Assert.True(served is not IStatusCodeHttpResult { StatusCode: 404 } and not ForbidHttpResult, served.GetType().Name);
+        var closed = new Island { Id = Guid.NewGuid(), OwnerUserId = _owner, Name = "Fechada", Slug = "fechada", IsPublic = false, Size = 100 }; _db.Islands.Add(closed); await _db.SaveChangesAsync();
+        Assert.IsType<ForbidHttpResult>(await MeshAssets.IslandAssetAsync(closed.Id, asset.Id, As(Guid.NewGuid()), _db, _storage, default));
+    }
 }
