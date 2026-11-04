@@ -57,6 +57,7 @@ public static class ItemTransfers
         var access = await ItemRightsService.RequireAsync(db, from, itemId, Right.Transfer, "offer", now, ct); if (!access.Ok) return new OfferResult(false, access.Error);
         if (access.Item!.OwnerUserId != from) return await Denied(db, from, access.Item, "offer", "not_allowed", "only the holder can hand an item over", now, ct);
         if (keepCopy && !ItemRights.Has(access.Held, Right.Copy)) return await Denied(db, from, access.Item, "offer", "keep_copy_needs_copy", "the item cannot be copied", now, ct);
+        if (!ItemRights.IsCopyable(access.Item.OwnerRights) && await Worlds.ObjectRights.InUseAsync(db, from, access.Item.AssetId, null, ct)) return await Denied(db, from, access.Item, "offer", "item_in_use", "it is part of an object in the world; return the object first", now, ct); // giving it away would leave a copy behind
         if (await db.ItemOffers.CountAsync(o => o.FromUserId == from && o.Status == "pending", ct) >= MaxOutgoing) return new OfferResult(false, "too_many_offers");
         if (await db.ItemOffers.CountAsync(o => o.ToUserId == to && o.Status == "pending", ct) >= MaxIncoming) return new OfferResult(false, "recipient_full");
 

@@ -706,10 +706,18 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(160)")
                         .HasColumnName("name");
 
+                    b.Property<int>("NextOwnerRights")
+                        .HasColumnType("integer")
+                        .HasColumnName("next_owner_rights");
+
                     b.Property<string>("OwnerHistoryJson")
                         .IsRequired()
                         .HasColumnType("jsonb")
                         .HasColumnName("owner_history_json");
+
+                    b.Property<int>("OwnerRights")
+                        .HasColumnType("integer")
+                        .HasColumnName("owner_rights");
 
                     b.Property<Guid>("OwnerUserId")
                         .HasColumnType("uuid")

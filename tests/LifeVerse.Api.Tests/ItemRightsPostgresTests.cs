@@ -211,4 +211,41 @@ public sealed class ItemRightsPostgresTests
         var result = await LifeVerse.Api.Modules.Economy.EconomyEndpoints.PublishAsync(request, context, db, clock, default);
         return (result is Microsoft.AspNetCore.Http.IStatusCodeHttpResult { StatusCode: { } code } ? code : 0, (result as Microsoft.AspNetCore.Http.IValueHttpResult)?.Value as MarketplaceProduct);
     }
+
+    private sealed class MemoryStore : LifeVerse.Api.Modules.Assets.IObjectStore
+    {
+        public readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> Files = new();
+        public Task PutAsync(string key, byte[] bytes, CancellationToken ct) { Files[key] = bytes; return Task.CompletedTask; }
+        public Task<Stream?> OpenReadAsync(string key, CancellationToken ct) => Task.FromResult<Stream?>(Files.TryGetValue(key, out var b) ? new MemoryStream(b) : null);
+    }
+
+    [PostgresFact]
+    public async Task TwentyPlacementsOfAnItemThatCannotBeCopiedPlaceItOnce()
+    {
+        var (name, cs) = await CreateAsync();
+        try
+        {
+            var options = new DbContextOptionsBuilder<LifeVerseDbContext>().UseNpgsql(cs).Options; var now = DateTimeOffset.UtcNow; var store = new MemoryStore();
+            var storage = new LifeVerse.Api.Modules.Assets.AssetStorageService(store, Microsoft.Extensions.Logging.Abstractions.NullLogger<LifeVerse.Api.Modules.Assets.AssetStorageService>.Instance); var instance = Guid.NewGuid(); Guid owner, package;
+            await using (var db = new LifeVerseDbContext(options))
+            {
+                var u = new User { Id = Guid.NewGuid(), Username = "dono", NormalizedUsername = "DONO", Email = "d@t.local", NormalizedEmail = "D@T.LOCAL", PasswordHash = "x", CreatedAt = now, UpdatedAt = now }; db.Users.Add(u); owner = u.Id;
+                var island = new Island { Id = Guid.NewGuid(), OwnerUserId = u.Id, Name = "Ilha", Slug = "ilha", IsPublic = true, Size = 400 }; db.Islands.Add(island); db.ServerInstances.Add(new ServerInstance { Id = instance, IslandId = island.Id, Hostname = "h", Status = "healthy" }); await db.SaveChangesAsync();
+                var sources = new[] { 0f, 2f, 4f }.Select(x => new LifeVerse.Api.Modules.Inventory.PackageSourceDto("cube", "Caixa", "", x, 1, 0, 0, 0, 0, 1, 1, 1, "{}", "{}", "{}", "[]", null)).ToList();
+                var item = await LifeVerse.Api.Modules.Inventory.BuildPackageStore.SaveAsync(db, storage, u.Id, LifeVerse.Api.Modules.Inventory.PackageDocument.Create("Casa", sources), now, default, new ItemPermissions(ItemRights.Modify | ItemRights.Transfer, 0, ItemRights.Transfer)); await db.SaveChangesAsync(); package = item.Id;
+            }
+            var results = new System.Collections.Concurrent.ConcurrentBag<int>();
+            await Parallel.ForEachAsync(Enumerable.Range(0, 20), new ParallelOptions { MaxDegreeOfParallelism = 20 }, async (n, ct) =>
+            {
+                await using var own = new LifeVerseDbContext(options);
+                var result = await LifeVerse.Api.Modules.Worlds.BuildOperations.ApplyAsync(instance, new LifeVerse.Api.Modules.Platform.ServerBuildOperationRequest(owner, "rez", null, null, 0, null, package, n * 20f, 0, 0), own, storage, new FixedTime(now), ct);
+                results.Add((result as Microsoft.AspNetCore.Http.IStatusCodeHttpResult)?.StatusCode ?? 200);
+            });
+            await using var check = new LifeVerseDbContext(options);
+            Assert.Equal(1, results.Count(s => s == 200)); Assert.Equal(3, await check.BuildObjects.CountAsync(o => o.DeletedAt == null)); // one placement: three objects, not sixty
+            var used = await check.InventoryItems.AsNoTracking().SingleAsync(i => i.Id == package); Assert.Equal(("consumed", true), (used.Status, used.DeletedAt is not null));
+            Assert.All(await check.BuildObjects.AsNoTracking().ToListAsync(), o => Assert.Equal((6, 4), (o.OwnerRights, o.NextOwnerRights)));
+        }
+        finally { await DropAsync(name); }
+    }
 }

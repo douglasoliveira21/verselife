@@ -139,6 +139,7 @@ app.MapGlobalSearchEndpoints();
 app.MapSearchModerationEndpoints();
 app.MapItemRightsEndpoints();
 app.MapItemOfferEndpoints();
+app.MapObjectRightsEndpoints();
 app.MapParcelEndpoints();
 app.MapLandEndpoints();
 app.MapVehicleEndpoints();

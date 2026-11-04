@@ -74,5 +74,29 @@ Quem decide é sempre o servidor (`ItemRightsService`). O jogo só mostra o que 
 
 **Ainda aberto:** vendas de grupo usam os direitos padrão (a tela de grupo não escolhe ainda); lojas dentro do mundo vendem pelo mesmo caminho e já respeitam tudo isto.
 
+## Fase 4 — construção e comandos multiplayer
+
+Todo comando de construção dos jogadores passa pela API (a ilha só repassa), então estas regras valem para a interface, para o servidor de ilha e para qualquer cliente.
+
+**Direitos do objeto.** Cada objeto do mundo tem `owner_rights` e `next_owner_rights` (colunas novas em `world.objects`; objetos que já existiam ficam com todos). **Herança dos componentes:** um objeto não pode mais do que aquilo de que é feito — o modelo 3D, as imagens do material e as coisas do conteúdo. Para cada parte que a pessoa não fez ela mesma, vale o direito do item que ela tem (o mais amplo, se tiver vários); o mais restrito vence. Ao criar, e ao acrescentar partes depois, os direitos só **diminuem**. O texto `permissionsJson` do objeto não mudou: continua sendo "o que os outros podem fazer" (legado, sem efeito); os direitos reais ficam nas colunas.
+
+**Filhos e grupos** (`ObjectRights.EffectiveAsync`): os direitos de um objeto são cortados pelos de todos os objetos de que ele é parte (filho de algo que não pode ser modificado também não pode, até 16 níveis). Uma construção salva ou devolvida (`ForPackage`, `PackageRightsAsync`) tem só o que todos os seus objetos permitem.
+
+**Modificar** (`update`): mover e girar nunca exigem Modificar; mudar o que o objeto **é** (formato, tamanho, material, física, conteúdo, nome, descrição, pai, grupo) exige, **para qualquer pessoa**, inclusive administrador da ilha ou dono do terreno (eles podem mover, devolver e apagar, mas não reconstruir o que não pode ser modificado). O JSON é comparado pelo sentido, então reenviar as mesmas configurações escritas de outro jeito não conta como mudança. Recusa: `403 no_modify`. **Scripts:** criar ou trocar o código de um script só em objeto que pode ser modificado.
+
+**Coisa que não pode ser copiada fica em um objeto só** (modelo 3D e conteúdos; as imagens de um material podem aparecer em vários lugares): criar ou editar um segundo objeto com a mesma coisa dá `409 no_copy_in_use`; devolver o primeiro libera. Item nessa situação **não pode ser dado nem vendido** enquanto estiver em um objeto (`item_in_use`), senão sobraria uma cópia no mundo.
+
+**Colocar do inventário no servidor** (`rez`, comando novo, também no servidor de ilha): o servidor lê a construção do inventário e cria **todos os objetos ou nenhum**, com as mesmas verificações de um `create` (onde a pessoa pode construir, scripts, limites, o que ela tem). Os objetos recebem os direitos do item. Item **sem Copiar** é consumido ao colocar (`status = consumed`; não volta pela lixeira) e reaparece, com os mesmos direitos, quando os objetos são devolvidos; o ciclo colocar-devolver-colocar sempre dá um só. Item copiável continua no inventário. Dois `rez` do mesmo item ao mesmo tempo: só um vale (testado no PostgreSQL de verdade, 20 pedidos). O posicionamento soma a origem às posições salvas (que já são relativas ao centro da construção).
+
+**Devolver** (`return`, também usado quando uma locação acaba): a construção devolvida ao dono ganha os direitos do conjunto. **Ler a construção inteira** pelo endpoint do inventário exige Copiar (`403 use_rez` caso contrário) e **`/place`** (colocação antiga de ativo solto) recusa item não copiável (`409 use_rez`).
+
+**Direitos de um objeto** (`GET/PUT /api/v1/worlds/islands/{islandId}/objects/{objectId}/rights`): o dono vê (o próprio conjunto e o que repassa) e pode **diminuir** os dois; subir é recusado (`cannot_raise_rights`, fica na auditoria); versão desatualizada dá `revision_conflict`.
+
+**Migração** `Phase55ObjectRights`.
+
+**Achado fora do escopo, ainda não corrigido:** `MeshAssets.IslandAssetAsync` (arquivos de modelos e imagens usados na ilha) procura o id com `ToLower().Contains(...)` em colunas `jsonb`, que o PostgreSQL não aceita (`lower(jsonb)`). Pode estar quebrando esse download em produção; o código novo desta fase evita o problema. Merece correção própria.
+
+**Testes:** `ObjectRightsTests` (21) e 1 teste novo no PostgreSQL real; o teste de revenda concorrente da fase 3 ajudou a achar o problema do `jsonb`.
+
 ## Ainda não (próximas fases)
-4: construção e comandos multiplayer (colocar/pegar itens no mundo, modificar objetos, herança de partes); 5: cliente; 6: testes finais de exploração.
+5: cliente (propriedades do item, editor de construção, inventário com oferta/aceite, `rez` no lugar de criar objeto por objeto); 6: testes finais de exploração.

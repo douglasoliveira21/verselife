@@ -5,6 +5,7 @@ using LifeVerse.Api.Modules.Land;
 using LifeVerse.Api.Modules.Assets;
 using LifeVerse.Api.Modules.Inventory;
 using LifeVerse.Api.Modules.Platform;
+using LifeVerse.Shared.Items;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Worlds;
@@ -36,6 +37,7 @@ public static class BuildOperations
             case "update": return await UpdateAsync(request, island, actor, isAdmin, hasBuild, parcels, db, now, ct);
             case "delete": return await DeleteAsync(request, island, actor, isAdmin, parcels, db, now, ct);
             case "return": return await ReturnAsync(request, island, actor, isAdmin, parcels, db, storage, now, ct);
+            case "rez": return await RezAsync(request, island, actor, isAdmin, hasBuild, parcels, db, storage, now, ct);
             default: return Refuse(400, "invalid_operation");
         }
     }
@@ -51,7 +53,10 @@ public static class BuildOperations
         if (BuildCost.HasScripts(o.ContentJson) && BuildRules.CanPutScripts(parcel, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts);
         var cost = BuildCost.Of(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.PhysicsJson, o.ContentJson);
         if (await LimitAsync(db, island, parcel, cost, null, ct) is { } limit) return Refuse(409, limit);
+        var parts = ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson);
+        if (await ObjectRights.ValidateSinglesAsync(db, actor, parts, null, null, ct) is { } inUse) return Refuse(409, inUse); // a thing that cannot be copied is in one object only
         var item = BuildEndpoints.NewObject(island.Id, actor, o, now);
+        var inherited = await ObjectRights.InheritAsync(db, actor, parts, ct); item.OwnerRights = inherited.Owner; item.NextOwnerRights = ItemRights.Clamp(inherited.NextOwner, inherited.Owner);
         db.BuildObjects.Add(item);
         return await FinishAsync(db, island, actor, "create", item, o, now, ct);
     }
@@ -71,9 +76,15 @@ public static class BuildOperations
         if (there?.Id != here?.Id && BuildRules.CanBuildAt(there, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);
         if (BuildCost.HasScripts(o.ContentJson) && !BuildCost.HasScripts(item.ContentJson) && BuildRules.CanPutScripts(there, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts); // adding the first script
 
+        var changes = ObjectRights.ChangesWhatItIs(item, o);
+        if (changes && !ItemRights.Has((await ObjectRights.EffectiveAsync(db, item, ct)).Owner, Right.Modify)) return Refuse(403, "no_modify"); // moving and turning never need Modify; changing what the object is does, for everyone
+        var before = ObjectRights.PartsOf(item.PrimitiveType, item.GeometryJson, item.MaterialJson, item.ContentJson); var after = ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson ?? item.GeometryJson, o.MaterialJson ?? item.MaterialJson, o.ContentJson ?? item.ContentJson);
+        if (changes && await ObjectRights.ValidateSinglesAsync(db, actor, after, before, item.Id, ct) is { } inUse) return Refuse(409, inUse);
         var previousPermissions = item.PermissionsJson; var oldCost = item.Cost;
         BuildEndpoints.Apply(item, o);
         if (item.OwnerUserId != actor && !isAdmin) item.PermissionsJson = previousPermissions; // only the owner (or an island admin) changes what others may do
+        if (changes) { var inherited = await ObjectRights.InheritAsync(db, actor, after, ct); item.OwnerRights &= inherited.Owner; item.NextOwnerRights = ItemRights.Clamp(item.NextOwnerRights & inherited.NextOwner, item.OwnerRights); } // new parts can only take rights away
+
         var newCost = BuildCost.Of(item.PrimitiveType, item.GeometryJson, item.MaterialJson, item.PhysicsJson, item.ContentJson);
         var movedParcel = there?.Id != here?.Id;
         if ((newCost > oldCost || movedParcel) && await LimitAsync(db, island, there, newCost, item, ct, countsAsNewObjectInParcel: movedParcel) is { } limit) { db.Entry(item).State = EntityState.Unchanged; await db.Entry(item).ReloadAsync(ct); return Refuse(409, limit); }
@@ -116,7 +127,7 @@ public static class BuildOperations
             var sources = owned.Select(x => new PackageSourceDto(x.PrimitiveType, x.Name, x.Description, x.PositionX, x.PositionY, x.PositionZ, x.RotationX, x.RotationY, x.RotationZ, x.ScaleX, x.ScaleY, x.ScaleZ, x.MaterialJson, x.GeometryJson, x.PhysicsJson, x.ContentJson, x.GroupId)).ToList();
             var first = owned.First().Name;
             var package = PackageDocument.Create(owned.Count() == 1 ? $"Devolvido: {first}" : $"Devolvido: {first} (+{owned.Count() - 1})", sources);
-            var saved = await BuildPackageStore.SaveAsync(db, storage, owned.Key, package, now, ct);
+            var saved = await BuildPackageStore.SaveAsync(db, storage, owned.Key, package, now, ct, ObjectRights.ForPackage(owned));
             itemIds.Add((owned.Key, saved.Id));
         }
         foreach (var item in items)
@@ -131,6 +142,61 @@ public static class BuildOperations
     /// <summary>Sends objects back to their owners' inventories on behalf of the land system (a rental ended): nothing is deleted for good.</summary>
     public static Task<IResult> ReturnForLandAsync(Island island, Guid actor, Guid[] objectIds, LifeVerseDbContext db, AssetStorageService storage, DateTimeOffset now, CancellationToken ct) =>
         ReturnAsync(new ServerBuildOperationRequest(actor, "return", null, null, 0, objectIds), island, actor, true, [], db, storage, now, ct);
+
+    // ---- rez (place a saved construction from the inventory) ---------------------------------------------------------------------
+
+    /// <summary>
+    /// "Colocar do inventário": the server places a saved construction itself, all objects or none. Each object goes through the same checks as a created one
+    /// (where the person may build, scripts, limits, what they hold). The objects get the rights of the item. An item that cannot be copied is used up by being
+    /// placed (it comes back as a new item, with the same rights, when the objects are returned), so placing it twice is impossible.
+    /// </summary>
+    private static async Task<IResult> RezAsync(ServerBuildOperationRequest request, Island island, Guid actor, bool isAdmin, bool hasBuild, List<ParcelFacts> parcels, LifeVerseDbContext db, AssetStorageService storage, DateTimeOffset now, CancellationToken ct)
+    {
+        if (request.PackageItemId is not { } itemId) return Refuse(400, "invalid_operation");
+        var item = await db.InventoryItems.FirstOrDefaultAsync(i => i.Id == itemId && i.OwnerUserId == actor && i.DeletedAt == null, ct); if (item is null) return Refuse(404, "not_found");
+        if (item.Status != ItemRightsService.Active) return Refuse(409, "item_busy");
+        var (package, loadError) = await BuildPackageEndpoints.LoadAsync(db, storage, item, ct); if (package is null) return Refuse(400, "invalid_package", loadError);
+        if (package.Objects.Length is 0 or > BuildPackageLimits.MaxReturnAtOnce) return Refuse(400, "invalid_package");
+        if (new[] { request.OriginX, request.OriginY, request.OriginZ }.Any(v => !float.IsFinite(v) || Math.Abs(v) > 100_000)) return Refuse(400, "invalid_operation");
+
+        var copyable = ItemRights.IsCopyable(item.OwnerRights); var rights = new ItemPermissions(item.OwnerRights, 0, item.NextOwnerRights).Normalized();
+        var requests = package.Objects.Select(p => new BuildObjectRequest(p.PrimitiveType, p.X + request.OriginX, p.Y + request.OriginY, p.Z + request.OriginZ, p.RotationX, p.RotationY, p.RotationZ, p.ScaleX, p.ScaleY, p.ScaleZ, p.MaterialJson, p.PhysicsJson, null, 0, p.GeometryJson, p.Name, p.Description, null, null, p.ContentJson)).ToList();
+        var singles = new HashSet<Guid>(); var cumulativeCost = 0; var perParcel = new Dictionary<Guid, int>(); var usage = new Dictionary<Guid, (int Objects, int Cost)>(); var created = new List<BuildObject>(); var groups = new Dictionary<int, Guid>();
+        for (var i = 0; i < requests.Count; i++)
+        {
+            var o = requests[i];
+            if (await ValidateAsync(db, actor, o, null, ct) is { } invalid) return Refuse(400, "invalid_object", $"{o.Name}: {invalid}");
+            var parcel = BuildRules.ParcelAt(parcels, o.PositionX, o.PositionZ);
+            if (BuildRules.CanBuildAt(parcel, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);
+            if (BuildCost.HasScripts(o.ContentJson) && BuildRules.CanPutScripts(parcel, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts);
+            var parts = ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson);
+            foreach (var single in parts.Singles) if (!singles.Add(single) && !await ObjectRights.CanBeInManyAsync(db, actor, single, ct)) return Refuse(409, "no_copy_in_use"); // the same thing twice in one construction
+            if (await ObjectRights.ValidateSinglesAsync(db, actor, parts, null, null, ct) is { } inUse) return Refuse(409, inUse);
+            var cost = BuildCost.Of(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.PhysicsJson, o.ContentJson); cumulativeCost += cost;
+            if (await LimitAsync(db, island, parcel, cumulativeCost, null, ct) is { } limit) return Refuse(409, limit);
+            if (parcel is not null)
+            {
+                if (!usage.TryGetValue(parcel.Id, out var used)) usage[parcel.Id] = used = await LandService.UsageAsync(db, island.Id, parcel, Guid.Empty, ct);
+                perParcel[parcel.Id] = perParcel.GetValueOrDefault(parcel.Id) + 1; if (used.Objects + perParcel[parcel.Id] > parcel.MaxObjects) return Refuse(409, "parcel_object_limit");
+            }
+            var made = BuildEndpoints.NewObject(island.Id, actor, o, now); var inherited = await ObjectRights.InheritAsync(db, actor, parts, ct);
+            made.OwnerRights = ItemRights.Clamp(rights.Owner, inherited.Owner); made.NextOwnerRights = ItemRights.Clamp(rights.NextOwner & inherited.NextOwner, made.OwnerRights);
+            created.Add(made);
+        }
+        if (await db.BuildObjects.CountAsync(x => x.IslandId == island.Id && x.DeletedAt == null, ct) + created.Count > BuildCost.Limit(island.ResourceLimitsJson, "objects", 5000)) return Refuse(409, "object_quota");
+
+        foreach (var made in created)
+        {
+            db.BuildObjects.Add(made);
+            db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = made.Id, ActorUserId = actor, Operation = "create", PayloadJson = JsonSerializer.Serialize(new { rezFromItem = item.Id }), Revision = made.Revision, CreatedAt = now });
+        }
+        if (!copyable) { item.Status = "consumed"; item.DeletedAt = now; } // the only one there is: it is now the objects
+        item.Revision++; item.UpdatedAt = now;
+        ItemRightsService.Audit(db, actor, "rez", "ok", item.Id, item.AssetId, actor, null, $"{created.Count} objects on island {island.Id}{(copyable ? string.Empty : ", item used up")}", now);
+        try { await db.SaveChangesAsync(ct); }
+        catch (DbUpdateConcurrencyException) { return Refuse(409, "item_busy"); } // the same item was placed, offered or sold at the same moment
+        return Results.Ok(new { operation = "rez", itemId = item.Id, consumed = !copyable, objects = created.Select(BuildEndpoints.ToResponse).ToArray() });
+    }
 
     // ---- shared ----------------------------------------------------------------------------------------------
 

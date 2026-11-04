@@ -36,6 +36,7 @@ public static class ProductRights
             if (access.Item!.OwnerUserId != seller) return await Deny(db, seller, access.Item, "only the holder can sell an item", now, ct);
             if (!ItemRights.Has(access.Held, Right.Resell)) return await Deny(db, seller, access.Item, "the item cannot be resold", now, ct);
             if (await db.MarketplaceProducts.AnyAsync(p => p.SourceItemId == itemId && p.Status == "active", ct)) return new ListingResult("already_listed", null);
+            if (!ItemRights.IsCopyable(access.Item.OwnerRights) && await Worlds.ObjectRights.InUseAsync(db, seller, access.Item.AssetId, null, ct)) return await Deny(db, seller, access.Item, "it is part of an object in the world; return the object first", now, ct);
             var item = await db.InventoryItems.FirstAsync(i => i.Id == itemId, ct); var arrives = new ItemPermissions(item.OwnerRights, ItemRights.None, item.NextOwnerRights).ForNextOwner();
             if (!ItemRights.IsCopyable(item.OwnerRights)) { item.Status = Listed; item.Revision++; item.UpdatedAt = now; } // the only one there is: it cannot be used or offered while it waits for a buyer
             return new ListingResult(null, new ListingPlan(arrives.Owner, arrives.NextOwner, item));

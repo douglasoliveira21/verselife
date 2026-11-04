@@ -423,6 +423,10 @@ public sealed class BuildObject
     public string PermissionsJson { get; set; } = "{\"modify\":true,\"copy\":true,\"transfer\":false,\"use\":true,\"move\":true,\"delete\":true,\"return\":true}";
     public string ContentJson { get; set; } = "[]";
     public string OwnerHistoryJson { get; set; } = "[]";
+    /// <summary>What the owner may do with this object (LifeVerse.Shared.Items.ItemRights). Inherited from the things it is made of and from the package it was placed from; objects from before the rights keep everything.</summary>
+    public int OwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
+    /// <summary>What the next owner (somebody it is given or sold to) will be able to do.</summary>
+    public int NextOwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
     /// <summary>What this object costs the island's and parcel's budget (see BuildCost).</summary>
     public int Cost { get; set; }
     public int Revision { get; set; } = 1;

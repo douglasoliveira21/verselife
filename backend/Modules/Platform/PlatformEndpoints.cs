@@ -17,7 +17,7 @@ public sealed record ValidateEntryTokenResponse(Guid UserId, Guid AvatarId, Guid
     int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false,
     float SpawnX = 0, float SpawnZ = 0, int IslandSize = 256, float? ResumeX = null, float? ResumeY = null, float? ResumeZ = null);
 public sealed record ServerSnapshotRequest(long ExpectedVersion, string TerrainJson, string EnvironmentJson, string IntegrityHash);
-public sealed record ServerBuildOperationRequest(Guid UserId, string Operation, Guid? ObjectId, BuildObjectRequest? Object, int ExpectedRevision, Guid[]? ObjectIds = null);
+public sealed record ServerBuildOperationRequest(Guid UserId, string Operation, Guid? ObjectId, BuildObjectRequest? Object, int ExpectedRevision, Guid[]? ObjectIds = null, Guid? PackageItemId = null, float OriginX = 0, float OriginY = 0, float OriginZ = 0);
 
 public static class PlatformEndpoints
 {
