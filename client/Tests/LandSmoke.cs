@@ -153,11 +153,13 @@ public partial class LandSmoke : Node
             var lucas = Guid.NewGuid(); var entryA = Guid.NewGuid(); var entryB = Guid.NewGuid(); var objA = Guid.NewGuid(); var objB = Guid.NewGuid(); var objC = Guid.NewGuid();
             string AccessJson() => "{\"mode\":\"list\",\"entries\":[{\"id\":\"" + entryA + "\",\"userId\":\"" + lucas + "\",\"userName\":\"Lucas\",\"kind\":\"ban\",\"reason\":\"\",\"expiresAt\":\"2030-12-01T00:00:00Z\",\"createdAt\":\"2026-11-03T12:00:00Z\"},{\"id\":\"" + entryB + "\",\"userId\":\"" + Guid.NewGuid() + "\",\"userName\":\"Ana\",\"kind\":\"allow\",\"reason\":\"\",\"expiresAt\":null,\"createdAt\":\"2026-11-03T12:00:00Z\"}]}";
             string ObjectJson(Guid id, string name, string owner, bool scripts, bool authorized) => "{\"id\":\"" + id + "\",\"name\":\"" + name + "\",\"ownerUserId\":\"" + Guid.NewGuid() + "\",\"ownerName\":\"" + owner + "\",\"primitiveType\":\"cube\",\"cost\":5,\"hasScripts\":" + (scripts ? "true" : "false") + ",\"x\":1,\"y\":1,\"z\":1,\"createdAt\":\"2026-11-03T12:00:00Z\",\"authorized\":" + (authorized ? "true" : "false") + "}";
-            var calls3 = new List<string>(); var answer = (Status: 200, Body: "{}");
+            var calls3 = new List<string>(); var answer = (Status: 200, Body: "{}"); var friendsGroup = Guid.NewGuid(); var grantId = Guid.NewGuid();
             var listing3 = "";
             land.Transport = (method, path, body) =>
             {
                 calls3.Add($"{method} {path} {body}");
+                if (method == Godot.HttpClient.Method.Get && path.EndsWith("/group-access")) return (200, "[{\"id\":\"" + grantId + "\",\"groupId\":\"" + friendsGroup + "\",\"groupName\":\"Amigos\",\"kind\":\"allow\",\"at\":\"2026-11-03T12:00:00Z\"}]");
+                if (method == Godot.HttpClient.Method.Get && path == "/api/v1/groups/mine") return (200, "[{\"id\":\"" + friendsGroup + "\",\"name\":\"Amigos\"}]");
                 if (method == Godot.HttpClient.Method.Get && path.EndsWith("/access")) return (200, AccessJson());
                 if (method == Godot.HttpClient.Method.Get && path.EndsWith("/objects")) return (200, "[" + ObjectJson(objA, "Mesa", "Marina", false, true) + "," + ObjectJson(objB, "Caixa", "Rafa", true, false) + "," + ObjectJson(objC, "Vaso", "Lua", false, false) + "]");
                 if (method == Godot.HttpClient.Method.Get && path.EndsWith("/audit")) return (200, "[{\"operation\":\"split\",\"actorName\":\"Marina\",\"summary\":\"{}\",\"at\":\"2026-11-03T12:00:00Z\"},{\"operation\":\"eject\",\"actorName\":\"Marina\",\"summary\":\"{}\",\"at\":\"2026-11-03T12:01:00Z\"}]");
@@ -177,6 +179,11 @@ public partial class LandSmoke : Node
             land.ShowPageForTesting(3);
             Require(land.AccessEntries.Count == 2 && land.AccessEntries[0].UserName == "Lucas" && land.AccessEntries[0].Kind == "ban" && land.AccessEntries[0].ExpiresAt is not null && land.AccessRowsForTesting == 2, "the access list of my parcel is read");
             Require(land.AccessNoteForTesting.Length == 0, "the owner has the access controls");
+            Require(land.GroupGrants.Count == 1 && land.GroupGrants[0].GroupName == "Amigos" && land.MyGroups.Count == 1, "the groups with access and my groups are read");
+            calls3.Clear(); land.GrantGroup(0, true);
+            Require(calls3.Any(c => c.StartsWith("Post") && c.Contains("/group-access") && c.Contains(friendsGroup.ToString()) && c.Contains("\"kind\":\"build\"")), "opening the parcel to a group is sent");
+            calls3.Clear(); land.RevokeGroup(grantId);
+            Require(calls3.Any(c => c.StartsWith("Delete") && c.Contains($"/group-access/{grantId}")), "taking the group access back is sent");
             Require(land.BuildModeShownForTesting == 1 && land.AllowScriptsShownForTesting && land.AutoReturnShownForTesting == 3 && land.Parcels.First(x => x.Name == "Casa").OthersObjects == 2, "the building rules of the parcel are shown");
             calls3.Clear(); land.SetBuildOptionsForTesting(2, false, 1); land.ApplyBuildOptionsForTesting();
             var options = calls3.First(c => c.Contains("/options"));

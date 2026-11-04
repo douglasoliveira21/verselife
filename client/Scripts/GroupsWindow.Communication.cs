@@ -235,6 +235,7 @@ public sealed partial class GroupsWindow
         _evCreate.Disabled = !manage; _evName.Editable = manage; _evStart.Editable = manage; _evMinutes.Editable = manage; _evCapacity.Editable = manage; _evIsland.Disabled = !manage;
         _evJoin.Disabled = ev is null; _evJoin.Text = ev?.Joined == true ? "Sair do evento" : "Participar";
         _evCancel.Disabled = !(ev is not null && (ev.OrganizerUserId == MyId || manage));
+        RefreshPanel();
     }
 
     // ---- building the pages ----------------------------------------------------------------------------------------------------------------------------------

@@ -199,6 +199,7 @@ public sealed partial class GroupsWindow
         _reprice.Disabled = !(manageStore && product is { Status: "active" }); _newPrice.Editable = manageStore; _unpublish.Disabled = !(manageStore && product is { Status: "active" });
         _openStore.Disabled = !(manageStore && _storeIsland.ItemCount > 0 && _storeProduct.ItemCount > 0); _storeName.Editable = manageStore; _storeIsland.Disabled = _storeProduct.Disabled = !manageStore;
         _closeStore.Disabled = !(manageStore && SelectedStore() is not null);
+        RefreshPanel();
     }
 
     private void RefreshTakeTargets() { if (_takeTo is null) return; _takeTo.Clear(); foreach (var m in _members) { _takeTo.AddItem(m.Username); _takeTo.SetItemMetadata(_takeTo.ItemCount - 1, m.UserId.ToString()); } }

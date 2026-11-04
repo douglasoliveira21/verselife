@@ -74,6 +74,7 @@ public partial class LandManager
 
         var listBox = Section(page, "Lista de acesso");
         _accessRows = new VBoxContainer(); _accessRows.AddThemeConstantOverride("separation", 4); listBox.AddChild(_accessRows);
+        BuildGroupAccessSection(page);
         return scroll;
     }
 
@@ -191,7 +192,8 @@ public partial class LandManager
 
     private void LoadAccess()
     {
-        if (Managed is not { } parcel) { _entries.Clear(); ShowAccess(); return; }
+        if (Managed is not { } parcel) { _entries.Clear(); ShowAccess(); LoadGroupAccess(); return; }
+        LoadGroupAccess();
         Call(Godot.HttpClient.Method.Get, $"/parcels/{parcel.Id}/access", null, (status, body) =>
         {
             if (status is < 200 or >= 300) { Say(CommerceMessage(status, ErrorCode(body))); return; }

@@ -150,7 +150,7 @@ public partial class LandManager : Node3D
         http.RequestCompleted += (result, code, _, bytes) => { http.QueueFree(); done(result == (long)HttpRequest.Result.Success ? (int)code : 0, bytes.GetStringFromUtf8()); };
         var headers = new List<string> { $"Authorization: Bearer {_session.AccessToken}" };
         if (body is not null) headers.Add("Content-Type: application/json");
-        if (http.Request($"{app.ApiBaseUrl}/api/v1/worlds/islands/{_network.CurrentIslandId}/land{path}", [.. headers], method, body ?? string.Empty) != Error.Ok) http.QueueFree();
+        if (http.Request($"{app.ApiBaseUrl}{(path.StartsWith("/api/", StringComparison.Ordinal) ? path : $"/api/v1/worlds/islands/{_network.CurrentIslandId}/land{path}")}", [.. headers], method, body ?? string.Empty) != Error.Ok) http.QueueFree();
     }
 
     /// Asks the server for the parcels of the island.

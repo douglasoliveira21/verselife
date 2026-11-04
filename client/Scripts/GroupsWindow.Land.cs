@@ -88,6 +88,7 @@ public sealed partial class GroupsWindow
         _landRelease.Disabled = !(_canReleaseLand && land is not null && _landHeir.ItemCount > 0); _landHeir.Disabled = !_canReleaseLand;
         _grantAdd.Disabled = !(_canManageLand && land is not null && _grantGroup.ItemCount > 0); _grantGroup.Disabled = !_canManageLand; _grantKind.Disabled = !_canManageLand;
         _grantRemove.Disabled = !(_canManageLand && land is not null && _grantList.GetSelectedItems().Length > 0);
+        RefreshPanel();
     }
 
     public void DonateLand()

@@ -1,6 +1,6 @@
 # Grupos e Organizações 2.0
 
-Plano em 5 fases. Este documento descreve o que existe hoje (**Fases 1 a 4**) e o que falta.
+Plano em 5 fases. Este documento descreve o que existe hoje (**as 5 fases**).
 
 | Fase | Conteúdo | Estado |
 |---|---|---|
@@ -8,7 +8,7 @@ Plano em 5 fases. Este documento descreve o que existe hoje (**Fases 1 a 4**) e 
 | 2 | Comunicação: chat de grupo (respeitando silenciamento), anúncios, eventos exclusivos, notificações | feito |
 | 3 | Propriedades: terrenos do grupo, construção compartilhada, administração coletiva, acesso por grupo | feito |
 | 4 | Economia: tesouraria, contribuições voluntárias, lojas do grupo, marketplace, auditoria financeira | feito |
-| 5 | Interface de administração completa e integração final | pendente |
+| 5 | Interface de administração completa e integração final | feito |
 
 ## Regras compartilhadas (`shared/Groups/GroupRules.cs`)
 
@@ -69,13 +69,24 @@ Menu Comunicar → **Grupos e organizações…** (`GroupsWindow`): abas Meus gr
 - **Permissões novas**: `view_treasury`, `manage_treasury`, `manage_store` (Administrador: ver o cofre e as lojas; líder: tudo; a migração `Phase47GroupsEconomy` ajusta grupos existentes).
 - **Cliente**: abas **Cofre** (saldo, extrato, contribuir, retirar, congelar) e **Loja** (produtos, preço, lojas nas ilhas). As abas do grupo agora rolam na horizontal.
 
+## Fase 5 – Interface de administração e integração
+
+A janela **Grupos e organizações** (menu Comunicar) reúne tudo; o que o cargo da pessoa não permite aparece desligado, e o servidor confere de novo.
+
+- **Meus grupos**: lista com contagem de mensagens novas, **convites recebidos** (aceitar/recusar) e, no grupo escolhido, as abas **Painel** (visão geral: cargo, membros, pedidos esperando, anúncios, próximo evento, terrenos, cofre, loja), **Chat**, **Anúncios**, **Eventos**, **Terrenos**, **Cofre**, **Loja**, **Membros**, **Cargos**, **Pedidos** (e banidos), **Histórico** (paginado, "Carregar mais antigos") e **Ajustes** (perfil, liderança, dissolução). As abas rolam na horizontal.
+- **Procurar** (com **cancelar meu pedido**), **Criar grupo** e **Avisos** (anúncios e eventos guardados).
+- **Identidade**: emblema (12 opções), cor e **imagem** (endereço https; vira miniatura de 96 px na visão do grupo, arquivos de até 2 MB, PNG/JPG/WebP; endereço ou arquivo ruim só deixa a imagem de fora).
+- **Terreno pessoal aberto a um grupo**: na janela de terrenos, aba **Acesso → Abrir o terreno a um grupo** (escolhe um dos seus grupos, "pode entrar" ou "pode construir", e retira). Vale também para quem administra um terreno de grupo.
+- **Mercado**: a lista de produtos mostra "· nome do grupo" nos produtos vendidos por grupos (`groupName` em `GET /economy/products`).
+- **Histórico administrativo** traduz todas as ações das cinco fases.
+- **Teste de ponta a ponta** (`GroupLifecycleTests`): um grupo nasce, ganha membros e cargos, conversa, anuncia, recebe terreno e evento, contribui, vende, é impedido de acabar com terreno e moedas, devolve tudo e é dissolvido, com o razão fechando em zero e o histórico guardado.
+
 ## Limitações conhecidas
 
 - O chat do grupo guarda só texto; não há anexos, reações ou respostas.
 - Anúncios e eventos de grupo não aparecem fora do grupo (busca pública, mapa).
-- Abrir um terreno **pessoal** a um grupo só tem API por enquanto; a janela de terrenos de uma pessoa ganha isso na Fase 5. Pela janela do grupo, abre-se terrenos do próprio grupo.
 - Terrenos do grupo ainda não são comprados, vendidos nem alugados com o cofre: a venda/aluguel de terreno de grupo segue bloqueada (`group_owned`).
 - Vender o terreno ou outros itens do grupo e pagar membros por dividendos não existe; as retiradas são manuais, com motivo e limite.
 - Os produtos de um grupo guardam o ativo de quem publicou; se essa pessoa apagar o ativo, o produto deixa de funcionar.
-- Imagem do grupo: a API aceita URL https; ainda não há envio de arquivo na interface.
+- A imagem do grupo é um endereço https; não há envio de arquivo pelo jogo.
 - Testes contra PostgreSQL real continuam opcionais (sem credenciais aqui).

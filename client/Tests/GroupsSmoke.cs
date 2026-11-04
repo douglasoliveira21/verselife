@@ -15,15 +15,19 @@ public partial class GroupsSmoke : Node
             var chatJson = "[]"; var annJson = "[]"; var evJson = "[]"; var noticeJson = "{\"unread\":0,\"items\":[]}"; var mutedJson = "null"; var island = Guid.NewGuid();
             var landsJson = "{}"; var availJson = "[]"; var grantsJson = "[]"; var parcel = Guid.NewGuid(); var islandId = Guid.NewGuid(); var friends = Guid.NewGuid();
             var treasuryJson = "{}"; var ledgerJson = "[]"; var productsJson = "[]"; var storesJson = "[]"; var inventoryJson = "{}";
+            var invitedTo = Guid.NewGuid(); var invite = Guid.NewGuid(); var pendingGroup = Guid.NewGuid(); var auditJson = "[]";
             var role = "moderator"; var perms = "[\"kick\",\"mute\"]"; var rank = 40; var leader = false; var memberRank = 0;
             window.Transport = (method, path, body) =>
             {
                 requests.Add($"{method} {path} {body}");
                 if (path == "/mine") return (200, $"[{{\"id\":\"{friends}\",\"name\":\"Amigos\",\"tag\":\"\",\"description\":\"\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"open\",\"members\":3,\"memberLimit\":500,\"isMember\":true}},{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"CLB\",\"description\":\"d\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":true}}]");
-                if (path == $"/{group}") return (200, $"{{\"card\":{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"CLB\",\"description\":\"d\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":true}},\"myRole\":\"{role}\",\"myRank\":{rank},\"myPermissions\":{perms},\"isLeader\":{(leader ? "true" : "false")},\"leaderName\":\"dono\",\"mutedUntil\":{mutedJson},\"notificationsMuted\":false}}");
+                if (path == $"/{group}") return (200, $"{{\"card\":{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"CLB\",\"description\":\"d\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":true,\"emblem\":\"star\",\"imageUrl\":\"https://x.test/a.png\"}},\"myRole\":\"{role}\",\"myRank\":{rank},\"myPermissions\":{perms},\"isLeader\":{(leader ? "true" : "false")},\"leaderName\":\"dono\",\"mutedUntil\":{mutedJson},\"notificationsMuted\":false}}");
                 if (path == $"/{group}/members") return (200, $"[{{\"userId\":\"{other}\",\"username\":\"ana\",\"roleId\":\"{roleMember}\",\"roleName\":\"Membro\",\"rank\":{memberRank}}},{{\"userId\":\"{me}\",\"username\":\"eu\",\"roleId\":\"{roleMod}\",\"roleName\":\"Moderador\",\"rank\":40}}]");
                 if (path == $"/{group}/roles") return (200, $"[{{\"id\":\"{roleOwner}\",\"name\":\"Líder\",\"systemKey\":\"owner\",\"rank\":1000,\"permissions\":[],\"members\":1,\"canEdit\":false}},{{\"id\":\"{roleMod}\",\"name\":\"Moderador\",\"systemKey\":\"moderator\",\"rank\":40,\"permissions\":[\"kick\"],\"members\":1,\"canEdit\":false}},{{\"id\":\"{roleMember}\",\"name\":\"Membro\",\"systemKey\":\"member\",\"rank\":0,\"permissions\":[],\"members\":1,\"canEdit\":false}}]");
-                if (path.StartsWith($"/search")) return (200, $"[{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"\",\"description\":\"\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":false}}]");
+                if (path.StartsWith($"/search")) return (200, $"[{{\"id\":\"{group}\",\"name\":\"Clube\",\"tag\":\"\",\"description\":\"\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":2,\"memberLimit\":500,\"isMember\":false}},{{\"id\":\"{pendingGroup}\",\"name\":\"Clube do Pedido\",\"tag\":\"\",\"description\":\"\",\"accentColor\":\"#12F2E0\",\"privacy\":\"public\",\"joinPolicy\":\"request\",\"members\":4,\"memberLimit\":500,\"isMember\":false,\"requestPending\":true}}]");
+                if (path == "/api/v1/social/groups/invites") return (200, $"[{{\"inviteId\":\"{invite}\",\"groupId\":\"{invitedTo}\",\"groupName\":\"Outro Clube\",\"fromUserId\":\"{other}\",\"fromUsername\":\"bia\",\"at\":\"2026-11-05T12:00:00Z\"}}]");
+                if (path.StartsWith($"/{group}/audit?take=100&before=")) return (200, "[{\"id\":\"" + Guid.NewGuid() + "\",\"at\":\"2026-01-01T00:00:00Z\",\"action\":\"group_created\",\"actor\":\"dono\",\"target\":null}]");
+                if (path == $"/{group}/audit?take=100") return (200, auditJson);
                 if (path == $"/{group}/treasury") return (200, treasuryJson);
                 if (path == $"/{group}/treasury/ledger?take=50") return (200, ledgerJson);
                 if (path == $"/{group}/products") return (200, productsJson);
@@ -43,6 +47,8 @@ public partial class GroupsSmoke : Node
             await Frames(2);
 
             window.Open();
+            Require(window.Invites.Count == 1 && !window.InviteButtonEnabledForTesting("accept"), "an invitation should load and wait for a selection");
+            window.SelectInviteForTesting(0); window.AnswerInvite(true); Require(requests.Any(r => r.StartsWith("Post ") && r.Contains($"/groups/invites/{invite}/accept")), "accepting an invitation is sent");
             Require(window.Visible && window.Mine.Count == 2, "opening should load my groups");
             window.SelectMine(1);
             Require(window.Current?.Name == "Clube" && window.InnerTabsVisibleForTesting, "the group should open with its tabs");
@@ -159,6 +165,17 @@ public partial class GroupsSmoke : Node
             window.SelectStoreForTesting(0); Require(window.EconomyButtonEnabledForTesting("closeStore"), "a store can be closed");
             window.CloseStore(); Require(requests.Any(r => r.StartsWith("Delete ") && r.Contains($"/stores/{storeId}")), "close store wrong");
 
+            // overview, identity and the paged history (as the leader)
+            auditJson = "[" + string.Join(",", Enumerable.Range(0, 100).Select(i => "{\"id\":\"" + Guid.NewGuid() + "\",\"at\":\"2026-11-0" + (1 + i % 5) + "T10:00:00Z\",\"action\":\"member_joined\",\"actor\":\"u" + i + "\",\"target\":null}")) + "]";
+            window.OpenGroup(group);
+            Require(window.PanelTextForTesting.Contains("Estrela · Clube") && window.PanelTextForTesting.Contains("Membros: 2/500") && window.PanelTextForTesting.Contains("Terrenos: 1") && window.PanelTextForTesting.Contains("Cofre: 1.500"), $"the overview panel summarises the group: {window.PanelTextForTesting}");
+            Require(window.OverviewTextForTesting.Contains("Emblema: Estrela") && window.SettingsEmblemForTesting == 1 && window.SettingsImageForTesting == "https://x.test/a.png", "the identity of the group is shown and filled in");
+            window.SetSettingsIdentityForTesting(2, ""); window.SetSettingsForTesting("Clube", "d"); window.SaveSettings();
+            Require(requests.Any(r => r.StartsWith("Put ") && r.Contains($"/{group} {{") && r.Contains("\"emblem\":\"hammer\"") && r.Contains("\"imageUrl\":\"\"")), "saving the identity is sent");
+            window.OpenGroup(group);
+            Require(window.AuditCountForTesting == 100 && window.AuditMoreVisibleForTesting, "the first page of the history has a button for more");
+            window.LoadMoreAuditForTesting(); Require(window.AuditCountForTesting == 101 && !window.AuditMoreVisibleForTesting, "older entries are added to the list");
+
             // a plain member who is muted
             treasuryJson = "{\"canView\":false,\"canTake\":false,\"canFreeze\":false,\"frozen\":false,\"myContributed\":300}";
             landsJson = landsJson.Replace("\"canManage\":true", "\"canManage\":false").Replace("\"canRelease\":true", "\"canRelease\":false"); availJson = "[]";
@@ -174,16 +191,19 @@ public partial class GroupsSmoke : Node
 
             // searching and joining
             window.Search("clu");
-            Require(window.Found.Count == 1, "search should fill");
+            Require(window.Found.Count == 2, "search should fill");
             window.SelectFoundForTesting(0);
             Require(window.ButtonEnabledForTesting("join") && window.JoinTextForTesting.Contains("Pedir"), "a request-policy group offers to ask");
             window.JoinSelected();
+            window.SelectFoundForTesting(1); Require(window.CancelRequestEnabledForTesting && !window.ButtonEnabledForTesting("join"), "a pending request can be cancelled, not repeated");
+            window.CancelRequestSelected(); Require(requests.Any(r => r.StartsWith("Delete ") && r.Contains($"/{pendingGroup}/join")), "cancelling a request is sent");
+            window.SelectFoundForTesting(0);
             Require(requests.Any(r => r.Contains($"/{group}/join")), "join request wrong");
 
             // creating
-            window.SetCreateForTesting("Novo Clube", "NVO", "bom", 0, 0);
+            window.SetCreateForTesting("Novo Clube", "NVO", "bom", 0, 0); window.SetCreateIdentityForTesting(1, "https://x.test/n.png");
             window.Create();
-            Require(requests.Any(r => r.StartsWith("Post  ") && r.Contains("\"name\":\"Novo Clube\"") && r.Contains("\"joinPolicy\":\"open\"") && r.Contains("\"privacy\":\"public\"")), $"create wrong: {requests.LastOrDefault(r => r.Contains("Novo"))}");
+            Require(requests.Any(r => r.StartsWith("Post  ") && r.Contains("\"name\":\"Novo Clube\"") && r.Contains("\"joinPolicy\":\"open\"") && r.Contains("\"privacy\":\"public\"") && r.Contains("\"emblem\":\"star\"") && r.Contains("\"imageUrl\":\"https://x.test/n.png\"")), $"create wrong: {requests.LastOrDefault(r => r.Contains("Novo"))}");
 
             Require(GroupsWindow.Explain(403, "{\"error\":\"outranked\"}").Contains("abaixo"), "errors should be explained");
             GD.Print("event=groups_smoke result=passed");

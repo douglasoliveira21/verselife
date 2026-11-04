@@ -6,7 +6,7 @@ using LifeVerse.Shared.Groups;
 
 namespace LifeVerse.Client.Scripts;
 
-public sealed record GroupCardData(Guid Id, string Name, string Tag, string Description, string AccentColor, string Privacy, string JoinPolicy, int Members, int MemberLimit, bool IsMember, bool RequestPending, bool Invited, bool Banned);
+public sealed record GroupCardData(Guid Id, string Name, string Tag, string Description, string AccentColor, string Privacy, string JoinPolicy, int Members, int MemberLimit, bool IsMember, bool RequestPending, bool Invited, bool Banned, string Emblem = "people", string ImageUrl = "");
 public sealed record GroupMemberData(Guid UserId, string Username, Guid RoleId, string RoleName, int Rank, DateTimeOffset? MutedUntil);
 public sealed record GroupRoleData(Guid Id, string Name, string SystemKey, int Rank, string[] Permissions, int Members, bool CanEdit);
 
@@ -60,7 +60,7 @@ public sealed partial class GroupsWindow : Node
     public override void _Ready() => Build();
 
     public void Toggle() { if (_window.Visible) _window.Visible = false; else Open(); }
-    public void Open() { _window.Visible = true; _window.MoveToFront(); LoadMine(); LoadNotices(); }
+    public void Open() { _window.Visible = true; _window.MoveToFront(); LoadMine(); LoadNotices(); LoadInvites(); }
 
     // ---- talking to the API -------------------------------------------------------------------------------------------------------------------------
 
@@ -155,7 +155,7 @@ public sealed partial class GroupsWindow : Node
     private static Guid IdOf(JsonElement e, string name) => Guid.TryParse(Str(e, name), out var id) ? id : Guid.Empty;
     private static DateTimeOffset? Time(JsonElement e, string name) => DateTimeOffset.TryParse(Str(e, name), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var t) ? t : null;
 
-    private static GroupCardData Card(JsonElement c) => new(IdOf(c, "id"), Str(c, "name"), Str(c, "tag"), Str(c, "description"), Str(c, "accentColor"), Str(c, "privacy"), Str(c, "joinPolicy"), Num(c, "members"), Num(c, "memberLimit"), Flag(c, "isMember"), Flag(c, "requestPending"), Flag(c, "invited"), Flag(c, "banned"));
+    private static GroupCardData Card(JsonElement c) => new(IdOf(c, "id"), Str(c, "name"), Str(c, "tag"), Str(c, "description"), Str(c, "accentColor"), Str(c, "privacy"), Str(c, "joinPolicy"), Num(c, "members"), Num(c, "memberLimit"), Flag(c, "isMember"), Flag(c, "requestPending"), Flag(c, "invited"), Flag(c, "banned"), Str(c, "emblem") is { Length: > 0 } emblem ? emblem : "people", Str(c, "imageUrl"));
 
     private static List<T> ReadList<T>(string body, Func<JsonElement, T> read)
     {
@@ -196,10 +196,10 @@ public sealed partial class GroupsWindow : Node
             _current = Card(root.GetProperty("card")); _myRole = Str(root, "myRole"); _myRank = Num(root, "myRank"); _isLeader = Flag(root, "isLeader");
             _mutedUntil = Time(root, "mutedUntil"); _notifyMuted = Flag(root, "notificationsMuted"); _unreadChat.Remove(_current.Id);
             _myPermissions = root.TryGetProperty("myPermissions", out var p) ? [.. p.EnumerateArray().Select(x => x.GetString() ?? string.Empty)] : [];
-            _overview.Text = $"{_current.Name}{(_current.Tag.Length > 0 ? $" [{_current.Tag}]" : string.Empty)}\n{(_current.Description.Length > 0 ? _current.Description : "Sem descrição.")}\n\nLíder: {Str(root, "leaderName")} · {_current.Members}/{_current.MemberLimit} membros\nPrivacidade: {(_current.Privacy == "public" ? "público" : "privado")} · Entrada: {PolicyName(_current)}\nSeu cargo: {(string.IsNullOrEmpty(_myRole) ? "(você não é membro)" : _myRole)}";
+            _overview.Text = $"{_current.Name}{(_current.Tag.Length > 0 ? $" [{_current.Tag}]" : string.Empty)}\n{(_current.Description.Length > 0 ? _current.Description : "Sem descrição.")}\n\nLíder: {Str(root, "leaderName")} · {_current.Members}/{_current.MemberLimit} membros\nPrivacidade: {(_current.Privacy == "public" ? "público" : "privado")} · Entrada: {PolicyName(_current)}\nEmblema: {EmblemName(_current.Emblem)} · Seu cargo: {(string.IsNullOrEmpty(_myRole) ? "(você não é membro)" : _myRole)}";
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { Say("Não foi possível ler o grupo."); return; }
-        _detail.Visible = true; var member = _current.IsMember;
+        _detail.Visible = true; var member = _current.IsMember; LoadGroupImage(_current);
         _innerBar.Visible = member;
         if (member) { LoadChat(); LoadAnnouncements(); LoadEvents(); LoadLands(); LoadTreasury(); LoadShop(); LoadMembers(); LoadRoles(); if (Has(GroupPermissions.ApproveRequests)) LoadRequests(); if (Has(GroupPermissions.Ban)) LoadBans(); if (Has(GroupPermissions.ViewAudit)) LoadAudit(); FillSettings(); }
         UpdateButtons();
@@ -252,14 +252,6 @@ public sealed partial class GroupsWindow : Node
         "land_donated" => "colocou um terreno no grupo", "land_released" => "devolveu um terreno a", "land_access_granted" => "abriu um terreno a outro grupo", "land_access_revoked" => "retirou o acesso de um grupo a um terreno", _ => action
     };
 
-    private void LoadAudit() => Call(Godot.HttpClient.Method.Get, $"/{_current!.Id}/audit?take=100", null, (status, body) =>
-    {
-        if (status is < 200 or >= 300) return;
-        _auditList.Clear();
-        foreach (var e in ReadList(body, e => e.Clone()))
-            _auditList.AddItem($"{(Time(e, "at") ?? DateTimeOffset.UtcNow).ToLocalTime().ToString("dd/MM HH:mm", Pt)} · {Str(e, "actor")} {ActionText(Str(e, "action"))}{(Str(e, "target").Length > 0 ? " " + Str(e, "target") : string.Empty)}");
-    });
-
     // ---- what the buttons may do (the server decides again) --------------------------------------------------------------------------------------------------
 
     private GroupMemberData? SelectedMember() { var p = _memberList.GetSelectedItems(); return p.Length == 0 || p[0] >= _members.Count ? null : _members[p[0]]; }
@@ -283,11 +275,13 @@ public sealed partial class GroupsWindow : Node
         UpdateLandButtons();
         UpdateEconomyButtons();
         UpdateSearchButtons();
+        RefreshPanel();
     }
 
     private void UpdateSearchButtons()
     {
         var g = SelectedFound(); _join.Disabled = g is null || g.IsMember || g.Banned || g.RequestPending || g.JoinPolicy == "invite";
+        _cancelRequest.Disabled = g is not { RequestPending: true };
         _join.Text = g is null ? "Entrar" : g.JoinPolicy == "open" ? "Entrar no grupo" : g.JoinPolicy == "request" ? (g.RequestPending ? "Pedido enviado" : "Pedir para entrar") : "Só por convite";
     }
 
@@ -299,7 +293,7 @@ public sealed partial class GroupsWindow : Node
         {
             name = _newName.Text.Trim(), tag = _newTag.Text.Trim(), description = _newDescription.Text.Trim(),
             privacy = _newPrivacy.Selected == 1 ? "private" : "public", joinPolicy = _newPrivacy.Selected == 1 ? "invite" : _newPolicy.Selected switch { 0 => "open", 1 => "request", _ => "invite" },
-            accentColor = "#" + _newColour.Color.ToHtml(false).ToUpperInvariant()
+            accentColor = "#" + _newColour.Color.ToHtml(false).ToUpperInvariant(), emblem = EmblemKey(_newEmblem.Selected), imageUrl = _newImage.Text.Trim()
         }, (status, body) =>
         {
             if (status is < 200 or >= 300) { Say(Explain(status, body)); return; }
@@ -338,6 +332,7 @@ public sealed partial class GroupsWindow : Node
         _setName.Text = g.Name; _setTag.Text = g.Tag; _setDescription.Text = g.Description; _setLimit.Text = g.MemberLimit.ToString(CultureInfo.InvariantCulture);
         _setPrivacy.Select(g.Privacy == "private" ? 1 : 0); _setPolicy.Select(g.JoinPolicy switch { "open" => 0, "request" => 1, _ => 2 });
         if (GroupRules.ValidColour(g.AccentColor) && g.AccentColor.Length == 7) _setColour.Color = new Color(g.AccentColor);
+        FillIdentity(g);
     }
 
     public void SaveSettings()
@@ -346,7 +341,7 @@ public sealed partial class GroupsWindow : Node
         Do(Godot.HttpClient.Method.Put, $"/{g.Id}", new
         {
             name = _setName.Text.Trim(), tag = _setTag.Text.Trim(), description = _setDescription.Text.Trim(), privacy = _setPrivacy.Selected == 1 ? "private" : "public",
-            joinPolicy = _setPrivacy.Selected == 1 ? "invite" : _setPolicy.Selected switch { 0 => "open", 1 => "request", _ => "invite" }, accentColor = "#" + _setColour.Color.ToHtml(false).ToUpperInvariant(), memberLimit = int.TryParse(_setLimit.Text, out var limit) ? limit : (int?)null
+            joinPolicy = _setPrivacy.Selected == 1 ? "invite" : _setPolicy.Selected switch { 0 => "open", 1 => "request", _ => "invite" }, accentColor = "#" + _setColour.Color.ToHtml(false).ToUpperInvariant(), emblem = EmblemKey(_setEmblem.Selected), imageUrl = _setImage.Text.Trim(), memberLimit = int.TryParse(_setLimit.Text, out var limit) ? limit : (int?)null
         }, "Perfil do grupo atualizado.", () => { OpenGroup(g.Id); LoadMine(); });
     }
 
@@ -376,12 +371,16 @@ public sealed partial class GroupsWindow : Node
         var mine = new HBoxContainer { Visible = true }; mine.SetAnchorsPreset(Control.LayoutPreset.FullRect); mine.AddThemeConstantOverride("separation", 10); stack.AddChild(mine); _minePage = mine;
         var left = new VBoxContainer { CustomMinimumSize = new Vector2(230, 0) }; mine.AddChild(left); left.AddChild(Heading("Seus grupos"));
         _mineList = List(380); _mineList.ItemSelected += i => { if (i >= 0 && i < _mine.Count) OpenGroup(_mine[(int)i].Id); }; left.AddChild(_mineList);
+        left.AddChild(Heading("Convites recebidos")); _inviteList = List(70); _inviteList.ItemSelected += _ => UpdateInviteButtons(); left.AddChild(_inviteList);
+        _inviteAccept = Act("Aceitar", UiStyle.ButtonKind.Primary, () => AnswerInvite(true)); _inviteDecline = Act("Recusar", UiStyle.ButtonKind.Secondary, () => AnswerInvite(false)); left.AddChild(Row(_inviteAccept, _inviteDecline)); UpdateInviteButtons();
         _detail = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, Visible = false }; mine.AddChild(_detail);
-        _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(400, 0) }; _overview.AddThemeFontSizeOverride("font_size", 16); _detail.AddChild(_overview);
+        _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(400, 0) }; _overview.AddThemeFontSizeOverride("font_size", 16);
+        _groupImage = new TextureRect { CustomMinimumSize = new Vector2(96, 96), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, Visible = false };
+        _detail.AddChild(Row(_groupImage, _overview));
         _leave = Act("Sair do grupo", UiStyle.ButtonKind.Secondary, LeaveCurrent); _detail.AddChild(_leave);
-        _inner = new UiTabs { Flat = true, FontSize = 14 }; foreach (var t in new[] { "Chat", "Anúncios", "Eventos", "Terrenos", "Cofre", "Loja", "Membros", "Cargos", "Pedidos", "Histórico", "Ajustes" }) _inner.AddTab(t); _innerBar = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Auto, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 48) }; _innerBar.AddChild(_inner); _detail.AddChild(_innerBar);
+        _inner = new UiTabs { Flat = true, FontSize = 14 }; foreach (var t in new[] { "Painel", "Chat", "Anúncios", "Eventos", "Terrenos", "Cofre", "Loja", "Membros", "Cargos", "Pedidos", "Histórico", "Ajustes" }) _inner.AddTab(t); _innerBar = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Auto, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 48) }; _innerBar.AddChild(_inner); _detail.AddChild(_innerBar);
         var innerStack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 280) }; _detail.AddChild(innerStack);
-        _innerPages.Add(BuildChat(innerStack)); _innerPages.Add(BuildAnnouncements(innerStack)); _innerPages.Add(BuildEvents(innerStack)); _innerPages.Add(BuildLands(innerStack)); _innerPages.Add(BuildChest(innerStack)); _innerPages.Add(BuildShop(innerStack)); _innerPages.Add(BuildMembers(innerStack)); _innerPages.Add(BuildRoles(innerStack)); _innerPages.Add(BuildRequests(innerStack)); _innerPages.Add(BuildAudit(innerStack)); _innerPages.Add(BuildSettings(innerStack));
+        _innerPages.Add(BuildPanel(innerStack)); _innerPages.Add(BuildChat(innerStack)); _innerPages.Add(BuildAnnouncements(innerStack)); _innerPages.Add(BuildEvents(innerStack)); _innerPages.Add(BuildLands(innerStack)); _innerPages.Add(BuildChest(innerStack)); _innerPages.Add(BuildShop(innerStack)); _innerPages.Add(BuildMembers(innerStack)); _innerPages.Add(BuildRoles(innerStack)); _innerPages.Add(BuildRequests(innerStack)); _innerPages.Add(BuildAudit(innerStack)); _innerPages.Add(BuildSettings(innerStack));
         _inner.TabChanged += i => { for (var p = 0; p < _innerPages.Count; p++) _innerPages[p].Visible = p == i; };
         _innerPages[0].Visible = true;
 
@@ -389,7 +388,7 @@ public sealed partial class GroupsWindow : Node
         var search = new VBoxContainer { Visible = false }; search.SetAnchorsPreset(Control.LayoutPreset.FullRect); search.AddThemeConstantOverride("separation", 8); stack.AddChild(search); _searchPage = search;
         _query = Field("Nome, sigla ou assunto"); _query.TextSubmitted += _ => Search(); search.AddChild(Row(_query, Act("Procurar", UiStyle.ButtonKind.Primary, () => Search())));
         _foundList = List(300); _foundList.ItemSelected += _ => UpdateSearchButtons(); search.AddChild(_foundList);
-        _join = Act("Entrar", UiStyle.ButtonKind.Primary, JoinSelected); search.AddChild(_join);
+        _join = Act("Entrar", UiStyle.ButtonKind.Primary, JoinSelected); _cancelRequest = Act("Cancelar meu pedido", UiStyle.ButtonKind.Secondary, CancelRequestSelected); search.AddChild(Row(_join, _cancelRequest));
 
         // create
         var create = new VBoxContainer { Visible = false }; create.SetAnchorsPreset(Control.LayoutPreset.FullRect); create.AddThemeConstantOverride("separation", 8); stack.AddChild(create); _createPage = create;
@@ -397,7 +396,7 @@ public sealed partial class GroupsWindow : Node
         _newPrivacy = Choice("Público (aparece na busca)", "Privado (só por convite)"); _newPolicy = Choice("Entrada livre", "Entra com aprovação", "Só por convite"); _newPolicy.Select(1);
         _newPrivacy.ItemSelected += i => { _newPolicy.Disabled = i == 1; if (i == 1) _newPolicy.Select(2); };
         _newColour = new ColorPickerButton { Color = new Color("#12F2E0"), CustomMinimumSize = new Vector2(120, 36), EditAlpha = false, FocusMode = Control.FocusModeEnum.None };
-        create.AddChild(_newName); create.AddChild(_newTag); create.AddChild(_newDescription); create.AddChild(_newPrivacy); create.AddChild(_newPolicy); create.AddChild(Row(new Label { Text = "Cor do grupo" }, _newColour));
+        create.AddChild(_newName); create.AddChild(_newTag); create.AddChild(_newDescription); create.AddChild(_newPrivacy); create.AddChild(_newPolicy); create.AddChild(Row(new Label { Text = "Cor do grupo" }, _newColour)); AddIdentityToCreate(create);
         create.AddChild(Note("Você será o líder. Depois dá para criar cargos, definir permissões, convidar e aprovar pedidos."));
         create.AddChild(Act("Criar grupo", UiStyle.ButtonKind.Primary, Create));
 
@@ -443,7 +442,8 @@ public sealed partial class GroupsWindow : Node
     private Control BuildAudit(Control stack)
     {
         var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
-        page.AddChild(Note("O que foi feito na administração do grupo, do mais novo para o mais antigo. Só quem tem permissão enxerga.")); _auditList = List(250); page.AddChild(_auditList);
+        page.AddChild(Note("O que foi feito na administração do grupo, do mais novo para o mais antigo. Só quem tem permissão enxerga.")); _auditList = List(230); page.AddChild(_auditList);
+        _auditMore = Act("Carregar mais antigos", UiStyle.ButtonKind.Secondary, () => LoadAudit(true)); _auditMore.Visible = false; page.AddChild(_auditMore);
         return page;
     }
 
@@ -452,7 +452,7 @@ public sealed partial class GroupsWindow : Node
         var box = new VBoxContainer(); box.AddThemeConstantOverride("separation", 6);
         _setName = Field("Nome", 40); _setTag = Field("Sigla", 5); _setDescription = Field("Descrição", 600); _setLimit = Field("Limite de membros", 4);
         _setPrivacy = Choice("Público", "Privado"); _setPolicy = Choice("Entrada livre", "Entra com aprovação", "Só por convite"); _setColour = new ColorPickerButton { Color = new Color("#12F2E0"), CustomMinimumSize = new Vector2(100, 34), EditAlpha = false, FocusMode = Control.FocusModeEnum.None };
-        box.AddChild(_setName); box.AddChild(Row(_setTag, _setLimit)); box.AddChild(_setDescription); box.AddChild(Row(_setPrivacy, _setPolicy, _setColour));
+        box.AddChild(_setName); box.AddChild(Row(_setTag, _setLimit)); box.AddChild(_setDescription); box.AddChild(Row(_setPrivacy, _setPolicy, _setColour)); AddIdentityToSettings(box);
         _saveSettings = Act("Salvar perfil do grupo", UiStyle.ButtonKind.Primary, SaveSettings); box.AddChild(_saveSettings);
         box.AddChild(Heading("Liderança e fim do grupo (só o líder)"));
         _leaderChoice = Choice(); _confirm = Field("Escreva o nome do grupo para confirmar"); box.AddChild(Row(new Label { Text = "Novo líder" }, _leaderChoice)); box.AddChild(_confirm);
