@@ -27,6 +27,13 @@ public static class PlatformEndpoints
         group.MapPut("/{instanceId:guid}/heartbeat", HeartbeatAsync);
         group.MapDelete("/{instanceId:guid}", StopAsync);
         endpoints.MapPost("/api/v1/platform/entry-tokens/validate", ValidateEntryAsync).WithTags("Platform");
+        // an island server asks what a player looks like now (they changed it while playing); the answer comes from the database, never from the client
+        endpoints.MapGet("/api/v1/platform/avatars/{avatarId:guid}/appearance", async (Guid avatarId, HttpContext context, LifeVerseDbContext db, IConfiguration config, CancellationToken ct) =>
+        {
+            if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+            var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems).SingleOrDefaultAsync(x => x.Id == avatarId, ct);
+            return avatar is null ? Results.NotFound() : Results.Ok(new { displayName = avatar.DisplayName, appearanceJson = await AvatarAppearanceJson.BuildAsync(db, avatar, ct) });
+        }).WithTags("Platform");
         endpoints.MapIslandContentEndpoints();
         endpoints.MapSupervisorEndpoints();
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/island-snapshot", GetServerSnapshotAsync).WithTags("Platform");
@@ -79,19 +86,7 @@ public static class PlatformEndpoints
         var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.Id == identity.AvatarId && x.UserId == identity.UserId, ct);
         if (avatar is null) return Results.Unauthorized();
-        var customModel = await AvatarModels.ActiveAsync(db, avatar, ct);
-        var appearance = JsonSerializer.Serialize(new
-        {
-            customWearablesJson = await AvatarWearables.WornInfoAsync(db, avatar, ct), customModelId = customModel?.Id, customModelHash = customModel?.ContentHash, customModelScale = customModel?.ScaleToStandard ?? 1f, customModelBonesJson = customModel?.BoneMapJson ?? "{}",
-            id = avatar.Id, displayName = avatar.DisplayName, baseModel = avatar.BaseModel,
-            skinColor = avatar.Appearance?.SkinColor ?? "#C98F65", hairColor = avatar.Appearance?.HairColor ?? "#2B1B14",
-            hairStyle = avatar.Appearance?.HairStyle ?? "short", eyeColor = avatar.Appearance?.EyeColor ?? "#4A3326",
-            beardStyle = avatar.Appearance?.BeardStyle ?? "none", bodySettingsJson = avatar.Appearance?.BodySettingsJson ?? "{}",
-            faceSettingsJson = avatar.Appearance?.FaceSettingsJson ?? "{}", outfitsJson = avatar.Appearance?.OutfitsJson ?? "[]",
-            attachmentsJson = avatar.Appearance?.AttachmentsJson ?? "[]", cameraSensitivity = avatar.Appearance?.CameraSensitivity ?? .003f,
-            invertCameraY = avatar.Appearance?.InvertCameraY ?? false,
-            equippedItems = avatar.EquippedItems.Select(x => new { slot = x.Slot, itemKey = x.ItemKey, tintColor = x.TintColor })
-        });
+        var appearance = await AvatarAppearanceJson.BuildAsync(db, avatar, ct);
         var canEditTerrain = await db.Islands.AsNoTracking().AnyAsync(x => x.Id == identity.IslandId && x.DeletedAt == null &&
             (x.OwnerUserId == identity.UserId || db.IslandPermissions.Any(p => p.IslandId == x.Id && p.UserId == identity.UserId && p.RevokedAt == null && (p.Permission == "edit_terrain" || p.Permission == "admin"))), ct);
         return Results.Ok(new ValidateEntryTokenResponse(identity.UserId, identity.AvatarId, identity.IslandId, identity.SessionId,

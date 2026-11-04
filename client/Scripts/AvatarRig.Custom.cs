@@ -35,6 +35,8 @@ public partial class AvatarRig
     private Quaternion[] _restGlobal = [], _globalNow = [];
     private bool[] _globalDone = [];
     private float _customScale = 1f;
+    private readonly Dictionary<string, int> _standardBones = [];
+    private bool _hipsLifted;
     private readonly Dictionary<int, Quaternion> _neutral = [];
 
     /// <summary>True while a custom body is on the avatar (the procedural body is hidden).</summary>
@@ -125,6 +127,8 @@ public partial class AvatarRig
         // the procedural parts keep animating but are no longer drawn
         if (_visual.GetNodeOrNull<Node3D>("Hips") is { } hips) foreach (var mesh in Meshes(hips)) mesh.Visible = false;
         _customBody = holder; _customRoot = scene; _customSkeleton = skeleton; _retarget = [.. table];
+        _standardBones.Clear();
+        for (var bone = 0; bone < skeleton.GetBoneCount(); bone++) if (BoneMapper.Map(skeleton.GetBoneName(bone)) is { } named) _standardBones.TryAdd(named, bone);
         _restGlobal = new Quaternion[skeleton.GetBoneCount()]; _globalNow = new Quaternion[skeleton.GetBoneCount()]; _globalDone = new bool[skeleton.GetBoneCount()];
         for (var bone = 0; bone < _restGlobal.Length; bone++) _restGlobal[bone] = skeleton.GetBoneGlobalRest(bone).Basis.Orthonormalized().GetRotationQuaternion();
         ComputeNeutralPose(skeleton, scene);
@@ -157,7 +161,7 @@ public partial class AvatarRig
         }
     }
 
-    public override void _Process(double delta) { RetargetCustom(); FollowWearables(); }
+    public override void _Process(double delta) { AdvanceClip(delta); RetargetCustom(); FollowWearables(); }
 
     /// <summary>Copies the animated rotations of the procedural body onto the bones of the custom model, in the model's own space.</summary>
     public void RetargetCustom()
@@ -166,13 +170,19 @@ public partial class AvatarRig
         var skeleton = _customSkeleton;
         var flip = new Quaternion(Vector3.Up, Mathf.Pi);
         var skeletonInModel = (((Node3D)root).GlobalBasis.Inverse() * skeleton.GlobalBasis).Orthonormalized().GetRotationQuaternion();
-        var delta = new Dictionary<int, Quaternion>();
-        foreach (var (bone, proxy) in _retarget)
+        var delta = new Dictionary<int, Quaternion>(); var clipDeltas = ClipDeltas(skeleton, skeletonInModel, _standardBones, out var hipsLift);
+        if (clipDeltas is not null) delta = clipDeltas; // the person's own animation drives the bones
+        else foreach (var (bone, proxy) in _retarget)
         {
             var inRig = (GlobalBasis.Inverse() * proxy.GlobalBasis).Orthonormalized().GetRotationQuaternion();
             var inModel = flip.Inverse() * inRig * flip;
             delta[bone] = skeletonInModel.Inverse() * inModel * skeletonInModel;
             if (_neutral.TryGetValue(bone, out var neutral)) delta[bone] *= neutral; // first the arm is lowered from its modelled pose, then the animation moves it
+        }
+        if (_standardBones.TryGetValue("hips", out var hipsBone))
+        {
+            if (clipDeltas is not null) { skeleton.SetBonePosePosition(hipsBone, skeleton.GetBoneRest(hipsBone).Origin + Vector3.Up * hipsLift); _hipsLifted = true; }
+            else if (_hipsLifted) { skeleton.SetBonePosePosition(hipsBone, skeleton.GetBoneRest(hipsBone).Origin); _hipsLifted = false; }
         }
         Array.Clear(_globalDone);
         for (var bone = 0; bone < _restGlobal.Length; bone++) GlobalOf(skeleton, bone, delta);

@@ -131,7 +131,7 @@ public partial class ServerMain : Node
     {
         _fleet.Release((int)peerId);
         _voice.Forget((int)peerId);
-        _lastTeleport.Remove((int)peerId);
+        _lastTeleport.Remove((int)peerId); _lastAppearance.Remove((int)peerId);
         if (!_players.Remove((int)peerId, out var player)) return;
         if (player.Authenticated)
         {

@@ -89,9 +89,10 @@ public partial class AvatarRig : Node3D
         var voice = new VoiceIndicator { Name = "VoiceIndicator", Position = new Vector3(0, top3 + .42f, 0), Active = _voiceActive };
         _visual.AddChild(voice); _voice = voice;
         _visual.AddChild(new NamePlate(data.DisplayName, voice) { Name = "DisplayName", Position = new Vector3(0, top3 + .2f, 0) });
-        if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(StateName(_state)); }
+        if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(Effective(_state)); }
         StartCustomBody(data);
         StartWearables(data);
+        StartAnimations(data);
     }
 
     /// Height of the player capsule in Player.tscn; the visible body is scaled to match it.
@@ -132,14 +133,14 @@ public partial class AvatarRig : Node3D
         if (_overrideState is not null && Time.GetTicksMsec() / 1000.0 >= _overrideUntil) { _overrideState = null; _overridePriority = 0; }
         if (!force && state == _state) return;
         _state = state;
-        if (_playback is not null) _playback.Travel(StateName(state));
+        if (_playback is not null) _playback.Travel(Effective(state));
     }
 
     public bool SetAnimationOverride(AvatarMotionState state, float duration, int priority = 1)
     {
         if (duration <= 0 || priority < _overridePriority) return false;
         _overrideState = state; _overridePriority = priority; _overrideUntil = Time.GetTicksMsec() / 1000.0 + Math.Clamp(duration, .05f, 30f);
-        _state = state; _playback?.Travel(StateName(state));
+        _state = state; _playback?.Travel(Effective(state));
         return true;
     }
 
@@ -173,7 +174,7 @@ public partial class AvatarRig : Node3D
         _tree = new AnimationTree { Name = "AnimationTree", AnimPlayer = new NodePath("../AnimationPlayer") };
         AddChild(_tree);
         var machine = new AnimationNodeStateMachine();
-        var names = Enum.GetValues<AvatarMotionState>().Select(StateName).ToArray();
+        var names = Enum.GetValues<AvatarMotionState>().Select(StateName).Concat(AlternativeNames()).ToArray();
         foreach (var name in names) machine.AddNode(name, new AnimationNodeAnimation { Animation = name });
         foreach (var from in names)
         foreach (var to in names)
@@ -206,6 +207,7 @@ public partial class AvatarRig : Node3D
         library.AddAnimation("Greet", Clip(1.2, true, ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { V(1.1f), V(1.7f), V(1.1f) })));
         library.AddAnimation("Laugh", Clip(1.0, true, ("Visual/Hips/Torso:rotation", new[] { V(.12f), V(-.12f), V(.12f) })));
         library.AddAnimation("SitFloor", Pose(.5, ("Visual/Hips/LeftUpperLeg:rotation", V(-1.1f)), ("Visual/Hips/RightUpperLeg:rotation", V(-1.1f))));
+        AddAlternativeAnimations(library);
     }
 
     private static Animation Gait(double length, float amount) => Clip(length, true,

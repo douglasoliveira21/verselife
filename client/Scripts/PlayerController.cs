@@ -1,4 +1,5 @@
 using Godot;
+using LifeVerse.Client.Models;
 using LifeVerse.Shared.Vehicles;
 using LifeVerse.Client.Autoloads;
 using LifeVerse.Shared.Gameplay;
@@ -463,6 +464,9 @@ public partial class PlayerController : CharacterBody3D
         if (direction.LengthSquared() > .01f) _targetYaw = Mathf.Atan2(-direction.X, -direction.Z);
     }
     public void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; }
+    /// Shows a new look on our own avatar (it came from the island after a refresh); the camera preferences stay as they are.
+    public void ShowAppearance(AvatarAppearanceData value) => _rig.ApplyAppearance(value);
+
     private void OnAvatarLoaded(bool success, string message)
     {
         if (!success) { _status.Text = message; return; }

@@ -80,11 +80,19 @@ public partial class Avatar2Smoke : Node
             var manager = GetNode<AvatarManager>("/root/AvatarManager");
             var calls = new List<string>(); var saved = new List<(Guid Id, string Name, string? Code)>(); var lastBody = string.Empty;
             var models = new List<(Guid Id, string Name)>(); Guid? usedModel = null;
-            var wear = new List<(Guid Id, string Name, string Slot, string Kind, string Covers)>();
+            var wear = new List<(Guid Id, string Name, string Slot, string Kind, string Covers)>(); var animFiles = new List<(Guid Id, string Name)>(); var savedOverrides = string.Empty;
             manager.Transport = (method, path, body) =>
             {
                 calls.Add($"{method} {path} {body}");
                 string List() => "[" + string.Join(",", saved.Select(l => $"{{\"id\":\"{l.Id}\",\"name\":\"{l.Name}\",\"shareCode\":{(l.Code is null ? "null" : $"\"{l.Code}\"")},\"skinColor\":\"#C98F65\",\"hairStyle\":\"short\"}}")) + "]";
+                if (method == Godot.HttpClient.Method.Get && path == "/animations") return (200, "[" + string.Join(",", animFiles.Select(a => $"{{\"id\":\"{a.Id}\",\"name\":\"{a.Name}\",\"hash\":\"{new string('c', 64)}\",\"clips\":[{{\"name\":\"Passada\"}},{{\"name\":\"Acenar\"}}]}}")) + "]");
+                if (method == Godot.HttpClient.Method.Post && path == "/animations")
+                {
+                    if (body!.Contains("ruim.glb")) return (422, "{\"error\":\"invalid_animation\",\"report\":{\"ok\":false,\"issues\":[{\"code\":\"too_few_bones\",\"message\":\"only 2 bones.\",\"error\":true},{\"code\":\"root_motion\",\"message\":\"x\",\"error\":false}]}}");
+                    animFiles.Add((Guid.NewGuid(), "bom")); return (200, "{\"file\":{},\"report\":{\"ok\":true,\"issues\":[]}}");
+                }
+                if (method == Godot.HttpClient.Method.Delete && path.StartsWith("/animations/")) { animFiles.RemoveAt(0); return (200, "{}"); }
+                if (method == Godot.HttpClient.Method.Put && path == "/animation-overrides") { savedOverrides = body!; return (200, "{}"); }
                 if (method == Godot.HttpClient.Method.Get && path == "/wearables") return (200, "[" + string.Join(",", wear.Select(w => $"{{\"id\":\"{w.Id}\",\"name\":\"{w.Name}\",\"slot\":\"{w.Slot}\",\"layer\":\"base\",\"kind\":\"{w.Kind}\",\"triangles\":12,\"key\":\"custom:{w.Id}\",\"hash\":\"{new string('b', 64)}\",\"covers\":[{w.Covers}],\"hidesHair\":false,\"attachBone\":\"head\",\"offset\":[0,0.15,0],\"rotation\":[0,0,0],\"scale\":1}}")) + "]");
                 if (method == Godot.HttpClient.Method.Post && path == "/wearables")
                 {
@@ -206,6 +214,26 @@ public partial class Avatar2Smoke : Node
             Require(creator.FormForTesting().Item("top", "") == "tee_basic", "choosing shorts takes the custom dress off");
             creator.DeleteWearableForTesting();
             Require(creator.Wearables.Count == 1, "deleting removes the item");
+
+            // ---- animations
+            creator.LoadAnimations();
+            Require(creator.AnimationFiles.Count == 0 && creator.AnimationSourcesForTesting("Walk").SequenceEqual(["default", "builtin:happy", "builtin:tired"]) && creator.AnimationSourcesForTesting("Jump").SequenceEqual(["default"]), "each state offers the default and its library alternatives");
+            creator.ImportAnimations("ruim.glb", [1]);
+            Require(creator.AnimationMessageForTesting.Contains("recusado") && creator.AnimationMessageForTesting.Contains("✖") && creator.AnimationFiles.Count == 0, $"a refused file shows why: {creator.AnimationMessageForTesting}");
+            creator.ImportAnimations("foto.png", [1]); Require(creator.AnimationMessageForTesting.Contains(".glb"), "only .glb");
+            creator.ImportAnimations("bom.glb", [1]);
+            var fileId = creator.AnimationFiles.Single().Id;
+            Require(creator.AnimationSourcesForTesting("Walk").Contains($"custom:{fileId}#Passada") && creator.AnimationSourcesForTesting("Wave").Contains($"custom:{fileId}#Acenar"), "the animations of the file are offered for every state");
+            creator.ChooseAnimationForTesting("Walk", "builtin:happy"); creator.ChooseAnimationForTesting("Wave", $"custom:{fileId}#Acenar");
+            var form = creator.FormForTesting();
+            Require(form.AnimationOverrides["Walk"] == "builtin:happy" && form.AnimationOverrides["Wave"] == $"custom:{fileId}#Acenar" && form.AnimationFiles.Single().Id == fileId && form.AnimationFiles[0].Hash.Length == 64, "the form carries the choices and the files they come from");
+            creator.SaveAnimationChoicesForTesting();
+            using (var sent = JsonDocument.Parse(savedOverrides)) Require(sent.RootElement.GetProperty("overrides").GetProperty("Walk").GetString() == "builtin:happy" && creator.AnimationMessageForTesting.Contains("salvas"), "saving sends the whole map");
+            creator.ClearAnimationChoicesForTesting();
+            Require(creator.FormForTesting().AnimationOverrides.Count == 0 && creator.OverridesJsonForTesting == "{}", "everything back to the default");
+            creator.ChooseAnimationForTesting("Dance", $"custom:{fileId}#Passada");
+            creator.SelectAnimationFileForTesting(0); creator.DeleteAnimationFileForTesting();
+            Require(creator.AnimationFiles.Count == 0 && creator.AnimationChoices.Count == 0, "deleting the file puts its states back to the default");
 
             manager.Transport = null;
             GD.Print("event=avatar2_smoke result=passed");

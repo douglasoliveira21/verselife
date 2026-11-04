@@ -26,6 +26,8 @@ public partial class AvatarManager : Node
     /// Sends a request to /api/v1/users/me/avatar{path} (looks use /looks...) and says what came back; each call has its own connection.
     public void Call(Godot.HttpClient.Method method, string path, string? body, Action<int, string> done)
     {
+        var inner = done;
+        done = (status, text) => { if (method != Godot.HttpClient.Method.Get && status is >= 200 and < 300) TellTheIsland(); inner(status, text); };
         if (Transport is not null) { var (status, text) = Transport(method, path, body); done(status, text); return; }
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager"); var app = GetNodeOrNull<AppManager>("/root/AppManager");
         if (session is null || app is null || !session.IsAuthenticated) { done(401, string.Empty); return; }
@@ -35,6 +37,9 @@ public partial class AvatarManager : Node
     }
 
     /// Sends a file as multipart form data (the field "file", plus the given text fields) to /api/v1/users/me/avatar{path}. Tests see it as a body like "file:name:size".
+    /// Something about the avatar changed on the server: if we are on an island, it looks the avatar up again and shows the new look to everybody.
+    public void TellTheIsland() => GetNodeOrNull<NetworkManager>("/root/NetworkManager")?.RefreshAppearance();
+
     public void Upload(string path, string fileName, byte[] bytes, IReadOnlyDictionary<string, string> fields, Action<int, string> done)
     {
         if (Transport is not null) { var (status, text) = Transport(Godot.HttpClient.Method.Post, path, $"file:{fileName}:{bytes.Length}"); done(status, text); return; }
@@ -88,7 +93,7 @@ public partial class AvatarManager : Node
             if (responseCode is >= 200 and < 300)
             {
                 Current = JsonSerializer.Deserialize<AvatarAppearanceData>(json) ?? CreateDefault();
-                if (wasSaving) EmitSignal(SignalName.AvatarSaved, true, "Avatar saved.");
+                if (wasSaving) { EmitSignal(SignalName.AvatarSaved, true, "Avatar saved."); TellTheIsland(); }
                 else EmitSignal(SignalName.AvatarLoaded, true, "Avatar loaded.");
                 return;
             }

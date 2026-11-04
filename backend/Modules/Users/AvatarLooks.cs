@@ -130,7 +130,7 @@ public static class AvatarLooks
         var request = ToRequest(avatar, snapshot);
         if (AvatarCatalog.Validate(request, await AvatarWearables.ResolverAsync(db, avatar.Id, ct)).Count > 0 || (request.EquippedItems.Any(i => AvatarRules.IsCustom(i.ItemKey)) && (await AvatarWearables.CheckOutfitAsync(db, avatar, request.EquippedItems, ct)).Count > 0)) return new LookResult(false, "look_invalid");
         UserEndpoints.ApplyAvatar(db, avatar, request, now);
-        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct)));
+        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct)));
     }
 
     public static async Task<LookResult> DuplicateAsync(LifeVerseDbContext db, Guid user, Guid id, DateTimeOffset now, CancellationToken ct)

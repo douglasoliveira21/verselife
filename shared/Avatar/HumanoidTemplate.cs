@@ -6,6 +6,9 @@ namespace LifeVerse.Shared.Avatar;
 public enum BoneNaming { Blender, Mixamo, Standard }
 public enum SkinningFault { None, NoWeights, BadSum, BadIndex }
 
+/// <summary>One animation to put in a template: for each track a standard bone turns about an axis (0 x, 1 y, 2 z) by an angle (radians) at the middle of the clip and back; the hips can also bob.</summary>
+public sealed record AnimationSpec(string Name, float Duration, (string Bone, int Axis, float Angle)[] Tracks, float HipsBob = 0f, float HipsTravel = 0f);
+
 /// <summary>What a template should look like; the defaults are a clean model every check passes.</summary>
 public sealed record TemplateOptions
 {
@@ -27,6 +30,8 @@ public sealed record TemplateOptions
     public bool ExternalTexture { get; init; }
     /// <summary>Adds an (empty) animation, which the game ignores.</summary>
     public bool WithAnimation { get; init; }
+    /// <summary>Real animations (keyframes on the bones) to put in the file.</summary>
+    public IReadOnlyList<AnimationSpec>? Animations { get; init; }
     /// <summary>Adds a required extension the game does not support.</summary>
     public string? RequiredExtension { get; init; }
     /// <summary>Makes the arms very long (to break the proportions).</summary>
@@ -134,6 +139,28 @@ public static class HumanoidTemplate
         var inverse = new List<float>();
         foreach (var bone in bones) { var w = world[bone.Standard]; inverse.AddRange([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -w.X, -w.Y, -w.Z, 1]); }
         var accessorInverse = AddAccessor(AddView(Bytes(inverse)), 5126, bones.Count, "MAT4");
+        var animationList = new List<object>();
+        foreach (var spec in options.Animations ?? [])
+        {
+            var times = new[] { 0f, spec.Duration / 2, spec.Duration }; var timeAccessor = AddAccessor(AddView(Bytes(times)), 5126, 3, "SCALAR", [0f], [spec.Duration]);
+            var samplers = new List<object>(); var channels = new List<object>();
+            foreach (var (bone, axis, angle) in spec.Tracks)
+            {
+                if (!indexOf.TryGetValue(bone, out var boneIndex)) continue;
+                var values = new List<float>();
+                foreach (var a in new[] { 0f, angle, 0f }) { var half = a / 2; var q = new float[] { axis == 0 ? MathF.Sin(half) : 0, axis == 1 ? MathF.Sin(half) : 0, axis == 2 ? MathF.Sin(half) : 0, MathF.Cos(half) }; values.AddRange(q); }
+                samplers.Add(new { input = timeAccessor, output = AddAccessor(AddView(Bytes(values)), 5126, 3, "VEC4"), interpolation = "LINEAR" });
+                channels.Add(new { sampler = samplers.Count - 1, target = new { node = boneIndex + 1, path = "rotation" } });
+            }
+            if (spec.HipsBob != 0 || spec.HipsTravel != 0)
+            {
+                var hips = world["hips"]; var values = new List<float>();
+                foreach (var f in new[] { 0f, 1f, 0f }) values.AddRange([hips.X, hips.Y + spec.HipsBob * f, hips.Z + spec.HipsTravel * f]);
+                samplers.Add(new { input = timeAccessor, output = AddAccessor(AddView(Bytes(values)), 5126, 3, "VEC3"), interpolation = "LINEAR" });
+                channels.Add(new { sampler = samplers.Count - 1, target = new { node = indexOf["hips"] + 1, path = "translation" } });
+            }
+            animationList.Add(new { name = spec.Name, channels, samplers });
+        }
         int accessorRigid = -1, accessorRigidIndices = -1;
         if (options.RigidMesh)
         {
@@ -177,7 +204,8 @@ public static class HumanoidTemplate
             ["accessors"] = accessors, ["bufferViews"] = views, ["buffers"] = new[] { new { byteLength = bin.Count } }
         };
         if (options.ExternalTexture) { root["images"] = new[] { new { uri = "http://example.com/skin.png" } }; }
-        if (options.WithAnimation) root["animations"] = new[] { new { name = "Idle", channels = Array.Empty<object>(), samplers = Array.Empty<object>() } };
+        if (animationList.Count > 0) root["animations"] = animationList;
+        else if (options.WithAnimation) root["animations"] = new[] { new { name = "Idle", channels = Array.Empty<object>(), samplers = Array.Empty<object>() } };
         if (options.RequiredExtension is { } extension) { root["extensionsUsed"] = new[] { extension }; root["extensionsRequired"] = new[] { extension }; }
 
         var json = JsonSerializer.SerializeToUtf8Bytes(root, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });

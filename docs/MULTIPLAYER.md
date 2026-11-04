@@ -36,3 +36,4 @@ O processo headless é iniciado com `--headless --path island-server`. Ele expõ
 - Docker não está instalado no ambiente auditado; por isso o Compose foi validado estaticamente, mas não executado nesta máquina.
 
 - Protocolo **7**: `RequestTeleport(parcelId, x, z)` (cliente → servidor) e `TeleportResult(ok, code, x, z, yaw)` (servidor → cliente), usados pelo teleporte de terrenos. Publique API e servidor de ilhas juntos.
+- Protocolo **8**: `RefreshAppearance()` (cliente → servidor) e `AppearanceChanged(peerId, displayName, appearanceJson)` (servidor → cliente). O servidor de ilha busca a aparência na API (`/api/v1/platform/avatars/{id}/appearance`, chave de serviço) e nunca usa o que o cliente diria. Publique API e servidor de ilhas juntos.

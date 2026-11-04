@@ -19,6 +19,8 @@ public partial class NetworkManager : Node
     [Signal] public delegate void TerrainPermissionChangedEventHandler(bool canEdit);
     [Signal] public delegate void TerrainEditRejectedEventHandler(string code);
     [Signal] public delegate void VehicleMessageEventHandler(string text);
+    /// Somebody's look was refreshed while connected (the peer and the name).
+    [Signal] public delegate void AppearanceRefreshedEventHandler(int peerId, string displayName);
     /// The island answered a teleport request: where we landed and which way we face, or why not.
     [Signal] public delegate void TeleportResultEventHandler(bool ok, string code, float x, float z, float yaw);
     public VehicleClient Vehicles { get; private set; } = null!;
@@ -235,6 +237,18 @@ public partial class NetworkManager : Node
         try { rig.ApplyAppearance(JsonSerializer.Deserialize<AvatarAppearanceData>(appearanceJson) ?? new AvatarAppearanceData { DisplayName = displayName }); } catch { }
         rig.SetMotionState(ToAvatarMotion((NetworkMotionState)state), true);
         _remote[peerId] = new RemoteAvatar(node, rig, position) { Name = displayName };
+    }
+
+    /// Asks the island to look up again how we look (after changing clothes, body or animations while connected). The island asks the server of accounts; nothing we send is shown to others.
+    public void RefreshAppearance() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.RefreshAppearance); }
+
+    /// Somebody (maybe us) looks different now: show the new look at once.
+    public void OnAppearanceChanged(int peerId, string displayName, string appearanceJson)
+    {
+        AvatarAppearanceData? data; try { data = JsonSerializer.Deserialize<AvatarAppearanceData>(appearanceJson); } catch (JsonException) { return; }
+        if (data is null) return;
+        if (peerId == Multiplayer.GetUniqueId()) { _localPlayer?.ShowAppearance(data); EmitSignal(SignalName.AppearanceRefreshed, peerId, displayName); return; }
+        if (_remote.TryGetValue(peerId, out var remote)) { remote.Rig.ApplyAppearance(data); remote.Name = displayName; EmitSignal(SignalName.AppearanceRefreshed, peerId, displayName); }
     }
 
     public void OnPlayerDespawned(int peerId, bool suspended) { Voice.Forget(peerId); if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }

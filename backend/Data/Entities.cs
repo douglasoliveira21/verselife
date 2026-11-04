@@ -66,6 +66,8 @@ public sealed class AvatarAppearance
     public string FaceSettingsJson { get; set; } = "{}";
     public string OutfitsJson { get; set; } = "[]";
     public string AttachmentsJson { get; set; } = "[]";
+    /// <summary>Which animation plays for which state when it is not the default: { "Walk": "builtin:happy", "Dance": "custom:{file}#{name}" }.</summary>
+    public string AnimationOverridesJson { get; set; } = "{}";
     public float CameraSensitivity { get; set; } = 0.003f;
     public bool InvertCameraY { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -106,6 +108,20 @@ public sealed class AvatarWearable
     public int SizeBytes { get; set; }
     public int Triangles { get; set; }
     /// <summary>The whole report of the check: it also holds what the item covers, whether it hides the hair and where a rigid piece goes.</summary>
+    public string ReportJson { get; set; } = "{}";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
+}
+
+/// <summary>A file of animations a person uploaded (checked, stored by hash). Each animation in it can replace the default of a state.</summary>
+public sealed class AvatarAnimationFile
+{
+    public Guid Id { get; set; }
+    public Guid AvatarId { get; set; }
+    public required string Name { get; set; }
+    public required string ContentHash { get; set; }
+    public required string StorageKey { get; set; }
+    public int SizeBytes { get; set; }
     public string ReportJson { get; set; } = "{}";
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }

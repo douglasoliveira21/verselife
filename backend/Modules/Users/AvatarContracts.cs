@@ -39,7 +39,9 @@ public sealed record AvatarResponse(
     string? CustomModelHash = null,
     float CustomModelScale = 1f,
     string CustomModelBonesJson = "{}",
-    string CustomWearablesJson = "[]");
+    string CustomWearablesJson = "[]",
+    string AnimationOverridesJson = "{}",
+    string AnimationFilesJson = "[]");
 
 public static partial class AvatarCatalog
 {

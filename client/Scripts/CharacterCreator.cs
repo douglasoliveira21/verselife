@@ -83,7 +83,7 @@ public partial class CharacterCreator : Control
         SetBusy(false, success ? "" : message);
         var value = success ? _manager.Current : AvatarManager.CreateDefault();
         _lastSaved = value.Copy(); _undoValue = value.Copy(); ApplyToForm(value);
-        if (success) { LoadLooks(); LoadModels(); LoadWearables(); }
+        if (success) { LoadLooks(); LoadModels(); LoadWearables(); LoadAnimations(); }
     }
 
     private void OnSaved(bool success, string message)
@@ -124,7 +124,7 @@ public partial class CharacterCreator : Control
         BodySettingsJson = BodyJson(), FaceSettingsJson = FaceJson(), OutfitsJson = "[]", AttachmentsJson = "[]",
         CameraSensitivity = (float)_sensitivity.Value, InvertCameraY = _invertY.ButtonPressed,
         EquippedItems = ReadWorn(),
-        CustomModelId = _custom.Id, CustomModelHash = _custom.Hash, CustomModelScale = _custom.Scale, CustomModelBonesJson = _custom.Bones, CustomWearablesJson = WornWearablesJson()
+        CustomModelId = _custom.Id, CustomModelHash = _custom.Hash, CustomModelScale = _custom.Scale, CustomModelBonesJson = _custom.Bones, CustomWearablesJson = WornWearablesJson(), AnimationOverridesJson = OverridesJson(), AnimationFilesJson = AnimationFilesJsonForForm()
     };
 
     private void RefreshPreview()

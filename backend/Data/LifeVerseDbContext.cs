@@ -11,6 +11,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<AvatarLook> AvatarLooks => Set<AvatarLook>();
     public DbSet<AvatarModel> AvatarModels => Set<AvatarModel>();
     public DbSet<AvatarWearable> AvatarWearables => Set<AvatarWearable>();
+    public DbSet<AvatarAnimationFile> AvatarAnimationFiles => Set<AvatarAnimationFile>();
     public DbSet<EquippedItem> EquippedItems => Set<EquippedItem>();
     public DbSet<Island> Islands => Set<Island>();
     public DbSet<ServerInstance> ServerInstances => Set<ServerInstance>();
@@ -115,6 +116,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.FaceSettingsJson).HasColumnType("jsonb");
             b.Property(x => x.OutfitsJson).HasColumnType("jsonb");
             b.Property(x => x.AttachmentsJson).HasColumnType("jsonb");
+            b.Property(x => x.AnimationOverridesJson).HasColumnType("jsonb").HasDefaultValue("{}");
             b.HasIndex(x => x.AvatarId).IsUnique();
             b.HasOne(x => x.Avatar).WithOne(x => x.Appearance).HasForeignKey<AvatarAppearance>(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -169,6 +171,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<ParcelRental>(b => { b.ToTable("parcel_rentals", "world"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(16); b.Property(x => x.EndReason).HasMaxLength(32); b.HasIndex(x => new { x.ParcelId, x.Status }); b.HasIndex(x => new { x.TenantUserId, x.Status }); b.HasOne<IslandParcel>().WithMany().HasForeignKey(x => x.ParcelId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ParcelTransaction>(b => { b.ToTable("parcel_transactions", "world"); b.HasKey(x => x.Id); b.Property(x => x.Type).HasMaxLength(32); b.Property(x => x.DataJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.ParcelId, x.CreatedAt }); b.HasOne<IslandParcel>().WithMany().HasForeignKey(x => x.ParcelId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ParcelCell>(b => { b.ToTable("parcel_cells", "world"); b.HasKey(x => new { x.IslandId, x.Cx, x.Cz }); b.HasIndex(x => x.ParcelId); b.HasOne<IslandParcel>().WithMany().HasForeignKey(x => x.ParcelId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<AvatarAnimationFile>(b => { b.ToTable("avatar_animation_files", "identity"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(60); b.Property(x => x.ContentHash).HasMaxLength(64); b.Property(x => x.StorageKey).HasMaxLength(200); b.Property(x => x.ReportJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.AvatarId, x.ContentHash }).IsUnique(); b.HasOne<Avatar>().WithMany().HasForeignKey(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<AvatarWearable>(b => { b.ToTable("avatar_wearables", "identity"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(60); b.Property(x => x.Slot).HasMaxLength(16); b.Property(x => x.Layer).HasMaxLength(8); b.Property(x => x.Kind).HasMaxLength(12); b.Property(x => x.ContentHash).HasMaxLength(64); b.Property(x => x.StorageKey).HasMaxLength(200); b.Property(x => x.ReportJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.AvatarId, x.ContentHash }).IsUnique(); b.HasOne<Avatar>().WithMany().HasForeignKey(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<AvatarModel>(b => { b.ToTable("avatar_models", "identity"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(60); b.Property(x => x.ContentHash).HasMaxLength(64); b.Property(x => x.StorageKey).HasMaxLength(200); b.Property(x => x.ReportJson).HasColumnType("jsonb"); b.Property(x => x.BoneMapJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.AvatarId, x.ContentHash }).IsUnique(); b.HasOne<Avatar>().WithMany().HasForeignKey(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<AvatarLook>(b => { b.ToTable("avatar_looks", "identity"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(40); b.Property(x => x.SnapshotJson).HasColumnType("jsonb"); b.Property(x => x.ShareCode).HasMaxLength(16); b.HasIndex(x => new { x.AvatarId, x.Name }).IsUnique(); b.HasIndex(x => x.ShareCode).IsUnique(); b.HasOne<Avatar>().WithMany().HasForeignKey(x => x.AvatarId).OnDelete(DeleteBehavior.Cascade); });
