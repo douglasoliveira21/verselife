@@ -14,7 +14,7 @@ public partial class InventoryPanel : Node3D
     private static readonly Color FolderYellow = new("#F8B84A");
     private static readonly Color FolderGrey = new("#B9BEC2");
 
-    private sealed record ItemInfo(Guid ItemId, Guid AssetId, string Name, string Category, string Mime, string Hash, long Size, Guid? FolderId, bool Favorite, bool Deleted, int Version);
+    private sealed record ItemInfo(Guid ItemId, Guid AssetId, string Name, string Category, string Mime, string Hash, long Size, Guid? FolderId, bool Favorite, bool Deleted, int Version, int OwnerRights = 15, string Status = "active");
     private sealed record FolderInfo(Guid Id, string Name);
     private enum Pending { List, Action }
 
@@ -175,6 +175,9 @@ public partial class InventoryPanel : Node3D
             case 4: Equip(); break;
             case 5: Favorite(); break;
             case 6: Restore(); break;
+            case 8: OpenRights(false); break;
+            case 9: OpenRights(true); break;
+            case 10: MakeCopy(); break;
         }
     }
 
@@ -231,7 +234,8 @@ public partial class InventoryPanel : Node3D
                 entry.TryGetProperty("size", out var size) && size.TryGetInt64(out var bytes) ? bytes : 0, folder,
                 entry.TryGetProperty("favorite", out var favorite) && favorite.ValueKind == JsonValueKind.True,
                 entry.TryGetProperty("deleted", out var deleted) && deleted.ValueKind == JsonValueKind.True,
-                entry.TryGetProperty("version", out var version) && version.TryGetInt32(out var v) ? v : 1);
+                entry.TryGetProperty("version", out var version) && version.TryGetInt32(out var v) ? v : 1,
+                entry.TryGetProperty("ownerRights", out var rights) && rights.TryGetInt32(out var r) ? r : 15, Text("status", "active"));
         }
         _itemsLoaded = true; _status.Text = $"{_items.Count} itens carregados";
         Rebuild();
@@ -490,7 +494,7 @@ public partial class InventoryPanel : Node3D
             _owner = owner; Info = info;
             CustomMinimumSize = list ? new Vector2(0, 64) : new Vector2(0, 178);
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            TooltipText = $"{info.Name}\n{info.Category} · {FormatSize(info.Size)} · v{info.Version}";
+            TooltipText = $"{info.Name}\n{info.Category} · {FormatSize(info.Size)} · v{info.Version}\nDireitos: {LifeVerse.Shared.Items.ItemRights.Describe(info.OwnerRights)}{(info.Status == "active" ? string.Empty : "\nEm oferta ou à venda: aguardando resposta")}";
             AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.RowFill, .75f), new Color(UiStyle.Divider, .9f), 14, 1, 8, 8));
             _thumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize; _thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered; _thumbnail.MouseFilter = MouseFilterEnum.Ignore;
             _thumbnail.TextureFilter = TextureFilterEnum.LinearWithMipmaps;
@@ -567,6 +571,7 @@ public partial class InventoryPanel : Node3D
     {
         var menu = new PopupMenu();
         menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5); menu.AddItem("Restaurar da lixeira", 6);
+        menu.AddSeparator(); menu.AddItem("Direitos e propriedades…", 8); menu.AddItem("Oferecer a alguém…", 9); menu.AddItem("Fazer uma cópia", 10);
         menu.IdPressed += id => { OnMenu(id); menu.QueueFree(); };
         menu.PopupHide += () => menu.QueueFree();
         AddChild(menu);
@@ -612,5 +617,24 @@ public partial class InventoryPanel : Node3D
         }
 
         public override void _Draw() => DrawDashedFrame(this, new Rect2(Vector2.Zero, Size), _hover ? Colors.White : UiStyle.Accent, 16, 3);
+    }
+}
+
+public partial class InventoryPanel
+{
+    /// <summary>Opens the rights window for the selected item ("Direitos e propriedades…", or straight to the offer section).</summary>
+    private void OpenRights(bool toOffer)
+    {
+        if (_selectedItem == Guid.Empty || !_items.TryGetValue(_selectedItem, out var info)) { _status.Text = "Escolha um item primeiro."; return; }
+        if (GetParent()?.GetNodeOrNull<ItemRightsWindow>("ItemRightsWindow") is not { } window) { _status.Text = "A janela de direitos não está disponível aqui."; return; }
+        window.Open(info.ItemId, info.Name, toOffer, Refresh);
+    }
+
+    /// <summary>"Fazer uma cópia": only for items that can be copied; the server decides and says why not.</summary>
+    private void MakeCopy()
+    {
+        if (_selectedItem == Guid.Empty || !_items.TryGetValue(_selectedItem, out var info)) { _status.Text = "Escolha um item primeiro."; return; }
+        if (!LifeVerse.Shared.Items.ItemRights.IsCopyable(info.OwnerRights)) { _status.Text = "Este item não pode ser copiado."; return; }
+        Send(Godot.HttpClient.Method.Post, $"/api/v1/inventory/items/{_selectedItem}/copy", null, Pending.Action);
     }
 }

@@ -31,6 +31,9 @@ public sealed class BuildObjectState
     public string PermissionsJson { get; set; } = "{}";
     public string ContentJson { get; set; } = "[]";
     public int Revision { get; set; }
+    /// <summary>What the owner may do (LifeVerse.Shared.Items.ItemRights) and what the next owner will be able to do; the server decides, the editor only shows.</summary>
+    public int OwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
+    public int NextOwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
 }
 
 public partial class BuildObjectView : Node3D

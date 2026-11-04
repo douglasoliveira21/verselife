@@ -508,6 +508,7 @@ public partial class BuildEditor : Node3D
             using var doc = JsonDocument.Parse(json);
             var operation = doc.RootElement.GetProperty("operation").GetString();
             if (operation is "lock" or "unlock") { HandleLockMessage(doc.RootElement, operation); return; }
+            if (operation == "rez") { OnRezzed(doc.RootElement); return; }
             if (doc.RootElement.TryGetProperty("objectState", out var state) && state.ValueKind != JsonValueKind.Null)
             {
                 var objectState = JsonSerializer.Deserialize<BuildObjectState>(state.GetRawText(), Web)!;

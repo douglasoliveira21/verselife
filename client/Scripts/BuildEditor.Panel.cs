@@ -104,8 +104,8 @@ public partial class BuildEditor
         _selectionLabel.Text = _selection.Count switch
         {
             0 => "Nada selecionado",
-            1 => $"Selecionado: {_selection[0].State.Name} · revisão {_selection[0].State.Revision}{(_selection[0].State.GroupId is null ? "" : " · vinculado")}",
-            _ => $"{_selection.Count} objetos selecionados"
+            1 => $"Selecionado: {_selection[0].State.Name} · revisão {_selection[0].State.Revision}{(_selection[0].State.GroupId is null ? "" : " · vinculado")}{RightsNote(_selection)}",
+            _ => $"{_selection.Count} objetos selecionados{RightsNote(_selection)}"
         };
         if (_selection.Count == 1)
         {
@@ -389,4 +389,17 @@ public partial class BuildEditor
     public bool GridVisibleForTesting => _grid.Visible;
     public void SetGridForTesting(bool show, bool snap) { _showGrid.ButtonPressed = show; _gridSnap.ButtonPressed = snap; UpdateGrid(); }
     public void SetPaintColorForTesting(Color color) => _colorPicker.Color = color;
+}
+
+public partial class BuildEditor
+{
+    /// <summary>" · direitos CMT-" for the selection (only what every selected object allows), and a warning when the selection may not be modified.</summary>
+    private static string RightsNote(IReadOnlyList<BuildObjectView> selection)
+    {
+        if (selection.Count == 0) return string.Empty;
+        var rights = LifeVerse.Shared.Items.ItemRights.Intersect(selection.Select(v => v.State.OwnerRights));
+        return $" · direitos {LifeVerse.Shared.Items.ItemRights.Letters(rights)}{(LifeVerse.Shared.Items.ItemRights.Has(rights, LifeVerse.Shared.Items.Right.Modify) ? string.Empty : " · só mover e devolver (sem direito de modificar)")}";
+    }
+
+    public string RightsNoteForTesting => RightsNote(_selection);
 }

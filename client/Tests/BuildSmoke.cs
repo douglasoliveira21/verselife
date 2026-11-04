@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Godot;
 using LifeVerse.Client.Scripts;
 using LifeVerse.Shared.Building;
@@ -15,7 +15,7 @@ public partial class BuildSmoke : Node
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<Guid, BuildObjectState> _server = [];
     private BuildEditor _editor = null!;
-    private readonly List<string> _sentLocks = [], _sentReturns = [];
+    private readonly List<string> _sentLocks = [], _sentReturns = [], _sentRez = [];
 
     public override async void _Ready()
     {
@@ -465,6 +465,21 @@ public partial class BuildSmoke : Node
             Require(Mathf.Abs(_server[fluid].ScaleX - 1.37f) < .02f, $"a stretch to 1.37 must not jump to a 5 % step: {_server[fluid].ScaleX}");
             _editor.SetModeForTesting(GizmoMode.Move);
 
+            // rights: shown for the selection (the strictest of it), with a warning when it may not be modified
+            var closedOne = Add(new Vector3(300, .5f, -6), "cube"); _server[closedOne].OwnerRights = 5; _server[closedOne].NextOwnerRights = 4; _editor.LoadStatesForTesting([_server[closedOne]]);
+            _editor.SelectIds([closedOne]); Require(_editor.RightsNoteForTesting.Contains("direitos C-T-") && _editor.RightsNoteForTesting.Contains("sem direito de modificar"), $"the rights of the selection must be shown: {_editor.RightsNoteForTesting}");
+            var openOne = Add(new Vector3(303, .5f, -6), "cube"); _editor.SelectIds([closedOne, openOne]); Require(_editor.RightsNoteForTesting.Contains("direitos C-T-"), "a selection has only what every object allows");
+            _editor.SelectIds([openOne]); Require(_editor.RightsNoteForTesting.Contains("direitos CMTR") && !_editor.RightsNoteForTesting.Contains("sem direito"), "a free object shows every right");
+            // the refusals the new rules can give are explained in words
+            _editor.RejectForTesting("no_modify"); Require(_editor.StatusForTesting.Contains("não pode ser modificado"), $"no_modify must be explained: {_editor.StatusForTesting}");
+            _editor.RejectForTesting("no_copy_in_use"); Require(_editor.StatusForTesting.Contains("não pode ser copiada"), "no_copy_in_use must be explained");
+            // a construction that cannot be copied is placed by the server: one command, and every object it made arrives at once
+            _sentRez.Clear(); var rezItem = Guid.NewGuid(); _editor.RezByServer(rezItem, new Vector3(5, 0, 7));
+            Require(_sentRez.Count == 1 && _sentRez[0].Contains("\"operation\":\"rez\"") && _sentRez[0].Contains(rezItem.ToString()) && _sentRez[0].Contains("\"originX\":5"), $"the rez command: {string.Join("|", _sentRez)}");
+            var objectsBeforeRez = _editor.ObjectCountForTesting; var madeA = new BuildObjectState { Id = Guid.NewGuid(), Name = "A", PrimitiveType = "cube", PositionX = 5, PositionY = 1, PositionZ = 7, Revision = 1, OwnerRights = 6, NextOwnerRights = 4 }; var madeB = new BuildObjectState { Id = Guid.NewGuid(), Name = "B", PrimitiveType = "cube", PositionX = 7, PositionY = 1, PositionZ = 7, Revision = 1, OwnerRights = 6, NextOwnerRights = 4 };
+            _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation = "rez", itemId = rezItem, consumed = true, objects = new[] { madeA, madeB } }, Web));
+            Require(_editor.ObjectCountForTesting == objectsBeforeRez + 2 && _editor.StatusForTesting.Contains("Construção colocada (2 objeto(s))") && _editor.StatusForTesting.Contains("não pode ser copiado"), $"the placed construction must arrive whole: {_editor.StatusForTesting}");
+
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();
         }
@@ -491,6 +506,7 @@ public partial class BuildSmoke : Node
         var operation = root.GetProperty("operation").GetString();
         if (operation is "lock" or "unlock") { _sentLocks.Add(json); return true; }
         if (operation == "return") { _sentReturns.Add(json); return true; }
+        if (operation == "rez") { _sentRez.Add(json); return true; }
         if (operation == "delete")
         {
             var id = Guid.Parse(root.GetProperty("objectId").GetString()!);

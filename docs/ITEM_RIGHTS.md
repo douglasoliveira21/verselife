@@ -98,5 +98,25 @@ Todo comando de construção dos jogadores passa pela API (a ilha só repassa), 
 
 **Testes:** `ObjectRightsTests` (21) e 1 teste novo no PostgreSQL real; o teste de revenda concorrente da fase 3 ajudou a achar o problema do `jsonb`.
 
+## Fase 5 — cliente
+
+O jogo só **mostra e pede**; todas as regras continuam sendo do servidor, e cada recusa dele é explicada em palavras (`ItemRightsApi.Explain`).
+
+**Inventário.** O menu do item ganhou "Direitos e propriedades…", "Oferecer a alguém…" e "Fazer uma cópia" (só se o item puder ser copiado). A dica de cada item mostra os direitos ("Direitos: Copiar · Modificar") e avisa quando está em oferta ou à venda. A lista do inventário (`GET /api/v1/inventory/items`) agora traz `ownerRights`, `groupRights`, `nextOwnerRights` e `status`, e não mostra itens usados ao colocar uma construção.
+
+**Janela "Direitos do item"** (`ItemRightsWindow`): o que você pode fazer; uma grade Copiar / Modificar / Transferir / Revender para você, para o grupo e para o próximo dono (só o dono edita, o grupo só se o item estiver compartilhado; salvar manda a versão lida, então mudança em cima de leitura velha é recusada); opção de deixar quem tem o item ver o histórico de donos e a lista do histórico; **dar a alguém** (presente ou transferência, mensagem, "ficar com o meu e dar uma cópia" só para item copiável) — a pessoa é achada pelo **nome de usuário exato** pela busca global, nunca por nome parcial; **revender** (preço, 0 = grátis) só com Transferir e Revender; **fazer uma cópia**. Quem só recebe o item por um grupo vê os próprios direitos e nenhum botão de entregar.
+
+**Janela "Ofertas de itens"** (menu Mundo): recebidas (aceitar / recusar) e enviadas (cancelar), com mensagem e prazo. O resultado de cada resposta continua na tela depois de a lista recarregar; oferta expirada é explicada e nada muda.
+
+**Editor de construção.** O texto da seleção mostra os direitos do que está selecionado (só o que todos os objetos permitem) e avisa "só mover e devolver (sem direito de modificar)". Mensagens novas para `no_modify`, `no_copy_in_use`, `item_busy`, `use_rez` e `invalid_package`. **Colocar do inventário:** se o servidor responde `use_rez` ao abrir a construção (item que não pode ser copiado), o editor manda o comando `rez`; os objetos chegam todos de uma vez, ficam selecionados e o aviso diz que o item foi usado. Não há "desfazer" para isso (desfazer apagaria o que o item virou); "Devolver" manda de volta ao inventário. Os objetos agora trazem `ownerRights` e `nextOwnerRights` na resposta da API.
+
+**Mercado.** A lista ganhou uma coluna de direitos (`CMT-`, e "revenda"), e ao escolher um produto aparece "Você receberá: … Poderá passar adiante: …" (e se não aceita presente). Erros de compra (saldo, já pegou o grátis, presente não permitido, venda indisponível) saem em palavras.
+
+**Servidor.** `rez` soma a altura de base da construção ao colocar, como o cliente faz; mudar só a física "vazia" para a física padrão não conta como modificar.
+
+**Testes:** `ItemRightsSmoke` (janelas contra um servidor de mentira: leitura, edição com versão, recusa de subir direitos, histórico, oferta com busca exata, revenda, cópia, quem não é dono, ofertas recebidas/enviadas, oferta expirada) e novas verificações no `BuildSmoke` (direitos da seleção, mensagens, comando e chegada do `rez`).
+
+**Ainda aberto:** compartilhar um item com um grupo (a escolha do grupo ainda não tem tela; o servidor já aceita), comprar de presente pela tela do mercado (o servidor já aceita), editar os direitos de um objeto do mundo (o servidor já aceita), e escolher os direitos de um produto ao publicar.
+
 ## Ainda não (próximas fases)
-5: cliente (propriedades do item, editor de construção, inventário com oferta/aceite, `rez` no lugar de criar objeto por objeto); 6: testes finais de exploração.
+6: testes finais de exploração, concorrência e duplicação, e fechamento da documentação.

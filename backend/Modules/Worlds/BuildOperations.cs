@@ -160,7 +160,7 @@ public static class BuildOperations
         if (new[] { request.OriginX, request.OriginY, request.OriginZ }.Any(v => !float.IsFinite(v) || Math.Abs(v) > 100_000)) return Refuse(400, "invalid_operation");
 
         var copyable = ItemRights.IsCopyable(item.OwnerRights); var rights = new ItemPermissions(item.OwnerRights, 0, item.NextOwnerRights).Normalized();
-        var requests = package.Objects.Select(p => new BuildObjectRequest(p.PrimitiveType, p.X + request.OriginX, p.Y + request.OriginY, p.Z + request.OriginZ, p.RotationX, p.RotationY, p.RotationZ, p.ScaleX, p.ScaleY, p.ScaleZ, p.MaterialJson, p.PhysicsJson, null, 0, p.GeometryJson, p.Name, p.Description, null, null, p.ContentJson)).ToList();
+        var requests = package.Objects.Select(p => new BuildObjectRequest(p.PrimitiveType, p.X + request.OriginX, p.Y + request.OriginY + package.BaseOffset, p.Z + request.OriginZ, p.RotationX, p.RotationY, p.RotationZ, p.ScaleX, p.ScaleY, p.ScaleZ, p.MaterialJson, p.PhysicsJson, null, 0, p.GeometryJson, p.Name, p.Description, null, null, p.ContentJson)).ToList();
         var singles = new HashSet<Guid>(); var cumulativeCost = 0; var perParcel = new Dictionary<Guid, int>(); var usage = new Dictionary<Guid, (int Objects, int Cost)>(); var created = new List<BuildObject>(); var groups = new Dictionary<int, Guid>();
         for (var i = 0; i < requests.Count; i++)
         {

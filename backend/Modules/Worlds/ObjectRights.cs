@@ -109,7 +109,15 @@ public static class ObjectRights
         || (o.Name is not null && !string.Equals(BuildEndpoints.CleanName(o.Name, item.PrimitiveType), item.Name, StringComparison.Ordinal))
         || (o.Description is not null && !string.Equals(BuildEndpoints.CleanDescription(o.Description), item.Description, StringComparison.Ordinal))
         || item.GroupId != o.GroupId || item.ParentObjectId != o.ParentObjectId
-        || !SameJson(item.MaterialJson, o.MaterialJson) || !SameJson(item.GeometryJson, o.GeometryJson) || !SameJson(item.PhysicsJson, o.PhysicsJson) || !SameJson(item.ContentJson, o.ContentJson);
+        || !SameJson(item.MaterialJson, o.MaterialJson) || !SameJson(item.GeometryJson, o.GeometryJson) || !SameJson(DefaultPhysics(item.PhysicsJson), DefaultPhysics(o.PhysicsJson)) || !SameJson(item.ContentJson, o.ContentJson);
+
+    /// <summary>An object with no physics settings collides, which is what the editor sends when it has none: the two are the same thing, not a change.</summary>
+    private static string? DefaultPhysics(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "{\"collision\":true}";
+        try { using var d = JsonDocument.Parse(json); return d.RootElement.ValueKind == JsonValueKind.Object && !d.RootElement.EnumerateObject().Any() ? "{\"collision\":true}" : json; }
+        catch (JsonException) { return json; }
+    }
 
     private static bool Differs(float a, float b) => Math.Abs(a - b) > 1e-4f;
 

@@ -95,11 +95,38 @@ public partial class BuildEditor
         http.RequestCompleted += (_, code, _, body) =>
         {
             http.QueueFree();
+            if (code == 403 && body.GetStringFromUtf8().Contains("use_rez", StringComparison.Ordinal)) { RezByServer(itemId, ground); return; } // an item that cannot be copied is placed by the server
             if (code is < 200 or >= 300) { _status.Text = $"Não foi possível abrir a construção (HTTP {code})."; return; }
             RezPackageJson(body.GetStringFromUtf8(), ground);
         };
         if (http.Request($"{app.ApiBaseUrl}/api/v1/inventory/build-packages/{itemId}", [$"Authorization: Bearer {session.AccessToken}"]) != Error.Ok) { http.QueueFree(); _status.Text = "Não foi possível abrir a construção."; }
         else _status.Text = "Abrindo a construção…";
+    }
+
+    /// Asks the server to place a construction that cannot be copied: it creates every object itself (all or none) and uses the item up.
+    /// There is no undo for this (it would delete what the item turned into); "Devolver" sends it back to the inventory.
+    public void RezByServer(Guid itemId, Vector3 ground)
+    {
+        if (!_network.IsAuthenticated && OperationSink is null) { _status.Text = "Entre em uma ilha autenticada antes de colocar construções."; return; }
+        var json = JsonSerializer.Serialize(new { operation = "rez", packageItemId = itemId, originX = ground.X, originY = ground.Y, originZ = ground.Z, expectedRevision = 0 });
+        _status.Text = "Pedindo ao servidor para colocar a construção…";
+        if (OperationSink is not null) { OperationSink(json); return; }
+        _network.SubmitBuildOperation(json);
+    }
+
+    /// The server placed a construction: every object of it arrives at once.
+    private void OnRezzed(JsonElement message)
+    {
+        if (!message.TryGetProperty("objects", out var objects) || objects.ValueKind != JsonValueKind.Array) return;
+        var ids = new List<Guid>();
+        foreach (var one in objects.EnumerateArray())
+        {
+            var state = JsonSerializer.Deserialize<BuildObjectState>(one.GetRawText(), Web)!; AddOrUpdate(state); ids.Add(state.Id);
+        }
+        var consumed = message.TryGetProperty("consumed", out var c) && c.ValueKind == JsonValueKind.True;
+        if (ids.Count > 0 && ids.All(id => _objects.TryGetValue(id, out var v) && v.State.CreatorUserId == _session.UserId)) SelectIds(ids);
+        _status.Text = $"Construção colocada ({ids.Count} objeto(s)){(consumed ? ". Este item não pode ser copiado: foi usado ao colocar e volta ao inventário quando você devolver os objetos" : string.Empty)}.";
+        GetParent()?.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Refresh();
     }
 
     /// Places a construction given as JSON. `instant` skips the pacing (tests, where there is no rate limit).
