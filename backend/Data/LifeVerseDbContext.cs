@@ -19,6 +19,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<IslandSnapshot> IslandSnapshots => Set<IslandSnapshot>();
     public DbSet<IslandChange> IslandChanges => Set<IslandChange>();
     public DbSet<IslandParcel> IslandParcels => Set<IslandParcel>();
+    public DbSet<PlayerLocation> PlayerLocations => Set<PlayerLocation>();
     public DbSet<ParcelChange> ParcelChanges => Set<ParcelChange>();
     public DbSet<ParcelCell> ParcelCells => Set<ParcelCell>();
     public DbSet<ParcelRental> ParcelRentals => Set<ParcelRental>();
@@ -153,9 +154,11 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.RuntimeState).HasMaxLength(24);
             b.HasIndex(x => new { x.IsPublic, x.Category, x.DeletedAt });
             b.HasIndex(x => x.Slug).IsUnique().HasFilter("deleted_at IS NULL");
+            b.HasIndex(x => x.IsWelcome).IsUnique().HasFilter("is_welcome = true AND deleted_at IS NULL");
             b.HasIndex(x => x.OwnerUserId);
             b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
         });
+        modelBuilder.Entity<PlayerLocation>(b => { b.ToTable("player_locations", "world"); b.HasKey(x => x.UserId); b.HasIndex(x => x.IslandId); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<IslandPermission>(b =>
         {
             b.ToTable("permissions", "world"); b.HasKey(x => x.Id);

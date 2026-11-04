@@ -131,6 +131,7 @@ app.MapIdentityEndpoints();
 app.MapUserEndpoints();
 app.MapPlatformEndpoints();
 app.MapWorldEndpoints();
+app.MapWelcomeEndpoints();
 app.MapParcelEndpoints();
 app.MapLandEndpoints();
 app.MapVehicleEndpoints();

@@ -14,7 +14,8 @@ public sealed record RegisterServerRequest(Guid InstanceId, Guid IslandId, strin
 public sealed record HeartbeatRequest(string Status);
 public sealed record ValidateEntryTokenRequest(string Token, Guid IslandId);
 public sealed record ValidateEntryTokenResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
-    int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false);
+    int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false,
+    float SpawnX = 0, float SpawnZ = 0, int IslandSize = 256, float? ResumeX = null, float? ResumeY = null, float? ResumeZ = null);
 public sealed record ServerSnapshotRequest(long ExpectedVersion, string TerrainJson, string EnvironmentJson, string IntegrityHash);
 public sealed record ServerBuildOperationRequest(Guid UserId, string Operation, Guid? ObjectId, BuildObjectRequest? Object, int ExpectedRevision, Guid[]? ObjectIds = null);
 
@@ -27,6 +28,21 @@ public static class PlatformEndpoints
         group.MapPut("/{instanceId:guid}/heartbeat", HeartbeatAsync);
         group.MapDelete("/{instanceId:guid}", StopAsync);
         endpoints.MapPost("/api/v1/platform/entry-tokens/validate", ValidateEntryAsync).WithTags("Platform");
+        // the island server tells where its players stand (every so often, and when somebody leaves), so they can be brought back to the same place
+        endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/player-locations", async (Guid instanceId, LocationBatch batch, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) =>
+        {
+            if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+            var server = await db.ServerInstances.AsNoTracking().SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct); if (server is null) return Results.NotFound();
+            if (batch.Players is null || batch.Players.Count > PlayerLocations.MaxPerBatch) return Results.BadRequest();
+            return Results.Ok(new { kept = await PlayerLocations.SaveAsync(db, server.IslandId, batch.Players, clock.GetUtcNow(), ct) });
+        }).WithTags("Platform");
+        // the operator chooses the island new avatars arrive on
+        endpoints.MapPut("/api/v1/platform/welcome-island/{islandId:guid}", async (Guid islandId, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) =>
+        {
+            if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+            var island = await db.Islands.SingleOrDefaultAsync(x => x.Id == islandId && x.DeletedAt == null, ct); if (island is null) return Results.NotFound();
+            return await WelcomeIsland.MarkAsync(db, island, clock.GetUtcNow(), ct) is { } marked ? Results.Ok(new { islandId = marked.Id, name = marked.Name }) : Results.Conflict(new { error = "island_not_public" });
+        }).WithTags("Platform");
         // an island server asks what a player looks like now (they changed it while playing); the answer comes from the database, never from the client
         endpoints.MapGet("/api/v1/platform/avatars/{avatarId:guid}/appearance", async (Guid avatarId, HttpContext context, LifeVerseDbContext db, IConfiguration config, CancellationToken ct) =>
         {
@@ -91,8 +107,10 @@ public static class PlatformEndpoints
         var appearance = await AvatarAppearanceJson.BuildAsync(db, avatar, ct);
         var canEditTerrain = await db.Islands.AsNoTracking().AnyAsync(x => x.Id == identity.IslandId && x.DeletedAt == null &&
             (x.OwnerUserId == identity.UserId || db.IslandPermissions.Any(p => p.IslandId == x.Id && p.UserId == identity.UserId && p.RevokedAt == null && (p.Permission == "edit_terrain" || p.Permission == "admin"))), ct);
+        var island = await db.Islands.AsNoTracking().SingleAsync(x => x.Id == identity.IslandId, ct);
+        var resume = await PlayerLocations.ResumeAsync(db, identity.UserId, identity.IslandId, island.Size, ct); // the spot they stood on here last time, if they were here
         return Results.Ok(new ValidateEntryTokenResponse(identity.UserId, identity.AvatarId, identity.IslandId, identity.SessionId,
-            identity.TokenId, identity.ProtocolVersion, identity.ExpiresAt, avatar.DisplayName, appearance, canEditTerrain));
+            identity.TokenId, identity.ProtocolVersion, identity.ExpiresAt, avatar.DisplayName, appearance, canEditTerrain, island.SpawnX, island.SpawnZ, island.Size, resume?.X, resume?.Y, resume?.Z));
     }
 
     internal static bool HasValidServiceKey(HttpContext context, IConfiguration config)

@@ -46,6 +46,7 @@ public partial class ViewerUI
         var world = AddMenu(row, "Mundo",
             ("Mapa e destinos…", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle(), false),
             ("Mini-mapa", () => ToggleWindow(_miniMapWindow), false),
+            ("Ir para a Ilha de Boas-vindas", GoToWelcome, false),
             ("Ir para uma ilha…", () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); }, false),
             ("-", null, false),
             ("Editar terreno   T", () => _world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.SetActive(true), false),

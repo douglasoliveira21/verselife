@@ -98,6 +98,7 @@ public partial class ServerMain : Node
         }
         _snapshotAccumulator += delta;
         _worldSaveAccumulator += delta;
+        TickLocations(delta);
         if (_worldSaveAccumulator >= 60) { _worldSaveAccumulator = 0; _ = SaveWorldSnapshotAsync(_shutdown.Token); }
         if (_snapshotAccumulator >= 1d / _config.SnapshotRate)
         {
@@ -135,6 +136,7 @@ public partial class ServerMain : Node
         if (!_players.Remove((int)peerId, out var player)) return;
         if (player.Authenticated)
         {
+            _ = SaveLocationsAsync([player], CancellationToken.None); // so signing in again brings them back to this spot
             BroadcastUnlock(_locks.ReleaseAll(player.UserId), player.UserId);
             _suspended[player.AvatarId] = new SuspendedPlayer(player, DateTimeOffset.UtcNow.AddSeconds(10));
             foreach (var other in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(other.PeerId, NetworkBridge.MethodName.DespawnPlayer, player.PeerId, true);
@@ -158,12 +160,7 @@ public partial class ServerMain : Node
             var admission = await response.Content.ReadFromJsonAsync<AdmissionResponse>(cancellationToken: _shutdown.Token);
             if (admission is null || admission.ProtocolVersion != _config.ProtocolVersion || !_usedTickets.Add(admission.TokenId)) { Reject(peerId, "ticket_reused_or_invalid"); return; }
             if (_suspended.Remove(admission.AvatarId, out var suspended)) player.State = suspended.Player.State;
-            else
-            {
-                var slot = _players.Values.Count(x => x.Authenticated);
-                player.State.X = slot % 8 * 2f; player.State.Z = slot / 8 * 2f;
-                player.State.Y = _terrain.SampleHeight(player.State.X, player.State.Z) + AuthoritativeMovement.GroundOffset;
-            }
+            else PlaceArriving(player, admission); // where they were last time on this island, or around its spawn point
             player.CanEditTerrain = admission.CanEditTerrain;
             player.Authenticated = true; player.UserId = admission.UserId; player.AvatarId = admission.AvatarId;
             player.SessionId = admission.SessionId; player.DisplayName = admission.DisplayName; player.AppearanceJson = admission.AppearanceJson;
@@ -602,6 +599,7 @@ public partial class ServerMain : Node
         _shutdown.Cancel();
         try { if (_scripting is not null) await _scripting.FlushStateAsync(CancellationToken.None); } catch (Exception exception) { Log("script_state_flush_failed", new { error = exception.Message }); }
         await SaveWorldSnapshotAsync(CancellationToken.None);
+        await SaveLocationsAsync([.. _players.Values.Where(x => x.Authenticated)], CancellationToken.None);
         Multiplayer.MultiplayerPeer?.Close();
         _healthListener?.Stop();
         if (_registered)
@@ -642,7 +640,8 @@ public partial class ServerMain : Node
     }
     private sealed record SuspendedPlayer(ConnectedPlayer Player, DateTimeOffset ExpiresAt);
     private sealed record AdmissionResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
-        int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false);
+        int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false,
+        float SpawnX = 0, float SpawnZ = 0, int IslandSize = 256, float? ResumeX = null, float? ResumeY = null, float? ResumeZ = null);
     private sealed record WorldSnapshotResponse(Guid IslandId, long Version, string TerrainJson, string EnvironmentJson, string IntegrityHash);
     private sealed record SnapshotWriteResponse(long Version);
     private sealed record BuildCommand(string Operation, Guid? ObjectId, BuildObjectCommand? Object, int ExpectedRevision, Guid[]? ObjectIds = null);

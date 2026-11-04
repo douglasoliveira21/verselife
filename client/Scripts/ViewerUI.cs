@@ -44,6 +44,10 @@ public partial class ViewerUI : CanvasLayer
     private VBoxContainer _toasts = null!;
     private HttpRequest _wallet = null!;
     private HttpRequest _islands = null!;
+    private HttpRequest _start = null!;
+    private bool _entering;
+    private double _facingTimer;
+    private Guid _arrivedAt;
     private ItemList _islandList = null!;
     private readonly List<Guid> _islandIds = [];
     private double _statusTimer;
@@ -90,12 +94,14 @@ public partial class ViewerUI : CanvasLayer
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
         _islands = new HttpRequest(); AddChild(_islands); _islands.RequestCompleted += OnIslands;
         RefreshIslands();
+        _start = new HttpRequest(); AddChild(_start); _start.RequestCompleted += OnStart;
         _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected; _network.VehicleMessage += Toast;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
         SetUiScale((float)(double)_prefs.GetValue("ui", "scale", 1.0), save: false);
         SetVolume((float)(double)_prefs.GetValue("audio", "volume", 1.0), save: false);
         UpdateStatus();
         BuildRadial();
+        EnterFirstIsland();
         if (_world.GetNodeOrNull<LandManager>("LandManager") is null) { var land = new LandManager { Name = "LandManager" }; _world.AddChild(land); land.Said += text => Toast(text); land.WalletChanged += RequestWallet; }
         if (_world.GetNodeOrNull<LandMapWindow>("LandMapWindow") is null) _world.AddChild(new LandMapWindow { Name = "LandMapWindow", JoinIsland = JoinIslandById });
         if (_world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow") is null) _world.AddChild(new AppearanceWindow { Name = "AppearanceWindow", Player = _player });
@@ -112,7 +118,7 @@ public partial class ViewerUI : CanvasLayer
 
     public override void _Process(double delta)
     {
-        _statusTimer -= delta; _walletTimer += delta;
+        _statusTimer -= delta; _walletTimer += delta; RememberFacing(delta);
         if (_statusTimer <= 0) { _statusTimer = .25; UpdateStatus(); }
         if (_walletTimer >= 60 && _network.IsAuthenticated && _wallet.GetHttpClientStatus() == Godot.HttpClient.Status.Disconnected) { _walletTimer = 0; RequestWallet(); }
     }
@@ -341,6 +347,54 @@ public partial class ViewerUI : CanvasLayer
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
     }
 
+    /// <summary>
+    /// Right after signing in the person is taken to an island by the server: the one they were on last (to the same spot, which the island server
+    /// keeps), or the welcome island when it is a new avatar or the last island is gone. Only once per visit to the world, and not when already on an island.
+    /// </summary>
+    private void EnterFirstIsland()
+    {
+        if (_entering || _network.IsAuthenticated || _network.CurrentIslandId != Guid.Empty) return;
+        var session = GetNode<SessionManager>("/root/SessionManager"); if (!session.IsAuthenticated) return;
+        _entering = true; _joinStatus.Text = "Procurando a sua ilha…";
+        _start.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/me/start", [$"Authorization: Bearer {session.AccessToken}"]);
+    }
+
+    private void OnStart(long result, long code, string[] headers, byte[] body)
+    {
+        _entering = false;
+        if (code is < 200 or >= 300 || StartPlace.Parse(Encoding.UTF8.GetString(body)) is not { } info) { _joinStatus.Text = "Escolha uma ilha para entrar."; return; }
+        Toast(StartPlace.Message(info)); JoinIslandById(info.IslandId);
+    }
+
+    /// <summary>Goes to the welcome island, on purpose.</summary>
+    private void GoToWelcome()
+    {
+        var session = GetNode<SessionManager>("/root/SessionManager"); if (!session.IsAuthenticated) return;
+        var http = new HttpRequest(); AddChild(http);
+        http.RequestCompleted += (result, code, _, body) =>
+        {
+            http.QueueFree();
+            try { using var d = JsonDocument.Parse(Encoding.UTF8.GetString(body)); if (code is >= 200 and < 300 && Guid.TryParse(d.RootElement.GetProperty("islandId").GetString(), out var id)) { Toast("Indo para a Ilha de Boas-vindas."); JoinIslandById(id); } else Toast("Não foi possível achar a Ilha de Boas-vindas."); }
+            catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { Toast("Não foi possível achar a Ilha de Boas-vindas."); }
+        };
+        http.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/welcome", [$"Authorization: Bearer {session.AccessToken}"]);
+    }
+
+    /// <summary>On this computer: which way the avatar faces, so coming back puts it looking the same way.</summary>
+    private void RememberFacing(double delta)
+    {
+        _facingTimer += delta; if (_facingTimer < 5) return; _facingTimer = 0;
+        if (!_network.IsAuthenticated || _player is null) return;
+        StartPlace.Remember(GetNode<SessionManager>("/root/SessionManager").UserId, _network.CurrentIslandId, _player.Rotation.Y);
+    }
+
+    private void FaceWhereIWas()
+    {
+        if (_player is null || _network.CurrentIslandId == _arrivedAt) return;
+        _arrivedAt = _network.CurrentIslandId;
+        if (StartPlace.FacingOn(GetNode<SessionManager>("/root/SessionManager").UserId, _network.CurrentIslandId) is { } yaw) _player.FaceYaw(yaw);
+    }
+
     /// Joins an island by its id (from the property search).
     private void JoinIslandById(Guid islandId) { _islandId.Text = islandId.ToString(); Join(); }
 
@@ -365,7 +419,7 @@ public partial class ViewerUI : CanvasLayer
     {
         _state = state; _joinStatus.Text = detail;
         if (state is "failed" or "offline") RefreshIslands();
-        if (state == "online") { Toast("Conectado à ilha."); _joinWindow.Visible = false; _walletTimer = 60; if (!(bool)_prefs.GetValue("tutorial", "done", false)) ShowTutorial(); }
+        if (state == "online") { FaceWhereIWas(); Toast("Conectado à ilha."); _joinWindow.Visible = false; _walletTimer = 60; if (!(bool)_prefs.GetValue("tutorial", "done", false)) ShowTutorial(); }
         else if (state is "failed" or "incompatible") { Toast(detail); _joinWindow.Visible = true; }
         else if (state == "offline") { Toast("Desconectado da ilha."); _joinWindow.Visible = true; }
     }

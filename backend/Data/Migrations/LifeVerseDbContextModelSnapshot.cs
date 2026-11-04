@@ -1660,6 +1660,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_public");
 
+                    b.Property<bool>("IsWelcome")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_welcome");
+
                     b.Property<int>("MaxPlayers")
                         .HasColumnType("integer")
                         .HasColumnName("max_players");
@@ -1716,6 +1720,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnName("updated_at");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("IsWelcome")
+                        .IsUnique()
+                        .HasFilter("is_welcome = true AND deleted_at IS NULL");
 
                     b.HasIndex("OwnerUserId");
 
@@ -2952,6 +2960,39 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("OwnerUserId", "CreatedAt");
 
                     b.ToTable("photos", "discovery");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.PlayerLocation", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<float>("X")
+                        .HasColumnType("real")
+                        .HasColumnName("x");
+
+                    b.Property<float>("Y")
+                        .HasColumnType("real")
+                        .HasColumnName("y");
+
+                    b.Property<float>("Z")
+                        .HasColumnType("real")
+                        .HasColumnName("z");
+
+                    b.HasKey("UserId");
+
+                    b.HasIndex("IslandId");
+
+                    b.ToTable("player_locations", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.RadioStation", b =>
@@ -4441,6 +4482,21 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasOne("LifeVerse.Api.Data.User", null)
                         .WithMany()
                         .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.PlayerLocation", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

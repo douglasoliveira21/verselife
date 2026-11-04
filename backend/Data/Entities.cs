@@ -171,6 +171,8 @@ public sealed class Island
     public string EnvironmentJson { get; set; } = "{}";
     public string ResourceLimitsJson { get; set; } = "{}";
     public string RuntimeState { get; set; } = "suspended";
+    /// <summary>The island every new avatar arrives on (at most one island is it; see WelcomeIsland).</summary>
+    public bool IsWelcome { get; set; }
     public long SnapshotVersion { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
@@ -188,6 +190,17 @@ public sealed class IslandPermission
     public Guid GrantedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
+}
+
+/// <summary>Where a person was last: the island and the spot, written by the island servers, so signing in again brings them back to the same place.</summary>
+public sealed class PlayerLocation
+{
+    public Guid UserId { get; set; }
+    public Guid IslandId { get; set; }
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Z { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public sealed class IslandSnapshot
