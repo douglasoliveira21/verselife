@@ -2652,6 +2652,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("product_id");
 
+                    b.Property<Guid?>("RecipientUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("recipient_user_id");
+
                     b.Property<Guid>("SellerUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("seller_user_id");
@@ -2685,9 +2689,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<bool>("AllowGift")
+                        .HasColumnType("boolean")
+                        .HasColumnName("allow_gift");
+
                     b.Property<Guid>("AssetId")
                         .HasColumnType("uuid")
                         .HasColumnName("asset_id");
+
+                    b.Property<int>("BuyerNextRights")
+                        .HasColumnType("integer")
+                        .HasColumnName("buyer_next_rights");
+
+                    b.Property<int>("BuyerRights")
+                        .HasColumnType("integer")
+                        .HasColumnName("buyer_rights");
 
                     b.Property<string>("Category")
                         .IsRequired()
@@ -2732,6 +2748,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("seller_user_id");
 
+                    b.Property<Guid?>("SourceItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_item_id");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(24)
@@ -2751,6 +2771,8 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("AssetId");
 
                     b.HasIndex("SellerUserId");
+
+                    b.HasIndex("SourceItemId");
 
                     b.HasIndex("Status", "Category", "UpdatedAt");
 

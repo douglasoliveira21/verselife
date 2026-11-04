@@ -148,4 +148,67 @@ public sealed class ItemRightsPostgresTests
         }
         finally { await DropAsync(name); }
     }
+
+    [PostgresFact]
+    public async Task ARightsSetToNothingIsStoredAsNothingNotAsTheDatabaseDefault()
+    {
+        var (name, cs) = await CreateAsync();
+        try
+        {
+            var options = new DbContextOptionsBuilder<LifeVerseDbContext>().UseNpgsql(cs).Options; var now = DateTimeOffset.UtcNow; var (giver, _, _, asset) = await SeedAsync(options, now, rights: 0, next: 0);
+            await using var db = new LifeVerseDbContext(options); var stored = await db.InventoryItems.AsNoTracking().SingleAsync(i => i.AssetId == asset);
+            Assert.Equal((0, 0, 0), (stored.OwnerRights, stored.GroupRights, stored.NextOwnerRights)); // the column defaults (15) are only for rows written before the rights existed
+            var product = new MarketplaceProduct { Id = Guid.NewGuid(), SellerUserId = giver, AssetId = asset, Name = "Fechado", Description = "", Category = "x", Status = "active", BuyerRights = 0, BuyerNextRights = 0, AllowGift = false, CreatedAt = now, UpdatedAt = now };
+            db.MarketplaceProducts.Add(product); await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+            var back = await db.MarketplaceProducts.AsNoTracking().SingleAsync(p => p.Id == product.Id); Assert.Equal((0, 0, false), (back.BuyerRights, back.BuyerNextRights, back.AllowGift));
+        }
+        finally { await DropAsync(name); }
+    }
+
+    [PostgresFact]
+    public async Task TwentyBuyersOfTheOnlyCopyOfAResaleLeaveExactlyOneOwnerAndOnePayment()
+    {
+        var (name, cs) = await CreateAsync();
+        try
+        {
+            var options = new DbContextOptionsBuilder<LifeVerseDbContext>().UseNpgsql(cs).Options; var now = DateTimeOffset.UtcNow; var (seller, _, item, asset) = await SeedAsync(options, now, rights: ItemRights.Modify | ItemRights.Transfer | ItemRights.Resell, next: ItemRights.Modify | ItemRights.Transfer);
+            var clock = new FixedTime(now); var buyers = new List<Guid>(); Guid product;
+            await using (var db = new LifeVerseDbContext(options))
+            {
+                db.Wallets.Add(new Wallet { Id = Guid.NewGuid(), UserId = seller, AvailableCoins = 0, CreatedAt = now, UpdatedAt = now });
+                for (var i = 0; i < 20; i++)
+                {
+                    var u = new User { Id = Guid.NewGuid(), Username = "comp" + i, NormalizedUsername = "COMP" + i, Email = $"c{i}@t.local", NormalizedEmail = $"C{i}@T.LOCAL", PasswordHash = "x", CreatedAt = now, UpdatedAt = now }; db.Users.Add(u); buyers.Add(u.Id);
+                    db.Wallets.Add(new Wallet { Id = Guid.NewGuid(), UserId = u.Id, AvailableCoins = 1000, CreatedAt = now, UpdatedAt = now });
+                }
+                await db.SaveChangesAsync();
+            }
+            await using (var db = new LifeVerseDbContext(options)) { var r = await Modules_Economy_PublishAsync(db, seller, asset, item, clock); Assert.Equal(201, r.Status); product = r.Product!.Id; }
+            var statuses = new System.Collections.Concurrent.ConcurrentBag<int>();
+            await Parallel.ForEachAsync(buyers, new ParallelOptions { MaxDegreeOfParallelism = 20 }, async (buyer, ct) =>
+            {
+                await using var own = new LifeVerseDbContext(options);
+                var context = new Microsoft.AspNetCore.Http.DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", buyer.ToString())], "test")) };
+                var result = await LifeVerse.Api.Modules.Economy.EconomyEndpoints.PurchaseAsync(product, new LifeVerse.Api.Modules.Economy.PurchaseRequest("compra-" + buyer.ToString("N")), context, own, clock, ct);
+                statuses.Add(result is Microsoft.AspNetCore.Http.IStatusCodeHttpResult { StatusCode: { } code } ? code : 0);
+            });
+            await using var check = new LifeVerseDbContext(options);
+            Assert.Equal(1, await check.MarketplaceOrders.CountAsync()); Assert.Equal(1, statuses.Count(s => s == 200));
+            var moved = await check.InventoryItems.AsNoTracking().SingleAsync(i => i.Id == item); var order = await check.MarketplaceOrders.AsNoTracking().SingleAsync();
+            Assert.Equal((order.BuyerUserId, "active", 1), (moved.OwnerUserId, moved.Status, await check.InventoryItems.CountAsync(i => i.AssetId == asset)));
+            var wallets = await check.Wallets.AsNoTracking().ToListAsync(); Assert.Equal(1, wallets.Count(w => w.UserId != seller && w.AvailableCoins < 1000)); Assert.Equal(1000 - order.PriceCoins, wallets.Single(w => w.UserId == order.BuyerUserId).AvailableCoins);
+            Assert.Equal(order.PriceCoins - order.PriceCoins * 500 / 10000, wallets.Single(w => w.UserId == seller).AvailableCoins); // paid once
+        }
+        finally { await DropAsync(name); }
+    }
+
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
+
+    private static async Task<(int Status, MarketplaceProduct? Product)> Modules_Economy_PublishAsync(LifeVerseDbContext db, Guid seller, Guid asset, Guid item, TimeProvider clock)
+    {
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext { User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity([new System.Security.Claims.Claim("sub", seller.ToString())], "test")) };
+        var request = new LifeVerse.Api.Modules.Economy.PublishProductRequest(asset, "Revenda", "", "x", 600, null, null, null, null, item, null);
+        var result = await LifeVerse.Api.Modules.Economy.EconomyEndpoints.PublishAsync(request, context, db, clock, default);
+        return (result is Microsoft.AspNetCore.Http.IStatusCodeHttpResult { StatusCode: { } code } ? code : 0, (result as Microsoft.AspNetCore.Http.IValueHttpResult)?.Value as MarketplaceProduct);
+    }
 }

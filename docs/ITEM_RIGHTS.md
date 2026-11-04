@@ -48,5 +48,31 @@ Quem decide é sempre o servidor (`ItemRightsService`). O jogo só mostra o que 
 
 **Ainda aberto de propósito:** colocar um item no mundo (`/place`) ainda não consome nem confere os direitos do item (fase 4); a revenda e o preço entram na fase 3.
 
+## Fase 3 — marketplace e economia
+
+**Produto do criador.** Ao publicar (`POST /api/v1/economy/products`) o criador diz o que o **comprador** recebe (`buyerRights`) e o que o comprador poderá **repassar** (`nextOwnerRights`, que precisa caber dentro do primeiro). Sem dizer, vale o padrão Copiar·Modificar·Transferir; o texto antigo `permissionsJson` (`{"copy":true,…}`) ainda é lido. "Nenhum direito" (0) é uma escolha válida. O produto grava os direitos e a compra os entrega: o item do comprador nasce com `OwnerRights = buyerRights` e `NextOwnerRights = nextOwnerRights`, e o histórico e a auditoria registram a compra. Alterar os direitos de um produto (`PATCH`) vale **só para quem comprar depois** e fica na auditoria (`product_rights`). Produtos que já existiam ficam com todos os direitos.
+
+**Gratuito e pago.** Preço 0 é um produto gratuito: nenhuma moeda se move e **cada pessoa o leva uma única vez** (senão seria um jeito de encher inventários). Produto pago pode ser comprado de novo. A mesma chave de idempotência dá o mesmo pedido; a chave de outra pessoa é recusada (`key_reused`).
+
+**Presente.** `PurchaseRequest.RecipientUserId` compra para outra pessoa: o item vai direto para o inventário dela (histórico `gift`), se o produto permitir (`allowGift`, padrão sim), se ela existir, estiver ativa e não houver bloqueio em nenhum sentido, e não for o vendedor.
+
+**Revenda.** `PublishProductRequest.ItemId` coloca à venda **um item que a pessoa tem**, que precisa ter **Transferir e Revender**; o preço é de quem vende e os direitos do comprador são os de "próximo dono" do item.
+- Item **não copiável**: fica trancado (`listed`) — não pode ser usado, oferecido nem copiado —, e a compra **move o próprio item** para o comprador; o produto vira `sold`. Na hora da compra confere-se de novo que o item ainda é de quem vende e ainda está à venda; senão, `listing_unavailable` e nenhuma moeda se move.
+- Item **copiável**: não é trancado; cada compra faz uma cópia e quem vende fica com o seu. Só uma listagem ativa por item.
+- Tirar da venda (`deactivate`) devolve o item. Os direitos de uma revenda são os do item e não se editam (só o preço e o texto).
+- Quem recebeu só revende se o direito Revender chegou até ele, e a cadeia respeita isso em cada passo.
+
+**Mercado mostra os direitos:** a listagem traz `buyerRights`, `rights` (`CMT-`), `rightsText`, `nextRightsText`, `isResale` e `allowGift`.
+
+**Pagamento e entrega andam juntos.** Primeiro se confere carteira e se o item pode ser entregue; só depois as moedas se movem, tudo na mesma transação. Se alguém chegou antes (a última unidade, as mesmas moedas, a mesma conta), o resultado é `409 stale` e **nada** foi cobrado nem entregue. Testado em PostgreSQL de verdade: 20 compradores simultâneos do único exemplar de uma revenda → um pedido, um dono, um pagamento.
+
+**Correção da fase 1 achada aqui.** Os valores padrão do banco (15) só existem para linhas escritas antes dos direitos, mas o EF tratava o valor `0` como "não informado" e gravaria 15: um item com **nenhum direito** viraria **todos os direitos** no PostgreSQL. Corrigido (`HasSentinel(-1)` nos itens; sem padrão no modelo dos produtos, com o padrão só na migração) e coberto por um teste no PostgreSQL de verdade. Os testes em memória não pegam isso porque o banco em memória não aplica valores padrão.
+
+**Migração** `Phase54MarketplaceRights`: `products` ganha `buyer_rights`, `buyer_next_rights`, `source_item_id`, `allow_gift`; `orders` ganha `recipient_user_id`.
+
+**Testes:** `MarketplaceRightsTests` (17) e 2 novos em `ItemRightsPostgresTests`.
+
+**Ainda aberto:** vendas de grupo usam os direitos padrão (a tela de grupo não escolhe ainda); lojas dentro do mundo vendem pelo mesmo caminho e já respeitam tudo isto.
+
 ## Ainda não (próximas fases)
-3: marketplace e economia; 4: construção e comandos multiplayer (inclui colocar/pegar itens no mundo); 5: cliente; 6: testes finais de exploração.
+4: construção e comandos multiplayer (colocar/pegar itens no mundo, modificar objetos, herança de partes); 5: cliente; 6: testes finais de exploração.
