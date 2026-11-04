@@ -496,6 +496,23 @@ public sealed class InventoryItem
     public Guid? FolderId { get; set; }
     public required string DisplayName { get; set; }
     public bool IsFavorite { get; set; }
+    // ---- rights (see LifeVerse.Shared.Items.ItemRights: Copy 1, Modify 2, Transfer 4, Resell 8). Items from before the rights existed keep everything.
+    /// <summary>What the person holding it may do.</summary>
+    public int OwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
+    /// <summary>What the members of <see cref="GroupId"/> may do.</summary>
+    public int GroupRights { get; set; }
+    /// <summary>What whoever gets it next will be able to do.</summary>
+    public int NextOwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
+    /// <summary>The group the item is shared with (empty when it is not).</summary>
+    public Guid? GroupId { get; set; }
+    /// <summary>The item this one was copied from (to follow where copies come from).</summary>
+    public Guid? CopiedFromItemId { get; set; }
+    /// <summary>Whether people other than the holder can see who held it before.</summary>
+    public bool ShowOwnerHistory { get; set; }
+    /// <summary>active, or offered while a transfer waits for an answer (an offered item can be neither used nor offered again).</summary>
+    public string Status { get; set; } = "active";
+    /// <summary>Goes up with every change of owner or rights; a change made on an older value is refused, so two requests cannot both win.</summary>
+    public long Revision { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }

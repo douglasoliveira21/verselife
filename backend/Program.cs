@@ -136,6 +136,7 @@ app.MapWorldEndpoints();
 app.MapWelcomeEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapSearchModerationEndpoints();
+app.MapItemRightsEndpoints();
 app.MapParcelEndpoints();
 app.MapLandEndpoints();
 app.MapVehicleEndpoints();
