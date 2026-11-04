@@ -35,6 +35,7 @@ public partial class ViewerUI
         AddMenu(row, "Comunicar",
             ("Conversa local   Enter", () => _chat.GrabFocus(), false),
             ("Pessoas, amigos e grupos…", () => _people?.Toggle(), false),
+            ("Grupos e organizações…", () => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.Toggle(), false),
             ("Mensagens privadas…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
             ("Gestos", ToggleGestures, false),
             ("-", null, false),

@@ -79,26 +79,17 @@ public static class PeopleQueries
     /// Accepting makes the caller a member (once); declining just closes the invite. Null means the invite is not theirs or already answered.
     public static async Task<bool?> AnswerInviteAsync(LifeVerseDbContext db, Guid me, Guid inviteId, bool accept, TimeProvider clock, CancellationToken ct)
     {
-        var invite = await db.GroupInvites.SingleOrDefaultAsync(i => i.Id == inviteId && i.InvitedUserId == me && i.Status == "pending", ct);
-        if (invite is null) return null;
-        invite.Status = accept ? "accepted" : "declined";
-        if (accept && !await db.GroupMembers.AnyAsync(m => m.GroupId == invite.GroupId && m.UserId == me, ct)
-            && await db.SocialGroups.AnyAsync(g => g.Id == invite.GroupId && g.DeletedAt == null, ct))
-            db.GroupMembers.Add(new GroupMember { Id = Guid.NewGuid(), GroupId = invite.GroupId, UserId = me, Role = "member", JoinedAt = clock.GetUtcNow() });
-        await db.SaveChangesAsync(ct);
-        return true;
+        // joining goes through the same checks as any other way into a group (banned, full group, limits), so it is the group service that does it
+        var result = await Groups.GroupService.RespondToInviteAsync(db, me, inviteId, accept, clock.GetUtcNow(), ct);
+        return result.Ok ? true : result.Error == "not_found" ? null : false;
     }
 
     public enum LeaveResult { Left, NotMember, OwnerCannotLeave }
 
     public static async Task<LeaveResult> LeaveGroupAsync(LifeVerseDbContext db, Guid me, Guid groupId, CancellationToken ct)
     {
-        var member = await db.GroupMembers.SingleOrDefaultAsync(m => m.GroupId == groupId && m.UserId == me, ct);
-        if (member is null) return LeaveResult.NotMember;
-        if (member.Role == "owner") return LeaveResult.OwnerCannotLeave;
-        db.GroupMembers.Remove(member);
-        await db.SaveChangesAsync(ct);
-        return LeaveResult.Left;
+        var result = await Groups.GroupService.LeaveAsync(db, me, groupId, DateTimeOffset.UtcNow, ct);
+        return result.Ok ? LeaveResult.Left : result.Error == "leader_cannot_leave" ? LeaveResult.OwnerCannotLeave : LeaveResult.NotMember;
     }
 
     public static async Task<SocialSummary> SummaryAsync(LifeVerseDbContext db, Guid me, CancellationToken ct) => new(
@@ -140,7 +131,7 @@ public static class PeopleEndpoints
     }
 
     private static async Task<IResult> AnswerAsync(Guid inviteId, bool accept, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) =>
-        !User(context, out var me) ? Results.Unauthorized() : await PeopleQueries.AnswerInviteAsync(db, me, inviteId, accept, clock, ct) is null ? Results.NotFound() : Results.NoContent();
+        !User(context, out var me) ? Results.Unauthorized() : await PeopleQueries.AnswerInviteAsync(db, me, inviteId, accept, clock, ct) switch { null => Results.NotFound(), false => Results.Conflict(new { error = "cannot_join" }), _ => Results.NoContent() };
 
     private static bool User(HttpContext context, out Guid id) => Guid.TryParse(context.User.FindFirstValue(JwtRegisteredClaimNames.Sub), out id);
 }

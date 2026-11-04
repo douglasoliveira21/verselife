@@ -140,6 +140,7 @@ app.MapBuildPackageEndpoints();
 app.MapBuildLimitEndpoints();
 app.MapScriptingEndpoints();
 app.MapSocialEndpoints();
+LifeVerse.Api.Modules.Groups.GroupEndpoints.MapGroupEndpoints(app);
 app.MapPeopleEndpoints();
 LifeVerse.Api.Modules.Platform.ClientReleaseEndpoints.MapClientReleaseEndpoints(app);
 app.MapNotificationEndpoints();
