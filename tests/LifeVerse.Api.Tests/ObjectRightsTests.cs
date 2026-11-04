@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using System.Text.Json;
 using LifeVerse.Api.Data;
 using LifeVerse.Api.Modules.Assets;
@@ -105,7 +105,7 @@ public sealed class ObjectRightsTests : IDisposable
     [Fact]
     public async Task ChildrenAreLimitedByTheirParents()
     {
-        var (asset, _) = Model(ItemRights.Copy | ItemRights.Transfer, ItemRights.All); var parent = await Create(_builder, MeshOf(asset)); var child = await Create(_builder, Cube(2, 2, parent: parent));
+        var (asset, _) = Model(ItemRights.Copy | ItemRights.Transfer, ItemRights.All); var group = Guid.NewGuid(); var parent = await Create(_builder, MeshOf(asset) with { GroupId = group }); var child = await Create(_builder, Cube(2, 2, parent: parent) with { GroupId = group });
         var effective = await ObjectRights.EffectiveAsync(_db, await Obj(child), default); Assert.Equal((5, 5), (effective.Owner, effective.NextOwner)); Assert.False(ItemRights.Has(effective.Owner, Right.Modify));
         var (status, body) = await Send(_builder, "update", Cube(2, 2, 0, "Outro nome", parent: parent), child, await Rev(child)); Assert.Equal((403, "no_modify"), (status, Code(body))); // its own rights allow it; the parent's do not
     }

@@ -93,6 +93,7 @@ public partial class BuildEditor
             var operation = root.GetProperty("operation").GetString();
             var wasIdle = _pending.Count == 0 && _pendingCreates == 0;
             if (operation == "create") _pendingCreates++;
+            else if (operation == "structure" && root.TryGetProperty("links", out var links) && links.ValueKind == JsonValueKind.Array) { foreach (var link in links.EnumerateArray()) if (Guid.TryParse(link.GetProperty("objectId").GetString(), out var linked)) _pending[linked] = link.GetProperty("expectedRevision").GetInt32(); }
             else if (operation is "update" or "delete" && root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var objectId)) _pending[objectId] = root.GetProperty("expectedRevision").GetInt32();
             else return;
             if (wasIdle) _pendingSince = Time.GetTicksMsec();

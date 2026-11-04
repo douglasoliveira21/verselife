@@ -16,7 +16,7 @@ namespace LifeVerse.Api.Modules.Worlds;
 /// an object, the island and parcel limits on objects and on cost, the revision check against other people's edits, and the audit
 /// trail. A refusal always carries a short <c>code</c> the client turns into a message.
 /// </summary>
-public static class BuildOperations
+public static partial class BuildOperations
 {
     private static IResult Refuse(int status, string code, string? message = null) => Results.Json(new { code, error = message ?? code }, statusCode: status);
 
@@ -37,6 +37,8 @@ public static class BuildOperations
             case "update": return await UpdateAsync(request, island, actor, isAdmin, hasBuild, parcels, db, now, ct);
             case "delete": return await DeleteAsync(request, island, actor, isAdmin, parcels, db, now, ct);
             case "return": return await ReturnAsync(request, island, actor, isAdmin, parcels, db, storage, now, ct);
+            case "structure": return await StructureAsync(request, island, actor, isAdmin, parcels, db, now, ct);
+            case "protect": return await ProtectAsync(request, island, actor, isAdmin, parcels, db, now, ct);
             case "rez": return await RezAsync(request, island, actor, isAdmin, hasBuild, parcels, db, storage, now, ct);
             default: return Refuse(400, "invalid_operation");
         }
@@ -53,6 +55,7 @@ public static class BuildOperations
         if (BuildCost.HasScripts(o.ContentJson) && BuildRules.CanPutScripts(parcel, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts);
         var cost = BuildCost.Of(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.PhysicsJson, o.ContentJson);
         if (await LimitAsync(db, island, parcel, cost, null, ct) is { } limit) return Refuse(409, limit);
+        if ((o.ParentObjectId is not null || o.GroupId is not null) && await ValidateNewLinkAsync(db, island.Id, o, ct) is { } linkProblem) return Refuse(400, linkProblem); // a new object may only join a linkset the way the rules allow
         var parts = ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson);
         if (await ObjectRights.ValidateSinglesAsync(db, actor, parts, null, null, ct) is { } inUse) return Refuse(409, inUse); // a thing that cannot be copied is in one object only
         var item = BuildEndpoints.NewObject(island.Id, actor, o, now);
@@ -68,6 +71,7 @@ public static class BuildOperations
         if (request.ObjectId is null || request.Object is not { } o) return Refuse(400, "invalid_operation");
         var item = await db.BuildObjects.SingleOrDefaultAsync(x => x.Id == request.ObjectId && x.IslandId == island.Id && x.DeletedAt == null, ct);
         if (item is null) return Refuse(404, "not_found");
+        if (item.EditLocked) return Refuse(403, "object_protected");
         if (item.Revision != request.ExpectedRevision) return Results.Json(new { code = "revision_conflict", currentRevision = item.Revision }, statusCode: 409);
         var here = BuildRules.ParcelAt(parcels, item.PositionX, item.PositionZ);
         if (BuildRules.CanEditObject(actor, item.OwnerUserId, isAdmin, here) is { } notOwner) return Refuse(403, notOwner);
@@ -101,8 +105,10 @@ public static class BuildOperations
         if (item is null) return Refuse(404, "not_found");
         if (item.Revision != request.ExpectedRevision) return Results.Json(new { code = "revision_conflict", currentRevision = item.Revision }, statusCode: 409);
         if (BuildRules.CanEditObject(actor, item.OwnerUserId, isAdmin, BuildRules.ParcelAt(parcels, item.PositionX, item.PositionZ)) is { } denied) return Refuse(403, denied);
+        if (item.EditLocked) return Refuse(403, "object_protected");
         item.DeletedAt = now; item.Revision++;
-        return await FinishAsync(db, island, actor, "delete", item, null, now, ct);
+        var healed = await HealAsync(db, island.Id, [item], actor, now, ct); // what hung under it is re-hung, and a linkset left with one member is dissolved
+        return await FinishAsync(db, island, actor, "delete", item, null, now, ct, healed);
     }
 
     // ---- return ----------------------------------------------------------------------------------------------
@@ -119,7 +125,10 @@ public static class BuildOperations
         var items = await db.BuildObjects.Where(x => ids.Contains(x.Id) && x.IslandId == island.Id && x.DeletedAt == null).ToListAsync(ct);
         if (items.Count == 0) return Refuse(404, "not_found");
         foreach (var item in items)
+        {
             if (BuildRules.CanReturn(actor, item.OwnerUserId, isAdmin, BuildRules.ParcelAt(parcels, item.PositionX, item.PositionZ)) is { } denied) return Refuse(403, denied, $"{item.Name}: {denied}");
+            if (item.EditLocked && actor == item.OwnerUserId) return Refuse(403, "object_protected", $"{item.Name} está protegido contra edição."); // whoever manages the land may still clear it
+        }
 
         var itemIds = new List<(Guid Owner, Guid Item)>();
         foreach (var owned in items.GroupBy(x => x.OwnerUserId))
@@ -135,8 +144,9 @@ public static class BuildOperations
             item.DeletedAt = now; item.Revision++;
             db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = item.Id, ActorUserId = actor, Operation = "return", PayloadJson = JsonSerializer.Serialize(new { returnedTo = item.OwnerUserId, byOwner = item.OwnerUserId == actor }), Revision = item.Revision, CreatedAt = now });
         }
+        var healed = await HealAsync(db, island.Id, items, actor, now, ct);
         if (await TrySaveAsync(db, items[0].Id, ct) is { } conflict) return conflict;
-        return Results.Ok(new { operation = "return", objectIds = items.Select(x => x.Id).ToArray(), returned = items.Count, packages = itemIds.Count });
+        return Results.Ok(new { operation = "return", objectIds = items.Select(x => x.Id).ToArray(), returned = items.Count, packages = itemIds.Count, healed = healed.Select(BuildEndpoints.ToResponse).ToArray() });
     }
 
     /// <summary>Sends objects back to their owners' inventories on behalf of the land system (a rental ended): nothing is deleted for good.</summary>
@@ -236,11 +246,11 @@ public static class BuildOperations
         }
     }
 
-    private static async Task<IResult> FinishAsync(LifeVerseDbContext db, Island island, Guid actor, string operation, BuildObject item, BuildObjectRequest? payload, DateTimeOffset now, CancellationToken ct)
+    private static async Task<IResult> FinishAsync(LifeVerseDbContext db, Island island, Guid actor, string operation, BuildObject item, BuildObjectRequest? payload, DateTimeOffset now, CancellationToken ct, List<BuildObject>? healed = null)
     {
         db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = item.Id, ActorUserId = actor, Operation = operation, PayloadJson = JsonSerializer.Serialize((object?)payload ?? new { }), Revision = item.Revision, CreatedAt = now });
         if (await TrySaveAsync(db, item.Id, ct) is { } conflict) return conflict;
-        return Results.Ok(new { operation, objectState = item.DeletedAt is null ? BuildEndpoints.ToResponse(item) : null, objectId = item.Id, revision = item.Revision });
+        return Results.Ok(new { operation, objectState = item.DeletedAt is null ? BuildEndpoints.ToResponse(item) : null, objectId = item.Id, revision = item.Revision, healed = (healed ?? []).Select(BuildEndpoints.ToResponse).ToArray() });
     }
 
     // ---- reading limits and the audit trail ------------------------------------------------------------------

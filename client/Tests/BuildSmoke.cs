@@ -465,6 +465,33 @@ public partial class BuildSmoke : Node
             Require(Mathf.Abs(_server[fluid].ScaleX - 1.37f) < .02f, $"a stretch to 1.37 must not jump to a 5 % step: {_server[fluid].ScaleX}");
             _editor.SetModeForTesting(GizmoMode.Move);
 
+            // linksets: a root with a tree under it, edited as a whole or one part at a time, protected against accidents, undoable
+            var lsRoot = Add(new Vector3(400, .5f, -6), "cube"); var lsA = Add(new Vector3(403, .5f, -6), "cube"); var lsB = Add(new Vector3(406, .5f, -6), "cube"); var lsAlone = Add(new Vector3(420, .5f, -6), "cube");
+            _editor.SelectIds([lsRoot, lsA, lsB]); _editor.LinkForTesting();
+            var lsGroup = _server[lsRoot].GroupId; Require(lsGroup is not null && _server[lsA].GroupId == lsGroup && _server[lsB].GroupId == lsGroup, "linking must put the three in one linkset");
+            Require(_server[lsRoot].ParentObjectId is null && _server[lsA].ParentObjectId == lsRoot && _server[lsB].ParentObjectId == lsRoot, "the first selected is the root and the others hang under it");
+            _editor.SelectForTesting(lsA); Require(_editor.Selection.Count == 3, "clicking a part of a linkset selects the whole linkset");
+            _editor.SetPartModeForTesting(true, children: false); _editor.SelectForTesting(lsA); Require(_editor.Selection.Count == 1 && _editor.LinkNoteForTesting.Contains("peça de “"), $"part mode selects only that part: {_editor.LinkNoteForTesting}");
+            _editor.SelectForTesting(lsRoot); Require(_editor.Selection.Count == 1 && _editor.LinkNoteForTesting.Contains("raiz do conjunto"), "the root alone, without its children");
+            _editor.SetPartModeForTesting(true, children: true); _editor.SelectForTesting(lsRoot); Require(_editor.Selection.Count == 3, "part mode with children takes what hangs under the part"); _editor.SetPartModeForTesting(false);
+            var tree = _editor.HierarchyLinesForTesting; var setAt = tree.ToList().IndexOf("Conjunto de 3 peças"); Require(setAt >= 0 && tree[setAt + 1].EndsWith("(raiz)") && tree[setAt + 2].StartsWith("    ") && tree[setAt + 3].StartsWith("    "), $"the tree shows the root and its two parts: {string.Join(" | ", tree)}");
+            // another root: the chain turns around and nobody leaves the tree
+            _editor.PickInHierarchyForTesting(lsB); _editor.MakeRootForTesting(); Require(_server[lsB].ParentObjectId is null && _server[lsRoot].ParentObjectId == lsB && _server[lsA].ParentObjectId == lsRoot, "making a part the root turns the chain around");
+            _editor.CommandForTesting("undo"); Require(_server[lsRoot].ParentObjectId is null && _server[lsB].ParentObjectId == lsRoot, "undo of a root change restores the tree in one step");
+            _editor.CommandForTesting("redo"); Require(_server[lsB].ParentObjectId is null, "redo asks for it again"); _editor.CommandForTesting("undo");
+            // protection: not even a move or a delete, until it is lifted
+            _editor.SelectIds([lsAlone]); _editor.ProtectForTesting(true); Require(_server[lsAlone].EditLocked && _editor.LinkNoteForTesting.Contains("🔒"), "protecting marks the object");
+            var revBefore = _server[lsAlone].Revision; _editor.CommandForTesting("delete"); Require(_server.ContainsKey(lsAlone) && _server[lsAlone].Revision == revBefore && _editor.StatusForTesting.Contains("protegido"), $"a protected object is not deleted: {_editor.StatusForTesting}");
+            Require(!_editor.BeginDrag(0, new Vector3(420, 5, 4), (new Vector3(420, .5f, -6) - new Vector3(420, 5, 4)).Normalized()), "a protected object shows no handles to drag");
+            _editor.SelectIds([lsAlone, lsA]); _editor.UnlinkForTesting(); Require(_server[lsA].GroupId is not null, "a selection with a protected object is not linked or unlinked"); _editor.SelectIds([lsAlone]); _editor.ProtectForTesting(false); Require(!_server[lsAlone].EditLocked, "unprotecting frees it");
+            _editor.CommandForTesting("undo"); Require(_server[lsAlone].EditLocked, "undo of unprotect protects again"); _editor.CommandForTesting("undo"); Require(!_server[lsAlone].EditLocked, "and undo of protect frees it");
+            // duplicating a linkset keeps the shape of its tree
+            _editor.SelectIds([lsRoot, lsA, lsB]); var countBeforeCopy = _server.Count; _editor.CommandForTesting("duplicate"); await Frames(3);
+            var copiesOfSet = _server.Values.Where(s => s.GroupId is not null && s.GroupId != lsGroup && s.PositionX >= 400).ToList(); Require(_server.Count == countBeforeCopy + 3 && copiesOfSet.Count == 3, $"the copies are a linkset of their own: {_server.Count - countBeforeCopy}");
+            Require(copiesOfSet.Count(s => s.ParentObjectId is null) == 1 && copiesOfSet.Count(s => s.ParentObjectId is not null && copiesOfSet.Any(c => c.Id == s.ParentObjectId)) == 2, "the copy has one root and two parts hanging under it");
+            // deleting the root re-hangs what was under it (the server says what changed)
+            _editor.SelectIds([lsRoot]); _editor.SetPartModeForTesting(false); _editor.CommandForTesting("delete"); Require(!_server.ContainsKey(lsRoot) && _server[lsA].GroupId is not null && (_server[lsA].ParentObjectId is null ^ _server[lsB].ParentObjectId is null), "deleting the root promotes one of its parts and re-hangs the other");
+
             // rights: shown for the selection (the strictest of it), with a warning when it may not be modified
             var closedOne = Add(new Vector3(300, .5f, -6), "cube"); _server[closedOne].OwnerRights = 5; _server[closedOne].NextOwnerRights = 4; _editor.LoadStatesForTesting([_server[closedOne]]);
             _editor.SelectIds([closedOne]); Require(_editor.RightsNoteForTesting.Contains("direitos C-T-") && _editor.RightsNoteForTesting.Contains("sem direito de modificar"), $"the rights of the selection must be shown: {_editor.RightsNoteForTesting}");
@@ -507,13 +534,31 @@ public partial class BuildSmoke : Node
         if (operation is "lock" or "unlock") { _sentLocks.Add(json); return true; }
         if (operation == "return") { _sentReturns.Add(json); return true; }
         if (operation == "rez") { _sentRez.Add(json); return true; }
+        if (operation == "structure")
+        {
+            // what the server does: every object must be at the revision the editor saw, the result must be a consistent set of trees, and one message carries all that changed
+            var asked = root.GetProperty("links").EnumerateArray().Select(l => (Id: Guid.Parse(l.GetProperty("objectId").GetString()!), Group: l.GetProperty("groupId").ValueKind == JsonValueKind.Null ? (Guid?)null : Guid.Parse(l.GetProperty("groupId").GetString()!), Parent: l.GetProperty("parentId").ValueKind == JsonValueKind.Null ? (Guid?)null : Guid.Parse(l.GetProperty("parentId").GetString()!), Revision: l.GetProperty("expectedRevision").GetInt32())).ToList();
+            foreach (var a in asked) if (!_server.TryGetValue(a.Id, out var s) || s.Revision != a.Revision || s.EditLocked) throw new InvalidOperationException($"structure used a stale revision or a protected object: {a.Id}");
+            var after = _server.Values.Select(s => asked.Any(a => a.Id == s.Id) ? new LifeVerse.Shared.Building.LinkNode(s.Id, asked.First(a => a.Id == s.Id).Group, asked.First(a => a.Id == s.Id).Group is null ? null : asked.First(a => a.Id == s.Id).Parent) : new LifeVerse.Shared.Building.LinkNode(s.Id, s.GroupId, s.ParentObjectId)).ToList();
+            if (LifeVerse.Shared.Building.LinksetRules.Validate(after) is { } broken) throw new InvalidOperationException("structure left a broken tree: " + broken);
+            var changed = new List<BuildObjectState>();
+            foreach (var n in after) { var s = _server[n.Id]; if (s.GroupId == n.GroupId && s.ParentObjectId == n.ParentId) continue; s.GroupId = n.GroupId; s.ParentObjectId = n.ParentId; s.Revision++; changed.Add(s); }
+            _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation, objects = changed }, Web)); return true;
+        }
+        if (operation == "protect")
+        {
+            var ids = root.GetProperty("objectIds").EnumerateArray().Select(i => Guid.Parse(i.GetString()!)).ToList(); var locked = root.GetProperty("locked").GetBoolean(); var changed = new List<BuildObjectState>();
+            foreach (var id in ids) { var s = _server[id]; if (s.EditLocked == locked) continue; s.EditLocked = locked; s.Revision++; changed.Add(s); }
+            _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation, locked, objects = changed }, Web)); return true;
+        }
         if (operation == "delete")
         {
             var id = Guid.Parse(root.GetProperty("objectId").GetString()!);
             var expected = root.GetProperty("expectedRevision").GetInt32();
             if (!_server.TryGetValue(id, out var current) || current.Revision != expected) throw new InvalidOperationException($"delete used a stale revision: {expected} vs {current?.Revision}");
-            _server.Remove(id);
-            _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation, objectId = id }));
+            if (current.EditLocked) throw new InvalidOperationException("delete of a protected object");
+            _server.Remove(id); var healedNow = LifeVerse.Shared.Building.LinksetRules.Heal([.. _server.Values.Append(current).Select(s => new LifeVerse.Shared.Building.LinkNode(s.Id, s.GroupId, s.ParentObjectId))], [id]).Select(c => { var s = _server[c.Id]; s.GroupId = c.GroupId; s.ParentObjectId = c.ParentId; s.Revision++; return s; }).ToList();
+            _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation, objectId = id, healed = healedNow }, Web));
             return true;
         }
         var payload = JsonSerializer.Deserialize<BuildObjectState>(root.GetProperty("object").GetRawText(), Web)!;
@@ -523,7 +568,7 @@ public partial class BuildSmoke : Node
             payload.Id = Guid.Parse(root.GetProperty("objectId").GetString()!);
             var expected = root.GetProperty("expectedRevision").GetInt32();
             if (!_server.TryGetValue(payload.Id, out var current) || current.Revision != expected) throw new InvalidOperationException($"update used a stale revision: {expected} vs {current?.Revision}");
-            payload.Revision = expected + 1;
+            payload.Revision = expected + 1; payload.GroupId = current.GroupId; payload.ParentObjectId = current.ParentObjectId; payload.EditLocked = current.EditLocked; // a plain update never changes the linkset or the protection
         }
         _server[payload.Id] = payload;
         _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation, objectState = payload }, Web));

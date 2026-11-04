@@ -682,6 +682,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("description");
 
+                    b.Property<bool>("EditLocked")
+                        .HasColumnType("boolean")
+                        .HasColumnName("edit_locked");
+
                     b.Property<string>("GeometryJson")
                         .IsRequired()
                         .HasColumnType("jsonb")

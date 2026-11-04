@@ -34,6 +34,8 @@ public sealed class BuildObjectState
     /// <summary>What the owner may do (LifeVerse.Shared.Items.ItemRights) and what the next owner will be able to do; the server decides, the editor only shows.</summary>
     public int OwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
     public int NextOwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
+    /// <summary>Protected against accidental editing (moving, changing, linking, deleting) until it is unprotected.</summary>
+    public bool EditLocked { get; set; }
 }
 
 public partial class BuildObjectView : Node3D

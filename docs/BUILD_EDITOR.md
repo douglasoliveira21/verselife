@@ -95,3 +95,23 @@ Materiais aceitam cor, transparência, emissão, rugosidade e metallic; a físic
 ## Terrenos
 
 O que cada terreno permite construir (quem constrói, scripts, orçamento, retorno automático de objetos de visitantes) está em [LAND.md](LAND.md); o cartão "Terreno e limites" da aba Geral mostra essas regras do ponto onde a câmera olha.
+
+## Editor avançado — fase 1: linksets, hierarquia e proteção
+
+**Linkset.** Objetos com o mesmo `groupId` formam um conjunto com **uma raiz** (o membro sem pai) e as demais peças **penduradas** nela ou em outras peças (`parentObjectId`): uma árvore, até 256 peças e 16 níveis. As regras são as mesmas no cliente e no servidor (`shared/Building/Linksets.cs`, `LinksetRules`): pai no mesmo conjunto, sem ciclo, sem profundidade além do limite, sem conjunto grande demais; "vincular", "desvincular", "tornar raiz" e a cura depois que peças saem são funções puras testadas.
+
+**Como o servidor muda a estrutura.** Grupo e pai **só mudam** pela operação `structure` (uma lista de objetos com o grupo, o pai e a revisão vista); uma atualização comum **preserva** grupo e pai. A operação vale por inteiro ou não vale: cada objeto precisa ser editável por quem pede (dono, dono do terreno ou administrador), **não protegido**, **modificável** (direito Modificar) e estar na revisão que o editor viu; e o resultado, contando também os outros membros dos conjuntos tocados, precisa ser uma árvore válida (`link_cycle`, `broken_link`, `invalid_link`, `link_too_deep`, `linkset_too_large`). Cada objeto alterado ganha revisão nova e uma linha na auditoria (`structure`). Criar um objeto já dentro de um conjunto segue as mesmas regras.
+
+**Quando peças saem** (excluídas ou devolvidas), o servidor reorganiza o resto na mesma transação (`LinksetRules.Heal`): quem estava pendurado nela passa para o ancestral mais próximo que ficou; se a raiz saiu, a peça de menor id vira a raiz e as outras penduram nela; um conjunto que ficou com uma peça só se desfaz. A resposta traz as peças que mudaram (`healed`) e a ilha as repassa a todos.
+
+**Proteção contra edição acidental** (`protect`/`unprotect`, coluna `world.objects.edit_locked`): um objeto protegido não pode ser movido, alterado, vinculado, excluído nem devolvido pelo próprio dono (`403 object_protected`); quem gerencia o terreno ainda pode devolvê-lo. Proteger e desproteger valem para o dono, o dono do terreno e administradores, e ficam na auditoria (`protect`/`unprotect`). O editor não mostra alças em objeto protegido, nem apaga, nem manda mover.
+
+**No editor** (aba nova **Hierarquia**; as abas existentes continuam como estavam): árvore dos conjuntos da ilha (raiz marcada, peças aninhadas, 🔒 nos protegidos), **Vincular** (`Ctrl+G`: a primeira peça selecionada é a raiz; árvores já montadas são mantidas e conjuntos unidos ficam sob a nova raiz), **Desvincular** (`Ctrl+Shift+G`), **Tornar raiz**, **Proteger/Desproteger**, e dois modos de seleção: **Editar só a peça** (ou `Ctrl` + clique) e **Incluir o que está pendurado nela**. Clicar em um nome da árvore seleciona aquela peça. O texto da seleção diz "raiz do conjunto" ou "peça de “X”" e "🔒 protegido". Vincular, desvincular, trocar a raiz e proteger entram no desfazer/refazer e voltam a estrutura **inteira** de uma vez. **Duplicar ou colar** um conjunto mantém o formato da árvore (as cópias nascem soltas num conjunto novo e, quando todas existem, cada cópia é pendurada na cópia do seu pai).
+
+**Direitos.** A hierarquia agora conta para os direitos de objeto (fase 4 dos direitos de itens): uma peça pendurada em algo que não pode ser modificado também não pode.
+
+**Ilha.** O servidor de ilha repassa `structure` e `protect`, guarda no cache todos os objetos que uma mensagem traz (`objects`/`healed`) e trava a edição das peças que outro editor tem reservadas.
+
+**Testes:** `LinksetRulesTests` e `LinksetOperationTests` (regras puras e operações: estrutura em um passo, preservação em atualização, recusas por dono/revisão/proteção/direito, árvores quebradas, limite, cura ao excluir e devolver, proteção), `LinksetChaosTests` (PostgreSQL real: 10 editores, 120 operações cada — vincular, desvincular, trocar raiz, proteger, excluir, devolver, criar —; no fim nenhuma árvore quebrada, uma só raiz por conjunto, nenhum conjunto de uma peça, nenhum erro inesperado) e novas verificações no `BuildSmoke`.
+
+**Ainda não** (próximas fases): pivôs, espelhar e duplicação múltipla, encaixe magnético, seleção por área, física dinâmica, presets, e levar a hierarquia para construções salvas no inventário (o formato salvo ainda guarda só o grupo; ao restaurar, a árvore volta achatada).

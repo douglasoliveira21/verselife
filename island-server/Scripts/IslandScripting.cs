@@ -101,7 +101,7 @@ public sealed class IslandScripting : IScriptWorld
             var root = document.RootElement;
             if (root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object) { var cached = Parse(state); _objects[cached.Id] = cached; UpdateObstacle(cached); }
             else if (root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) { _objects.Remove(removed); Obstacles.Remove(removed); }
-            if (root.TryGetProperty("operation", out var op) && op.GetString() == "rez" && root.TryGetProperty("objects", out var placed) && placed.ValueKind == JsonValueKind.Array) foreach (var one in placed.EnumerateArray()) { var cached = Parse(one); _objects[cached.Id] = cached; UpdateObstacle(cached); } // a construction placed from the inventory: every object of it
+            foreach (var listName in new[] { "objects", "healed" }) if (root.TryGetProperty(listName, out var placed) && placed.ValueKind == JsonValueKind.Array) foreach (var one in placed.EnumerateArray()) { var cached = Parse(one); _objects[cached.Id] = cached; UpdateObstacle(cached); } // constructions placed, linksets changed, objects protected or re-hung: every object it carries
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
     }

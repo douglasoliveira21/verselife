@@ -105,6 +105,7 @@ public partial class BuildEditor : Node3D
         UpdateGhost();
         PumpRez(delta);
         PumpCollab(delta);
+        if (_hierarchyDirty && _tabs is not null && _tabs.Selected == 6) RefreshHierarchy();
         UpdateSaveLabel();
         if (!_active || !_dragging) return;
         if (!Input.IsMouseButtonPressed(MouseButton.Left)) { EndDrag(); return; }
@@ -171,7 +172,7 @@ public partial class BuildEditor : Node3D
 
     private void SelectView(BuildObjectView view, bool additive)
     {
-        var members = view.State.GroupId is { } group ? _objects.Values.Where(x => x.State.GroupId == group).ToList() : [view];
+        var members = MembersOf(view);
         if (!additive) ClearSelectionVisuals();
         else if (_selection.Contains(view)) { foreach (var member in members) { _selection.Remove(member); member.SetSelected(false); } AfterSelectionChanged(); return; }
         foreach (var member in members) if (!_selection.Contains(member)) { _selection.Add(member); member.SetSelected(true); }
@@ -190,6 +191,7 @@ public partial class BuildEditor : Node3D
 
     private void AfterSelectionChanged()
     {
+        _hierarchyDirty = true;
         if (_faceView is not null && !_selection.Contains(_faceView)) ClearFace(); // a face belongs to the object it was picked on
         FillFields();
         RefreshGizmo();
@@ -200,7 +202,7 @@ public partial class BuildEditor : Node3D
     private void RefreshGizmo()
     {
         UpdateGrid();
-        if (_selection.Count == 0 || !_active || _selectOnly || _faceTool || SelectionLockedByOther(out _)) { _gizmo.HideHandles(); return; }
+        if (_selection.Count == 0 || !_active || _selectOnly || _faceTool || SelectionLockedByOther(out _) || _selection.Any(v => v.State.EditLocked)) { _gizmo.HideHandles(); return; }
         var center = _selection.Aggregate(Vector3.Zero, (sum, view) => sum + view.Position) / _selection.Count;
         var axes = _mode == GizmoMode.Scale && _selection.Count == 1 ? Basis.FromEuler(_selection[0].Rotation) : Basis.Identity;
         _gizmo.ShowAt(center, _mode, axes);
@@ -311,6 +313,7 @@ public partial class BuildEditor : Node3D
 
     private void CommitUpdates(List<BuildObjectState> afters)
     {
+        if (afters.Any(a => _objects.TryGetValue(a.Id, out var v) && v.State.EditLocked)) { afters = [.. afters.Where(a => !_objects.TryGetValue(a.Id, out var v) || !v.State.EditLocked)]; SelectionProtected(); foreach (var view in _selection) if (IsInstanceValid(view)) view.Apply(view.State); RefreshGizmo(); if (afters.Count == 0) return; } // a protected object is not even moved
         var entry = new HistoryEntry("update", []);
         foreach (var after in afters)
         {
@@ -380,7 +383,7 @@ public partial class BuildEditor : Node3D
         var center = source.Aggregate(Vector3.Zero, (sum, s) => sum + new Vector3(s.PositionX, s.PositionY, s.PositionZ)) / source.Count;
         var lowest = source.Min(s => s.PositionY - s.ScaleY * .5f);
         var groups = source.Where(s => s.GroupId is not null).Select(s => s.GroupId!.Value).Distinct().ToDictionary(id => id, _ => Guid.NewGuid());
-        var created = new List<Guid>(); var entry = new HistoryEntry("create", []); var actions = new List<Action>();
+        var created = new List<Guid>(); var entry = new HistoryEntry("create", []); var actions = new List<Action>(); var copyOf = new Dictionary<Guid, Guid>();
         foreach (var state in source)
         {
             var offset = new Vector3(state.PositionX, state.PositionY, state.PositionZ) - center;
@@ -388,8 +391,8 @@ public partial class BuildEditor : Node3D
             var expected = source.Count; var template = state; var group = state.GroupId is { } g ? groups[g] : (Guid?)null;
             actions.Add(() => CreateFrom(template, position, group, confirmed =>
             {
-                entry.Items.Add(new HistoryItem(confirmed.Id, null, Clone(confirmed))); created.Add(confirmed.Id);
-                if (created.Count == expected) SelectIds(created);
+                entry.Items.Add(new HistoryItem(confirmed.Id, null, Clone(confirmed))); created.Add(confirmed.Id); copyOf[template.Id] = confirmed.Id;
+                if (created.Count == expected) { SelectIds(created); RestoreCopiedHierarchy(source, copyOf, groups); }
             }));
         }
         PushHistory(entry);
@@ -399,7 +402,7 @@ public partial class BuildEditor : Node3D
 
     private void DeleteSelection()
     {
-        if (_selection.Count == 0) return;
+        if (_selection.Count == 0 || SelectionProtected()) return;
         var entry = new HistoryEntry("delete", []);
         foreach (var view in _selection.ToList())
         {
@@ -410,20 +413,9 @@ public partial class BuildEditor : Node3D
         ClearSelection();
     }
 
-    private void GroupSelection()
-    {
-        if (_selection.Count < 2) { _status.Text = "Selecione dois ou mais objetos para agrupar."; return; }
-        var group = Guid.NewGuid();
-        CommitUpdates(_selection.Select(view => { var state = FromView(view); state.GroupId = group; return state; }).ToList());
-        _status.Text = $"{_selection.Count} objetos agrupados; clicar em um seleciona todos.";
-    }
+    private void GroupSelection() => LinkSelection();
 
-    private void Ungroup()
-    {
-        if (_selection.All(view => view.State.GroupId is null)) { _status.Text = "A seleção não está agrupada."; return; }
-        CommitUpdates(_selection.Where(view => view.State.GroupId is not null).Select(view => { var state = FromView(view); state.GroupId = null; return state; }).ToList());
-        _status.Text = "Grupo desfeito.";
-    }
+    private void Ungroup() => UnlinkSelection();
 
     // ---- undo / redo -----------------------------------------------------------------------------------------
 
@@ -440,6 +432,11 @@ public partial class BuildEditor : Node3D
     {
         if (from.Count == 0) { _status.Text = undo ? "Nada para desfazer." : "Nada para refazer."; return; }
         var entry = from[^1]; from.RemoveAt(from.Count - 1);
+        if (entry.Kind is "structure" or "protect")
+        {
+            if (entry.Kind == "structure") ReplayStructure(entry, undo); else ReplayProtection(entry, undo);
+            to.Add(entry); ClearSelection(); _status.Text = undo ? "Desfeito." : "Refeito."; return;
+        }
         // An undo of "create" deletes, an undo of "delete" re-creates; redo does the opposite.
         var deleting = (entry.Kind == "create" && undo) || (entry.Kind == "delete" && !undo);
         var creating = (entry.Kind == "delete" && undo) || (entry.Kind == "create" && !undo);
@@ -509,6 +506,7 @@ public partial class BuildEditor : Node3D
             var operation = doc.RootElement.GetProperty("operation").GetString();
             if (operation is "lock" or "unlock") { HandleLockMessage(doc.RootElement, operation); return; }
             if (operation == "rez") { OnRezzed(doc.RootElement); return; }
+            if (operation is "structure" or "protect") { if (doc.RootElement.TryGetProperty("objects", out var changed)) ApplyObjects(changed); return; }
             if (doc.RootElement.TryGetProperty("objectState", out var state) && state.ValueKind != JsonValueKind.Null)
             {
                 var objectState = JsonSerializer.Deserialize<BuildObjectState>(state.GetRawText(), Web)!;
@@ -521,6 +519,8 @@ public partial class BuildEditor : Node3D
             {
                 Settle(objectId, null); _selection.Remove(removed); _lockedBy.Remove(objectId); _myLocks.Remove(objectId); removed.QueueFree(); AfterSelectionChanged();
             }
+            if (doc.RootElement.TryGetProperty("healed", out var healed)) ApplyObjects(healed); // what hung under a deleted object was re-hung by the server
+            _hierarchyDirty = true;
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
     }
@@ -538,6 +538,7 @@ public partial class BuildEditor : Node3D
 
     private void AddOrUpdate(BuildObjectState state)
     {
+        _hierarchyDirty = true;
         if (_objects.TryGetValue(state.Id, out var existing)) { existing.Apply(state); if (_selection.Contains(existing)) existing.SetSelected(true); RefreshLockTag(existing); return; }
         var view = new BuildObjectView(); GetParent().AddChild(view); view.Apply(state); _objects[state.Id] = view; RefreshLockTag(view);
     }

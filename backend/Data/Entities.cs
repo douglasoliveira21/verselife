@@ -427,6 +427,8 @@ public sealed class BuildObject
     public int OwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
     /// <summary>What the next owner (somebody it is given or sold to) will be able to do.</summary>
     public int NextOwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
+    /// <summary>Protected against accidental editing: it cannot be moved, changed, linked or deleted until it is unprotected (by the owner, the owner of the land or an island administrator).</summary>
+    public bool EditLocked { get; set; }
     /// <summary>What this object costs the island's and parcel's budget (see BuildCost).</summary>
     public int Cost { get; set; }
     public int Revision { get; set; } = 1;

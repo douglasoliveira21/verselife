@@ -108,7 +108,7 @@ public static class ObjectRights
         || Differs(item.ScaleX, o.ScaleX) || Differs(item.ScaleY, o.ScaleY) || Differs(item.ScaleZ, o.ScaleZ)
         || (o.Name is not null && !string.Equals(BuildEndpoints.CleanName(o.Name, item.PrimitiveType), item.Name, StringComparison.Ordinal))
         || (o.Description is not null && !string.Equals(BuildEndpoints.CleanDescription(o.Description), item.Description, StringComparison.Ordinal))
-        || item.GroupId != o.GroupId || item.ParentObjectId != o.ParentObjectId
+
         || !SameJson(item.MaterialJson, o.MaterialJson) || !SameJson(item.GeometryJson, o.GeometryJson) || !SameJson(DefaultPhysics(item.PhysicsJson), DefaultPhysics(o.PhysicsJson)) || !SameJson(item.ContentJson, o.ContentJson);
 
     /// <summary>An object with no physics settings collides, which is what the editor sends when it has none: the two are the same thing, not a change.</summary>

@@ -24,7 +24,7 @@ public partial class BuildEditor
         content.AddThemeConstantOverride("separation", 10);
 
         _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 22 };
-        foreach (var (text, icon) in new[] { ("Geral", "list"), ("Objeto", "cube"), ("Textura", "image"), ("Recursos", "bulb"), ("Conteúdo", "folder"), ("Alinhar", "move") }) _tabs.AddTab(text, icon);
+        foreach (var (text, icon) in new[] { ("Geral", "list"), ("Objeto", "cube"), ("Textura", "image"), ("Recursos", "bulb"), ("Conteúdo", "folder"), ("Alinhar", "move"), ("Hierarquia", "layers") }) _tabs.AddTab(text, icon);
         content.AddChild(_tabs);
 
         // everyday actions, always at hand whatever the tab
@@ -53,7 +53,7 @@ public partial class BuildEditor
 
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 640) };
         content.AddChild(stack);
-        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildContentTab()), Scroll(stack, BuildAlignTab()) };
+        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildContentTab()), Scroll(stack, BuildAlignTab()), Scroll(stack, BuildHierarchyTab()) };
         _tabs.TabChanged += index => { for (var i = 0; i < pages.Length; i++) pages[i].Visible = i == index; RefreshPreviews(); };
 
         var footer = Row(10); content.AddChild(footer);
