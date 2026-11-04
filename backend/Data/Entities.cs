@@ -429,6 +429,10 @@ public sealed class BuildObject
     public int NextOwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
     /// <summary>Protected against accidental editing: it cannot be moved, changed, linked or deleted until it is unprotected (by the owner, the owner of the land or an island administrator).</summary>
     public bool EditLocked { get; set; }
+    /// <summary>A pivot of its own, in the object's own axes, measured from its centre (metres): what it turns and stretches around when the editor uses "pivot of the object".</summary>
+    public float PivotX { get; set; }
+    public float PivotY { get; set; }
+    public float PivotZ { get; set; }
     /// <summary>What this object costs the island's and parcel's budget (see BuildCost).</summary>
     public int Cost { get; set; }
     public int Revision { get; set; } = 1;

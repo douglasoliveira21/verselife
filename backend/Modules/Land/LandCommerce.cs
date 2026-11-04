@@ -42,7 +42,7 @@ public static class LandCommerce
     {
         var local = db.LedgerAccounts.Local.FirstOrDefault(a => a.UserId == userId && a.AccountType == type);
         if (local is not null) return local;
-        var account = await db.LedgerAccounts.SingleOrDefaultAsync(a => a.UserId == userId && a.AccountType == type, ct);
+        var account = await db.LedgerAccounts.Where(a => a.UserId == userId && a.AccountType == type).OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).FirstOrDefaultAsync(ct);
         if (account is not null) return account;
         account = new LedgerAccount { Id = Guid.NewGuid(), UserId = userId, AccountType = type, CreatedAt = now };
         db.LedgerAccounts.Add(account);

@@ -25,6 +25,7 @@ public partial class BuildEditor
     private HSlider _hollow = null!, _taperX = null!, _taperY = null!, _twist = null!;
     private ColorPickerButton _colorPicker = null!, _emissionPicker = null!;
     private CheckBox _glow = null!, _ghost = null!;
+    private OptionButton _physMode = null!; private LineEdit _physMass = null!, _physFriction = null!, _physBounce = null!;
     private HSlider _roughness = null!, _metallic = null!, _opacity = null!;
     private Label _status = null!, _selectionLabel = null!;
     private Button _toolSelect = null!, _toolMove = null!, _toolRotate = null!, _toolScale = null!, _toolFace = null!;
@@ -124,7 +125,7 @@ public partial class BuildEditor
             _roughness.Value = Read(material, "roughness", .7f); _metallic.Value = Read(material, "metallic", 0f); _opacity.Value = Read(material, "transparency", 1f);
             _glow.ButtonPressed = material["emission"] is not null;
             if (material["emission"]?.GetValue<string>() is { } emission) _emissionPicker.Color = Color.FromHtml(emission);
-            _ghost.ButtonPressed = physics["collision"] is JsonValue flag && flag.TryGetValue<bool>(out var solid) && !solid;
+            _ghost.ButtonPressed = physics["collision"] is JsonValue flag && flag.TryGetValue<bool>(out var solid) && !solid; FillPhysics(s.PhysicsJson);
             var parts = s.GroupId is { } group ? _objects.Values.Count(o => o.State.GroupId == group) : 1;
             _infoLeft.Text = $"Criador: {Who(s.CreatorUserId)}\nProprietário: {Who(s.OwnerUserId)}";
             _infoRight.Text = $"Identificador: {s.Id}\nPrimitiva: {s.Name}{(parts > 1 ? $" (composta por {parts} primitivas)" : $" ({PrimitiveLabel(s.PrimitiveType)})")}";
@@ -195,10 +196,18 @@ public partial class BuildEditor
 
     private string PhysicsFromFields(string existing)
     {
-        var node = ParseObject(existing);
-        node["collision"] = !_ghost.ButtonPressed;
-        return node.ToJsonString();
+        var physical = _physMode.Selected == 1;
+        return PhysicsRules.Write(existing, new PhysicsSettings(!_ghost.ButtonPressed, Trigger: ParseObject(existing)["trigger"] is JsonValue t && t.TryGetValue<bool>(out var isTrigger) && isTrigger, physical,
+            NumOr(_physMass, 1f), NumOr(_physFriction, .5f), NumOr(_physBounce, 0f)));
     }
+
+    private void FillPhysics(string physicsJson)
+    {
+        var p = PhysicsRules.Read(physicsJson);
+        _physMode.Select(p.Physical ? 1 : 0); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2);
+    }
+
+    public void SetPhysicsForTesting(bool physical, float mass = 1f, float friction = .5f, float bounce = 0f) { _physMode.Select(physical ? 1 : 0); _physMass.Text = Disp(mass, 2); _physFriction.Text = Disp(friction, 2); _physBounce.Text = Disp(bounce, 2); ApplySelected(); }
 
     private void CopyProperties()
     {
@@ -327,13 +336,16 @@ public partial class BuildEditor
     private void AlignSelection(AlignAxis axis, AlignEdge edge)
     {
         if (_selection.Count < 2) { _status.Text = "Selecione dois ou mais objetos para alinhar."; return; }
-        MoveSelection(AlignMath.Align(_selection.Select(WorldBounds).ToList(), axis, edge), axis, "Objetos alinhados.");
+        var boxes = _selection.Select(WorldBounds).ToList(); var reference = AlignReferenceIndex(boxes, axis);
+        MoveSelection(reference >= 0 ? AlignMath.AlignTo(boxes, reference, axis, edge) : AlignMath.Align(boxes, axis, edge), axis, reference >= 0 ? "Objetos alinhados ao escolhido." : "Objetos alinhados.");
     }
 
     private void DistributeSelection(AlignAxis axis)
     {
         if (_selection.Count < 3) { _status.Text = "Selecione três ou mais objetos para distribuir."; return; }
-        MoveSelection(AlignMath.Distribute(_selection.Select(WorldBounds).ToList(), axis), axis, "Objetos distribuídos.");
+        var boxes = _selection.Select(WorldBounds).ToList(); var how = _distributeHow?.Selected ?? 0;
+        var offsets = how == 1 ? AlignMath.DistributeCenters(boxes, axis) : how == 2 ? AlignMath.DistributeWithGap(boxes, axis, NumOr(_distributeGap, 0f)) : AlignMath.Distribute(boxes, axis);
+        MoveSelection(offsets, axis, "Objetos distribuídos.");
     }
 
     private void RestSelectionOnGround()

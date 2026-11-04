@@ -1,3 +1,4 @@
+using NV = System.Numerics.Vector3;
 using System.Text;
 using System.Text.Json;
 using Godot;
@@ -90,10 +91,11 @@ public partial class BuildEditor : Node3D
     {
         if (input.IsActionPressed("build_mode")) { SetActive(!_active); return; }
         if (!_active) return;
-        if (input.IsActionPressed("ui_cancel")) { if (_placeType is not null) DisarmPlacement("Colocação cancelada."); else if (_dragging) CancelDrag(); else SetActive(false); return; }
+        if (input.IsActionPressed("ui_cancel")) { if (_placeType is not null || _previewRoot is not null) DisarmPlacement("Colocação cancelada."); else if (_dragging) CancelDrag(); else SetActive(false); return; }
         if (input is InputEventKey { Pressed: true, Echo: false } key && GetViewport().GuiGetFocusOwner() is not (LineEdit or TextEdit)) { if (HandleKey(key)) GetViewport().SetInputAsHandled(); return; }
         if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: false } click)
         {
+            if (_previewRoot is not null && TryConfirmPreview(click.Position)) { GetViewport().SetInputAsHandled(); return; }
             if (_placeType is not null) { TryPlaceClick(click.Position, click.ShiftPressed); GetViewport().SetInputAsHandled(); return; }
             if (OnPress(click.Position, click.ShiftPressed)) GetViewport().SetInputAsHandled();
         }
@@ -102,11 +104,12 @@ public partial class BuildEditor : Node3D
     public override void _Process(double delta)
     {
         PumpLoad();
-        UpdateGhost();
+        UpdateGhost(); UpdatePreview();
         PumpRez(delta);
         PumpCollab(delta);
         if (_hierarchyDirty && _tabs is not null && _tabs.Selected == 6) RefreshHierarchy();
         UpdateSaveLabel();
+        PumpMarquee();
         if (!_active || !_dragging) return;
         if (!Input.IsMouseButtonPressed(MouseButton.Left)) { EndDrag(); return; }
         var camera = GetViewport().GetCamera3D();
@@ -148,7 +151,7 @@ public partial class BuildEditor : Node3D
         var axis = _gizmo.HandleAt(origin, direction);
         if (axis >= 0 && _selection.Count > 0) return BeginDrag(axis, origin, direction);
         var picked = PickObject(origin, direction, out var face);
-        if (picked is null) { if (!additive) ClearSelection(); return false; }
+        if (picked is null) { BeginMarquee(screen, additive); if (!additive) ClearSelection(); return false; }
         SelectView(picked, additive);
         if (_faceTool) SelectFace(picked, face);
         return false;
@@ -191,7 +194,7 @@ public partial class BuildEditor : Node3D
 
     private void AfterSelectionChanged()
     {
-        _hierarchyDirty = true;
+        _hierarchyDirty = true; UpdatePivotInfo(); FillPivotFields(); UpdateArrayInfo();
         if (_faceView is not null && !_selection.Contains(_faceView)) ClearFace(); // a face belongs to the object it was picked on
         FillFields();
         RefreshGizmo();
@@ -203,9 +206,11 @@ public partial class BuildEditor : Node3D
     {
         UpdateGrid();
         if (_selection.Count == 0 || !_active || _selectOnly || _faceTool || SelectionLockedByOther(out _) || _selection.Any(v => v.State.EditLocked)) { _gizmo.HideHandles(); return; }
-        var center = _selection.Aggregate(Vector3.Zero, (sum, view) => sum + view.Position) / _selection.Count;
-        var axes = _mode == GizmoMode.Scale && _selection.Count == 1 ? Basis.FromEuler(_selection[0].Rotation) : Basis.Identity;
+        var center = PivotWorld(); // where things turn and stretch around: the centre of the selection unless another pivot was chosen
+        var local = Space == AxisSpace.Local || (_mode == GizmoMode.Scale && _selection.Count == 1);
+        var axes = local ? Basis.FromEuler(_selection[0].Rotation) : Basis.Identity;
         _gizmo.ShowAt(center, _mode, axes);
+        UpdatePivotInfo();
     }
 
     private void SetMode(GizmoMode mode)
@@ -230,6 +235,7 @@ public partial class BuildEditor : Node3D
         _dragStart.Clear();
         foreach (var view in _selection) _dragStart.Add(new DragStart(view, view.Position, Basis.FromEuler(view.Rotation), view.Scale));
         _dragPivot = _gizmo.Pivot; _dragging = true; _dragMoved = false;
+        PrepareMagnet();
         return true;
     }
 
@@ -244,13 +250,16 @@ public partial class BuildEditor : Node3D
         switch (drag.Mode)
         {
             case GizmoMode.Move:
+                var amount = drag.Amount; var magnet = MagnetAdjust(drag.AxisDirection, amount);
+                if (magnet is { } pulled) amount = pulled.Amount;
+                ShowMagnet(magnet);
                 foreach (var start in _dragStart)
                 {
-                    var moved = start.Position + drag.AxisDirection * drag.Amount;
-                    if (_gridSnap.ButtonPressed && snap > 0f) moved[drag.Axis] = LifeVerse.Shared.Building.AlignMath.SnapToGrid(moved[drag.Axis], snap);
+                    var moved = start.Position + drag.AxisDirection * amount;
+                    if (magnet is null && _gridSnap.ButtonPressed && snap > 0f) moved[drag.Axis] = LifeVerse.Shared.Building.AlignMath.SnapToGrid(moved[drag.Axis], snap);
                     start.View.Position = moved;
                 }
-                _gizmo.GlobalPosition = _dragPivot + drag.AxisDirection * drag.Amount;
+                _gizmo.GlobalPosition = _dragPivot + drag.AxisDirection * amount;
                 break;
             case GizmoMode.Rotate:
             {
@@ -264,6 +273,12 @@ public partial class BuildEditor : Node3D
                     if (_dragStart.Count == 1)
                     {
                         var scale = start.Scale; scale[drag.Axis] = ClampScale(start.Scale[drag.Axis] * drag.Amount); start.View.Scale = scale;
+                        if (_dragPivot.DistanceTo(start.Position) > .001f) // a pivot away from the centre: the object grows away from it
+                        {
+                            var factors = drag.Axis switch { 0 => new NV(drag.Amount, 1, 1), 1 => new NV(1, drag.Amount, 1), _ => new NV(1, 1, drag.Amount) };
+                            var pose = new Pose(N(start.Position), QuatOf(start.Basis.GetEuler()), N(start.Scale));
+                            if (TransformMath.TryScaleAbout(pose, N(_dragPivot), factors, AxisSpace.Local, pose.Rotation, out var grown, out _)) start.View.Position = G(grown.Position);
+                        }
                     }
                     else { start.View.Position = _dragPivot + (start.Position - _dragPivot) * drag.Amount; start.View.Scale = new Vector3(ClampScale(start.Scale.X * drag.Amount), ClampScale(start.Scale.Y * drag.Amount), ClampScale(start.Scale.Z * drag.Amount)); }
                 }
@@ -274,7 +289,7 @@ public partial class BuildEditor : Node3D
     public void EndDrag()
     {
         if (!_dragging) return;
-        _dragging = false; _gizmo.EndDrag();
+        _dragging = false; _gizmo.EndDrag(); ShowMagnet(null);
         if (_dragMoved) CommitUpdates(_dragStart.Select(start => Tidy(FromView(start.View))).ToList());
         _dragStart.Clear();
         RefreshGizmo();
@@ -421,7 +436,7 @@ public partial class BuildEditor : Node3D
 
     private void PushHistory(HistoryEntry entry)
     {
-        _undo.Add(entry); _redo.Clear();
+        _undo.Add(entry); _redo.Clear(); _stepped = null;
         if (_undo.Count > HistoryLimit) _undo.RemoveAt(0);
     }
 
@@ -440,12 +455,14 @@ public partial class BuildEditor : Node3D
         // An undo of "create" deletes, an undo of "delete" re-creates; redo does the opposite.
         var deleting = (entry.Kind == "create" && undo) || (entry.Kind == "delete" && !undo);
         var creating = (entry.Kind == "delete" && undo) || (entry.Kind == "create" && !undo);
+        var skipped = new List<HistoryItem>();
         foreach (var item in entry.Items)
         {
             if (entry.Kind == "update")
             {
                 var target = undo ? item.Before : item.After;
                 if (target is null || !_objects.TryGetValue(Resolve(item.Id), out var view)) continue;
+                if (ChangedByOthersSince(item.Id)) { skipped.Add(item); continue; } // someone else changed it after me: do not write over their work
                 var state = Clone(target); state.Id = view.State.Id;
                 Send(Command("update", state.Id, view.State.Revision, PayloadFrom(state)));
             }
@@ -462,9 +479,10 @@ public partial class BuildEditor : Node3D
                 Send(Command("create", null, 0, PayloadFrom(Clone(template))));
             }
         }
-        to.Add(entry);
+        foreach (var item in skipped) entry.Items.Remove(item);
+        if (entry.Items.Count > 0) { to.Add(entry); _stepped = (entry, undo); }
         ClearSelection();
-        _status.Text = undo ? "Desfeito." : "Refeito.";
+        _status.Text = skipped.Count > 0 ? ConflictText(skipped.Count) : undo ? "Desfeito." : "Refeito.";
     }
 
     private Guid Resolve(Guid id)
@@ -510,7 +528,7 @@ public partial class BuildEditor : Node3D
             if (doc.RootElement.TryGetProperty("objectState", out var state) && state.ValueKind != JsonValueKind.Null)
             {
                 var objectState = JsonSerializer.Deserialize<BuildObjectState>(state.GetRawText(), Web)!;
-                AddOrUpdate(objectState); Settle(objectState.Id, objectState.Revision);
+                NoteRevision(operation, objectState); AddOrUpdate(objectState); Settle(objectState.Id, objectState.Revision);
                 if (operation == "create") SettleCreate(objectState);
                 if (operation == "create" && IsMine(objectState) && _createCallbacks.Count > 0) _createCallbacks.Dequeue()(objectState);
                 if (_selection.Any(view => view.State.Id == objectState.Id) && !_dragging) AfterSelectionChanged();
@@ -529,7 +547,7 @@ public partial class BuildEditor : Node3D
 
     private void OnRejected(string code)
     {
-        _createCallbacks.Clear(); SettleAll();
+        _createCallbacks.Clear(); RollBackHistoryOfRefusal(); SettleAll();
         CancelRez("Colocação interrompida: o servidor recusou um objeto (limite de objetos ou permissão).");
         foreach (var view in _selection) if (IsInstanceValid(view)) view.Apply(view.State);
         RefreshGizmo();
@@ -581,7 +599,7 @@ public partial class BuildEditor : Node3D
         ["primitiveType"] = s.PrimitiveType, ["positionX"] = s.PositionX, ["positionY"] = s.PositionY, ["positionZ"] = s.PositionZ,
         ["rotationX"] = s.RotationX, ["rotationY"] = s.RotationY, ["rotationZ"] = s.RotationZ, ["scaleX"] = s.ScaleX, ["scaleY"] = s.ScaleY, ["scaleZ"] = s.ScaleZ,
         ["materialJson"] = s.MaterialJson, ["geometryJson"] = s.GeometryJson, ["physicsJson"] = string.IsNullOrWhiteSpace(s.PhysicsJson) ? "{\"collision\":true}" : s.PhysicsJson,
-        ["groupId"] = s.GroupId, ["expectedRevision"] = s.Revision, ["name"] = s.Name, ["description"] = s.Description, ["contentJson"] = string.IsNullOrWhiteSpace(s.ContentJson) ? "[]" : s.ContentJson
+        ["groupId"] = s.GroupId, ["expectedRevision"] = s.Revision, ["name"] = s.Name, ["description"] = s.Description, ["contentJson"] = string.IsNullOrWhiteSpace(s.ContentJson) ? "[]" : s.ContentJson, ["pivotX"] = s.PivotX, ["pivotY"] = s.PivotY, ["pivotZ"] = s.PivotZ
     };
 
     private static string Command(string operation, Guid? objectId, int revision, object? payload) => JsonSerializer.Serialize(new { operation, objectId, @object = payload, expectedRevision = revision });

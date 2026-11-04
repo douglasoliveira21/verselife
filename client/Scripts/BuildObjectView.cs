@@ -36,6 +36,10 @@ public sealed class BuildObjectState
     public int NextOwnerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.All;
     /// <summary>Protected against accidental editing (moving, changing, linking, deleting) until it is unprotected.</summary>
     public bool EditLocked { get; set; }
+    /// <summary>The pivot of the object itself: an offset from its centre, in its own axes (metres).</summary>
+    public float PivotX { get; set; }
+    public float PivotY { get; set; }
+    public float PivotZ { get; set; }
 }
 
 public partial class BuildObjectView : Node3D

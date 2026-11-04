@@ -17,7 +17,7 @@ public partial class BuildEditor
     public void EditObject(Guid id, GizmoMode? mode = null) { SetActive(true); SelectIds([id]); if (mode is { } wanted) SetMode(wanted); }
     public void RunCommand(string name) => CommandForTesting(name);
     public void StartPlacing() { SetActive(true); if (_placeType is null) CreateObject(); }
-    public bool IsPlacingForTesting => _placeType is not null;
+    public bool IsPlacingForTesting => _placeType is not null || _previewRoot is not null;
     public bool GhostVisibleForTesting => _placeGhost is { Visible: true };
 
     /// The cube button: starts (or stops) choosing a spot for the shape selected in the Geral tab.
@@ -33,6 +33,7 @@ public partial class BuildEditor
 
     private void DisarmPlacement(string? message)
     {
+        if (_previewRoot is not null) { ClearPreview(); if (_placeType is null) { if (message is not null) _status.Text = message; return; } }
         if (_placeType is null) return;
         _placeType = null;
         if (_placeGhost is not null && IsInstanceValid(_placeGhost)) _placeGhost.QueueFree();

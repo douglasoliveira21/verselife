@@ -741,6 +741,18 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("physics_json");
 
+                    b.Property<float>("PivotX")
+                        .HasColumnType("real")
+                        .HasColumnName("pivot_x");
+
+                    b.Property<float>("PivotY")
+                        .HasColumnType("real")
+                        .HasColumnName("pivot_y");
+
+                    b.Property<float>("PivotZ")
+                        .HasColumnType("real")
+                        .HasColumnName("pivot_z");
+
                     b.Property<float>("PositionX")
                         .HasColumnType("real")
                         .HasColumnName("position_x");

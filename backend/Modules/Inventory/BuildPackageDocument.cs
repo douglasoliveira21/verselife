@@ -6,13 +6,13 @@ namespace LifeVerse.Api.Modules.Inventory;
 public sealed record PackageObjectDto(
     string PrimitiveType, string Name, string Description,
     float X, float Y, float Z, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ,
-    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, int? Group);
+    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, int? Group, int? Parent = null, float PivotX = 0, float PivotY = 0, float PivotZ = 0);
 
 /// <summary>An object of the world as the package builder reads it (absolute position, real group id).</summary>
 public sealed record PackageSourceDto(
     string PrimitiveType, string Name, string Description,
     float X, float Y, float Z, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ,
-    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, Guid? GroupId);
+    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, Guid? GroupId, Guid Id = default, Guid? ParentId = null, float PivotX = 0, float PivotY = 0, float PivotZ = 0);
 
 public sealed record PackageDto(string Format, int Version, string Name, float BaseOffset, PackageObjectDto[] Objects);
 
@@ -37,9 +37,30 @@ public static class PackageDocument
         var groups = sources.Where(s => s.GroupId is not null).Select(s => s.GroupId!.Value).Distinct().ToList();
         var objects = sources.Select(s => new PackageObjectDto(s.PrimitiveType, s.Name, s.Description, s.X - centerX, s.Y - lowest.Y, s.Z - centerZ,
             s.RotationX, s.RotationY, s.RotationZ, s.ScaleX, s.ScaleY, s.ScaleZ, s.MaterialJson, s.GeometryJson, s.PhysicsJson, s.ContentJson,
-            s.GroupId is { } id ? groups.IndexOf(id) : null)).ToArray();
+            s.GroupId is { } id ? groups.IndexOf(id) : null, ParentIndex(sources, s), s.PivotX, s.PivotY, s.PivotZ)).ToArray();
         name = (name ?? string.Empty).Trim();
         return new PackageDto(FormatName, CurrentVersion, name.Length == 0 ? "Construção" : name[..Math.Min(name.Length, 160)], lowest.ScaleY / 2f, objects);
+    }
+
+    private static int? ParentIndex(IReadOnlyList<PackageSourceDto> sources, PackageSourceDto s)
+    {
+        if (s.ParentId is not { } parent || s.GroupId is null) return null;
+        for (var i = 0; i < sources.Count; i++) if (sources[i].Id == parent && sources[i].Id != Guid.Empty && sources[i].GroupId == s.GroupId) return i;
+        return null;
+    }
+
+    /// <summary>Null when every parent exists, is in the same group and the hierarchy has no loop; otherwise why not.</summary>
+    public static string? HierarchyError(IReadOnlyList<(int? Group, int? Parent)> objects)
+    {
+        for (var i = 0; i < objects.Count; i++)
+        {
+            if (objects[i].Parent is not { } parent) continue;
+            if (parent < 0 || parent >= objects.Count || parent == i) return "An object hangs from a parent that does not exist.";
+            if (objects[i].Group is null || objects[i].Group != objects[parent].Group) return "An object hangs from a parent that is not in its group.";
+            var hops = 0; var at = (int?)parent;
+            while (at is { } step) { if (++hops > objects.Count) return "The hierarchy of the construction has a loop."; at = objects[step].Parent is { } up && up >= 0 && up < objects.Count ? up : null; }
+        }
+        return null;
     }
 
     public static string Serialize(PackageDto package) => JsonSerializer.Serialize(package, Options);
@@ -62,7 +83,9 @@ public static class PackageDocument
             if (numbers.Any(n => !float.IsFinite(n)) || Math.Abs(o.X) > 2000 || Math.Abs(o.Y) > 2000 || Math.Abs(o.Z) > 2000) { error = "An object has invalid numbers."; return null; }
             if (new[] { o.ScaleX, o.ScaleY, o.ScaleZ }.Any(s => s is < .01f or > 64f)) { error = "An object has a size outside 0.01 to 64 metres."; return null; }
             if (o.Group is < 0 || o.Group >= Math.Max(groupCount, 1) && o.Group is not null) { error = "An object points to a group that does not exist."; return null; }
+            if (new[] { o.PivotX, o.PivotY, o.PivotZ }.Any(p => !float.IsFinite(p) || Math.Abs(p) > 64f)) { error = "An object has a pivot outside 64 metres."; return null; }
         }
+        if (HierarchyError(package.Objects.Select(o => (o.Group, o.Parent)).ToArray()) is { } hierarchy) { error = hierarchy; return null; }
         return package;
     }
 }

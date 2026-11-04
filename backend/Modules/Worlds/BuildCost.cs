@@ -60,7 +60,7 @@ public static class BuildCost
         {
             using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(physicsJson) ? "{}" : physicsJson);
             solid = !(document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("collision", out var c) && c.ValueKind == JsonValueKind.False);
-            physics = solid ? (primitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase) ? 2 : 1) : 0;
+            physics = solid ? (primitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase) ? 2 : 1) + (ObjectPhysics.IsPhysical(physicsJson) ? 2 : 0) : 0; // a body that moves by physics costs more than one that stands still
         }
         catch (JsonException) { physics = 1; }
         // a hollow, twisted or cut shape needs a collision mesh of its own instead of a simple box

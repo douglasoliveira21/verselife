@@ -24,7 +24,7 @@ public partial class BuildEditor
         content.AddThemeConstantOverride("separation", 10);
 
         _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 22 };
-        foreach (var (text, icon) in new[] { ("Geral", "list"), ("Objeto", "cube"), ("Textura", "image"), ("Recursos", "bulb"), ("Conteúdo", "folder"), ("Alinhar", "move"), ("Hierarquia", "layers") }) _tabs.AddTab(text, icon);
+        foreach (var (text, icon) in new[] { ("Geral", "list"), ("Objeto", "cube"), ("Textura", "image"), ("Recursos", "bulb"), ("Conteúdo", "folder"), ("Alinhar", "move"), ("Hierarquia", "layers"), ("Transformar", "rotate") }) _tabs.AddTab(text, icon);
         content.AddChild(_tabs);
 
         // everyday actions, always at hand whatever the tab
@@ -53,7 +53,7 @@ public partial class BuildEditor
 
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 640) };
         content.AddChild(stack);
-        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildContentTab()), Scroll(stack, BuildAlignTab()), Scroll(stack, BuildHierarchyTab()) };
+        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildContentTab()), Scroll(stack, BuildAlignTab()), Scroll(stack, BuildHierarchyTab()), Scroll(stack, BuildTransformTab()) };
         _tabs.TabChanged += index => { for (var i = 0; i < pages.Length; i++) pages[i].Visible = i == index; RefreshPreviews(); };
 
         var footer = Row(10); content.AddChild(footer);
@@ -162,7 +162,14 @@ public partial class BuildEditor
         left.AddChild(grid);
         var ghostCard = Card(null, null, out var ghostBody, out _, 0, false, 16, 10);
         _ghost = new CheckBox { Text = " Fantasma (pode ser atravessado)", TooltipText = "Desativa a colisão sólida; o objeto continua visível" }; _ghost.AddThemeFontSizeOverride("font_size", 20);
-        ghostBody.AddChild(_ghost); left.AddChild(ghostCard);
+        ghostBody.AddChild(_ghost);
+        var physRow = Row(8); ghostBody.AddChild(physRow);
+        physRow.AddChild(Txt("Física", 19, true)); _physMode = Pick("Estático", "Físico"); _physMode.TooltipText = "Físico marca um corpo que deve se mover por física (cair, ser empurrado). Ainda não é simulado no mundo: fica onde foi posto."; physRow.AddChild(_physMode);
+        var physNumbers = Row(8); ghostBody.AddChild(physNumbers);
+        physNumbers.AddChild(Txt("Massa", 18)); _physMass = Field("1", 8); _physMass.Text = "1"; physNumbers.AddChild(_physMass);
+        physNumbers.AddChild(Txt("Atrito", 18)); _physFriction = Field("0,5", 6); _physFriction.Text = "0,5"; physNumbers.AddChild(_physFriction);
+        physNumbers.AddChild(Txt("Quique", 18)); _physBounce = Field("0", 6); _physBounce.Text = "0"; physNumbers.AddChild(_physBounce);
+        left.AddChild(ghostCard);
 
         var shape = Card("Forma", "layers", out var shapeBody, out _, 12); shape.SizeFlagsStretchRatio = 1.2f;
         _hollow = NewSlider(0, .95, .01, 0); _taperX = NewSlider(-1, 1, .01, 0); _taperY = NewSlider(-1, 1, .01, 0); _twist = NewSlider(-180, 180, 1, 0);
@@ -243,6 +250,7 @@ public partial class BuildEditor
         pasteBody.AddChild(Txt("Aplica os valores copiados nos objetos selecionados.", 18, false, UiStyle.TextMuted));
         var pasteButton = OrangeButton("paste", "Colar na seleção", "Aplica o que foi copiado", PasteTransform, 50); pasteBody.AddChild(pasteButton);
         bottom.AddChild(paste);
+        page.AddChild(BuildAdvancedAlignCard());
         return page;
     }
 

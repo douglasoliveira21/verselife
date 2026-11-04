@@ -492,6 +492,102 @@ public partial class BuildSmoke : Node
             // deleting the root re-hangs what was under it (the server says what changed)
             _editor.SelectIds([lsRoot]); _editor.SetPartModeForTesting(false); _editor.CommandForTesting("delete"); Require(!_server.ContainsKey(lsRoot) && _server[lsA].GroupId is not null && (_server[lsA].ParentObjectId is null ^ _server[lsB].ParentObjectId is null), "deleting the root promotes one of its parts and re-hangs the other");
 
+            // precise transforms: pivot, axes, typed moves/turns/stretches, mirror, multiple duplication
+            var pa = Add(new Vector3(500, .5f, -6), "cube"); var pb = Add(new Vector3(504, .5f, -6), "cube"); _editor.SelectIds([pa, pb]);
+            Require((_editor.PivotForTesting - new Vector3(502, .5f, -6)).Length() < .001f, $"the default pivot is the centre of the selection: {_editor.PivotForTesting}");
+            _editor.SetPivotModeForTesting(1); Require((_editor.PivotForTesting - new Vector3(502, 0, -6)).Length() < .001f, "the base pivot is the lowest point"); _editor.SetPivotModeForTesting(3); Require((_editor.PivotForTesting - new Vector3(500, .5f, -6)).Length() < .001f, "the first selected");
+            _editor.SetPivotModeForTesting(6); Require(_editor.PivotForTesting.Length() < .001f, "the world origin"); _editor.SetPivotPointForTesting(500, 0, -10); _editor.SetPivotModeForTesting(5); Require((_editor.PivotForTesting - new Vector3(500, 0, -10)).Length() < .001f, "a typed point");
+            _editor.SetPivotModeForTesting(0); _editor.MoveByForTesting(1, 2, 3); Require(Mathf.Abs(_server[pa].PositionX - 501) < .001f && Mathf.Abs(_server[pa].PositionY - 2.5f) < .001f && Mathf.Abs(_server[pb].PositionZ + 3) < .001f, $"a typed move: {_server[pa].PositionX},{_server[pa].PositionY}");
+            _editor.CommandForTesting("undo"); Require(Mathf.Abs(_server[pa].PositionX - 500) < .001f && Mathf.Abs(_server[pb].PositionZ + 6) < .001f, "a typed move is one undo step");
+            _editor.SelectIds([pa, pb]); _editor.TurnForTesting(1, 90); Require(Mathf.Abs(_server[pa].PositionX - 502) < .01f && Mathf.Abs(Mathf.Abs(_server[pa].RotationY) - 90) < .1f && Mathf.Abs(_server[pb].PositionX - 502) < .01f, $"a quarter turn around the centre: a={_server[pa].PositionX},{_server[pa].PositionZ} rot {_server[pa].RotationY}; status {_editor.StatusForTesting}");
+            _editor.CommandForTesting("undo"); _editor.SelectIds([pa, pb]); _editor.StretchForTesting(2, 2, 2); Require(Mathf.Abs(_server[pa].PositionX - 498) < .01f && Mathf.Abs(_server[pb].PositionX - 506) < .01f && Mathf.Abs(_server[pa].ScaleX - 2) < .01f, $"a stretch around the centre doubles size and distances: {_server[pa].PositionX} {_server[pa].ScaleX}");
+            _editor.CommandForTesting("undo");
+            // a pivot of the object itself, saved with it
+            _editor.SelectIds([pa]); _editor.SetObjectPivotForTesting(0, -.5f, 0); Require(Mathf.Abs(_server[pa].PivotY + .5f) < .001f, "the pivot of the object is saved"); _editor.SetPivotModeForTesting(4); Require((_editor.PivotForTesting - new Vector3(500, 0, -6)).Length() < .001f, $"the pivot of the object is its centre plus the offset: {_editor.PivotForTesting}");
+            _editor.TurnForTesting(2, 90); Require(Mathf.Abs(_server[pa].PositionY - .5f) > .1f || Mathf.Abs(_server[pa].PositionX - 500) > .1f, "turning around the object's own pivot moves its centre"); _editor.CommandForTesting("undo"); _editor.SetPivotModeForTesting(0);
+            // mirror: copies by default, through the plane of the pivot; shapes that cannot be mirrored are left out
+            var beforeMirror = _server.Count; _editor.SelectIds([pa, pb]); _editor.SetPivotModeForTesting(6); _editor.MirrorForTesting(0, copy: true);
+            var mirroredCopies = _server.Values.Where(s => s.Id != pa && s.Id != pb && s.PositionX < -499 && s.PositionX > -505).ToList(); Require(_server.Count == beforeMirror + 2 && mirroredCopies.Count == 2, $"the mirror makes two copies: {_server.Count - beforeMirror}");
+            Require(mirroredCopies.Any(s => Mathf.Abs(s.PositionX + 500) < .01f) && mirroredCopies.Any(s => Mathf.Abs(s.PositionX + 504) < .01f), "through the world origin on X"); _editor.CommandForTesting("undo"); Require(_server.Count == beforeMirror, "undoing a mirror removes its copies");
+            _editor.SelectIds([pa]); _editor.MirrorForTesting(0, copy: false); Require(Mathf.Abs(_server[pa].PositionX + 500) < .01f, "mirrored in place"); _editor.CommandForTesting("undo"); _editor.SetPivotModeForTesting(0);
+            // multiple duplication
+            var beforeLine = _server.Count; _editor.SelectIds([pa]); _editor.ArrayForTesting(0, 3, 1, 1, new Vector3(2, 0, 0), Vector3.Zero, Vector3.One); Require(_server.Count == beforeLine + 3, $"a line of three copies: {_server.Count - beforeLine}");
+            var line = _server.Values.Where(s => s.Id != pa && Mathf.Abs(s.PositionZ + 6) < .01f && s.PositionX > 500 && s.PositionX < 507 && s.PositionY < 1).Select(s => Mathf.Round(s.PositionX)).OrderBy(x => x).ToList(); Require(line.Contains(502) && line.Contains(504) && line.Contains(506), $"a step of two metres each: {string.Join(",", line)}");
+            _editor.CommandForTesting("undo"); Require(_server.Count == beforeLine, "a multiple duplication is one undo step");
+            var beforeGrid = _server.Count; _editor.SelectIds([pa]); _editor.ArrayForTesting(1, 2, 2, 1, new Vector3(3, 0, 3), Vector3.Zero, Vector3.One); Require(_server.Count == beforeGrid + 3, "a grid of 2 x 2 has three copies"); _editor.CommandForTesting("undo");
+            var beforeCircle = _server.Count; _editor.SelectIds([pa]); _editor.SetPivotModeForTesting(5); _editor.SetPivotPointForTesting(500, .5f, -10); _editor.ArrayForTesting(2, 4, 1, 1, Vector3.Zero, Vector3.Zero, Vector3.One); Require(_server.Count == beforeCircle + 3, "a circle of four has three copies"); _editor.CommandForTesting("undo"); _editor.SetPivotModeForTesting(0);
+            var beforeMany = _server.Count; _editor.SelectIds([pa, pb]); _editor.ArrayForTesting(0, 200, 1, 1, new Vector3(1, 0, 0), Vector3.Zero, Vector3.One); Require(_server.Count == beforeMany && _editor.StatusForTesting.Contains("limite"), $"too many objects at once are refused: {_editor.StatusForTesting}");
+            // a copy of a linkset keeps its tree, once for each copy
+            var ra = Add(new Vector3(520, .5f, -6), "cube"); var rb = Add(new Vector3(523, .5f, -6), "cube"); var rc = Add(new Vector3(526, .5f, -6), "cube"); _editor.SelectIds([ra, rb, rc]); _editor.LinkForTesting();
+            var beforeSets = _server.Count; _editor.SelectIds([ra, rb, rc]); _editor.ArrayForTesting(0, 2, 1, 1, new Vector3(0, 0, 4), Vector3.Zero, Vector3.One);
+            var madeSets = _server.Values.Where(s => s.GroupId is not null && s.GroupId != _server[ra].GroupId && s.PositionZ > -5 && s.PositionX >= 520).GroupBy(s => s.GroupId).ToList(); Require(_server.Count == beforeSets + 6 && madeSets.Count == 2 && madeSets.All(g => g.Count() == 3 && g.Count(s => s.ParentObjectId is null) == 1), $"each copy of the linkset is a linkset with one root: {madeSets.Count}");
+
+            // phase 3: magnetic snap, advanced alignment, choosing by area
+            var ma = Add(new Vector3(600, .5f, -20), "cube"); var mt = Add(new Vector3(604, .5f, -20), "cube"); _editor.SelectIds([ma]);
+            _editor.SetMagnetForTesting(false); Require(_editor.MagnetForTesting(Vector3.Right, 2.9f) is null, "with the magnet off nothing snaps");
+            _editor.SetMagnetForTesting(true, .3f); var pulled = _editor.MagnetForTesting(Vector3.Right, 2.9f); Require(pulled is { } p0 && Mathf.Abs(p0.Amount - 3f) < .01f, $"the magnet pulls the face against the neighbour: {pulled?.Amount}");
+            Require(_editor.MagnetForTesting(Vector3.Right, 1.5f) is null, "too far from anything: no pull"); _editor.SetMagnetForTesting(false);
+            var q1 = Add(new Vector3(610, .5f, -24), "cube"); var q2 = Add(new Vector3(613, .5f, -24), "cube"); var q3 = Add(new Vector3(617, .5f, -24), "cube");
+            _editor.SelectIds([q1, q2, q3]); _editor.SetAlignOptionsForTesting(1, 0, 0); _editor.AlignForTesting(0, 0);
+            Require(Mathf.Abs(_server[q2].PositionX - 610f) < .02f && Mathf.Abs(_server[q3].PositionX - 610f) < .02f && Mathf.Abs(_server[q1].PositionX - 610f) < .001f, $"aligned to the first: {_server[q2].PositionX},{_server[q3].PositionX}");
+            _editor.SetAlignOptionsForTesting(0, 0, 0);
+            var g1 = Add(new Vector3(620, .5f, -28), "cube"); var g2 = Add(new Vector3(621, .5f, -28), "cube"); var g3 = Add(new Vector3(630, .5f, -28), "cube");
+            _editor.SelectIds([g1, g2, g3]); _editor.SetAlignOptionsForTesting(0, 2, 2); _editor.DistributeForTesting(0);
+            Require(Mathf.Abs(_server[g1].PositionX - 620f) < .001f && Mathf.Abs(_server[g2].PositionX - 623f) < .02f && Mathf.Abs(_server[g3].PositionX - 626f) < .02f, $"a fixed gap of two metres: {_server[g2].PositionX},{_server[g3].PositionX}"); _editor.SetAlignOptionsForTesting(0, 0, 0);
+            _editor.SelectIds([]); Require(_editor.SelectInVolumeForTesting(new Vector3(618, 0, -29), new Vector3(628, 3, -27), touching: false) == 3, $"an area of the world chooses what is inside: {_editor.StatusForTesting}");
+            Require(_editor.SelectInVolumeForTesting(new Vector3(626.4f, 0, -29), new Vector3(640, 3, -27), touching: false) == 0 && _editor.SelectInVolumeForTesting(new Vector3(626.4f, 0, -29), new Vector3(640, 3, -27), touching: true) == 1, "touching also chooses what only reaches into the area");
+            _editor.SelectIds([]);
+
+            // phase 4: constructions keep their tree, presets with a preview, physics settings
+            var h1 = Add(new Vector3(700, .5f, -40), "cube"); var h2 = Add(new Vector3(702, .5f, -40), "cube"); var h3 = Add(new Vector3(704, .5f, -40), "cube");
+            _editor.SelectIds([h1, h2, h3]); _editor.LinkForTesting(); string? treeJson = null; _editor.PackageSink = json => { treeJson = json; return true; };
+            _editor.SelectIds([h1, h2, h3]); _editor.SetPackageNameForTesting("Árvore"); _editor.SaveSelectionForTesting(false);
+            var treePackage = BuildPackages.Parse(treeJson ?? "", out var treeError) ?? throw new InvalidOperationException($"tree package invalid: {treeError}");
+            Require(treePackage.Objects.Count(o => o.Parent is null) == 1 && treePackage.Objects.Count(o => o.Parent == 0) == 2, $"a saved linkset keeps its tree: {string.Join(",", treePackage.Objects.Select(o => o.Parent?.ToString() ?? "-"))}");
+            var beforeTree = _server.Count; _editor.RezPackageJson(treeJson!, new Vector3(800, 0, -40), instant: true);
+            var treeCopies = _server.Values.Where(s => s.PositionX > 790 && s.PositionX < 810).ToList();
+            Require(_server.Count == beforeTree + 3 && treeCopies.Select(s => s.GroupId).Distinct().Count() == 1 && treeCopies.Count(s => s.ParentObjectId is null) == 1, "placing a construction brings back one linkset with one root");
+            var treeRoot = treeCopies.Single(s => s.ParentObjectId is null); Require(treeCopies.Count(s => s.ParentObjectId == treeRoot.Id) == 2, "and its parts hang from the root");
+            _editor.CommandForTesting("undo"); Require(_server.Count == beforeTree, "the whole placing is one undo step");
+            _editor.PackageSink = null;
+
+            var beforePreset = _server.Count; _editor.PlacePresetForTesting("table");
+            Require(_editor.PreviewActiveForTesting && _editor.PreviewPartsForTesting == 5 && _editor.IsPlacingForTesting, "choosing a preset shows its preview");
+            Require(_server.Count == beforePreset, "the preview creates nothing");
+            _editor.ConfirmPreviewForTesting(new Vector3(900, 0, -40));
+            Require(!_editor.PreviewActiveForTesting && _server.Count == beforePreset + 5, $"the click places the preset: {_server.Count - beforePreset}");
+            var tableParts = _server.Values.Where(s => s.PositionX > 890 && s.PositionX < 910).ToList(); var tableTop = tableParts.Single(s => s.ParentObjectId is null);
+            Require(tableTop.Name == "Tampo" && Mathf.Abs(tableTop.PositionY - .75f) < .02f && tableParts.Count(s => s.ParentObjectId == tableTop.Id) == 4, $"the table is a linkset standing on the ground: tableTop at {tableTop.PositionY}");
+            _editor.CommandForTesting("undo"); Require(_server.Count == beforePreset, "the preset is placed in one undo step");
+            _editor.PlacePresetForTesting("wall"); _editor.CancelPreviewForTesting(); Require(!_editor.PreviewActiveForTesting && _server.Count == beforePreset, "cancelling the preview places nothing");
+
+            var phy = Add(new Vector3(950, .5f, -40), "cube"); _editor.SelectIds([phy]);
+            _editor.SetPhysicsForTesting(true, 20f, .8f, .1f);
+            Require(_server[phy].PhysicsJson.Contains("\"physical\"") && _server[phy].PhysicsJson.Contains("\"mass\":20"), $"physics settings are saved: {_server[phy].PhysicsJson}");
+            _editor.SelectIds([]); _editor.SelectIds([phy]); _editor.SetPhysicsForTesting(false);
+            Require(!_server[phy].PhysicsJson.Contains("physical") && !_server[phy].PhysicsJson.Contains("mass"), "back to static removes the settings");
+            _editor.SelectIds([]);
+
+            // phase 5: undo that respects other people and what the server really did
+            var co = Add(new Vector3(1000, .5f, -40), "cube"); _editor.SelectIds([co]); _editor.MoveByForTesting(1, 0, 0);
+            Require(Mathf.Abs(_server[co].PositionX - 1001) < .01f && !_editor.ChangedByOthersForTesting(co), "my own change is not a foreign edit");
+            var theirs = _server[co]; theirs.PositionX = 1010; theirs.Revision++; _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation = "update", objectState = theirs }, Web));
+            Require(_editor.ChangedByOthersForTesting(co), "an edit by somebody else after mine is noticed");
+            var depth = _editor.UndoDepthForTesting; _editor.SelectIds([co]); _editor.Undo();
+            Require(Mathf.Abs(_server[co].PositionX - 1010) < .01f && _editor.StatusForTesting.Contains("outra pessoa"), $"undo must not write over their change: x={_server[co].PositionX}, {_editor.StatusForTesting}");
+            Require(_editor.UndoDepthForTesting == depth - 1 && _editor.RedoDepthForTesting == 0, "a step that could not be undone leaves the history");
+            _editor.SelectIds([co]); _editor.MoveByForTesting(1, 0, 0); Require(!_editor.ChangedByOthersForTesting(co), "building on top of their change makes it mine again");
+            _editor.SelectIds([co]); _editor.Undo(); Require(Mathf.Abs(_server[co].PositionX - 1010) < .01f, $"and then undo works again: {_server[co].PositionX}");
+            var heldSink = _editor.OperationSink; _editor.OperationSink = _ => true; // a server that never answers, then refuses
+            var depthBefore = _editor.UndoDepthForTesting; _editor.SelectIds([co]); _editor.MoveByForTesting(0, 0, 3); Require(_editor.UndoDepthForTesting == depthBefore + 1, "the step enters the history when it is made");
+            _editor.RejectForTesting("revision_conflict"); Require(_editor.UndoDepthForTesting == depthBefore, "a step the server refused leaves the history"); Require(_editor.StatusForTesting.Contains("Outra pessoa"), "and the conflict is explained");
+            _editor.OperationSink = heldSink; _editor.SelectIds([co]); _editor.MoveByForTesting(0, 0, 2); var settledDepth = _editor.UndoDepthForTesting;
+            _editor.OperationSink = _ => true; _editor.SelectIds([co]); _editor.Undo(); Require(_editor.RedoDepthForTesting == 1, "the undo is waiting for the server");
+            _editor.RejectForTesting("rate_limit"); Require(_editor.UndoDepthForTesting == settledDepth && _editor.RedoDepthForTesting == 0, "an undo the server refused goes back where it was");
+            _editor.OperationSink = heldSink; _editor.SelectIds([]);
+            _editor.ShowLinksetHistoryText("{\"members\":[{},{}],\"log\":[{\"objectName\":\"Tampo\",\"operation\":\"structure\",\"actorUserId\":\"" + Guid.NewGuid() + "\",\"revision\":3,\"at\":\"2026-11-10T12:00:00Z\"}]}");
+            Require(_editor.HistoryTextForTesting.Contains("Conjunto de 2 peça(s)") && _editor.HistoryTextForTesting.Contains("Vínculo alterado · Tampo"), $"the linkset history is listed: {_editor.HistoryTextForTesting}");
+
             // rights: shown for the selection (the strictest of it), with a warning when it may not be modified
             var closedOne = Add(new Vector3(300, .5f, -6), "cube"); _server[closedOne].OwnerRights = 5; _server[closedOne].NextOwnerRights = 4; _editor.LoadStatesForTesting([_server[closedOne]]);
             _editor.SelectIds([closedOne]); Require(_editor.RightsNoteForTesting.Contains("direitos C-T-") && _editor.RightsNoteForTesting.Contains("sem direito de modificar"), $"the rights of the selection must be shown: {_editor.RightsNoteForTesting}");

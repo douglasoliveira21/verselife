@@ -42,7 +42,7 @@ public partial class BuildEditor
         var notMine = _selection.FirstOrDefault(v => _session.UserId != Guid.Empty && v.State.OwnerUserId != _session.UserId);
         if (notMine is not null) { _status.Text = $"\"{notMine.State.Name}\" não é seu: só dá para guardar objetos seus."; return; }
         var name = string.IsNullOrWhiteSpace(_packageName.Text) ? (_selection.Count == 1 ? _selection[0].State.Name : "Construção") : _packageName.Text.Trim();
-        var sources = _selection.Select(v => { var s = FromView(v); return new SourceObject(s.PrimitiveType, s.Name, s.Description, s.PositionX, s.PositionY, s.PositionZ, s.RotationX, s.RotationY, s.RotationZ, s.ScaleX, s.ScaleY, s.ScaleZ, s.MaterialJson, s.GeometryJson, s.PhysicsJson, s.ContentJson, s.GroupId); }).ToList();
+        var sources = _selection.Select(v => { var s = FromView(v); return new SourceObject(s.PrimitiveType, s.Name, s.Description, s.PositionX, s.PositionY, s.PositionZ, s.RotationX, s.RotationY, s.RotationZ, s.ScaleX, s.ScaleY, s.ScaleZ, s.MaterialJson, s.GeometryJson, s.PhysicsJson, s.ContentJson, s.GroupId, s.Id, s.ParentObjectId, s.PivotX, s.PivotY, s.PivotZ); }).ToList();
         var json = BuildPackages.Serialize(BuildPackages.Create(name, sources));
         _takeAfterSave = take; _takeViews = take ? [.. _selection] : null;
         if (PackageSink is not null) { if (PackageSink(json)) OnPackageSaved(name, sources.Count); return; }
@@ -140,13 +140,18 @@ public partial class BuildEditor
         var total = placed.Count;
         var created = new List<Guid>();
         var actions = new List<Action>();
-        foreach (var item in placed)
+        // the tree of the construction: stand-ins for the saved objects, so the copies can be hung under each other once they all exist
+        var stand = placed.Select(_ => Guid.NewGuid()).ToList(); var copyOf = new Dictionary<Guid, Guid>(); var groupMap = new Dictionary<Guid, Guid>();
+        var source = placed.Select((p, i) => new BuildObjectState { Id = stand[i], GroupId = p.GroupId, ParentObjectId = p.Source.Parent is { } up && up >= 0 && up < stand.Count ? stand[up] : null }).ToList();
+        foreach (var p in placed) if (p.GroupId is { } g) groupMap[g] = g;
+        for (var i = 0; i < placed.Count; i++)
         {
+            var index = i; var item = placed[i];
             var template = TemplateOf(item.Source); var position = new Vector3(item.Position.X, item.Position.Y, item.Position.Z); var group = item.GroupId;
             actions.Add(() => CreateFrom(template, position, group, state =>
             {
-                entry.Items.Add(new HistoryItem(state.Id, null, Clone(state))); created.Add(state.Id);
-                if (created.Count == total) { SelectIds(created); _status.Text = $"Construção colocada ({total} objeto(s))."; }
+                entry.Items.Add(new HistoryItem(state.Id, null, Clone(state))); created.Add(state.Id); copyOf[stand[index]] = state.Id;
+                if (created.Count == total) { SelectIds(created); RestoreCopiedHierarchy(source, copyOf, groupMap); _status.Text = $"Construção colocada ({total} objeto(s))."; }
             }));
         }
         PushHistory(entry);
@@ -169,7 +174,8 @@ public partial class BuildEditor
     {
         PrimitiveType = o.PrimitiveType, Name = o.Name, Description = o.Description, RotationX = o.RotationX, RotationY = o.RotationY, RotationZ = o.RotationZ,
         ScaleX = o.ScaleX, ScaleY = o.ScaleY, ScaleZ = o.ScaleZ, MaterialJson = o.MaterialJson, GeometryJson = o.GeometryJson,
-        PhysicsJson = string.IsNullOrWhiteSpace(o.PhysicsJson) ? "{\"collision\":true}" : o.PhysicsJson, ContentJson = string.IsNullOrWhiteSpace(o.ContentJson) ? "[]" : o.ContentJson
+        PhysicsJson = string.IsNullOrWhiteSpace(o.PhysicsJson) ? "{\"collision\":true}" : o.PhysicsJson, ContentJson = string.IsNullOrWhiteSpace(o.ContentJson) ? "[]" : o.ContentJson,
+        PivotX = o.PivotX, PivotY = o.PivotY, PivotZ = o.PivotZ
     };
 
     private void CancelRez(string why)

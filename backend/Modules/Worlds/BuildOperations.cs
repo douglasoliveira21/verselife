@@ -133,7 +133,7 @@ public static partial class BuildOperations
         var itemIds = new List<(Guid Owner, Guid Item)>();
         foreach (var owned in items.GroupBy(x => x.OwnerUserId))
         {
-            var sources = owned.Select(x => new PackageSourceDto(x.PrimitiveType, x.Name, x.Description, x.PositionX, x.PositionY, x.PositionZ, x.RotationX, x.RotationY, x.RotationZ, x.ScaleX, x.ScaleY, x.ScaleZ, x.MaterialJson, x.GeometryJson, x.PhysicsJson, x.ContentJson, x.GroupId)).ToList();
+            var sources = owned.Select(x => new PackageSourceDto(x.PrimitiveType, x.Name, x.Description, x.PositionX, x.PositionY, x.PositionZ, x.RotationX, x.RotationY, x.RotationZ, x.ScaleX, x.ScaleY, x.ScaleZ, x.MaterialJson, x.GeometryJson, x.PhysicsJson, x.ContentJson, x.GroupId, x.Id, x.ParentObjectId, x.PivotX, x.PivotY, x.PivotZ)).ToList();
             var first = owned.First().Name;
             var package = PackageDocument.Create(owned.Count() == 1 ? $"Devolvido: {first}" : $"Devolvido: {first} (+{owned.Count() - 1})", sources);
             var saved = await BuildPackageStore.SaveAsync(db, storage, owned.Key, package, now, ct, ObjectRights.ForPackage(owned));
@@ -170,7 +170,7 @@ public static partial class BuildOperations
         if (new[] { request.OriginX, request.OriginY, request.OriginZ }.Any(v => !float.IsFinite(v) || Math.Abs(v) > 100_000)) return Refuse(400, "invalid_operation");
 
         var copyable = ItemRights.IsCopyable(item.OwnerRights); var rights = new ItemPermissions(item.OwnerRights, 0, item.NextOwnerRights).Normalized();
-        var requests = package.Objects.Select(p => new BuildObjectRequest(p.PrimitiveType, p.X + request.OriginX, p.Y + request.OriginY + package.BaseOffset, p.Z + request.OriginZ, p.RotationX, p.RotationY, p.RotationZ, p.ScaleX, p.ScaleY, p.ScaleZ, p.MaterialJson, p.PhysicsJson, null, 0, p.GeometryJson, p.Name, p.Description, null, null, p.ContentJson)).ToList();
+        var requests = package.Objects.Select(p => new BuildObjectRequest(p.PrimitiveType, p.X + request.OriginX, p.Y + request.OriginY + package.BaseOffset, p.Z + request.OriginZ, p.RotationX, p.RotationY, p.RotationZ, p.ScaleX, p.ScaleY, p.ScaleZ, p.MaterialJson, p.PhysicsJson, null, 0, p.GeometryJson, p.Name, p.Description, null, null, p.ContentJson, p.PivotX, p.PivotY, p.PivotZ)).ToList();
         var singles = new HashSet<Guid>(); var cumulativeCost = 0; var perParcel = new Dictionary<Guid, int>(); var usage = new Dictionary<Guid, (int Objects, int Cost)>(); var created = new List<BuildObject>(); var groups = new Dictionary<int, Guid>();
         for (var i = 0; i < requests.Count; i++)
         {
@@ -191,8 +191,10 @@ public static partial class BuildOperations
             }
             var made = BuildEndpoints.NewObject(island.Id, actor, o, now); var inherited = await ObjectRights.InheritAsync(db, actor, parts, ct);
             made.OwnerRights = ItemRights.Clamp(rights.Owner, inherited.Owner); made.NextOwnerRights = ItemRights.Clamp(rights.NextOwner & inherited.NextOwner, made.OwnerRights);
+            if (package.Objects[i].Group is { } groupIndex) { if (!groups.TryGetValue(groupIndex, out var groupId)) groups[groupIndex] = groupId = Guid.NewGuid(); made.GroupId = groupId; } // the construction's linksets come back as linksets
             created.Add(made);
         }
+        for (var i = 0; i < created.Count; i++) if (package.Objects[i].Parent is { } parentIndex && parentIndex >= 0 && parentIndex < created.Count) created[i].ParentObjectId = created[parentIndex].Id; // and keep their tree
         if (await db.BuildObjects.CountAsync(x => x.IslandId == island.Id && x.DeletedAt == null, ct) + created.Count > BuildCost.Limit(island.ResourceLimitsJson, "objects", 5000)) return Refuse(409, "object_quota");
 
         foreach (var made in created)
@@ -259,7 +261,32 @@ public static partial class BuildOperations
     {
         endpoints.MapGet("/api/v1/worlds/islands/{islandId:guid}/build-limits", LimitsAsync).WithTags("Build").RequireAuthorization();
         endpoints.MapGet("/api/v1/worlds/islands/{islandId:guid}/objects/{objectId:guid}/audit", AuditAsync).WithTags("Build").RequireAuthorization();
+        endpoints.MapGet("/api/v1/worlds/islands/{islandId:guid}/linksets/{groupId:guid}/audit", LinksetAuditAsync).WithTags("Build").RequireAuthorization();
         return endpoints;
+    }
+
+    /// <summary>
+    /// The history of a whole linkset: every operation on any of its parts (including parts that have since been deleted or returned), newest first. Only somebody who
+    /// may edit <b>every</b> live part sees it, so it never shows more than the parts' own histories would.
+    /// </summary>
+    public static async Task<IResult> LinksetAuditAsync(Guid islandId, Guid groupId, HttpContext context, LifeVerseDbContext db, CancellationToken ct)
+    {
+        if (!TryUser(context, out var user)) return Results.Unauthorized();
+        var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(i => i.Id == islandId && i.DeletedAt == null, ct); if (island is null) return Results.NotFound();
+        var members = await db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.GroupId == groupId).ToListAsync(ct); if (members.Count == 0) return Results.NotFound();
+        var isAdmin = island.OwnerUserId == user || await db.IslandPermissions.AsNoTracking().AnyAsync(p => p.IslandId == islandId && p.UserId == user && p.RevokedAt == null && p.Permission == "admin", ct);
+        var parcels = await LandService.LoadFactsAsync(db, islandId, ct);
+        foreach (var member in members.Where(m => m.DeletedAt == null))
+            if (BuildRules.CanEditObject(user, member.OwnerUserId, isAdmin, BuildRules.ParcelAt(parcels, member.PositionX, member.PositionZ)) is not null) return Results.Forbid();
+        if (members.All(m => m.DeletedAt != null) && !isAdmin && members.Any(m => m.OwnerUserId != user)) return Results.Forbid(); // nothing live left to judge by: only the owner of every part, or an admin
+        var ids = members.Select(m => m.Id).ToList(); var names = members.ToDictionary(m => m.Id, m => m.Name);
+        var log = await db.BuildOperations.AsNoTracking().Where(o => o.IslandId == islandId && o.ObjectId != null && ids.Contains(o.ObjectId.Value)).OrderByDescending(o => o.CreatedAt).Take(200)
+            .Select(o => new { objectId = o.ObjectId, operation = o.Operation, actorUserId = o.ActorUserId, revision = o.Revision, at = o.CreatedAt }).ToListAsync(ct);
+        return Results.Ok(new
+        {
+            groupId, members = members.Select(m => new { id = m.Id, name = m.Name, parentId = m.ParentObjectId, deleted = m.DeletedAt != null }).ToArray(),
+            log = log.Select(l => new { l.objectId, objectName = names.GetValueOrDefault(l.objectId ?? Guid.Empty, "?"), l.operation, l.actorUserId, l.revision, l.at }).ToArray()
+        });
     }
 
     private static bool TryUser(HttpContext context, out Guid id) => Guid.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out id);

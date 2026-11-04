@@ -114,4 +114,81 @@ O que cada terreno permite construir (quem constrói, scripts, orçamento, retor
 
 **Testes:** `LinksetRulesTests` e `LinksetOperationTests` (regras puras e operações: estrutura em um passo, preservação em atualização, recusas por dono/revisão/proteção/direito, árvores quebradas, limite, cura ao excluir e devolver, proteção), `LinksetChaosTests` (PostgreSQL real: 10 editores, 120 operações cada — vincular, desvincular, trocar raiz, proteger, excluir, devolver, criar —; no fim nenhuma árvore quebrada, uma só raiz por conjunto, nenhum conjunto de uma peça, nenhum erro inesperado) e novas verificações no `BuildSmoke`.
 
-**Ainda não** (próximas fases): pivôs, espelhar e duplicação múltipla, encaixe magnético, seleção por área, física dinâmica, presets, e levar a hierarquia para construções salvas no inventário (o formato salvo ainda guarda só o grupo; ao restaurar, a árvore volta achatada).
+**Ainda não** (próximas fases): encaixe magnético, seleção por área, física dinâmica, presets, e levar a hierarquia para construções salvas no inventário (o formato salvo ainda guarda só o grupo; ao restaurar, a árvore volta achatada).
+
+## Editor avançado — fase 2: pivôs, transformações precisas, espelhar e duplicação múltipla
+
+Nova aba **Transformar** (as abas existentes continuam como estavam). A aritmética está em `shared/Building/TransformMath.cs` e é testada sem a engine (`TransformMathTests`); o editor só converte os tipos.
+
+**Onde girar (o pivô).** As alças, os giros e os esticamentos por número usam o pivô escolhido: *centro da seleção* (padrão, como antes), *base da seleção* (o ponto mais baixo), *raiz do conjunto*, *primeiro selecionado*, *pivô do objeto*, *ponto escolhido* (coordenadas digitadas, com o botão "Usar o primeiro") ou *origem do mundo*. As alças aparecem no pivô e o texto da aba diz onde ele está. Esticar um objeto só, com pivô fora do centro, faz o objeto crescer **para longe do pivô**.
+
+**Pivô do objeto.** Cada objeto pode ter um pivô próprio: um deslocamento em metros, nos eixos dele, a partir do centro (como a dobradiça de uma porta). Fica **salvo com o objeto** (`world.objects.pivot_x/y/z`, migração `Phase57ObjectPivot`; até 64 m, finito; vai e volta pela API e pela ilha). Mudar o pivô conta como mudar o objeto (exige o direito Modificar); mover um objeto que diz o mesmo pivô, não. "Pivô na base" e "No centro" são atalhos.
+
+**Eixos.** *Do mundo* ou *locais (do primeiro selecionado)*, para as alças (mover, girar, esticar) e para os números.
+
+**Com números.** *Mover* por x, y, z metros nos eixos escolhidos; *Girar* N graus em torno do eixo X, Y ou Z que passa pelo pivô (o centro de cada objeto dá a volta e ele gira junto); *Esticar* por fatores x, y, z em torno do pivô (distâncias e tamanhos). Esticar com fatores diferentes só vale para objetos **alinhados** aos eixos escolhidos (até 5°); senão o editor explica e não faz (daria um objeto "entortado"); fatores iguais nos três sempre valem. Tamanhos fora de 0,01 – 64 m são limitados, com aviso. Tudo é um passo só no desfazer.
+
+**Espelhar.** Pelo plano que passa pelo pivô e é perpendicular ao eixo X, Y ou Z do mundo, como **cópias** (padrão) ou no lugar. O centro é refletido; para formas que ficam iguais ao virar de lado (caixa, cilindro, esfera…) a imagem no espelho é a mesma forma girada ao contrário, sem tamanho negativo; **formas torcidas torcem ao contrário** (o sinal da torção troca); **modelos importados não são espelhados** (esquerdo e direito não são iguais) e ficam de fora com aviso.
+
+**Duplicação múltipla.** *Linha* (cada cópia anda o passo, gira em torno do pivô e cresce o fator por cópia), *grade* (quantidades e distâncias nos três eixos) e *círculo* (objetos igualmente espaçados em volta do pivô, virando ou não para o centro, em torno de qualquer eixo). Até 200 cópias e 300 objetos por vez; o texto da aba diz quantos objetos serão criados antes de criar. Cada cópia de um conjunto vinculado é um conjunto vinculado com a mesma árvore; a criação sai em ritmo abaixo do limite da ilha e tudo é **um passo só** no desfazer.
+
+**Testes:** `TransformMathTests` (movimento em eixos do mundo e locais, giro em torno de pivô, esticar com e sem alinhamento, espelho — inclusive espelhar duas vezes volta ao mesmo —, pivô próprio, linha/grade/círculo e números absurdos), novos casos em `LinksetOperationTests` (pivô guardado, enviado, recusado fora de 64 m, exige Modificar) e a parte nova do `BuildSmoke` (modos de pivô, mover/girar/esticar por números com desfazer, pivô do objeto, espelho com cópias e no lugar, linha, grade, círculo, limite e cópia de conjuntos).
+
+**Ainda não:** encaixe magnético, seleção por área, física dinâmica, presets, e levar hierarquia e pivôs para as construções salvas no inventário.
+
+## Fase 3 — encaixe magnético, seleção por área, alinhamento avançado
+
+**Encaixe magnético** (aba *Transformar*, cartão "Encaixe magnético"). Ao arrastar uma seta de mover, a seleção é puxada para os cantos, o meio das arestas e o centro das faces de objetos vizinhos que estão perto do caminho do arrasto, ou uma face dela é feita encostar na face de outro objeto (`SnapMath.AlongAxis` e `SnapMath.Contact`, em `shared/Building/SnapMath.cs`). Cada tipo de ponto pode ser ligado ou desligado e o alcance é configurável (0,05 a 3 m). Um marcador amarelo mostra onde encaixou. Com o encaixe ligado ele tem prioridade sobre a grade.
+
+Limites: os pontos são os da caixa de contorno orientada de cada objeto, não vértices exatos da malha; o encaixe de "faces encostando" só vale para vizinhos alinhados aos eixos; ao arrastar mais de 12 objetos o encaixe usa a caixa que envolve a seleção toda.
+
+**Seleção por área.** Arrastar um retângulo em espaço vazio escolhe o que ficou inteiro dentro (esquerda para a direita) ou também o que o retângulo toca (direita para a esquerda); Shift soma à seleção. Conjuntos vinculados entram inteiros, exceto com "Editar só a peça". O cartão "Seleção por área" escolhe por uma caixa de coordenadas do mundo (dentro ou tocando), com atalho para preencher a caixa com a seleção atual.
+
+**Alinhar e distribuir: opções** (aba *Alinhar*). "Alinhar a" aceita a seleção toda (como antes), o primeiro, o último, o maior, o menor ou a raiz do conjunto: o objeto de referência fica parado e os outros vêm até ele. "Distribuir" aceita espaços iguais (como antes), centros igualmente afastados ou um espaço fixo em metros entre os objetos.
+
+Testes: `SnapAndAreaTests` (aritmética pura) e blocos novos em `BuildSmoke` (encaixe, alinhar ao primeiro, espaço fixo, seleção por volume).
+
+## Fase 4 — física, predefinidos, prévia e construções com hierarquia
+
+**Física por objeto** (aba *Objeto*, cartão do fantasma). Além de "Fantasma" (sem colisão sólida), cada objeto tem um modo **Estático** (padrão) ou **Físico**, com massa (0,01 a 10 000), atrito e quique (0 a 1). Fica em `PhysicsJson` (`mode`, `mass`, `friction`, `bounce`) e é validado no servidor em todo comando de objeto e em toda construção salva (`ObjectPhysics`, espelhado no cliente por `PhysicsRules`; um teste compara os dois). Um objeto físico precisa de colisão sólida (não pode ser fantasma nem gatilho) e custa 2 pontos a mais no orçamento da ilha.
+
+**Limite honesto:** o mundo **ainda não simula** corpos físicos. O modo "Físico" é guardado, validado, cobrado e levado nas construções salvas, mas o objeto fica onde foi posto. A simulação (servidor da ilha dono dos corpos e replicação a todos os jogadores) é um passo à parte.
+
+**Construções com hierarquia e pivôs.** O formato salvo (`lifeverse.build`, versão 1) ganhou campos opcionais `parent` (índice do objeto de que a peça depende) e `pivotX/Y/Z`. Construções antigas continuam abrindo. Ao salvar, a árvore do conjunto é guardada; ao colocar, o conjunto volta como um linkset novo com a mesma raiz e os mesmos filhos e pivôs. Isso vale para a colocação feita pelo cliente (com desfazer de um passo só) e para a colocação feita pelo servidor (itens que não podem ser copiados). Ao corrigir isso, a colocação pelo servidor passou a recriar também os grupos, que antes se perdiam. Um pai que não está na construção, ou em outro grupo, é salvo como raiz; um arquivo com pai inexistente, em outro grupo ou com laço é recusado.
+
+**Predefinidos** (aba *Hierarquia*): parede, piso, coluna, escada (6 degraus ligados), mesa (tampo + 4 pés ligados) e cômodo (piso + 4 paredes ligados), feitos de formas simples (`BuildPresets`).
+
+**Prévia antes de colocar.** Escolher um predefinido, ou "Colocar" um item de construção no inventário, mostra uma cópia translúcida de **todas** as peças seguindo o mouse sobre o terreno, com contagem de peças e tamanho na barra de estado. Clique coloca ali (com todas as checagens do servidor); Esc cancela e nada é criado. Construções que não podem ser copiadas não podem ser lidas pelo cliente, então não têm prévia: o servidor as coloca diante do avatar.
+
+Limites: a prévia não gira (a construção é colocada com a orientação com que foi salva); peças de modelo 3D aparecem como caixa na prévia.
+
+Testes: `PhysicsPresetsPackageTests` (regras de física, hierarquia/pivôs no formato, predefinidos válidos, colocação pelo servidor, devolver e colocar de novo, física recusada em todo comando) e um bloco novo em `BuildSmoke`.
+
+## Fase 5 — construção colaborativa, conflitos, desfazer consistente e histórico do conjunto
+
+**O que já protegia e continua valendo.** O servidor confere a revisão de cada comando: uma edição, exclusão ou reorganização feita a partir de uma imagem velha do objeto é recusada por inteiro (`revision_conflict`, 409, com a revisão atual) e não muda nada, nem as outras peças do mesmo comando. A ilha reserva (trava) o que cada pessoa seleciona e recusa comandos sobre o que outra pessoa segura; selecionar uma peça seleciona o conjunto, então o conjunto inteiro fica reservado. Construir lado a lado não dá direito de editar as coisas dos outros (`not_owner`).
+
+**Desfazer/refazer que respeita os outros.** O editor distingue as mudanças confirmadas como suas (resposta com a revisão que pediu mais um) das edições de outras pessoas. Desfazer ou refazer uma peça que outra pessoa alterou **depois** da sua última mudança não escreve por cima do trabalho dela: essa peça fica como está, a mensagem diz quantas ficaram e o passo sai do histórico se nenhuma peça pôde ser desfeita. Se você edita por cima da versão dela, a peça volta a ser sua e o desfazer funciona de novo.
+
+**Desfazer que acompanha o servidor.** Se o servidor recusa o único passo que aguardava resposta (conflito de revisão, limite, permissão), esse passo sai do histórico, e um desfazer/refazer recusado volta para a pilha de onde saiu; assim o histórico descreve o que realmente existe no mundo. Quando há vários passos aguardando ao mesmo tempo, a recusa não diz a qual se refere, então o histórico não é mexido (nenhum passo é descartado por palpite).
+
+**Histórico do conjunto.** Novo endpoint `GET /api/v1/worlds/islands/{ilha}/linksets/{grupo}/audit` e botão "Histórico do conjunto" (aba *Hierarquia*): todas as operações de todas as peças, inclusive as já apagadas ou devolvidas, da mais nova para a mais antiga, com a peça, quem fez e a revisão (criar, alterar, vincular, proteger, apagar, devolver, colocar). Só vê quem pode editar **todas** as peças vivas do conjunto (ou o dono/administrador da ilha), então nunca mostra mais do que o histórico de cada peça mostraria.
+
+Limites: a trava de edição é por peça e dura enquanto a seleção dura (renovada a cada 8 s); uma recusa não identifica o comando, então a limpeza do histórico só acontece no caso sem ambiguidade; o teste de concorrência real (várias conexões ao mesmo tempo no PostgreSQL) fica para a fase 6.
+
+Testes: `CollaborationTests` (edição velha recusada sem perder o trabalho do outro, exclusão velha, reorganização velha recusada inteira, raiz apagada enquanto filho é editado, duas pessoas construindo lado a lado, histórico do conjunto e quem pode lê-lo) e um bloco novo em `BuildSmoke`.
+
+## Fase 6 — testes finais e fechamento
+
+**Testes no PostgreSQL real** (`BuildEditorPostgresTests`, rodam com `LIFEVERSE_TEST_PG` apontando para um servidor onde o usuário cria bancos):
+- **Edição colaborativa sob concorrência:** seis editores (donos e administrador) atualizam as mesmas seis peças ao mesmo tempo, com revisão otimista. Ao final, a revisão de cada peça é a inicial mais exatamente o número de mudanças aceitas, o registro de auditoria tem uma linha por mudança aceita, e as edições velhas foram recusadas com `revision_conflict`; nenhum erro inesperado.
+- **Restauração após reinício:** um conjunto com raiz, filhos, pivôs, física, uma peça fantasma e uma peça protegida é lido do banco, o pool de conexões é descartado (o processo "reinicia") e a leitura é idêntica campo a campo. Depois o conjunto é devolvido ao inventário, o processo "reinicia" de novo e o item é colocado: volta um linkset novo e válido, com a mesma árvore e os mesmos pivôs, no lugar pedido.
+- **Colocações simultâneas:** oito colocações ao mesmo tempo da mesma construção copiável produzem conjuntos completos e válidos; seis colocações ao mesmo tempo de uma construção que não pode ser copiada produzem exatamente uma.
+
+**Colisões** (`BuildCollisionTests`): o cômodo predefinido para o avatar na parede e uma parede fantasma deixa passar; cada configuração de física decide se o objeto bloqueia (sólido, fantasma, gatilho, físico, estático, JSON inválido); o pivô nunca desloca a forma de colisão; uma parede girada continua bloqueando pela face girada.
+
+**Falha encontrada e corrigida pelos testes de carga:** duas primeiras compras simultâneas podiam criar duas vezes a conta da plataforma no livro-razão (sem usuário, então nenhum índice único a impede), e todas as compras seguintes falhavam com "Sequence contains more than one element". A leitura das contas do livro-razão agora usa sempre a mais antiga (`EnsureAccount`, tesouraria de grupo, conta de usuário e conta de terreno), então uma duplicata não quebra mais nada.
+
+**Cobertura das 30 funções do pedido.** Linksets, raiz, edição por peça, proteção e hierarquia (fase 1); pivôs, mover/girar/esticar por números e eixos, espelhar e duplicação múltipla (fase 2); encaixe magnético, grade, seleção por área, alinhar e distribuir (fase 3); colisão por objeto, estático/físico, predefinidos, prévia e salvar/restaurar construções com árvore, pivôs e permissões (fase 4); construção colaborativa, resolução de conflitos, desfazer consistente com o servidor, auditoria e persistência (fase 5, mais os testes desta fase). O editor existente e suas abas foram preservados; as abas novas são *Hierarquia* e *Transformar*.
+
+**Não feito (declarado):** simulação de corpos físicos no mundo (o modo "Físico" é guardado, validado e cobrado, mas o objeto não se move); encaixe magnético em vértices exatos da malha (usa a caixa de contorno); materiais e UV por face e limites/orçamento de terreno já existiam antes deste pedido e não foram alterados; a prévia da construção não gira.

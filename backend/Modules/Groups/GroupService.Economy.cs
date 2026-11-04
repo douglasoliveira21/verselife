@@ -36,14 +36,14 @@ public static partial class GroupService
 
     private static async Task<LedgerAccount> UserAccountAsync(LifeVerseDbContext db, Guid user, DateTimeOffset now, CancellationToken ct)
     {
-        var account = await db.LedgerAccounts.SingleOrDefaultAsync(a => a.UserId == user && a.AccountType == "user", ct); if (account is not null) return account;
+        var account = await db.LedgerAccounts.Where(a => a.UserId == user && a.AccountType == "user").OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).FirstOrDefaultAsync(ct); if (account is not null) return account;
         account = new LedgerAccount { Id = Guid.NewGuid(), UserId = user, AccountType = "user", CreatedAt = now }; db.LedgerAccounts.Add(account); return account;
     }
 
     /// <summary>The account of the chest of a group in the platform ledger (made when first needed).</summary>
     public static async Task<LedgerAccount> TreasuryAccountAsync(LifeVerseDbContext db, Guid groupId, DateTimeOffset now, CancellationToken ct)
     {
-        var account = await db.LedgerAccounts.SingleOrDefaultAsync(a => a.GroupId == groupId && a.AccountType == "group_treasury", ct); if (account is not null) return account;
+        var account = await db.LedgerAccounts.Where(a => a.GroupId == groupId && a.AccountType == "group_treasury").OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).FirstOrDefaultAsync(ct); if (account is not null) return account;
         account = new LedgerAccount { Id = Guid.NewGuid(), GroupId = groupId, AccountType = "group_treasury", CreatedAt = now }; db.LedgerAccounts.Add(account); return account;
     }
 

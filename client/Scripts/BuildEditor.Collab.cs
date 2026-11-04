@@ -116,7 +116,7 @@ public partial class BuildEditor
             "invalid_package" => "A construção do inventário está danificada ou não é válida.",
             "not_found" => "Esse objeto não existe mais.",
             "lock_limit" => "Você está segurando objetos demais ao mesmo tempo.",
-            "revision_conflict" => "Outra pessoa alterou este objeto antes; a edição foi recusada.",
+            "revision_conflict" => "Outra pessoa alterou este objeto antes: sua edição foi recusada e a tela mostra a versão dela. Refaça a edição se ainda quiser.",
             "rate_limit" => "Muitas alterações seguidas; aguarde um instante.",
             "service_unavailable" => "O servidor de construção não respondeu; tente novamente.",
             _ => $"Construção rejeitada: {code}"
@@ -194,7 +194,7 @@ public partial class BuildEditor
         if (_auditHttp.GetHttpClientStatus() == Godot.HttpClient.Status.Disconnected) _auditHttp.Request($"{app.ApiBaseUrl}/api/v1/worlds/islands/{_network.CurrentIslandId}/objects/{_selection[0].State.Id}/audit", [$"Authorization: Bearer {session.AccessToken}"]);
     }
 
-    private static string OperationLabel(string operation) => operation switch { "create" => "Criado", "update" => "Alterado", "delete" => "Excluído", "return" => "Devolvido", _ => operation };
+    private static string OperationLabel(string operation) => operation switch { "create" => "Criado", "update" => "Alterado", "delete" => "Excluído", "return" => "Devolvido", "structure" => "Vínculo alterado", "protect" => "Proteção alterada", "rez" => "Colocado", _ => operation };
 
     /// Lists the audit answer (newest first) in a dialog: what happened, who did it (you, or the start of their id), the revision and when.
     public void ShowHistoryText(string json)

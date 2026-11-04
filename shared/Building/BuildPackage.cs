@@ -7,7 +7,7 @@ namespace LifeVerse.Shared.Building;
 public sealed record PackageObject(
     string PrimitiveType, string Name, string Description,
     float X, float Y, float Z, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ,
-    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, int? Group);
+    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, int? Group, int? Parent = null, float PivotX = 0, float PivotY = 0, float PivotZ = 0);
 
 /// <summary>A construction saved in the inventory: a house, a sofa, a shop. It is plain data, so it can be validated before it is stored or placed.</summary>
 public sealed record BuildPackage(string Format, int Version, string Name, float BaseOffset, PackageObject[] Objects);
@@ -16,7 +16,7 @@ public sealed record BuildPackage(string Format, int Version, string Name, float
 public sealed record SourceObject(
     string PrimitiveType, string Name, string Description,
     float X, float Y, float Z, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ,
-    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, Guid? GroupId);
+    string MaterialJson, string GeometryJson, string PhysicsJson, string ContentJson, Guid? GroupId, Guid Id = default, Guid? ParentId = null, float PivotX = 0, float PivotY = 0, float PivotZ = 0);
 
 /// <summary>An object ready to be created in the world: absolute position and the group id it must share with its siblings.</summary>
 public sealed record PlacedObject(PackageObject Source, Vector3 Position, Guid? GroupId);
@@ -43,8 +43,30 @@ public static class BuildPackages
         var groups = sources.Where(s => s.GroupId is not null).Select(s => s.GroupId!.Value).Distinct().ToList();
         var objects = sources.Select(s => new PackageObject(s.PrimitiveType, s.Name, s.Description, s.X - centerX, s.Y - baseY, s.Z - centerZ,
             s.RotationX, s.RotationY, s.RotationZ, s.ScaleX, s.ScaleY, s.ScaleZ, s.MaterialJson, s.GeometryJson, s.PhysicsJson, s.ContentJson,
-            s.GroupId is { } id ? groups.IndexOf(id) : null)).ToArray();
+            s.GroupId is { } id ? groups.IndexOf(id) : null, ParentIndex(sources, s), s.PivotX, s.PivotY, s.PivotZ)).ToArray();
         return new BuildPackage(FormatName, CurrentVersion, Clean(name), lowest.ScaleY / 2f, objects);
+    }
+
+    /// <summary>The index of the object's parent in the list, when the parent is part of the construction and in the same group; otherwise the object is saved as a root.</summary>
+    private static int? ParentIndex(IReadOnlyList<SourceObject> sources, SourceObject s)
+    {
+        if (s.ParentId is not { } parent || s.GroupId is null) return null;
+        for (var i = 0; i < sources.Count; i++) if (sources[i].Id == parent && sources[i].Id != Guid.Empty && sources[i].GroupId == s.GroupId) return i;
+        return null;
+    }
+
+    /// <summary>Null when every parent exists, is in the same group and the hierarchy has no loop; otherwise why not.</summary>
+    public static string? HierarchyError(IReadOnlyList<(int? Group, int? Parent)> objects)
+    {
+        for (var i = 0; i < objects.Count; i++)
+        {
+            if (objects[i].Parent is not { } parent) continue;
+            if (parent < 0 || parent >= objects.Count || parent == i) return "An object hangs from a parent that does not exist.";
+            if (objects[i].Group is null || objects[i].Group != objects[parent].Group) return "An object hangs from a parent that is not in its group.";
+            var hops = 0; var at = (int?)parent;
+            while (at is { } step) { if (++hops > objects.Count) return "The hierarchy of the construction has a loop."; at = objects[step].Parent is { } up && up >= 0 && up < objects.Count ? up : null; }
+        }
+        return null;
     }
 
     private static string Clean(string name) { name = (name ?? string.Empty).Trim(); return name.Length == 0 ? "Construção" : name[..Math.Min(name.Length, 160)]; }
@@ -70,7 +92,9 @@ public static class BuildPackages
             if (numbers.Any(n => !float.IsFinite(n)) || Math.Abs(o.X) > 2000 || Math.Abs(o.Y) > 2000 || Math.Abs(o.Z) > 2000) { error = "An object has invalid numbers."; return null; }
             if (new[] { o.ScaleX, o.ScaleY, o.ScaleZ }.Any(s => s is < .01f or > 64f)) { error = "An object has a size outside 0.01 to 64 metres."; return null; }
             if (o.Group is < 0 || o.Group >= Math.Max(groupCount, 1) && o.Group is not null) { error = "An object points to a group that does not exist."; return null; }
+            if (new[] { o.PivotX, o.PivotY, o.PivotZ }.Any(p => !float.IsFinite(p) || Math.Abs(p) > 64f)) { error = "An object has a pivot outside 64 metres."; return null; }
         }
+        if (HierarchyError(package.Objects.Select(o => (o.Group, o.Parent)).ToArray()) is { } hierarchy) { error = hierarchy; return null; }
         return package;
     }
 

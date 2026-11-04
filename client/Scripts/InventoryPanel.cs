@@ -395,7 +395,7 @@ public partial class InventoryPanel : Node3D
         if (IsPackage(info))
         {
             if (GetParent()?.GetNodeOrNull<BuildEditor>("BuildEditor") is not { } builder) { _status.Text = "O editor de construção não está disponível."; return; }
-            builder.RezPackage(info.ItemId, position - Vector3.Up * 1f);
+            builder.PreviewPackage(info.ItemId, position - Vector3.Up * 1f);
             _status.Text = $"Colocando \"{info.Name}\"…";
             return;
         }

@@ -157,6 +157,8 @@ public partial class BuildEditor
         var guard = Row(10); body.AddChild(guard);
         guard.AddChild(IconButton("lock", "Proteger", "Protege a seleção contra edição acidental: nem mover, nem alterar, nem apagar", () => ProtectSelection(true), UiStyle.ButtonKind.Secondary, 46));
         guard.AddChild(IconButton("unlock", "Desproteger", "Libera a seleção para edição de novo", () => ProtectSelection(false), UiStyle.ButtonKind.Secondary, 46));
+        guard.AddChild(IconButton("history", "Histórico do conjunto", "Mostra quem mexeu em qualquer peça do conjunto", ShowLinksetHistory, UiStyle.ButtonKind.Secondary, 46));
+        page.AddChild(BuildPresetsCard());
         return page;
     }
 
@@ -234,6 +236,13 @@ public partial class BuildEditor
     /// A pasted or duplicated linkset keeps its tree: the copies are created as loose members of a new linkset, and once they all exist the editor hangs each copy under the copy of its parent.
     private void RestoreCopiedHierarchy(List<BuildObjectState> source, Dictionary<Guid, Guid> copyOf, Dictionary<Guid, Guid> groups)
     {
+        var links = HierarchyLinksForCopies(source, copyOf, groups);
+        if (links.Count > 0) SendStructure(links, string.Empty, history: false); // part of the paste's own undo step: undoing it deletes the copies
+    }
+
+    /// The links that hang each copy under the copy of its parent (the copies were created loose, in a linkset of their own).
+    private List<LinkNode> HierarchyLinksForCopies(List<BuildObjectState> source, Dictionary<Guid, Guid> copyOf, Dictionary<Guid, Guid> groups)
+    {
         var links = new List<LinkNode>();
         foreach (var set in source.Where(s => s.GroupId is not null && groups.ContainsKey(s.GroupId!.Value)).GroupBy(s => s.GroupId!.Value))
         {
@@ -247,6 +256,6 @@ public partial class BuildEditor
                 links.Add(new LinkNode(mine, groups[set.Key], parent));
             }
         }
-        if (links.Count > 0) SendStructure(links, string.Empty, history: false); // part of the paste's own undo step: undoing it deletes the copies
+        return links;
     }
 }

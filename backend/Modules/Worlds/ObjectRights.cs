@@ -106,6 +106,7 @@ public static class ObjectRights
     public static bool ChangesWhatItIs(BuildObject item, BuildObjectRequest o) =>
         !string.Equals(item.PrimitiveType, o.PrimitiveType, StringComparison.OrdinalIgnoreCase)
         || Differs(item.ScaleX, o.ScaleX) || Differs(item.ScaleY, o.ScaleY) || Differs(item.ScaleZ, o.ScaleZ)
+        || (o.PivotX is { } px && Differs(item.PivotX, px)) || (o.PivotY is { } py && Differs(item.PivotY, py)) || (o.PivotZ is { } pz && Differs(item.PivotZ, pz))
         || (o.Name is not null && !string.Equals(BuildEndpoints.CleanName(o.Name, item.PrimitiveType), item.Name, StringComparison.Ordinal))
         || (o.Description is not null && !string.Equals(BuildEndpoints.CleanDescription(o.Description), item.Description, StringComparison.Ordinal))
 

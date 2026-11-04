@@ -254,4 +254,36 @@ public sealed class LinksetOperationTests : IDisposable
         Assert.Equal(400, (await Send(_builder, "protect", ids: [id])).Status); Assert.Equal(404, (await Send(_builder, "protect", ids: [Guid.NewGuid()], locked: true)).Status); Assert.Equal(400, (await Send(_builder, "protect", locked: true)).Status);
         Assert.Contains(_db.BuildOperations, o => o.Operation == "protect" && o.ObjectId == id); Assert.Contains(_db.BuildOperations, o => o.Operation == "unprotect" && o.ObjectId == id);
     }
+
+    // ---- the pivot of an object ----------------------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task APivotIsSavedWithTheObjectAndSentBackToEveryone()
+    {
+        var (status, body) = await Send(_builder, "create", Cube(2) with { PivotX = 0.5f, PivotY = -0.5f, PivotZ = 0 }); Assert.Equal(200, status);
+        var state = body.GetProperty("objectState"); Assert.Equal((0.5f, -0.5f, 0f), (state.GetProperty("pivotX").GetSingle(), state.GetProperty("pivotY").GetSingle(), state.GetProperty("pivotZ").GetSingle()));
+        var id = body.GetProperty("objectId").GetGuid(); var stored = await Obj(id); Assert.Equal((0.5f, -0.5f, 0f), (stored.PivotX, stored.PivotY, stored.PivotZ));
+        var (s2, b2) = await Send(_builder, "update", Cube(2) with { PivotZ = 1.25f }, id, stored.Revision); Assert.Equal(200, s2); var changed = await Obj(id); Assert.Equal((0.5f, -0.5f, 1.25f), (changed.PivotX, changed.PivotY, changed.PivotZ)); // only what is sent changes
+        Assert.Equal(200, (await Send(_builder, "update", Cube(9), id, changed.Revision)).Status); var moved = await Obj(id); Assert.Equal((0.5f, -0.5f, 1.25f), (moved.PivotX, moved.PivotY, moved.PivotZ)); // a move that says nothing about the pivot keeps it
+        _ = b2;
+    }
+
+    [Fact]
+    public async Task APivotFarFromTheObjectOrNotANumberIsRefused()
+    {
+        foreach (var bad in new[] { 65f, -65f, float.NaN, float.PositiveInfinity })
+        {
+            var (status, body) = await Send(_builder, "create", Cube() with { PivotX = bad }); Assert.Equal((400, "invalid_object"), (status, Code(body)));
+        }
+        Assert.Equal(200, (await Send(_builder, "create", Cube() with { PivotX = 64, PivotY = -64 })).Status); Assert.Equal(1, await _db.BuildObjects.CountAsync());
+    }
+
+    [Fact]
+    public async Task ChangingThePivotNeedsTheRightToModifyButMovingDoesNot()
+    {
+        var id = await Make(_builder, 0); var tracked = await _db.BuildObjects.SingleAsync(o => o.Id == id); tracked.OwnerRights = ItemRights.Copy | ItemRights.Transfer; await _db.SaveChangesAsync();
+        var rev = (await Obj(id)).Revision;
+        var (status, body) = await Send(_builder, "update", Cube(0) with { PivotY = -1 }, id, rev); Assert.Equal((403, "no_modify"), (status, Code(body)));
+        Assert.Equal(200, (await Send(_builder, "update", Cube(7) with { PivotY = 0 }, id, rev)).Status); // the same pivot, just moved
+    }
 }
