@@ -17,11 +17,14 @@ public partial class AvatarRig
 
     public AvatarDetail Detail => _detail;
 
-    /// <summary>Triangles of this avatar when drawn in full: the custom body and every custom item (0 for the procedural body; the planner counts that as its own minimum).</summary>
-    public int FullCost => ReducedCost + (_lastData?.CustomWearables.Sum(w => Math.Max(0, w.Triangles)) ?? 0);
+    /// <summary>Triangles of the custom body at full detail (0 for the procedural body; the planner counts that as its own minimum).</summary>
+    public int BodyCost => _lastData is { CustomModelId: not null } data ? Math.Max(0, data.CustomModelTriangles) : 0;
 
-    /// <summary>Triangles when drawn reduced: the custom body only.</summary>
-    public int ReducedCost => _lastData is { CustomModelId: not null } data ? Math.Max(0, data.CustomModelTriangles) : 0;
+    /// <summary>Triangles of this avatar when drawn in full: the custom body and every custom item.</summary>
+    public int FullCost => BodyCost + (_lastData?.CustomWearables.Sum(w => Math.Max(0, w.Triangles)) ?? 0);
+
+    /// <summary>Triangles when drawn reduced: the custom body with its geometry simplified (see <see cref="ModelLod"/>), no items.</summary>
+    public int ReducedCost => AvatarDetailPlanner.ReducedTriangles(BodyCost);
 
     /// <summary>Sets how much of the avatar is drawn. Hidden stops drawing and animating without throwing anything away; the other levels rebuild only when what they need changed.</summary>
     public void SetDetail(AvatarDetail detail)

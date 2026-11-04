@@ -44,7 +44,7 @@ public partial class AvatarDetailSmoke : Node
             rig.SetDetail(AvatarDetail.Basic); rig.ApplyAppearance(Look()); await Frames(8);
             Require(!rig.CustomBodyActive && rig.WearablesShown == 0 && bodyDownloads + itemDownloads + animationDownloads == 0, $"at Basic nothing is fetched: {bodyDownloads}/{itemDownloads}/{animationDownloads}");
             Require(rig.CustomBodyStatus.Contains("Longe"), $"the reason is said: {rig.CustomBodyStatus}");
-            Require(rig.ReducedCost == 30_000 && rig.FullCost == 38_000, $"the costs are known without loading anything: {rig.ReducedCost}/{rig.FullCost}");
+            Require(rig.ReducedCost == AvatarDetailPlanner.ReducedTriangles(30_000) && rig.BodyCost == 30_000 && rig.FullCost == 38_000, $"the costs are known without loading anything: {rig.ReducedCost}/{rig.FullCost}");
 
             // ---- closer: the custom body comes, the items still wait
             rig.SetDetail(AvatarDetail.Reduced); await Frames(8);

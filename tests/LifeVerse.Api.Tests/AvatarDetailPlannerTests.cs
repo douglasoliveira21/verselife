@@ -94,6 +94,36 @@ public sealed class AvatarDetailPlannerTests
     }
 }
 
+public sealed class ReducedGeometryTests
+{
+    [Theory]
+    [InlineData(0, 0)] [InlineData(-5, 0)] [InlineData(1_200, 1_200)] [InlineData(4_000, 4_000)] [InlineData(4_001, 4_000)] [InlineData(10_000, 4_000)] [InlineData(30_000, 10_500)] [InlineData(100_000, 35_000)]
+    public void AReducedBodyKeepsAFractionOfItsTrianglesButNeverGoesBelowTheFloor(int body, int expected) => Assert.Equal(expected, AvatarDetailPlanner.ReducedTriangles(body));
+
+    [Fact]
+    public void ASmallBodyIsNotSimplifiedAndABigOneNeverGrows()
+    {
+        foreach (var body in new[] { 100, 3_000, 4_000, 4_500, 20_000, 80_000, 500_000 })
+        {
+            var reduced = AvatarDetailPlanner.ReducedTriangles(body);
+            Assert.True(reduced <= body || body <= AvatarDetailPlanner.ReducedFloor, $"{body} -> {reduced}");
+            if (body <= AvatarDetailPlanner.ReducedFloor) Assert.Equal(body, reduced);
+        }
+    }
+
+    [Fact]
+    public void SimplifiedBodiesLetMoreAvatarsBeDrawnWithTheirOwnBody()
+    {
+        // 20 heavy bodies of 60,000 triangles (and 70,000 with items) seen at 30 to 58 m: they ask for the reduced detail
+        DetailCandidate Heavy(int id, int reduced) => new(id, 30f + id * 1.5f, true, 70_000, reduced, Previous: AvatarDetail.Reduced);
+        var budget = new DetailBudget { Triangles = 450_000, MaxReduced = 40 };
+        int Reduced(Func<int, int> cost) => AvatarDetailPlanner.Plan([.. Enumerable.Range(0, 20).Select(i => Heavy(i, cost(60_000)))], budget).Values.Count(v => v == AvatarDetail.Reduced);
+        var before = Reduced(body => body); var after = Reduced(AvatarDetailPlanner.ReducedTriangles);
+        Assert.True(after > before, $"before={before} after={after}");
+        Assert.Equal(20, after); // 20 x 21,000 fits in 450,000; 20 x 60,000 does not
+    }
+}
+
 internal static class DetailTestHelpers
 {
     /// <summary>The detail an avatar would already have at this distance if it had been standing there a while (so the test measures the distance and not the stickiness).</summary>

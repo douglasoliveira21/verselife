@@ -33,6 +33,7 @@ run client res://Tests/InventorySmoke.tscn inventory_smoke
 run client res://Tests/PeopleSmoke.tscn people_smoke
 run client res://Tests/GroupsSmoke.tscn groups_smoke
 run client res://Tests/MirrorSmoke.tscn mirror_smoke
+run client res://Tests/ModelLodSmoke.tscn model_lod_smoke
 run client res://Tests/VehicleSmoke.tscn vehicle_smoke
 run client res://Tests/UpdateSmoke.tscn update_smoke
 run client res://Tests/VoiceSmoke.tscn voice_smoke

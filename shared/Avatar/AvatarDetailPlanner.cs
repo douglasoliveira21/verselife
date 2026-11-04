@@ -78,6 +78,14 @@ public static class AvatarDetailPlanner
         return plan;
     }
 
+    /// <summary>The fraction of its triangles a custom body keeps when it is drawn at <see cref="AvatarDetail.Reduced"/> (its geometry is simplified).</summary>
+    public const float ReducedRatio = .35f;
+    /// <summary>A body with no more triangles than this is not simplified: it is cheap already.</summary>
+    public const int ReducedFloor = 4_000;
+
+    /// <summary>How many triangles a custom body of this size costs at <see cref="AvatarDetail.Reduced"/>, for the budget.</summary>
+    public static int ReducedTriangles(int bodyTriangles) => bodyTriangles <= ReducedFloor ? Math.Max(0, bodyTriangles) : Math.Max(ReducedFloor, (int)(bodyTriangles * ReducedRatio));
+
     /// <summary>What an avatar costs to draw, for the budget: its triangles (a procedural body counts as <see cref="DetailBudget.BasicCost"/>).</summary>
     public static int RenderCost(int bodyTriangles, IEnumerable<int> itemTriangles) => Math.Max(0, bodyTriangles) + itemTriangles.Sum(Max0);
 

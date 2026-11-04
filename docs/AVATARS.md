@@ -177,3 +177,19 @@ Antes, mudar o visual levava para outra tela (a do personagem), saindo da ilha. 
 **Teste:** `MirrorSmoke` (carrega o mundo com o jogador de verdade: a câmera vai para a frente e perto, o avatar não anda com a tecla apertada, visão do corpo inteiro e de costas, mudanças aparecendo no avatar, vestido cobrindo a calça, item próprio indo para o visual com o que a prévia precisa, salvar, desfazer, fechar sem salvar volta ao salvo e a câmera volta, andar de novo, looks, salvar como look).
 
 **Limitações:** sem captura de tela (a distância e a posição da câmera foram conferidas por números); a prévia reconstrói o avatar por inteiro a cada mudança, como a tela completa; o espelho não mostra um reflexo de verdade, é a câmera na frente do avatar; durante o espelho, quem está perto vê o avatar parado como em qualquer pausa e não o visual ainda não salvo.
+
+## Avatar 2.0 — LOD de geometria: o corpo simplificado de longe (entregue)
+
+Antes, o nível "Reduzido" desenhava o corpo personalizado com **todos** os triângulos (só deixava de baixar os itens e as animações próprias) e o "Básico" trocava por um boneco padrão. Agora o **Reduzido desenha uma versão simplificada do modelo**:
+
+- **Quanto**: o corpo mantém `AvatarDetailPlanner.ReducedRatio` = **35%** dos triângulos, nunca abaixo de **4.000** (`ReducedFloor`); um corpo de até 4.000 triângulos não é mexido. `ReducedTriangles(corpo)` é a regra única (cliente e planejador). Exemplo: 30.000 → 10.500; 100.000 → 35.000.
+- **Como** (`client/Scripts/ModelLod.cs`): o simplificador do próprio engine (o mesmo que o editor usa para gerar LODs na importação, meshoptimizer) roda em cada superfície do modelo **mantendo os vértices**: só o buffer de índices fica menor, então esqueleto, pesos, UVs, normais e materiais continuam como eram. Escolhe-se o LOD mais perto do alvo. O resultado fica em cache por corpo (hash), nome da malha e superfície, então uma multidão do mesmo corpo simplifica uma vez.
+- **Onde**: só em `AvatarDetail.Reduced`. Em **Completo** o corpo mantém todos os triângulos (e ao chegar perto o corpo é remontado a partir do arquivo em cache). **Básico** continua o boneco padrão (nenhum arquivo é baixado de longe).
+- **Orçamento**: o custo do avatar Reduzido no planejador passou a ser o do corpo **simplificado** (`AvatarRig.ReducedCost`); `BodyCost` é o corpo inteiro e `FullCost` é corpo + itens. Com o mesmo orçamento cabem mais avatares com o corpo próprio de média distância (o teste mostra 20 corpos de 60 mil triângulos cabendo no orçamento onde antes só 7 ou menos cabiam).
+- **Segurança**: malha com morph targets (blendshapes) é mantida inteira; se uma superfície não puder ser simplificada, ela fica como estava (mais triângulos, nunca um corpo quebrado); se o engine não tiver simplificador (`ModelLod.Available`), nada muda. O rig informa `CustomBodyFileTriangles`, `CustomBodyTriangles` e `CustomBodyGeometry` ("full" ou "simplificado: 40.000 → 14.000").
+
+**Testes:** `ReducedGeometryTests` (a regra do custo, nunca cresce, mais avatares cabem no orçamento) e `ModelLodSmoke` (uma esfera densa de ~9 mil triângulos fica com cerca de um terço, mantém a forma, normais, UVs e índices válidos, cache, fração menor dá menos triângulos; um modelo com várias malhas é simplificado por inteiro; abaixo do piso nada muda; blendshapes intactos; no avatar, Reduzido nunca tem mais triângulos que o arquivo e Completo tem todos).
+
+**Limitações:** a simplificação considera a pose de repouso (não os pesos dos ossos), então articulações muito detalhadas podem ficar um pouco mais angulosas ao dobrar; nada foi visto em captura de tela; o resultado depende de o build do engine incluir o simplificador (o editor e os smokes incluem; num build exportado sem ele o corpo simplesmente segue com todos os triângulos).
+
+**Limpeza:** o `LocomotionSolver.cs` (sem nenhum uso) foi removido.

@@ -66,7 +66,7 @@ public partial class AvatarRig
         if (token != _customToken || !IsInstanceValid(this)) return; // the avatar changed while it downloaded
         if (bytes is null) { CustomBodyStatus = "Não foi possível baixar o corpo personalizado."; return; }
         if (!HashMatches(bytes, hash)) { CustomBodyStatus = "O arquivo do corpo não confere com o que o servidor aprovou."; return; }
-        AttachCustom(bytes);
+        AttachCustom(bytes, hash);
     }
 
     private static bool HashMatches(byte[] bytes, string hash) => string.Equals(Convert.ToHexString(SHA256.HashData(bytes)), hash, StringComparison.OrdinalIgnoreCase);
@@ -100,12 +100,27 @@ public partial class AvatarRig
         foreach (var child in node.GetChildren()) foreach (var found in Meshes(child)) yield return found;
     }
 
-    private void AttachCustom(byte[] bytes)
+    /// <summary>Triangles of the custom body as drawn now, and of the file it came from (they differ when the body is drawn simplified).</summary>
+    public int CustomBodyTriangles { get; private set; }
+    public int CustomBodyFileTriangles { get; private set; }
+    /// <summary>"full", or how the geometry was simplified for the reduced detail ("simplificado: 40.000 → 14.000").</summary>
+    public string CustomBodyGeometry { get; private set; } = string.Empty;
+
+    private void AttachCustom(byte[] bytes, string hash)
     {
         var document = new GltfDocument(); var state = new GltfState();
         if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) { CustomBodyStatus = "O engine não conseguiu ler o corpo personalizado."; return; }
         var scene = document.GenerateScene(state);
         if (scene is null || FindSkeleton(scene) is not { } skeleton) { scene?.QueueFree(); CustomBodyStatus = "O corpo personalizado não tem esqueleto."; return; }
+
+        // far enough to be drawn reduced: the body keeps a fraction of its triangles (its geometry is simplified); close enough, it keeps all of them
+        CustomBodyFileTriangles = ModelLod.CountTriangles(scene); CustomBodyGeometry = "full";
+        if (_detail == AvatarDetail.Reduced)
+        {
+            var (before, after) = ModelLod.Simplify(scene, AvatarDetailPlanner.ReducedRatio, hash);
+            if (after < before) CustomBodyGeometry = $"simplificado: {before:N0} → {after:N0}";
+        }
+        CustomBodyTriangles = ModelLod.CountTriangles(scene);
 
         // a glTF model looks along +Z and this game looks along -Z, so the model is turned around; the animation copy below accounts for it
         var holder = new Node3D { Name = "CustomBody", Rotation = new Vector3(0, Mathf.Pi, 0), Scale = Vector3.One * _customScale };
