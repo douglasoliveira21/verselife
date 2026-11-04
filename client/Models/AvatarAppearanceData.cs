@@ -19,6 +19,11 @@ public sealed class AvatarAppearanceData
     [JsonPropertyName("cameraSensitivity")] public float CameraSensitivity { get; set; } = 0.003f;
     [JsonPropertyName("invertCameraY")] public bool InvertCameraY { get; set; }
     [JsonPropertyName("equippedItems")] public List<EquippedItemData> EquippedItems { get; set; } = [];
+    /// The checked GLB the avatar wears as its body (null: the procedural body), its content hash, the factor that brings it to 1.8 m and its bone map.
+    [JsonPropertyName("customModelId")] public Guid? CustomModelId { get; set; }
+    [JsonPropertyName("customModelHash")] public string? CustomModelHash { get; set; }
+    [JsonPropertyName("customModelScale")] public float CustomModelScale { get; set; } = 1f;
+    [JsonPropertyName("customModelBonesJson")] public string CustomModelBonesJson { get; set; } = "{}";
 
     public string Item(string slot, string fallback) => EquippedItems.FirstOrDefault(x => x.Slot == slot)?.ItemKey ?? fallback;
     public string Tint(string slot, string fallback) => EquippedItems.FirstOrDefault(x => x.Slot == slot)?.TintColor ?? fallback;
@@ -28,7 +33,7 @@ public sealed class AvatarAppearanceData
         Id = Id, DisplayName = DisplayName, BaseModel = BaseModel, SkinColor = SkinColor,
         HairColor = HairColor, HairStyle = HairStyle, EyeColor = EyeColor, BeardStyle = BeardStyle,
         BodySettingsJson = BodySettingsJson, FaceSettingsJson = FaceSettingsJson, OutfitsJson = OutfitsJson, AttachmentsJson = AttachmentsJson,
-        CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY,
+        CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY, CustomModelId = CustomModelId, CustomModelHash = CustomModelHash, CustomModelScale = CustomModelScale, CustomModelBonesJson = CustomModelBonesJson,
         EquippedItems = EquippedItems.Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.ItemKey, TintColor = x.TintColor }).ToList()
     };
 }

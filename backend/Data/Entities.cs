@@ -47,6 +47,8 @@ public sealed class Avatar
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public AvatarAppearance? Appearance { get; set; }
+    /// <summary>The checked GLB the avatar wears as its body; null: the procedural body.</summary>
+    public Guid? CustomModelId { get; set; }
     public ICollection<EquippedItem> EquippedItems { get; set; } = [];
 }
 
@@ -68,6 +70,25 @@ public sealed class AvatarAppearance
     public bool InvertCameraY { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>A body model a person uploaded: the checked GLB (stored by its hash), the report of the check and the map of its bones to the standard skeleton.</summary>
+public sealed class AvatarModel
+{
+    public Guid Id { get; set; }
+    public Guid AvatarId { get; set; }
+    public required string Name { get; set; }
+    public required string ContentHash { get; set; }
+    public required string StorageKey { get; set; }
+    public int SizeBytes { get; set; }
+    public int Triangles { get; set; }
+    public int Joints { get; set; }
+    public float Height { get; set; }
+    public float ScaleToStandard { get; set; } = 1f;
+    public string ReportJson { get; set; } = "{}";
+    public string BoneMapJson { get; set; } = "{}";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 }
 
 /// <summary>A saved look: a named snapshot of the whole appearance that can be put on again, duplicated and shared with a code.</summary>

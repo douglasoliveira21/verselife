@@ -16,6 +16,8 @@ public static class UserEndpoints
         group.MapPut("/avatar", SaveAvatarAsync).Produces<AvatarResponse>().ProducesValidationProblem().ProducesProblem(404);
         group.MapPut("/profile", UpdateProfileAsync);
         group.MapAvatarLookEndpoints();
+        group.MapAvatarModelEndpoints();
+        endpoints.MapPublic();
         endpoints.MapGet("/api/v1/users/{userId:guid}/profile", PublicProfileAsync).RequireAuthorization().WithTags("Users");
         return endpoints;
     }
@@ -36,7 +38,7 @@ public static class UserEndpoints
         if (!TryGetUserId(context, out var userId)) return Results.Unauthorized();
         var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.UserId == userId, ct);
-        return avatar is null ? Results.NotFound() : Results.Ok(ToResponse(avatar));
+        return avatar is null ? Results.NotFound() : Results.Ok(ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct)));
     }
 
     private static async Task<IResult> SaveAvatarAsync(SaveAvatarRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider timeProvider, CancellationToken ct)
@@ -49,7 +51,7 @@ public static class UserEndpoints
         if (avatar is null) return Results.NotFound();
         ApplyAvatar(db, avatar, request, timeProvider.GetUtcNow());
         await db.SaveChangesAsync(ct);
-        return Results.Ok(ToResponse(avatar));
+        return Results.Ok(ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct)));
     }
 
     /// <summary>Writes an already validated appearance into the avatar (the caller saves). Used by saving and by applying a saved look.</summary>
@@ -95,7 +97,7 @@ public static class UserEndpoints
     private static bool TryGetUserId(HttpContext context, out Guid userId) =>
         Guid.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out userId);
 
-    public static AvatarResponse ToResponse(Avatar avatar)
+    public static AvatarResponse ToResponse(Avatar avatar, AvatarModel? model = null)
     {
         var appearance = avatar.Appearance;
         return new AvatarResponse(avatar.Id, avatar.DisplayName, avatar.BaseModel,
@@ -103,7 +105,8 @@ public static class UserEndpoints
             appearance?.EyeColor ?? "#4A3326", appearance?.BeardStyle ?? "none", appearance?.BodySettingsJson ?? "{}",
             appearance?.FaceSettingsJson ?? "{}", appearance?.OutfitsJson ?? "[]", appearance?.AttachmentsJson ?? "[]",
             appearance?.CameraSensitivity ?? 0.003f, appearance?.InvertCameraY ?? false,
-            avatar.EquippedItems.OrderBy(x => x.Slot).Select(x => new EquippedItemRequest(x.Slot, x.ItemKey, x.TintColor)).ToList());
+            avatar.EquippedItems.OrderBy(x => x.Slot).Select(x => new EquippedItemRequest(x.Slot, x.ItemKey, x.TintColor)).ToList(),
+            model?.Id, model?.ContentHash, model?.ScaleToStandard ?? 1f, model?.BoneMapJson ?? "{}");
     }
     private static string ValidJsonOrDefault(string? value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value;
 }

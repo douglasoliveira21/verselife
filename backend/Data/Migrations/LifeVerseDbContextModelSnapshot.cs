@@ -273,6 +273,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<Guid?>("CustomModelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("custom_model_id");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -424,6 +428,81 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("avatar_looks", "identity");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
+                    b.Property<string>("BoneMapJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("bone_map_json");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<float>("Height")
+                        .HasColumnType("real")
+                        .HasColumnName("height");
+
+                    b.Property<int>("Joints")
+                        .HasColumnType("integer")
+                        .HasColumnName("joints");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("ReportJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("report_json");
+
+                    b.Property<float>("ScaleToStandard")
+                        .HasColumnType("real")
+                        .HasColumnName("scale_to_standard");
+
+                    b.Property<int>("SizeBytes")
+                        .HasColumnType("integer")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("storage_key");
+
+                    b.Property<int>("Triangles")
+                        .HasColumnType("integer")
+                        .HasColumnName("triangles");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AvatarId", "ContentHash")
+                        .IsUnique();
+
+                    b.ToTable("avatar_models", "identity");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.BuildObject", b =>
@@ -3203,6 +3282,15 @@ namespace LifeVerse.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.AvatarLook", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Avatar", null)
+                        .WithMany()
+                        .HasForeignKey("AvatarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarModel", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.Avatar", null)
                         .WithMany()

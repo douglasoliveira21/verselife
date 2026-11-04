@@ -34,7 +34,11 @@ public sealed record AvatarResponse(
     string AttachmentsJson,
     float CameraSensitivity,
     bool InvertCameraY,
-    IReadOnlyList<EquippedItemRequest> EquippedItems);
+    IReadOnlyList<EquippedItemRequest> EquippedItems,
+    Guid? CustomModelId = null,
+    string? CustomModelHash = null,
+    float CustomModelScale = 1f,
+    string CustomModelBonesJson = "{}");
 
 public static partial class AvatarCatalog
 {

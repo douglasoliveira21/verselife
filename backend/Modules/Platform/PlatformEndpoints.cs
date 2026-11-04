@@ -6,6 +6,7 @@ using LifeVerse.Api.Modules.Assets;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 using LifeVerse.Api.Modules.Worlds;
+using LifeVerse.Api.Modules.Users;
 
 namespace LifeVerse.Api.Modules.Platform;
 
@@ -78,8 +79,10 @@ public static class PlatformEndpoints
         var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.Id == identity.AvatarId && x.UserId == identity.UserId, ct);
         if (avatar is null) return Results.Unauthorized();
+        var customModel = await AvatarModels.ActiveAsync(db, avatar, ct);
         var appearance = JsonSerializer.Serialize(new
         {
+            customModelId = customModel?.Id, customModelHash = customModel?.ContentHash, customModelScale = customModel?.ScaleToStandard ?? 1f, customModelBonesJson = customModel?.BoneMapJson ?? "{}",
             id = avatar.Id, displayName = avatar.DisplayName, baseModel = avatar.BaseModel,
             skinColor = avatar.Appearance?.SkinColor ?? "#C98F65", hairColor = avatar.Appearance?.HairColor ?? "#2B1B14",
             hairStyle = avatar.Appearance?.HairStyle ?? "short", eyeColor = avatar.Appearance?.EyeColor ?? "#4A3326",

@@ -34,6 +34,24 @@ public partial class AvatarManager : Node
         if (http.Request(app.ApiBaseUrl + "/api/v1/users/me/avatar" + path, ["Content-Type: application/json", $"Authorization: Bearer {session.AccessToken}"], method, body ?? string.Empty) != Error.Ok) { http.QueueFree(); done(0, string.Empty); }
     }
 
+    /// Sends a file as multipart form data (the field "file", plus the given text fields) to /api/v1/users/me/avatar{path}. Tests see it as a body like "file:name:size".
+    public void Upload(string path, string fileName, byte[] bytes, IReadOnlyDictionary<string, string> fields, Action<int, string> done)
+    {
+        if (Transport is not null) { var (status, text) = Transport(Godot.HttpClient.Method.Post, path, $"file:{fileName}:{bytes.Length}"); done(status, text); return; }
+        var session = GetNodeOrNull<SessionManager>("/root/SessionManager"); var app = GetNodeOrNull<AppManager>("/root/AppManager");
+        if (session is null || app is null || !session.IsAuthenticated) { done(401, string.Empty); return; }
+        var boundary = "----lifeverse" + Guid.NewGuid().ToString("N");
+        using var body = new MemoryStream();
+        void Write(string text) { var data = Encoding.UTF8.GetBytes(text); body.Write(data, 0, data.Length); }
+        const string Crlf = "\r\n";
+        foreach (var field in fields) Write("--" + boundary + Crlf + "Content-Disposition: form-data; name=\"" + field.Key + "\"" + Crlf + Crlf + field.Value + Crlf);
+        Write("--" + boundary + Crlf + "Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName.Replace("\"", string.Empty) + "\"" + Crlf + "Content-Type: model/gltf-binary" + Crlf + Crlf);
+        body.Write(bytes, 0, bytes.Length); Write(Crlf + "--" + boundary + "--" + Crlf);
+        var http = new HttpRequest { Timeout = 60 }; AddChild(http);
+        http.RequestCompleted += (result, code, _, response) => { http.QueueFree(); done(result == (long)HttpRequest.Result.Success ? (int)code : 0, Encoding.UTF8.GetString(response)); };
+        if (http.RequestRaw(app.ApiBaseUrl + "/api/v1/users/me/avatar" + path, new string[] { $"Content-Type: multipart/form-data; boundary={boundary}", $"Authorization: Bearer {session.AccessToken}" }, Godot.HttpClient.Method.Post, body.ToArray()) != Error.Ok) { http.QueueFree(); done(0, string.Empty); }
+    }
+
     /// The avatar the server sent back, or null when the text is not one.
     public static AvatarAppearanceData? ParseAppearance(string json) { try { return JsonSerializer.Deserialize<AvatarAppearanceData>(json); } catch (JsonException) { return null; } }
 

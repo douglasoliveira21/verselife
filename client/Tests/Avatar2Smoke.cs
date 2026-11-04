@@ -79,10 +79,21 @@ public partial class Avatar2Smoke : Node
             // ---- the editor
             var manager = GetNode<AvatarManager>("/root/AvatarManager");
             var calls = new List<string>(); var saved = new List<(Guid Id, string Name, string? Code)>(); var lastBody = string.Empty;
+            var models = new List<(Guid Id, string Name)>(); Guid? usedModel = null;
             manager.Transport = (method, path, body) =>
             {
                 calls.Add($"{method} {path} {body}");
                 string List() => "[" + string.Join(",", saved.Select(l => $"{{\"id\":\"{l.Id}\",\"name\":\"{l.Name}\",\"shareCode\":{(l.Code is null ? "null" : $"\"{l.Code}\"")},\"skinColor\":\"#C98F65\",\"hairStyle\":\"short\"}}")) + "]";
+                if (method == Godot.HttpClient.Method.Get && path == "/models") return (200, "[" + string.Join(",", models.Select(m => $"{{\"id\":\"{m.Id}\",\"name\":\"{m.Name}\",\"triangles\":204,\"joints\":17,\"active\":{(usedModel == m.Id ? "true" : "false")}}}")) + "]");
+                if (method == Godot.HttpClient.Method.Post && path == "/models")
+                {
+                    if (body!.Contains("ruim.glb")) return (422, "{\"error\":\"invalid_model\",\"report\":{\"ok\":false,\"triangles\":204,\"joints\":16,\"height\":1.78,\"issues\":[{\"code\":\"missing_bones\",\"message\":\"The skeleton is missing these bones: hand_l.\",\"error\":true},{\"code\":\"animations_ignored\",\"message\":\"x\",\"error\":false}]}}");
+                    models.Add((Guid.NewGuid(), "bom")); return (200, "{\"model\":{},\"report\":{\"ok\":true,\"triangles\":204,\"joints\":17,\"height\":1.78,\"issues\":[{\"code\":\"no_chest\",\"message\":\"x\",\"error\":false}]}}");
+                }
+                if (method == Godot.HttpClient.Method.Post && path.StartsWith("/models/") && path.EndsWith("/use")) { usedModel = models[0].Id; return (200, "{}"); }
+                if (method == Godot.HttpClient.Method.Delete && path == "/models/use") { usedModel = null; return (200, "{}"); }
+                if (method == Godot.HttpClient.Method.Delete && path.StartsWith("/models/")) { if (usedModel == models[0].Id) usedModel = null; models.RemoveAt(0); return (200, "{}"); }
+                if (method == Godot.HttpClient.Method.Get && path == string.Empty) return (200, "{\"displayName\":\"Teste\",\"baseModel\":\"human_a\",\"skinColor\":\"#C98F65\",\"hairColor\":\"#2B1B14\",\"hairStyle\":\"short\",\"eyeColor\":\"#4A3326\",\"beardStyle\":\"none\",\"bodySettingsJson\":\"{}\",\"faceSettingsJson\":\"{}\",\"outfitsJson\":\"[]\",\"attachmentsJson\":\"[]\",\"cameraSensitivity\":0.003,\"invertCameraY\":false,\"equippedItems\":[]," + (usedModel is { } u ? $"\"customModelId\":\"{u}\",\"customModelHash\":\"{new string('a', 64)}\",\"customModelScale\":1.01," : string.Empty) + "\"customModelBonesJson\":\"{}\"}");
                 if (method == Godot.HttpClient.Method.Get && path == "/looks") return (200, List());
                 if (method == Godot.HttpClient.Method.Put && path == string.Empty) { lastBody = body ?? string.Empty; return (200, lastBody); }
                 if (method == Godot.HttpClient.Method.Post && path == "/looks")
@@ -142,6 +153,23 @@ public partial class Avatar2Smoke : Node
             Require(creator.Looks.Any(l => l.Name == "Importado"), "a valid code imports the look");
             creator.SelectLookForTesting(0); creator.DeleteLookForTesting();
             Require(creator.Looks.Count == 2, "deleting removes the look");
+
+            // ---- custom bodies
+            creator.LoadModels();
+            Require(creator.Models.Count == 0, "no models at first");
+            creator.Import("ruim.glb", [1, 2, 3]);
+            Require(creator.ModelMessageForTesting.Contains("recusado") && creator.ModelMessageForTesting.Contains("hand_l") && creator.ModelMessageForTesting.Contains("✖"), $"a refused model shows why: {creator.ModelMessageForTesting}");
+            creator.Import("foto.png", [1]);
+            Require(creator.ModelMessageForTesting.Contains(".glb"), "only .glb is accepted");
+            creator.Import("bom.glb", [1, 2, 3]);
+            Require(creator.ModelMessageForTesting.Contains("aceito") && creator.ModelMessageForTesting.Contains("204") && creator.Models.Count == 1, $"an accepted model is listed: {creator.ModelMessageForTesting}");
+            creator.SelectModelForTesting(0); creator.UseModelForTesting();
+            Require(creator.CustomIdForTesting is not null && creator.FormForTesting().CustomModelId == creator.CustomIdForTesting && creator.FormForTesting().CustomModelHash!.Length == 64, "choosing a model puts it on the form and the preview");
+            Require(creator.Models[0].Active, "the list shows which model is in use");
+            creator.StandardBodyForTesting();
+            Require(creator.CustomIdForTesting is null && creator.FormForTesting().CustomModelId is null, "going back to the standard body clears it");
+            creator.SelectModelForTesting(0); creator.UseModelForTesting(); creator.SelectModelForTesting(0); creator.DeleteModelForTesting();
+            Require(creator.Models.Count == 0 && creator.CustomIdForTesting is null, "deleting the model in use goes back to the standard body");
 
             manager.Transport = null;
             GD.Print("event=avatar2_smoke result=passed");

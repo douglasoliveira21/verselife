@@ -90,6 +90,7 @@ public partial class AvatarRig : Node3D
         _visual.AddChild(voice); _voice = voice;
         _visual.AddChild(new NamePlate(data.DisplayName, voice) { Name = "DisplayName", Position = new Vector3(0, top3 + .2f, 0) });
         if (_tree is not null) { _tree.Active = false; _tree.Active = true; _playback.Start(StateName(_state)); }
+        StartCustomBody(data);
     }
 
     /// Height of the player capsule in Player.tscn; the visible body is scaled to match it.

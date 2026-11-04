@@ -60,6 +60,7 @@ public partial class CharacterCreator
             fields.AddChild(option); _extra[slot] = option;
         }
         BuildLooksManager(fields);
+        BuildModelsManager(fields);
     }
 
     // ---- reading and writing the form -----------------------------------------------------------------------------------------------
@@ -83,6 +84,7 @@ public partial class CharacterCreator
         foreach (var (key, slider) in _body) slider.Value = body[key];
         var face = AvatarRules.ReadSettings(value.FaceSettingsJson, AvatarRules.FaceRanges);
         foreach (var (key, slider) in _face) slider.Value = face[key];
+        _custom = (value.CustomModelId, value.CustomModelHash, value.CustomModelScale, value.CustomModelBonesJson);
         _tints.Clear(); foreach (var pair in DefaultTints) _tints[pair.Key] = pair.Value;
         foreach (var item in value.EquippedItems) _tints[item.Slot] = item.TintColor;
         foreach (var slot in ExtraSlots) if (_extra.TryGetValue(slot, out var option)) Select(option, value.Item(slot, "none"));
