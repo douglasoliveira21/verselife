@@ -73,6 +73,12 @@ public static class InventoryOrganizer
     /// </summary>
     private static async Task<InventoryOutcome> LockedAsync(LifeVerseDbContext db, Guid owner, CancellationToken ct, Func<Task<InventoryOutcome>> body)
     {
+        try { return await LockedCoreAsync(db, owner, ct, body); }
+        catch (Exception exception) when (exception is DbUpdateConcurrencyException || RaceFailures.IsRace(exception)) { db.ChangeTracker.Clear(); return InventoryOutcome.Fail("stale"); } // somebody changed one of these items at the same moment (a delivery, a deletion): nothing was applied, try again
+    }
+
+    private static async Task<InventoryOutcome> LockedCoreAsync(LifeVerseDbContext db, Guid owner, CancellationToken ct, Func<Task<InventoryOutcome>> body)
+    {
         if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true) return await body();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtext({owner.ToString()}))", ct);

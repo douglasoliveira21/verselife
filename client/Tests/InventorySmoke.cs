@@ -177,6 +177,21 @@ public partial class InventorySmoke : Node
             versions.Transport = (method, path, body) => (404, "{\"error\":\"not_found\"}"); versions.Reload(); Require(versions.NoteForTesting.Contains("Não há histórico"), "an item without history is explained");
             inventory.PopulateForTesting($"[{{\"id\":\"{folder}\",\"name\":\"Casas\"}}]", $"[{{\"itemId\":\"{modelItem}\",\"assetId\":\"{modelAsset}\",\"name\":\"Caixa\",\"category\":\"models\",\"mimeType\":\"model/gltf-binary\",\"contentHash\":\"h1\",\"size\":{bytes.Length},\"version\":1,\"favorite\":false,\"deleted\":false}},{{\"itemId\":\"{textureItem}\",\"assetId\":\"{Guid.NewGuid()}\",\"name\":\"Pedra\",\"category\":\"textures\",\"mimeType\":\"image/png\",\"contentHash\":\"h2\",\"size\":10,\"version\":1,\"favorite\":false,\"deleted\":false}}]");
 
+            // Inventory 2.0, phase 6: the storage bar comes from the server, and other sessions of the same person keep in step.
+            inventory.ApplyStorageForTesting("{\"usedBytes\":" + (3L << 30) + ",\"quotaBytes\":" + (100L << 30) + ",\"inBinBytes\":" + (1L << 20) + ",\"olderVersionsBytes\":0,\"items\":12,\"assets\":9,\"byCategory\":[{\"category\":\"models\",\"bytes\":" + (2L << 30) + ",\"assets\":3},{\"category\":\"textures\",\"bytes\":" + (1L << 30) + ",\"assets\":6}]}");
+            Require(inventory.StorageTextForTesting == "3,0 GB de 100,0 GB (3%)" && Mathf.Abs((float)inventory.StorageBarForTesting - 3f) < .01f && !inventory.StorageWarningColorForTesting, $"the storage line comes from the server: {inventory.StorageTextForTesting}");
+            Require(inventory.StorageTipForTesting.Contains("modelos: 2,0 GB") && inventory.StorageTipForTesting.Contains("texturas: 1,0 GB") && inventory.StorageTipForTesting.Contains("Na lixeira: 1,0 MB") && !inventory.StorageTipForTesting.Contains("Perto do limite"), $"the kinds and the bin are told: {inventory.StorageTipForTesting}");
+            inventory.ApplyStorageForTesting("{\"usedBytes\":" + (95L << 30) + ",\"quotaBytes\":" + (100L << 30) + ",\"byCategory\":[]}");
+            Require(inventory.StorageForTesting is { Warning: true } && inventory.StorageWarningColorForTesting && inventory.StorageTipForTesting.Contains("Perto do limite"), "close to the limit it is shown in the warning colour and says why it matters");
+            Require(InventoryPanel.ParseStorage("garbage") is null && InventoryPanel.ParseStorage("{\"usedBytes\":1}") is null && InventoryPanel.ParseStorage("{\"usedBytes\":10,\"quotaBytes\":0}") is { Percent: 100 }, "damaged answers are ignored and a zero limit reads as full");
+            Require(InventoryPanel.SessionId.Length == 32 && InventoryPanel.SessionId.All(Uri.IsHexDigit), "this running game has a name that the server hands back to the other sessions");
+            var syncBefore = inventory.SyncRequestsForTesting;
+            inventory.OnLiveEvent("{\"type\":\"inventory_changed\",\"data\":{\"source\":\"" + InventoryPanel.SessionId + "\"}}"); Require(inventory.SyncRequestsForTesting == syncBefore, "what this session did itself is not read again");
+            inventory.OnLiveEvent("{\"type\":\"inventory_changed\",\"data\":{\"source\":\"outra-sessao\"}}"); inventory.OnLiveEvent("{\"type\":\"inventory_changed\",\"data\":{}}"); inventory.OnLiveEvent("{\"type\":\"inventory_changed\"}");
+            Require(inventory.SyncRequestsForTesting == syncBefore + 3, "a change made by another session (or by one that did not say who) is noticed");
+            await ToSignal(GetTree().CreateTimer(.9), SceneTreeTimer.SignalName.Timeout); Require(inventory.SyncRequestsForTesting == 0, "and read once, a moment after the last change, not once for each");
+            inventory.OnLiveEvent("not json"); inventory.OnLiveEvent("{\"type\":\"message\"}"); inventory.OnLiveEvent("[]");
+
             // Only models can be placed in the world.
             inventory.PlaceForTesting(textureItem, new Vector3(0, 0, -6));
             Require(_server.Count == 0, "a texture must not become a world object");

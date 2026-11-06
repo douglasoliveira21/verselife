@@ -27,7 +27,7 @@ public static class AssetVersioning
     public static string CleanNotes(string? notes) { var text = new string([.. (notes ?? string.Empty).Where(c => !char.IsControl(c) || c == '\n')]).Trim(); return text.Length > MaxNotes ? text[..MaxNotes] : text; }
 
     /// <summary>Publishes a new version and makes it the current one. Only the creator may. The file goes through the same checks as an upload and must be the same kind of file as the asset.</summary>
-    public static Task<InventoryOutcome> PublishAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, Guid assetId, string fileName, byte[] bytes, string? notes, DateTimeOffset now, CancellationToken ct) => OneAtATime(db, assetId, ct, () => PublishCoreAsync(db, storage, owner, assetId, fileName, bytes, notes, now, ct));
+    public static Task<InventoryOutcome> PublishAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, Guid assetId, string fileName, byte[] bytes, string? notes, DateTimeOffset now, CancellationToken ct, long quota = InventoryStorage.DefaultQuotaBytes) => OneAtATime(db, assetId, ct, () => PublishCoreAsync(db, storage, owner, assetId, fileName, bytes, notes, now, ct, quota));
     public static Task<InventoryOutcome> ActivateAsync(LifeVerseDbContext db, Guid owner, Guid assetId, int version, DateTimeOffset now, CancellationToken ct) => OneAtATime(db, assetId, ct, () => ActivateCoreAsync(db, owner, assetId, version, now, ct));
 
     /// <summary>Publishing and going back take turns for the same asset (on PostgreSQL, an advisory lock until saved): two at once could each pick the same number, or leave the current version pointing at the older of the two.</summary>
@@ -39,7 +39,7 @@ public static class AssetVersioning
         var result = await body(); if (result.Ok) await transaction.CommitAsync(ct); return result;
     }
 
-    private static async Task<InventoryOutcome> PublishCoreAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, Guid assetId, string fileName, byte[] bytes, string? notes, DateTimeOffset now, CancellationToken ct)
+    private static async Task<InventoryOutcome> PublishCoreAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, Guid assetId, string fileName, byte[] bytes, string? notes, DateTimeOffset now, CancellationToken ct, long quota)
     {
         var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == assetId && a.OwnerUserId == owner && a.DeletedAt == null, ct); if (asset is null) return InventoryOutcome.Fail("not_found");
         var allowed = Extensions(asset.Category); var extension = Path.GetExtension(fileName).ToLowerInvariant();
@@ -49,6 +49,7 @@ public static class AssetVersioning
         var inspection = await AssetValidator.InspectAsync(fileName, string.Empty, bytes, ct); if (!inspection.Valid) return new InventoryOutcome(false, "invalid_file", inspection.Error);
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         if (versions.Any(v => v.ContentHash == hash && v.Version == asset.CurrentVersion)) return InventoryOutcome.Fail("unchanged");
+        if (!await InventoryStorage.FitsAsync(db, owner, bytes.Length, quota, ct)) return InventoryOutcome.Fail("storage_full");
         var next = versions.Max(v => v.Version) + 1; var key = await storage.PutAsync(owner, hash, bytes, ct);
         db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = assetId, Version = next, ContentHash = hash, StorageKey = key, MimeType = inspection.MimeType, ByteSize = bytes.Length, Width = inspection.Width, Height = inspection.Height, DurationSeconds = inspection.DurationSeconds, ValidationJson = inspection.MetadataJson, Notes = CleanNotes(notes), CreatedAt = now });
         asset.CurrentVersion = next; asset.UpdatedAt = now;

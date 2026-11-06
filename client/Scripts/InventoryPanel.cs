@@ -16,7 +16,7 @@ public partial class InventoryPanel : Node3D
 
     private sealed record ItemInfo(Guid ItemId, Guid AssetId, string Name, string Category, string Mime, string Hash, long Size, Guid? FolderId, bool Favorite, bool Deleted, int Version, int OwnerRights = 15, string Status = "active", bool HasUpdate = false, bool IsCreator = false);
     private sealed record FolderInfo(Guid Id, string Name, Guid? ParentId = null, int Count = -1);
-    private enum Pending { List, Action, Used, Integrity, Unpack }
+    private enum Pending { List, Action, Used, Integrity, Unpack, Storage }
 
     private const int PageSize = 50;
     private static readonly (string Label, string Types)[] TypeFilters = [("Todos os tipos", ""), ("Modelos 3D", "models"), ("Texturas", "textures"), ("Sons", "sounds"), ("Animações", "animations"), ("Roupas e acessórios", "clothing,accessories"), ("Objetos", "objects"), ("Pacotes", "packages")];
@@ -78,6 +78,8 @@ public partial class InventoryPanel : Node3D
     public bool IsOpen => _window.Visible;
     /// Reloads the list when the window is open (another window changed the inventory).
     public void Refresh() { if (_window.Visible) LoadItems(); }
+    /// <summary>Names this running game in the changes it asks for, so the server can tell the other open sessions of the same person which one did it.</summary>
+    public static string SessionId { get; } = Guid.NewGuid().ToString("N");
     /// Raised when the server accepted a change (upload, move, favourite…), so other windows can refresh what they list.
     public event Action? ItemsChanged;
     /// Sends an image to the inventory as a texture (used by the build window's Importar imagem).
@@ -240,6 +242,7 @@ public partial class InventoryPanel : Node3D
         if (!session.IsAuthenticated && RequestSink is null) return;
         _page = page; if (page == 1) { _itemsLoaded = false; } _foldersLoaded = false;
         Send(Godot.HttpClient.Method.Get, ItemsUrl(page), null, Pending.List);
+        if (page == 1) Send(Godot.HttpClient.Method.Get, "/api/v1/inventory/storage", null, Pending.Storage);
         if (RequestSink is null) { _folderHttp.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/inventory/folders", [$"Authorization: Bearer {session.AccessToken}"]); _trashHttp.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/inventory/trash", [$"Authorization: Bearer {session.AccessToken}"]); }
         else { RequestSink(Godot.HttpClient.Method.Get, "/api/v1/inventory/folders", null); RequestSink(Godot.HttpClient.Method.Get, "/api/v1/inventory/trash", null); }
     }
@@ -281,6 +284,7 @@ public partial class InventoryPanel : Node3D
         var kind = _inFlight;
         if (kind == Pending.Used) { Pump(); return; } // noting that an item was used needs no refresh
         if (kind == Pending.Unpack) { _status.Text = UnpackText(code, body.Length == 0 ? "{}" : Encoding.UTF8.GetString(body)); if (code is >= 200 and < 300) { LoadItems(); ItemsChanged?.Invoke(); } Pump(); return; }
+        if (kind == Pending.Storage) { if (code is >= 200 and < 300 && ParseStorage(Encoding.UTF8.GetString(body)) is { } storage) { _storage = storage; UpdateStorage(); } Pump(); return; }
         if (kind == Pending.Integrity) { _status.Text = code is >= 200 and < 300 && ItemRightsApi.ParseIntegrity(Encoding.UTF8.GetString(body)) is { } report ? report.Summary : ErrorText(code, body); Pump(); return; }
         if (code is < 200 or >= 300) { _status.Text = ErrorText(code, body); if (kind == Pending.Action) LoadItems(); /* show what the server really has: a refused move must not look done */ Pump(); return; }
         try
@@ -422,12 +426,41 @@ public partial class InventoryPanel : Node3D
         }
     }
 
+    /// <summary>The storage the server counts for this person: used, the limit, what is in the bin and the share of each kind of thing.</summary>
+    public sealed record StorageInfo(long Used, long Quota, long InBin, long OlderVersions, IReadOnlyList<(string Category, long Bytes)> ByCategory)
+    {
+        public double Percent => Quota <= 0 ? 100 : Math.Min(100d, Used * 100d / Quota);
+        public bool Warning => Percent >= 90;
+    }
+
+    private StorageInfo? _storage;
+    public StorageInfo? StorageForTesting => _storage;
+
+    public static StorageInfo? ParseStorage(string json)
+    {
+        try
+        {
+            using var d = JsonDocument.Parse(json); var r = d.RootElement; if (r.ValueKind != JsonValueKind.Object || !r.TryGetProperty("usedBytes", out var used) || !used.TryGetInt64(out var u) || !r.TryGetProperty("quotaBytes", out var quota) || !quota.TryGetInt64(out var q)) return null;
+            long N(string name) => r.TryGetProperty(name, out var v) && v.TryGetInt64(out var n) ? n : 0;
+            var kinds = r.TryGetProperty("byCategory", out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object).Select(e => (e.TryGetProperty("category", out var c) ? c.GetString() ?? string.Empty : string.Empty, e.TryGetProperty("bytes", out var b) && b.TryGetInt64(out var bytes) ? bytes : 0L)).ToList() : [];
+            return new StorageInfo(u, q, N("inBinBytes"), N("olderVersionsBytes"), kinds);
+        }
+        catch (JsonException) { return null; }
+    }
+
+    private static string KindName(string category) => category switch { "models" => "modelos", "textures" => "texturas", "sounds" => "sons", "animations" => "animações", "packages" => "construções", "clothing" => "roupas", "accessories" => "acessórios", "objects" => "objetos", _ => category };
+
     private void UpdateStorage()
     {
-        var used = _items.Values.Where(x => !x.Deleted).Sum(x => x.Size);
-        var percent = Math.Min(100d, used * 100d / QuotaBytes);
-        _storageText.Text = $"{FormatSize(used)} de 100 GB ({percent.ToString("0", CultureInfo.InvariantCulture)}%)";
-        _storageBar.Value = percent;
+        if (_storage is { } known)
+        {
+            _storageText.Text = $"{FormatSize(known.Used)} de {FormatSize(known.Quota)} ({known.Percent.ToString("0", CultureInfo.InvariantCulture)}%)"; _storageBar.Value = known.Percent;
+            _storageText.AddThemeColorOverride("font_color", known.Warning ? UiStyle.Orange : UiStyle.Text);
+            _storageText.TooltipText = _storageBar.TooltipText = string.Join("\n", known.ByCategory.Take(6).Select(c => $"{KindName(c.Category)}: {FormatSize(c.Bytes)}")) + (known.InBin > 0 ? $"\nNa lixeira: {FormatSize(known.InBin)} (conta até esvaziar)" : string.Empty) + (known.OlderVersions > 0 ? $"\nVersões antigas do que você criou: {FormatSize(known.OlderVersions)}" : string.Empty) + (known.Warning ? "\nPerto do limite: envios novos podem ser recusados." : string.Empty);
+            return;
+        }
+        var used = _items.Values.Where(x => !x.Deleted).Sum(x => x.Size); var percent = Math.Min(100d, used * 100d / QuotaBytes); // until the server answers: what is on the screen
+        _storageText.Text = $"{FormatSize(used)} de 100 GB ({percent.ToString("0", CultureInfo.InvariantCulture)}%)"; _storageBar.Value = percent;
     }
 
     private static string FormatSize(long bytes)
@@ -643,7 +676,8 @@ public partial class InventoryPanel : Node3D
         var session = GetNode<SessionManager>("/root/SessionManager");
         var url = $"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}{path}";
         _inFlight = kind;
-        var error = raw is not null ? _http.RequestRaw(url, headers, method, raw) : _http.Request(url, headers ?? [$"Authorization: Bearer {session.AccessToken}", "Content-Type: application/json"], method, body ?? string.Empty);
+        string[] Tagged(string[] list) => [.. list, $"X-Client-Session: {SessionId}"]; // so the server can tell the other sessions of this person which one made the change
+        var error = raw is not null ? _http.RequestRaw(url, Tagged(headers ?? []), method, raw) : _http.Request(url, Tagged(headers ?? [$"Authorization: Bearer {session.AccessToken}", "Content-Type: application/json"]), method, body ?? string.Empty);
         if (error != Error.Ok) { _status.Text = $"Não foi possível enviar o pedido ({error})."; Pump(); }
     }
 
@@ -842,8 +876,29 @@ public partial class InventoryPanel
     /// <summary>A live event: a delivery was offered to this person or answered. The inventory is read again when open (an accepted gift appears, an answered one frees its item).</summary>
     public void OnLiveEvent(string json)
     {
-        try { using var document = JsonDocument.Parse(json); if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("type", out var type) && type.GetString() is "item_offer_answer" or "item_offer" or "asset_updated") Refresh(); }
+        try
+        {
+            using var document = JsonDocument.Parse(json); if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("type", out var type)) return;
+            switch (type.GetString())
+            {
+                case "item_offer_answer" or "item_offer" or "asset_updated": Refresh(); break;
+                case "inventory_changed": // another session of this person changed something: read it again (what this session did itself is already on the screen)
+                    if (document.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object && data.TryGetProperty("source", out var source) && source.ValueKind == JsonValueKind.String && source.GetString() == SessionId) return;
+                    SyncSoon(); break;
+            }
+        }
         catch (JsonException) { }
+    }
+
+    private Godot.Timer? _syncTimer; private int _syncRequests;
+    public int SyncRequestsForTesting => _syncRequests;
+
+    /// <summary>Several changes in a row (a big move, an unzip) make one new reading, a moment after the last one.</summary>
+    private void SyncSoon()
+    {
+        _syncRequests++;
+        if (_syncTimer is null) { _syncTimer = new Godot.Timer { OneShot = true, WaitTime = .5 }; AddChild(_syncTimer); _syncTimer.Timeout += () => { _syncRequests = 0; Refresh(); }; }
+        _syncTimer.Start();
     }
 
     public string IntegrityTextForTesting(string json) => ItemRightsApi.ParseIntegrity(json)?.Summary ?? string.Empty;
@@ -920,4 +975,13 @@ public partial class InventoryPanel
     }
 
     public void OpenVersionsForTesting(Guid itemId) { SelectItem(itemId); OpenVersions(); }
+}
+
+public partial class InventoryPanel
+{
+    public void ApplyStorageForTesting(string json) { _storage = ParseStorage(json); UpdateStorage(); }
+    public string StorageTextForTesting => _storageText.Text;
+    public string StorageTipForTesting => _storageBar.TooltipText;
+    public double StorageBarForTesting => _storageBar.Value;
+    public bool StorageWarningColorForTesting => _storageText.GetThemeColor("font_color") == UiStyle.Orange;
 }

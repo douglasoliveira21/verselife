@@ -127,7 +127,7 @@ public static class PackUnzip
         var name = Path.GetFileNameWithoutExtension(file); name = new string(name.Where(c => char.IsLetterOrDigit(c) || c is ' ' or '-' or '_').ToArray()).Trim(); if (name.Length == 0) name = "arquivo"; return name[..Math.Min(name.Length, 160)];
     }
 
-    public static async Task<(bool Ok, string? Error, object? Report)> UnpackAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, string zipName, byte[] zip, DateTimeOffset now, CancellationToken ct)
+    public static async Task<(bool Ok, string? Error, object? Report)> UnpackAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, string zipName, byte[] zip, DateTimeOffset now, CancellationToken ct, long quota = InventoryStorage.DefaultQuotaBytes)
     {
         if (zip.Length == 0 || zip.Length > MaxZipBytes) return (false, "invalid_zip", null);
         var files = new List<(string Path, byte[] Bytes, string Category, string Mime, int? Width, int? Height, string Metadata)>(); var problems = new List<UnpackFile>(); long total = 0;
@@ -165,6 +165,7 @@ public static class PackUnzip
         if (problems.Count > 0) return (false, "bad_files", new { problems = problems.Select(p => new { file = p.Name, error = p.Error }) });
 
         if (await db.InventoryItems.CountAsync(i => i.OwnerUserId == owner && i.DeletedAt == null, ct) + files.Count > ItemTransfers.MaxItemsPerPerson) return (false, "inventory_full", null);
+        if (!await InventoryStorage.FitsAsync(db, owner, files.Sum(f => (long)f.Bytes.Length), quota, ct)) return (false, "storage_full", null); // checked before anything is stored
         var live = await db.InventoryFolders.Where(f => f.OwnerUserId == owner && f.DeletedAt == null).ToListAsync(ct); if (live.Count >= FolderRules.MaxFolders) return (false, "folder_limit", null);
         var baseName = FolderRules.CleanName(Path.GetFileNameWithoutExtension(zipName)) is { } clean ? new string(clean.Where(c => char.IsLetterOrDigit(c) || c is ' ' or '-' or '_').ToArray()).Trim() : "Pacote"; if (baseName.Length == 0) baseName = "Pacote";
         var folderName = baseName; for (var n = 2; live.Any(f => f.ParentId == null && string.Equals(f.Name, folderName, StringComparison.CurrentCultureIgnoreCase)); n++) folderName = $"{baseName} ({n})";

@@ -146,3 +146,49 @@ Menu do item (e do "+"): lista as versões com as notas. O criador tem o campo "
 
 ### Testes
 `AssetVersioningTests` (publicar, tipo errado, arquivo inválido, igual, limite, voltar e avançar, histórico e quem o vê, marca de atualização, avisos, lista de produtos), `AssetVersionsPostgresTests` (10 publicações e 6 trocas ao mesmo tempo) e um bloco novo em `InventorySmoke`.
+
+## Fase 6 — armazenamento, sincronização entre sessões e fechamento
+
+### Indicador de armazenamento (`GET /api/v1/inventory/storage`)
+A barra do inventário agora vem do servidor. Conta cada asset **distinto** de que a pessoa tem um item (vivo ou ainda na lixeira; o que se tem duas vezes conta uma) no tamanho da versão em uso, mais as versões antigas do que ela mesma criou. Item entregue, eliminado ou transformado em objeto deixa de contar. A dica da barra mostra o total por tipo (modelos, texturas, sons…), quanto está na lixeira (que só deixa de contar ao esvaziar) e as versões antigas; acima de 90% o texto fica laranja e avisa que envios novos podem ser recusados.
+O limite padrão é de 100 GB e pode ser trocado na configuração (`Inventory:QuotaBytes`). Ele vale **na hora de guardar algo novo**: envio de arquivo, descompactar um .zip (checado antes de guardar qualquer arquivo) e publicar uma versão nova (`storage_full`, 409). Nunca tira nada do que já está lá, então ninguém fica trancado fora das próprias coisas.
+
+### Sincronização entre sessões
+Depois de qualquer mudança bem-sucedida no inventário (mover, apagar, restaurar, pasta, envio, descompactar, versão, compra), o servidor avisa as **outras** sessões abertas da mesma pessoa com um evento ao vivo (`inventory_changed`). Cada jogo aberto tem um nome (`X-Client-Session`) que vai em cada pedido e volta no evento, então a sessão que fez a mudança a ignora e as outras leem o inventário de novo, **uma vez**, meio segundo depois da última mudança de uma sequência. O aviso não gera mensagem na tela. Ofertas, respostas e versões novas já tinham os seus avisos.
+Limite: as mudanças feitas dentro de uma ilha (colocar ou devolver objetos) chegam ao inventário pelos avisos que já existiam, não por este evento; e uma sessão sem conexão ao vivo só vê o que mudou ao abrir o inventário.
+
+### Mudanças que se cruzam
+O teste final em PostgreSQL com 8 conexões e 4 pessoas (mover itens e pastas, apagar e restaurar pastas, lixeira, apagar definitivamente, favoritar, oferecer, aceitar, recusar e cancelar entregas, ler o armazenamento, tudo ao mesmo tempo) achou uma falha: apagar uma pasta ao mesmo tempo em que um dos itens dela mudava de dono (uma entrega aceita) dava um erro interno. Agora a operação de pastas devolve "tente de novo" (`stale`, 409) sem aplicar nada, e todos os pedidos do inventário e das versões transformam uma corrida desse tipo em 409 em vez de erro do servidor.
+
+### Conferência final dos 30 itens do pedido
+| # | Item | Onde |
+|---|------|------|
+| 1–2 | pastas e subpastas | fase 1 |
+| 3–5 | busca avançada, filtros por tipo, ordenação | fase 1 |
+| 6–7 | favoritos, recentes | fase 1 |
+| 8–9 | lixeira, recuperação | fase 1 |
+| 10–13 | prévia de modelo, textura, animação, áudio | fase 2 |
+| 14–16 | entrega, aceitar ou recusar, histórico | itens e ofertas já existiam; fase 3 trouxe avisos ao vivo, histórico completo e direitos visíveis |
+| 17 | permissões de itens | direitos de itens; letras nos cartões e direitos que chegam (fase 3) |
+| 18–19 | pacotes e descompactação | construções salvas (já existiam) e .zip (fase 4) |
+| 20 | objetos com conteúdo interno | lista das peças e do que levam (fase 4) |
+| 21 | salvamento de construções | já existia; árvore e pivôs (editor, fase 4) |
+| 22–23 | objetos devolvidos e perdidos | fase 4 |
+| 24 | duplicações inválidas | fase 3 (verificação e correção segura) e testes de carga |
+| 25–26 | versionamento, atualizações de produtos | fase 5 |
+| 27 | arrastar e soltar | fase 1 (itens e pastas na árvore) |
+| 28 | uso de armazenamento | esta fase |
+| 29 | carregamento paginado | fase 1 (páginas numeradas de ordem estável) |
+| 30 | sincronização entre sessões | esta fase |
+
+A separação entre asset, versão, item de inventário e instância colocada foi mantida: organizar, mover, apagar e restaurar mexem só no item; versões são do asset; o objeto no mundo guarda só o asset.
+
+### O que não foi feito
+- Uma "caixa" de itens do inventário para entregar de uma vez (ver a fase 4).
+- Fixar uma versão para quem comprou (ver a fase 5).
+- Paginação por cursor (é por página numerada).
+- Arrastar vários itens ao mesmo tempo na tela (a rota de mover já aceita vários).
+- Conferir a aparência das janelas novas numa tela de verdade: foram testadas por comportamento.
+
+### Testes
+`InventoryStorageTests` (uso, quota, descompactar e publicar acima do limite, eventos de sincronização), `InventoryFinalPostgresTests` (caos misto de pastas, lixeira, entregas e favoritos; reinício) e blocos novos em `InventorySmoke`.

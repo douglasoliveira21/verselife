@@ -123,6 +123,7 @@ app.Use(async (context, next) =>
     await next();
 });
 app.UseAuthorization();
+app.UseInventorySync();
 
 app.MapHealthChecks("/health");
 app.MapGet("/api/v1/version", () => Results.Ok(new

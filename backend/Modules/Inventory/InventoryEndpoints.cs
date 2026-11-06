@@ -22,9 +22,11 @@ public static class InventoryEndpoints
 
     public static IEndpointRouteBuilder MapInventoryOrganizerEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var inventory = endpoints.MapGroup("/api/v1/inventory").WithTags("Inventory").RequireAuthorization();
+        var inventory = endpoints.MapGroup("/api/v1/inventory").WithTags("Inventory").RequireAuthorization().AddEndpointFilter(StaleToConflict);
         inventory.MapGet("/items", ListAsync);
         inventory.MapGet("/summary", SummaryAsync);
+        inventory.MapGet("/storage", async (HttpContext context, LifeVerseDbContext db, IConfiguration configuration, CancellationToken ct) =>
+            !TryUser(context, out var me) ? Results.Unauthorized() : Results.Ok(await InventoryStorage.ReportAsync(db, me, InventoryStorage.QuotaOf(configuration), ct)));
         inventory.MapGet("/folders", ListFoldersAsync);
         inventory.MapPost("/folders", CreateFolderAsync);
         inventory.MapPatch("/folders/{folderId:guid}", UpdateFolderAsync);
@@ -37,7 +39,7 @@ public static class InventoryEndpoints
         inventory.MapDelete("/items/{itemId:guid}/purge", PurgeItemAsync);
         inventory.MapPost("/items/{itemId:guid}/used", UsedAsync);
         inventory.MapPost("/items/{itemId:guid}/ack-update", AcknowledgeUpdateAsync);
-        var assets = endpoints.MapGroup("/api/v1/assets").WithTags("Asset versions").RequireAuthorization();
+        var assets = endpoints.MapGroup("/api/v1/assets").WithTags("Asset versions").RequireAuthorization().AddEndpointFilter(StaleToConflict);
         assets.MapGet("/{assetId:guid}/versions", VersionsAsync);
         assets.MapPost("/{assetId:guid}/versions/{version:int}/activate", ActivateVersionAsync);
         assets.MapPost("/{assetId:guid}/versions", PublishVersionAsync).DisableAntiforgery();
@@ -48,12 +50,19 @@ public static class InventoryEndpoints
         return endpoints;
     }
 
+    /// <summary>A change that raced with another one (a revision moved on, a row went away) is a "try again" for the person, never a server error.</summary>
+    public static async ValueTask<object?> StaleToConflict(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        try { return await next(context); }
+        catch (Exception exception) when (exception is DbUpdateConcurrencyException || RaceFailures.IsRace(exception)) { return Results.Conflict(new { error = "stale" }); }
+    }
+
     private static bool TryUser(HttpContext context, out Guid id) => Guid.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out id);
 
     private static IResult Respond(InventoryOutcome outcome, Func<object?, IResult>? ok = null) => outcome.Ok ? (ok?.Invoke(outcome.Data) ?? Results.Ok(outcome.Data)) : outcome.Error switch
     {
         "not_found" => Results.NotFound(new { error = outcome.Error }),
-        "name_taken" or "folder_limit" or "item_busy" or "already_recovered" or "inventory_full" or "stale" or "unchanged" or "version_limit" => Results.Conflict(new { error = outcome.Error }),
+        "name_taken" or "folder_limit" or "item_busy" or "already_recovered" or "inventory_full" or "storage_full" or "stale" or "unchanged" or "version_limit" => Results.Conflict(new { error = outcome.Error }),
         _ => Results.BadRequest(new { error = outcome.Error })
     };
 
@@ -139,7 +148,7 @@ public static class InventoryEndpoints
         IFormCollection form; try { form = await request.ReadFormAsync(ct); } catch (Exception exception) when (exception is InvalidDataException or BadHttpRequestException or IOException) { return Results.BadRequest(new { error = "invalid_file" }); }
         var file = form.Files.GetFile("file"); if (file is null || file.Length == 0 || file.Length > 100 * 1024 * 1024) return Results.BadRequest(new { error = "invalid_file" });
         using var memory = new MemoryStream(); await using (var input = file.OpenReadStream()) await input.CopyToAsync(memory, ct);
-        var result = await AssetVersioning.PublishAsync(db, storage, owner, assetId, file.FileName, memory.ToArray(), form["notes"].ToString(), clock.GetUtcNow(), ct);
+        var result = await AssetVersioning.PublishAsync(db, storage, owner, assetId, file.FileName, memory.ToArray(), form["notes"].ToString(), clock.GetUtcNow(), ct, InventoryStorage.QuotaOf(context.RequestServices.GetService<IConfiguration>()));
         if (result.Ok && result.Data is VersionResult published) await AssetVersioning.NotifyHoldersAsync(hub, db, assetId, published.Version, ct);
         return Respond(result);
     }
@@ -166,8 +175,8 @@ public static class InventoryEndpoints
         IFormCollection form; try { form = await request.ReadFormAsync(ct); } catch (Exception exception) when (exception is InvalidDataException or BadHttpRequestException or IOException) { return Results.BadRequest(new { error = "invalid_zip" }); }
         var file = form.Files.GetFile("file"); if (file is null || file.Length == 0 || file.Length > PackUnzip.MaxZipBytes || !file.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return Results.BadRequest(new { error = "invalid_zip" });
         using var memory = new MemoryStream(); await using (var input = file.OpenReadStream()) await input.CopyToAsync(memory, ct);
-        var (ok, error, report) = await PackUnzip.UnpackAsync(db, storage, owner, file.FileName, memory.ToArray(), clock.GetUtcNow(), ct);
-        return ok ? Results.Ok(report) : error == "inventory_full" || error == "folder_limit" ? Results.Conflict(new { error, report }) : Results.UnprocessableEntity(new { error, report });
+        var (ok, error, report) = await PackUnzip.UnpackAsync(db, storage, owner, file.FileName, memory.ToArray(), clock.GetUtcNow(), ct, InventoryStorage.QuotaOf(context.RequestServices.GetService<IConfiguration>()));
+        return ok ? Results.Ok(report) : error is "inventory_full" or "folder_limit" or "storage_full" ? Results.Conflict(new { error, report }) : Results.UnprocessableEntity(new { error, report });
     }
 
     /// <summary>The numbers shown beside the sections of the inventory.</summary>
