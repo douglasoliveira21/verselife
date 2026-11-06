@@ -484,6 +484,8 @@ public sealed class AssetVersion
     public int? Height { get; set; }
     public double? DurationSeconds { get; set; }
     public string ValidationJson { get; set; } = "{}";
+    /// <summary>What the creator says changed in this version (shown to the people who hold the item).</summary>
+    public string Notes { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -526,6 +528,14 @@ public sealed class InventoryItem
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
+    /// <summary>When the item was last placed, worn or opened (the "recent" section).</summary>
+    public DateTimeOffset? LastUsedAt { get; set; }
+    /// <summary>Set when the item went to the bin together with its folder: restoring that folder brings it back.</summary>
+    public Guid? DeletedWithFolderId { get; set; }
+    /// <summary>Where the item came from when that matters to the person: "returned" (objects sent back to the inventory), "recovered" (deleted objects brought back) or "unpacked" (from a zip pack). Null for the rest.</summary>
+    public string? Origin { get; set; }
+    /// <summary>When the holder last looked at the versions of the asset: a version published after this (and after they got the item) is an update they have not seen.</summary>
+    public DateTimeOffset? UpdateAckAt { get; set; }
 }
 
 public sealed class AssetPermission

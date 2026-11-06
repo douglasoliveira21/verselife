@@ -15,9 +15,23 @@ public sealed record HistoryLine(DateTimeOffset At, string Reason, string? Holde
     public string Text => $"{At.LocalDateTime:dd/MM/yyyy HH:mm} · {ItemRightsApi.ReasonText(Reason)}{(Holder is null ? string.Empty : " · " + Holder)}{(From is null ? string.Empty : " (de " + From + ")")}";
 }
 
-public sealed record OfferInfo(Guid Id, Guid ItemId, string ItemName, string FromName, string ToName, string Kind, string Message, bool KeepCopy, string Status, DateTimeOffset ExpiresAt)
+public sealed record OfferInfo(Guid Id, Guid ItemId, string ItemName, string FromName, string ToName, string Kind, string Message, bool KeepCopy, string Status, DateTimeOffset ExpiresAt, int Arrives = 0)
 {
     public string Text => $"{ItemName} · {(Kind == "gift" ? "presente" : "transferência")}{(KeepCopy ? " (uma cópia)" : string.Empty)}";
+}
+
+/// <summary>One line of the history of deliveries.</summary>
+public sealed record TransferInfo(Guid Id, string ItemName, bool Incoming, string OtherName, string Kind, bool KeepCopy, string Status, DateTimeOffset At)
+{
+    public static string StatusText(string status) => status switch { "pending" => "esperando resposta", "accepted" => "aceita", "rejected" => "recusada", "cancelled" => "cancelada", "expired" => "expirou", _ => status };
+    public string Text => $"{ItemName} · {(Incoming ? "de " : "para ")}{OtherName} · {(Kind == "gift" ? "presente" : "transferência")}{(KeepCopy ? " (cópia)" : string.Empty)} · {StatusText(Status)}\n{At.LocalDateTime:dd/MM/yyyy HH:mm}";
+}
+
+/// <summary>What the duplication check found: how many things were looked at and the findings (a rule, what it means, and whether it can be fixed on its own).</summary>
+public sealed record IntegrityInfo(int Checked, IReadOnlyList<(string Rule, string Detail, bool Repairable)> Findings)
+{
+    public bool Clean => Findings.Count == 0;
+    public string Summary => Clean ? $"Tudo certo: {Checked} coisa(s) conferida(s), nenhuma duplicação ou item preso." : $"{Findings.Count} problema(s) encontrado(s); {Findings.Count(f => f.Repairable)} dá(ão) para corrigir sozinho(s).\n" + string.Join("\n", Findings.Take(4).Select(f => "• " + f.Detail)) + (Findings.Count > 4 ? $"\n… e mais {Findings.Count - 4}." : string.Empty);
 }
 
 /// <summary>What the rights windows send to the API and how they read it back. No nodes in here, so it can be tested alone.</summary>
@@ -30,7 +44,31 @@ public static class ItemRightsApi
     public static string CopyPath(Guid item) => $"/api/v1/inventory/items/{item}/copy";
     public static string OffersPath(bool incoming) => $"/api/v1/inventory/offers?box={(incoming ? "incoming" : "outgoing")}&pending=true";
     public static string AnswerPath(Guid offer, string answer) => $"/api/v1/inventory/offers/{offer}/{answer}";
+    public static string TransfersPath(int page, string direction, string status, string search) => $"/api/v1/inventory/transfers?page={page}&pageSize=20&direction={Uri.EscapeDataString(direction)}&status={Uri.EscapeDataString(status)}&search={Uri.EscapeDataString(search ?? string.Empty)}";
+    public const string IntegrityPath = "/api/v1/inventory/integrity", RepairPath = "/api/v1/inventory/integrity/repair";
     public const string ProductsPath = "/api/v1/economy/products";
+
+    /// <summary>A page of the history of deliveries: the lines, and whether there are more after them.</summary>
+    public static (IReadOnlyList<TransferInfo> Lines, bool HasMore, int Total) ParseTransfers(string json)
+    {
+        try
+        {
+            using var d = JsonDocument.Parse(json); if (d.RootElement.ValueKind != JsonValueKind.Object || !d.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return ([], false, 0);
+            var lines = items.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object && Guid.TryParse(Str(e, "id"), out _)).Select(e => new TransferInfo(Guid.Parse(Str(e, "id")), Str(e, "itemName"), Str(e, "direction") == "in", Str(e, "otherName"), Str(e, "kind"), Bool(e, "keepCopy"), Str(e, "status"), DateTimeOffset.TryParse(Str(e, "at"), out var at) ? at : DateTimeOffset.MinValue)).ToList();
+            return (lines, Bool(d.RootElement, "hasMore"), Int(d.RootElement, "total"));
+        }
+        catch (JsonException) { return ([], false, 0); }
+    }
+
+    public static IntegrityInfo? ParseIntegrity(string json)
+    {
+        try
+        {
+            using var d = JsonDocument.Parse(json); if (d.RootElement.ValueKind != JsonValueKind.Object || !d.RootElement.TryGetProperty("findings", out var findings) || findings.ValueKind != JsonValueKind.Array) return null;
+            return new IntegrityInfo(Int(d.RootElement, "checked"), [.. findings.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object).Select(e => (Str(e, "rule"), Str(e, "detail"), Bool(e, "repairable")))]);
+        }
+        catch (JsonException) { return null; }
+    }
 
     public static string SetRightsBody(int owner, int group, int next, long revision) => JsonSerializer.Serialize(new { owner = ItemRights.Normalize(owner), group = ItemRights.Normalize(group), nextOwner = ItemRights.Normalize(next), expectedRevision = revision });
     public static string HistoryVisibilityBody(bool visible) => JsonSerializer.Serialize(new { visible });
@@ -68,7 +106,7 @@ public static class ItemRightsApi
         {
             using var d = JsonDocument.Parse(json); if (d.RootElement.ValueKind != JsonValueKind.Array) return [];
             return [.. d.RootElement.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object && Guid.TryParse(Str(e, "id"), out _) && Guid.TryParse(Str(e, "itemId"), out _))
-                .Select(e => new OfferInfo(Guid.Parse(Str(e, "id")), Guid.Parse(Str(e, "itemId")), Str(e, "itemName"), Str(e, "fromName"), Str(e, "toName"), Str(e, "kind"), Str(e, "message"), Bool(e, "keepCopy"), Str(e, "status"), DateTimeOffset.TryParse(Str(e, "expiresAt"), out var at) ? at : DateTimeOffset.MinValue))];
+                .Select(e => new OfferInfo(Guid.Parse(Str(e, "id")), Guid.Parse(Str(e, "itemId")), Str(e, "itemName"), Str(e, "fromName"), Str(e, "toName"), Str(e, "kind"), Str(e, "message"), Bool(e, "keepCopy"), Str(e, "status"), DateTimeOffset.TryParse(Str(e, "expiresAt"), out var at) ? at : DateTimeOffset.MinValue, Int(e, "arrives")))];
         }
         catch (JsonException) { return []; }
     }

@@ -32,12 +32,19 @@ public static class NotificationFormatter
                 "group_treasury" => $"{Group(data)} — retirada do cofre: {Clip(Text(data, "reason"), 60)}",
                 "group_land" => $"{Group(data)} — novo terreno: {Clip(Text(data, "name"), 60)}",
                 "group_land_released" => $"{Group(data)} devolveu a você o terreno {Clip(Text(data, "name"), 60)}.",
+                "item_offer" => $"{Person(data, "fromName")} quer {(Text(data, "kind") == "transfer" ? "te entregar" : "te dar")} “{Clip(Text(data, "itemName"), 50)}”. Veja em Ofertas de itens.",
+                "item_offer_answer" => Text(data, "answer") switch { "accepted" => $"{Person(data, "byName")} aceitou “{Clip(Text(data, "itemName"), 50)}”.", "rejected" => $"{Person(data, "byName")} recusou “{Clip(Text(data, "itemName"), 50)}”.", "cancelled" => $"{Person(data, "byName")} cancelou a oferta de “{Clip(Text(data, "itemName"), 50)}”.", _ => null },
+                "asset_updated" => $"“{Clip(Text(data, "name"), 50)}” ganhou a versão {Number(data, "version")}{(Text(data, "notes") is { Length: > 0 } notes ? ": " + Clip(notes, 80) : ".")}",
                 "group_event_cancelled" => $"{Group(data)} — evento cancelado: {Clip(Text(data, "name"), 60)}",
                 _ => null
             };
         }
         catch (JsonException) { return null; }
     }
+
+    private static string Number(JsonElement data, string name) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number ? value.ToString() : "nova";
+
+    private static string Person(JsonElement data, string key) => Text(data, key) is { Length: > 0 } name ? name : "Alguém";
 
     private static string Group(JsonElement data) => Text(data, "groupName") is { Length: > 0 } name ? name : "um grupo";
 

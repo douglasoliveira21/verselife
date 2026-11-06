@@ -33,15 +33,28 @@ public static partial class BuildOperations
 
         switch (request.Operation)
         {
-            case "create": return await CreateAsync(request, island, actor, isAdmin, hasBuild, parcels, db, now, ct);
+            case "create": return request.Object is { GroupId: not null } or { ParentObjectId: not null } ? await Exclusive(db, island.Id, ct, () => CreateAsync(request, island, actor, isAdmin, hasBuild, parcels, db, now, ct)) : await CreateAsync(request, island, actor, isAdmin, hasBuild, parcels, db, now, ct);
             case "update": return await UpdateAsync(request, island, actor, isAdmin, hasBuild, parcels, db, now, ct);
-            case "delete": return await DeleteAsync(request, island, actor, isAdmin, parcels, db, now, ct);
-            case "return": return await ReturnAsync(request, island, actor, isAdmin, parcels, db, storage, now, ct);
-            case "structure": return await StructureAsync(request, island, actor, isAdmin, parcels, db, now, ct);
+            case "delete": return await Exclusive(db, island.Id, ct, () => DeleteAsync(request, island, actor, isAdmin, parcels, db, now, ct));
+            case "return": return await Exclusive(db, island.Id, ct, () => ReturnAsync(request, island, actor, isAdmin, parcels, db, storage, now, ct));
+            case "structure": return await Exclusive(db, island.Id, ct, () => StructureAsync(request, island, actor, isAdmin, parcels, db, now, ct));
             case "protect": return await ProtectAsync(request, island, actor, isAdmin, parcels, db, now, ct);
-            case "rez": return await RezAsync(request, island, actor, isAdmin, hasBuild, parcels, db, storage, now, ct);
+            case "rez": return await Exclusive(db, island.Id, ct, () => RezAsync(request, island, actor, isAdmin, hasBuild, parcels, db, storage, now, ct));
             default: return Refuse(400, "invalid_operation");
         }
+    }
+
+    /// <summary>
+    /// What changes how objects hang together (linking, deleting, returning, placing a construction) takes turns on an island. Each of these decides from the tree as it is: a link to
+    /// a parent that is deleted at the same moment, or a re-hanging computed before somebody else's change, would leave a linkset with a missing parent. On PostgreSQL the island's
+    /// advisory lock is held until the change is saved; everything else (moving, painting…) runs freely.
+    /// </summary>
+    private static async Task<IResult> Exclusive(LifeVerseDbContext db, Guid islandId, CancellationToken ct, Func<Task<IResult>> body)
+    {
+        if (db.Database.ProviderName?.Contains("Npgsql", StringComparison.OrdinalIgnoreCase) != true || db.Database.CurrentTransaction is not null) return await body();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtext({"build-tree:" + islandId}))", ct);
+        var result = await body(); await transaction.CommitAsync(ct); return result;
     }
 
     // ---- create ----------------------------------------------------------------------------------------------
@@ -136,7 +149,7 @@ public static partial class BuildOperations
             var sources = owned.Select(x => new PackageSourceDto(x.PrimitiveType, x.Name, x.Description, x.PositionX, x.PositionY, x.PositionZ, x.RotationX, x.RotationY, x.RotationZ, x.ScaleX, x.ScaleY, x.ScaleZ, x.MaterialJson, x.GeometryJson, x.PhysicsJson, x.ContentJson, x.GroupId, x.Id, x.ParentObjectId, x.PivotX, x.PivotY, x.PivotZ)).ToList();
             var first = owned.First().Name;
             var package = PackageDocument.Create(owned.Count() == 1 ? $"Devolvido: {first}" : $"Devolvido: {first} (+{owned.Count() - 1})", sources);
-            var saved = await BuildPackageStore.SaveAsync(db, storage, owned.Key, package, now, ct, ObjectRights.ForPackage(owned));
+            var saved = await BuildPackageStore.SaveAsync(db, storage, owned.Key, package, now, ct, ObjectRights.ForPackage(owned), "returned");
             itemIds.Add((owned.Key, saved.Id));
         }
         foreach (var item in items)
@@ -203,7 +216,7 @@ public static partial class BuildOperations
             db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = made.Id, ActorUserId = actor, Operation = "create", PayloadJson = JsonSerializer.Serialize(new { rezFromItem = item.Id }), Revision = made.Revision, CreatedAt = now });
         }
         if (!copyable) { item.Status = "consumed"; item.DeletedAt = now; } // the only one there is: it is now the objects
-        item.Revision++; item.UpdatedAt = now;
+        item.Revision++; item.UpdatedAt = now; if (copyable) item.LastUsedAt = now; // a copy that stays in the inventory counts as used
         ItemRightsService.Audit(db, actor, "rez", "ok", item.Id, item.AssetId, actor, null, $"{created.Count} objects on island {island.Id}{(copyable ? string.Empty : ", item used up")}", now);
         try { await db.SaveChangesAsync(ct); }
         catch (Exception exception) when (RaceFailures.IsRace(exception)) { return Refuse(409, "item_busy"); } // the same item was placed, offered or sold at the same moment

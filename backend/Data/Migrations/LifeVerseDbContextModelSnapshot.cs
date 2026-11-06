@@ -222,6 +222,12 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(128)")
                         .HasColumnName("mime_type");
 
+                    b.Property<string>("Notes")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("notes");
+
                     b.Property<string>("StorageKey")
                         .IsRequired()
                         .HasMaxLength(512)
@@ -1614,6 +1620,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<Guid?>("DeletedWithFolderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("deleted_with_folder_id");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(160)
@@ -1636,11 +1646,19 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_favorite");
 
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_used_at");
+
                     b.Property<int>("NextOwnerRights")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
                         .HasDefaultValue(15)
                         .HasColumnName("next_owner_rights");
+
+                    b.Property<string>("Origin")
+                        .HasColumnType("text")
+                        .HasColumnName("origin");
 
                     b.Property<int>("OwnerRights")
                         .ValueGeneratedOnAdd()
@@ -1668,6 +1686,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(16)")
                         .HasDefaultValue("active")
                         .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("UpdateAckAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("update_ack_at");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")

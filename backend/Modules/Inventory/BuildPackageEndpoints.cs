@@ -95,7 +95,7 @@ public static class BuildPackageEndpoints
 /// <summary>Writes a construction into someone's inventory (the asset, its stored bytes and the item). The caller saves the changes.</summary>
 public static class BuildPackageStore
 {
-    public static async Task<InventoryItem> SaveAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, PackageDto package, DateTimeOffset now, CancellationToken ct, LifeVerse.Shared.Items.ItemPermissions? rights = null)
+    public static async Task<InventoryItem> SaveAsync(LifeVerseDbContext db, AssetStorageService storage, Guid owner, PackageDto package, DateTimeOffset now, CancellationToken ct, LifeVerse.Shared.Items.ItemPermissions? rights = null, string? origin = null)
     {
         var bytes = Encoding.UTF8.GetBytes(PackageDocument.Serialize(package));
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
@@ -103,7 +103,7 @@ public static class BuildPackageStore
         var key = await storage.PutAsync(owner, hash, bytes, ct);
         var version = new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = hash, StorageKey = key, MimeType = BuildPackageEndpoints.MimeType, ByteSize = bytes.Length, ValidationJson = JsonSerializer.Serialize(new { objects = package.Objects.Length }), CreatedAt = now };
         var item = new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = owner, AssetId = asset.Id, DisplayName = package.Name, CreatedAt = now, UpdatedAt = now }; if (rights is not null) { item.OwnerRights = LifeVerse.Shared.Items.ItemRights.Normalize(rights.Owner); item.NextOwnerRights = LifeVerse.Shared.Items.ItemRights.Clamp(rights.NextOwner, item.OwnerRights); } /* a construction is as free as the things it is made of */
-        db.Assets.Add(asset); db.AssetVersions.Add(version); db.InventoryItems.Add(item);
+        item.Origin = origin; db.Assets.Add(asset); db.AssetVersions.Add(version); db.InventoryItems.Add(item);
         return item;
     }
 }

@@ -119,6 +119,7 @@ public sealed class ItemRightsChaosTests(ITestOutputHelper output)
             var orders = await check.MarketplaceOrders.AsNoTracking().Where(o => o.Status == "completed").ToListAsync(); var fees = orders.Sum(o => o.PriceCoins * 500 / 10000);
             Assert.Equal(people * (long)startCoins, wallets.Sum(w => w.AvailableCoins) + fees); // no coin is made or destroyed: what left the wallets is the fees
             Assert.All(products.Where(p => p.Status == "sold"), p => Assert.Equal(1, orders.Count(o => o.ProductId == p.Id)));
+            var integrity = await InventoryIntegrity.CheckAsync(check, null, default); Assert.True(integrity.Clean, "the duplication check found: " + string.Join("; ", integrity.Findings.Select(x => x.Rule + " " + x.Detail))); // what the check looks for never happens, whatever the order of events
             output.WriteLine($"event=item_chaos_trading_result owners_changed={records.Count} orders={orders.Count} offers={offers.Count} accepted={offers.Count(o => o.Status == "accepted")}");
         }
         finally { await DropAsync(name); }

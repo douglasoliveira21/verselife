@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Inventory;
 
-public sealed record OfferView(Guid Id, Guid ItemId, string ItemName, Guid FromUserId, string FromName, Guid ToUserId, string ToName, string Kind, string Message, bool KeepCopy, string Status, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, Guid? ResultItemId);
+public sealed record OfferView(Guid Id, Guid ItemId, string ItemName, Guid FromUserId, string FromName, Guid ToUserId, string ToName, string Kind, string Message, bool KeepCopy, string Status, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, Guid? ResultItemId, int Arrives = 0);
 public sealed record OfferResult(bool Ok, string? Error, ItemOffer? Offer = null, InventoryItem? Item = null);
 
 /// <summary>
@@ -164,8 +164,8 @@ public static class ItemTransfers
         var query = db.ItemOffers.AsNoTracking().Where(o => incoming ? o.ToUserId == user : o.FromUserId == user); if (pendingOnly) query = query.Where(o => o.Status == "pending");
         var offers = await query.OrderByDescending(o => o.CreatedAt).ThenBy(o => o.Id).Take(100).ToListAsync(ct); if (offers.Count == 0) return [];
         var people = offers.SelectMany(o => new[] { o.FromUserId, o.ToUserId }).Distinct().ToList(); var names = await db.Users.AsNoTracking().Where(u => people.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Username, ct);
-        var itemIds = offers.Select(o => o.ItemId).Distinct().ToList(); var items = await db.InventoryItems.AsNoTracking().Where(i => itemIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, i => i.DisplayName, ct);
-        return [.. offers.Select(o => new OfferView(o.Id, o.ItemId, items.GetValueOrDefault(o.ItemId, "item removido"), o.FromUserId, names.GetValueOrDefault(o.FromUserId, "conta removida"), o.ToUserId, names.GetValueOrDefault(o.ToUserId, "conta removida"), o.Kind, o.Message, o.KeepCopy, o.Status, o.CreatedAt, o.ExpiresAt, o.ResultItemId))];
+        var itemIds = offers.Select(o => o.ItemId).Distinct().ToList(); var items = await db.InventoryItems.AsNoTracking().Where(i => itemIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, i => i.DisplayName, ct); var arrives = await db.InventoryItems.AsNoTracking().Where(i => itemIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, i => new ItemPermissions(i.OwnerRights, i.GroupRights, i.NextOwnerRights).ForNextOwner().Owner, ct); // what the receiver would hold
+        return [.. offers.Select(o => new OfferView(o.Id, o.ItemId, items.GetValueOrDefault(o.ItemId, "item removido"), o.FromUserId, names.GetValueOrDefault(o.FromUserId, "conta removida"), o.ToUserId, names.GetValueOrDefault(o.ToUserId, "conta removida"), o.Kind, o.Message, o.KeepCopy, o.Status, o.CreatedAt, o.ExpiresAt, o.ResultItemId, arrives.GetValueOrDefault(o.ItemId)))];
     }
 }
 

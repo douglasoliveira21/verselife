@@ -86,7 +86,7 @@ public partial class ViewerUI : CanvasLayer
         BuildMoveWindow();
         BuildJoinWindow();
         BuildToasts();
-        var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text); notifications.Raw += json => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OnLiveEvent(json);
+        var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text); notifications.Raw += json => { _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OnLiveEvent(json); };
         AnnounceUpdate();
         _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += text => Toast(text); _people.ChatRequested += (_, name) => Toast($"Mensagem privada para {name}: abra a aba Conversas.");
         BuildTopBar();

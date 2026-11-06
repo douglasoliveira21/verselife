@@ -14,9 +14,26 @@ public partial class InventoryPanel : Node3D
     private static readonly Color FolderYellow = new("#F8B84A");
     private static readonly Color FolderGrey = new("#B9BEC2");
 
-    private sealed record ItemInfo(Guid ItemId, Guid AssetId, string Name, string Category, string Mime, string Hash, long Size, Guid? FolderId, bool Favorite, bool Deleted, int Version, int OwnerRights = 15, string Status = "active");
-    private sealed record FolderInfo(Guid Id, string Name);
-    private enum Pending { List, Action }
+    private sealed record ItemInfo(Guid ItemId, Guid AssetId, string Name, string Category, string Mime, string Hash, long Size, Guid? FolderId, bool Favorite, bool Deleted, int Version, int OwnerRights = 15, string Status = "active", bool HasUpdate = false, bool IsCreator = false);
+    private sealed record FolderInfo(Guid Id, string Name, Guid? ParentId = null, int Count = -1);
+    private enum Pending { List, Action, Used, Integrity, Unpack }
+
+    private const int PageSize = 50;
+    private static readonly (string Label, string Types)[] TypeFilters = [("Todos os tipos", ""), ("Modelos 3D", "models"), ("Texturas", "textures"), ("Sons", "sounds"), ("Animações", "animations"), ("Roupas e acessórios", "clothing,accessories"), ("Objetos", "objects"), ("Pacotes", "packages")];
+    private static readonly (string Label, string Sort, string Dir)[] SortChoices = [("Ordem padrão", "", ""), ("Nome (A–Z)", "name", "asc"), ("Nome (Z–A)", "name", "desc"), ("Mais novos", "date", "desc"), ("Mais antigos", "date", "asc"), ("Maiores", "size", "desc"), ("Menores", "size", "asc"), ("Tipo", "type", "asc"), ("Usados há pouco", "recent", "desc")];
+
+    private OptionButton _typeBox = null!, _sortBox = null!;
+    private CheckBox _subfolders = null!;
+    private Button _loadMore = null!;
+    private HttpRequest _trashHttp = null!;
+    private readonly List<Guid> _order = [];
+    private readonly List<FolderInfo> _binFolders = [];
+    private bool _recent, _returned, _updated, _hasMore;
+    private FileDialog _zipDialog = null!; private LostObjectsWindow? _lostWindow;
+    private int _page = 1, _total;
+    private Guid _selectedBinFolder;
+    private AssetPreview _preview = null!;
+    public AssetPreview PreviewForTesting => _preview;
 
     private FloatingWindow _window = null!;
     private Tree _tree = null!;
@@ -51,6 +68,8 @@ public partial class InventoryPanel : Node3D
     {
         _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnResponse;
         _folderHttp = new HttpRequest(); AddChild(_folderHttp); _folderHttp.RequestCompleted += OnFolders;
+        _trashHttp = new HttpRequest(); AddChild(_trashHttp); _trashHttp.RequestCompleted += OnTrashFolders;
+        _preview = new AssetPreview { Name = "AssetPreview" }; AddChild(_preview);
         _thumbnails = new ThumbnailLoader { Name = "Thumbnails" }; AddChild(_thumbnails);
         BuildUi();
     }
@@ -101,7 +120,8 @@ public partial class InventoryPanel : Node3D
         var plus = new MenuButton { Icon = UiStyle.Icon("plus", UiStyle.Text, 24), TooltipText = "Importar arquivo, nova pasta…", FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(54, 52), Flat = false };
         StyleSquare(plus, false);
         var menu = plus.GetPopup();
-        menu.AddItem("Importar modelo 3D…", 7); menu.AddItem("Importar arquivo…", 0); menu.AddItem("Nova pasta…", 1); menu.AddItem("Excluir pasta selecionada", 2); menu.AddSeparator(); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5); menu.AddItem("Restaurar da lixeira", 6);
+        menu.AddItem("Importar modelo 3D…", 7); menu.AddItem("Importar arquivo…", 0); menu.AddItem("Nova pasta…", 1); menu.AddItem("Nova subpasta na pasta selecionada…", 11); menu.AddItem("Renomear pasta selecionada…", 12); menu.AddItem("Excluir pasta selecionada (vai para a lixeira)", 2); menu.AddSeparator();
+        menu.AddItem("Pré-visualizar…", 16); menu.AddItem("Versões…", 21); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5); menu.AddItem("Excluir (vai para a lixeira)", 13); menu.AddItem("Restaurar da lixeira", 6); menu.AddItem("Excluir definitivamente", 14); menu.AddItem("Esvaziar a lixeira", 15); menu.AddSeparator(); menu.AddItem("Verificar duplicações e itens presos", 17); menu.AddItem("Corrigir itens presos por ofertas", 18); menu.AddSeparator(); menu.AddItem("Importar pacote (.zip)…", 19); menu.AddItem("Objetos apagados…", 20);
         menu.IdPressed += OnMenu;
         top.AddChild(plus);
 
@@ -115,7 +135,7 @@ public partial class InventoryPanel : Node3D
         _tree.AddThemeStyleboxOverride("selected", UiStyle.Box(new Color(UiStyle.AccentFillStrong, .85f), new Color(0, 0, 0, 0), 10, 0, 6, 4)); _tree.AddThemeStyleboxOverride("selected_focus", UiStyle.Box(new Color(UiStyle.AccentFillStrong, .85f), new Color(0, 0, 0, 0), 10, 0, 6, 4));
         _tree.AddThemeStyleboxOverride("cursor", clear); _tree.AddThemeStyleboxOverride("cursor_unfocused", clear);
         _tree.ItemSelected += OnSelected;
-        _tree.SetDragForwarding(Callable.From<Vector2, Variant>(_ => default), Callable.From<Vector2, Variant, bool>(CanDrop), Callable.From<Vector2, Variant>(Drop));
+        _tree.SetDragForwarding(Callable.From<Vector2, Variant>(FolderDragData), Callable.From<Vector2, Variant, bool>(CanDrop), Callable.From<Vector2, Variant>(Drop));
         left.AddChild(_tree);
         _status = new Label { Text = string.Empty, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(250, 0) };
         _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); _status.AddThemeFontSizeOverride("font_size", 14);
@@ -126,9 +146,16 @@ public partial class InventoryPanel : Node3D
 
         body.AddChild(new VSeparator());
         var right = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; right.AddThemeConstantOverride("separation", 12); body.AddChild(right);
+        var filters = new HBoxContainer(); filters.AddThemeConstantOverride("separation", 8); right.AddChild(filters);
+        _typeBox = new OptionButton { FocusMode = Control.FocusModeEnum.None, TooltipText = "Mostrar só um tipo de item", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; foreach (var (label, _) in TypeFilters) _typeBox.AddItem(label); _typeBox.AddThemeFontSizeOverride("font_size", 17); filters.AddChild(_typeBox);
+        _sortBox = new OptionButton { FocusMode = Control.FocusModeEnum.None, TooltipText = "Ordenar a lista", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; foreach (var (label, _, _) in SortChoices) _sortBox.AddItem(label); _sortBox.AddThemeFontSizeOverride("font_size", 17); filters.AddChild(_sortBox);
+        _subfolders = new CheckBox { Text = "Com subpastas", TooltipText = "Ao escolher uma pasta, incluir o que está nas pastas dentro dela", FocusMode = Control.FocusModeEnum.None, ButtonPressed = true }; _subfolders.AddThemeFontSizeOverride("font_size", 16); filters.AddChild(_subfolders);
+        _typeBox.ItemSelected += _ => LoadItems(); _sortBox.ItemSelected += _ => LoadItems(); _subfolders.Toggled += _ => { if (_selectedFolder != Guid.Empty) LoadItems(); };
         var scroll = new ScrollContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(500, 0) };
         _grid = new GridContainer { Columns = 3, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; _grid.AddThemeConstantOverride("h_separation", 12); _grid.AddThemeConstantOverride("v_separation", 12);
-        scroll.AddChild(_grid); right.AddChild(scroll);
+        var gridColumn = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; gridColumn.AddThemeConstantOverride("separation", 10); gridColumn.AddChild(_grid);
+        _loadMore = new Button { Text = "Carregar mais", Visible = false, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 44) }; _loadMore.Pressed += () => LoadItems(_page + 1); gridColumn.AddChild(_loadMore);
+        scroll.AddChild(gridColumn); right.AddChild(scroll);
         right.AddChild(new DropZone(this));
 
         AddChild(_window);
@@ -138,9 +165,10 @@ public partial class InventoryPanel : Node3D
         AddChild(_newFolderDialog);
         _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.glb,*.gltf,*.png,*.jpg,*.jpeg,*.webp,*.ogg,*.wav"] };
         AddChild(_fileDialog);
+        _zipDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.zip"], Title = "Importar pacote de arquivos" }; AddChild(_zipDialog); _zipDialog.FileSelected += UploadZip;
         _fileDialog.FileSelected += Upload;
         _import = new ModelImportDialog { Name = "ModelImport" }; AddChild(_import); _import.AttachTo(this); _import.Confirmed += Upload;
-        _search.TextChanged += _ => LoadItems();
+        var debounce = new Godot.Timer { OneShot = true, WaitTime = .3 }; AddChild(debounce); debounce.Timeout += () => LoadItems(); _search.TextChanged += _ => debounce.Start(); // wait for a pause in typing before asking the server
         _gridMode.Pressed += () => { _listLayout = false; RebuildCards(); }; _listMode.Pressed += () => { _listLayout = true; RebuildCards(); };
         UpdateStorage();
     }
@@ -169,12 +197,23 @@ public partial class InventoryPanel : Node3D
         {
             case 0: _fileDialog.PopupCentered(new Vector2I(800, 500)); break;
             case 7: _import.Open(); break;
-            case 1: _folderName.Clear(); _newFolderDialog.PopupCentered(); _folderName.GrabFocus(); break;
+            case 1: _folderMode = FolderMode.Top; OpenFolderDialog("Nova pasta", "Criar"); break;
             case 2: DeleteFolder(); break;
             case 3: Place(); break;
             case 4: Equip(); break;
             case 5: Favorite(); break;
-            case 6: Restore(); break;
+            case 6: RestoreFromBin(); break;
+            case 11: _folderMode = FolderMode.Sub; OpenFolderDialog("Nova subpasta", "Criar"); break;
+            case 12: _folderMode = FolderMode.Rename; OpenFolderDialog("Renomear pasta", "Renomear"); break;
+            case 13: DeleteItem(); break;
+            case 14: PurgeSelected(); break;
+            case 15: EmptyTrash(); break;
+            case 16: PreviewSelected(); break;
+            case 17: Send(Godot.HttpClient.Method.Get, ItemRightsApi.IntegrityPath, null, Pending.Integrity); _status.Text = "Conferindo duplicações e itens presos…"; break;
+            case 19: _zipDialog.PopupCentered(new Vector2I(800, 500)); break;
+            case 20: OpenLost(); break;
+            case 21: OpenVersions(); break;
+            case 18: Send(Godot.HttpClient.Method.Post, ItemRightsApi.RepairPath, null, Pending.Action); _status.Text = "Corrigindo o que dá para corrigir sozinho…"; break;
             case 8: OpenRights(false); break;
             case 9: OpenRights(true); break;
             case 10: MakeCopy(); break;
@@ -183,15 +222,44 @@ public partial class InventoryPanel : Node3D
 
     // ---- data ------------------------------------------------------------------------------------------------
 
-    private void LoadItems()
+    /// The address of the list for what is chosen on the screen: the section, the folder, the search, the type and the order. The server does the filtering and the ordering, a page at a time.
+    private string ItemsUrl(int page)
+    {
+        var view = _trash ? "trash" : _favorites ? "favorites" : _recent ? "recent" : _returned ? "returned" : _updated ? "updated" : "all";
+        var url = $"/api/v1/inventory/items?view={view}&page={page}&pageSize={PageSize}";
+        if (!string.IsNullOrWhiteSpace(_search?.Text)) url += $"&search={Uri.EscapeDataString(_search.Text.Trim())}";
+        if (_typeBox is not null && _typeBox.Selected > 0) url += $"&types={Uri.EscapeDataString(TypeFilters[_typeBox.Selected].Types)}";
+        if (_sortBox is not null && _sortBox.Selected > 0) { var (_, sort, dir) = SortChoices[_sortBox.Selected]; url += $"&sort={sort}&dir={dir}"; }
+        if (view == "all" && _selectedFolder != Guid.Empty) url += $"&folderId={_selectedFolder}&includeSubfolders={(_subfolders?.ButtonPressed ?? true).ToString().ToLowerInvariant()}";
+        return url;
+    }
+
+    private void LoadItems(int page = 1)
     {
         var session = GetNode<SessionManager>("/root/SessionManager");
-        if (!session.IsAuthenticated) return;
-        _itemsLoaded = false; _foldersLoaded = false;
-        var url = $"/api/v1/inventory/items?search={Uri.EscapeDataString(_search?.Text ?? string.Empty)}&page=1&pageSize=100&includeDeleted={_trash.ToString().ToLowerInvariant()}&favoritesOnly={_favorites.ToString().ToLowerInvariant()}";
-        Send(Godot.HttpClient.Method.Get, url, null, Pending.List);
-        if (RequestSink is null) _folderHttp.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/inventory/folders", [$"Authorization: Bearer {session.AccessToken}"]);
-        else RequestSink(Godot.HttpClient.Method.Get, "/api/v1/inventory/folders", null);
+        if (!session.IsAuthenticated && RequestSink is null) return;
+        _page = page; if (page == 1) { _itemsLoaded = false; } _foldersLoaded = false;
+        Send(Godot.HttpClient.Method.Get, ItemsUrl(page), null, Pending.List);
+        if (RequestSink is null) { _folderHttp.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/inventory/folders", [$"Authorization: Bearer {session.AccessToken}"]); _trashHttp.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/inventory/trash", [$"Authorization: Bearer {session.AccessToken}"]); }
+        else { RequestSink(Godot.HttpClient.Method.Get, "/api/v1/inventory/folders", null); RequestSink(Godot.HttpClient.Method.Get, "/api/v1/inventory/trash", null); }
+    }
+
+    private void OnTrashFolders(long result, long code, string[] headers, byte[] body)
+    {
+        if (code is < 200 or >= 300) return;
+        ParseTrashFolders(Encoding.UTF8.GetString(body));
+    }
+
+    private void ParseTrashFolders(string json)
+    {
+        _binFolders.Clear();
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.TryGetProperty("folders", out var list)) foreach (var entry in list.EnumerateArray()) if (Guid.TryParse(entry.GetProperty("id").GetString(), out var id)) _binFolders.Add(new FolderInfo(id, entry.GetProperty("name").GetString() ?? "Pasta", null, entry.TryGetProperty("items", out var n) && n.TryGetInt32(out var count) ? count : 0));
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
+        if (_foldersLoaded && _itemsLoaded) RebuildTree();
     }
 
     private void OnFolders(long result, long code, string[] headers, byte[] body)
@@ -203,7 +271,7 @@ public partial class InventoryPanel : Node3D
     private void ParseFolders(string json)
     {
         _folders.Clear();
-        try { using var document = JsonDocument.Parse(json); foreach (var entry in document.RootElement.EnumerateArray()) if (Guid.TryParse(entry.GetProperty("id").GetString(), out var id)) _folders.Add(new FolderInfo(id, entry.GetProperty("name").GetString() ?? "Pasta")); }
+        try { using var document = JsonDocument.Parse(json); foreach (var entry in document.RootElement.EnumerateArray()) if (Guid.TryParse(entry.GetProperty("id").GetString(), out var id)) _folders.Add(new FolderInfo(id, entry.GetProperty("name").GetString() ?? "Pasta", entry.TryGetProperty("parentId", out var p) && p.ValueKind == JsonValueKind.String && Guid.TryParse(p.GetString(), out var parentId) ? parentId : null, entry.TryGetProperty("itemCount", out var c) && c.TryGetInt32(out var count) ? count : -1)); }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
         _foldersLoaded = true; Rebuild();
     }
@@ -211,20 +279,44 @@ public partial class InventoryPanel : Node3D
     private void OnResponse(long result, long code, string[] headers, byte[] body)
     {
         var kind = _inFlight;
-        if (code is < 200 or >= 300) { _status.Text = $"Inventário: HTTP {code}"; Pump(); return; }
+        if (kind == Pending.Used) { Pump(); return; } // noting that an item was used needs no refresh
+        if (kind == Pending.Unpack) { _status.Text = UnpackText(code, body.Length == 0 ? "{}" : Encoding.UTF8.GetString(body)); if (code is >= 200 and < 300) { LoadItems(); ItemsChanged?.Invoke(); } Pump(); return; }
+        if (kind == Pending.Integrity) { _status.Text = code is >= 200 and < 300 && ItemRightsApi.ParseIntegrity(Encoding.UTF8.GetString(body)) is { } report ? report.Summary : ErrorText(code, body); Pump(); return; }
+        if (code is < 200 or >= 300) { _status.Text = ErrorText(code, body); if (kind == Pending.Action) LoadItems(); /* show what the server really has: a refused move must not look done */ Pump(); return; }
         try
         {
             using var document = JsonDocument.Parse(body.Length == 0 ? "{}" : Encoding.UTF8.GetString(body));
-            if (kind == Pending.List && document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("items", out var items)) ParseItems(items);
+            if (kind == Pending.List && document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("items", out var items)) ParseItems(items, document.RootElement.TryGetProperty("page", out var pageNumber) && pageNumber.TryGetInt32(out var shownPage) ? shownPage : 1, document.RootElement.TryGetProperty("hasMore", out var more) && more.ValueKind == JsonValueKind.True, document.RootElement.TryGetProperty("total", out var total) && total.TryGetInt32(out var all) ? all : -1);
             else { _status.Text = "Operação concluída."; LoadItems(); ItemsChanged?.Invoke(); }
         }
         catch (JsonException) { _status.Text = body.Length == 0 ? "Operação concluída." : "Resposta de inventário inválida."; if (body.Length == 0) { LoadItems(); ItemsChanged?.Invoke(); } }
         Pump();
     }
 
-    private void ParseItems(JsonElement items)
+    /// What the server said, in words: the reason it refused a change (a name in use, a folder inside itself, too many levels…).
+    private static string ErrorText(long code, byte[] body)
     {
-        _items.Clear();
+        var error = string.Empty;
+        try { using var document = JsonDocument.Parse(Encoding.UTF8.GetString(body)); if (document.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String) error = e.GetString() ?? string.Empty; }
+        catch (JsonException) { }
+        return error switch
+        {
+            "name_taken" => "Já existe uma pasta com esse nome aí.",
+            "cycle" => "Uma pasta não pode ir para dentro dela mesma ou de uma pasta que está dentro dela.",
+            "too_deep" => "Pastas demais umas dentro das outras (no máximo 8 níveis).",
+            "folder_limit" => "Você chegou ao limite de 500 pastas.",
+            "invalid_name" => "O nome da pasta é inválido (1 a 120 caracteres).",
+            "not_found" => "Isso não existe mais, ou não é seu. A lista foi atualizada.",
+            "invalid_move" => "Nada para mover (ou itens demais de uma vez).",
+            "item_busy" => "Esse item está em uso agora (oferta ou venda).",
+            _ => $"Inventário: HTTP {code}"
+        };
+    }
+
+    private void ParseItems(JsonElement items, int page = 1, bool hasMore = false, int total = -1)
+    {
+        if (page <= 1) { _items.Clear(); _order.Clear(); }
+        _hasMore = hasMore; _total = total;
         foreach (var entry in items.EnumerateArray())
         {
             string Text(string name, string fallback = "") => entry.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback;
@@ -235,9 +327,10 @@ public partial class InventoryPanel : Node3D
                 entry.TryGetProperty("favorite", out var favorite) && favorite.ValueKind == JsonValueKind.True,
                 entry.TryGetProperty("deleted", out var deleted) && deleted.ValueKind == JsonValueKind.True,
                 entry.TryGetProperty("version", out var version) && version.TryGetInt32(out var v) ? v : 1,
-                entry.TryGetProperty("ownerRights", out var rights) && rights.TryGetInt32(out var r) ? r : 15, Text("status", "active"));
+                entry.TryGetProperty("ownerRights", out var rights) && rights.TryGetInt32(out var r) ? r : 15, Text("status", "active"), entry.TryGetProperty("hasUpdate", out var upd) && upd.ValueKind == JsonValueKind.True, entry.TryGetProperty("isCreator", out var cr) && cr.ValueKind == JsonValueKind.True);
+            if (!_order.Contains(itemId)) _order.Add(itemId);
         }
-        _itemsLoaded = true; _status.Text = $"{_items.Count} itens carregados";
+        _itemsLoaded = true; _status.Text = _total >= 0 ? $"{_items.Count} de {_total} itens" : $"{_items.Count} itens carregados";
         Rebuild();
     }
 
@@ -248,6 +341,20 @@ public partial class InventoryPanel : Node3D
         ParseItems(document.RootElement);
     }
 
+    public void PopulatePageForTesting(string itemsJson, int page, bool hasMore, int total) { using var document = JsonDocument.Parse(itemsJson); _foldersLoaded = true; ParseItems(document.RootElement, page, hasMore, total); }
+    public string UrlForTesting(int page = 1) => ItemsUrl(page);
+    public void SearchForTesting(string text) => _search.Text = text;
+    public void ChooseForTesting(int type, int sort) { _typeBox.Select(type); _sortBox.Select(sort); }
+    public void ChooseSectionForTesting(string metadata) { var found = FindNode(_tree.GetRoot(), metadata); found?.Select(0); }
+    public bool LoadMoreVisibleForTesting => _loadMore.Visible;
+    public string StatusForTesting => _status.Text;
+    public void DeleteFolderForTesting() => DeleteFolder();
+    public void SelectItemForTesting(Guid id) => SelectItem(id);
+    public void MenuForTesting(long id) => OnMenu(id);
+    public void MoveFolderForTesting(Guid folder, Guid? parent) => MoveFolder(folder, parent);
+    public void TrashFoldersForTesting(string json) => ParseTrashFolders(json);
+    public string[] TreeLinesForTesting() { var lines = new List<string>(); void Walk(TreeItem item, int depth) { if (item.GetMetadata(0).VariantType == Variant.Type.String) lines.Add(new string(' ', depth) + item.GetText(0)); for (var child = item.GetFirstChild(); child is not null; child = child.GetNext()) Walk(child, depth + 1); } if (_tree.GetRoot() is { } root) Walk(root, -1); return [.. lines]; }
+    private static TreeItem? FindNode(TreeItem? item, string metadata) { if (item is null) return null; if (item.GetMetadata(0).VariantType == Variant.Type.String && item.GetMetadata(0).AsString() == metadata) return item; for (var child = item.GetFirstChild(); child is not null; child = child.GetNext()) if (FindNode(child, metadata) is { } hit) return hit; return null; }
     public int ItemCountForTesting => _items.Count;
     public int CardCountForTesting => _cards.Count;
     public Tree TreeForTesting => _tree;
@@ -270,32 +377,43 @@ public partial class InventoryPanel : Node3D
         var mine = _tree.CreateItem(root);
         mine.SetText(0, "Meu Inventário"); mine.SetMetadata(0, "all"); mine.SetIcon(0, UiStyle.Icon("folder-open", FolderYellow, 26)); mine.SetIconMaxWidth(0, 26);
         TreeItem? selected = null;
-        foreach (var folder in _folders.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+        var known = _folders.Select(f => f.Id).ToHashSet(); var byParent = _folders.ToLookup(f => f.ParentId is { } p && known.Contains(p) ? p : (Guid?)null);
+        void AddFolders(TreeItem parent, Guid? parentId)
         {
-            var count = _items.Values.Count(x => x.FolderId == folder.Id);
-            var node = _tree.CreateItem(mine);
-            node.SetText(0, $"{folder.Name} ({count})"); node.SetMetadata(0, $"folder:{folder.Id}");
-            node.SetIcon(0, UiStyle.Icon("folder-filled", count > 0 ? FolderYellow : FolderGrey, 26)); node.SetIconMaxWidth(0, 26);
-            if (folder.Id == _selectedFolder) selected = node;
+            foreach (var folder in byParent[parentId].OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var count = folder.Count >= 0 && _hasMore ? folder.Count : _items.Values.Count(x => x.FolderId == folder.Id); // the server's count while only part of the list is here
+                var node = _tree.CreateItem(parent);
+                node.SetText(0, $"{folder.Name} ({count})"); node.SetMetadata(0, $"folder:{folder.Id}");
+                node.SetIcon(0, UiStyle.Icon("folder-filled", count > 0 || byParent[folder.Id].Any() ? FolderYellow : FolderGrey, 26)); node.SetIconMaxWidth(0, 26);
+                if (folder.Id == _selectedFolder) selected = node;
+                AddFolders(node, folder.Id);
+            }
         }
+        AddFolders(mine, null);
+        var recent = _tree.CreateItem(root); recent.SetText(0, "Recentes"); recent.SetMetadata(0, "recent"); recent.SetIcon(0, UiStyle.Icon("history", UiStyle.Text, 26)); recent.SetIconMaxWidth(0, 26);
+        var returned = _tree.CreateItem(root); returned.SetText(0, "Devolvidos e recuperados"); returned.SetMetadata(0, "returned"); returned.SetIcon(0, UiStyle.Icon("download", UiStyle.Text, 26)); returned.SetIconMaxWidth(0, 26);
+        var updatedNode = _tree.CreateItem(root); updatedNode.SetText(0, "Com atualização"); updatedNode.SetMetadata(0, "updated"); updatedNode.SetIcon(0, UiStyle.Icon("layers", UiStyle.Text, 26)); updatedNode.SetIconMaxWidth(0, 26);
+        var lostNode = _tree.CreateItem(root); lostNode.SetText(0, "Objetos apagados"); lostNode.SetMetadata(0, "lost"); lostNode.SetIcon(0, UiStyle.Icon("undo", UiStyle.Text, 26)); lostNode.SetIconMaxWidth(0, 26);
         var fav = _tree.CreateItem(root); fav.SetText(0, "Favoritos"); fav.SetMetadata(0, "fav"); fav.SetIcon(0, UiStyle.Icon("star", UiStyle.Text, 26)); fav.SetIconMaxWidth(0, 26);
         var bin = _tree.CreateItem(root); bin.SetText(0, "Lixeira"); bin.SetMetadata(0, "trash"); bin.SetIcon(0, UiStyle.Icon("trash", UiStyle.Text, 26)); bin.SetIconMaxWidth(0, 26);
-        var current = _trash ? bin : _favorites ? fav : selected ?? mine;
+        TreeItem? selectedBin = null;
+        foreach (var folder in _binFolders.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            var node = _tree.CreateItem(bin); node.SetText(0, $"{folder.Name} ({folder.Count})"); node.SetMetadata(0, $"bin:{folder.Id}"); node.SetIcon(0, UiStyle.Icon("folder-filled", FolderGrey, 26)); node.SetIconMaxWidth(0, 26);
+            if (folder.Id == _selectedBinFolder) selectedBin = node;
+        }
+        var current = selectedBin ?? (_trash ? bin : _favorites ? fav : _recent ? recent : _returned ? returned : _updated ? updatedNode : selected ?? mine);
         current.Select(0);
     }
 
-    private IEnumerable<ItemInfo> ShownItems()
-    {
-        var items = _items.Values.AsEnumerable();
-        if (_selectedFolder != Guid.Empty && !_trash && !_favorites) items = items.Where(x => x.FolderId == _selectedFolder);
-        return items.OrderByDescending(x => x.Favorite).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
-    }
+    private IEnumerable<ItemInfo> ShownItems() => _order.Where(_items.ContainsKey).Select(id => _items[id]); // the server already filtered and ordered them
 
     private void RebuildCards()
     {
         foreach (var card in _cards) { _grid.RemoveChild(card); card.QueueFree(); }
         _cards.Clear();
-        _grid.Columns = _listLayout ? 1 : 3;
+        _grid.Columns = _listLayout ? 1 : 3; _loadMore.Visible = _hasMore;
         foreach (var info in ShownItems())
         {
             var card = new ItemCard(this, info, _listLayout) { Selected = info.ItemId == _selectedItem };
@@ -325,12 +443,12 @@ public partial class InventoryPanel : Node3D
         var node = _tree.GetSelected();
         if (node is null || node.GetMetadata(0).VariantType != Variant.Type.String) return;
         var text = node.GetMetadata(0).AsString();
-        var wasTrash = _trash; var wasFavorites = _favorites;
-        _trash = text == "trash"; _favorites = text == "fav";
-        _selectedFolder = Guid.Empty;
+        var wasView = (_trash, _favorites, _recent, _returned, _updated, _selectedFolder);
+        _trash = text is "trash" || text.StartsWith("bin:", StringComparison.Ordinal); _favorites = text == "fav"; _recent = text == "recent"; _returned = text == "returned"; _updated = text == "updated"; if (text == "lost") { OpenLost(); return; }
+        _selectedFolder = Guid.Empty; _selectedBinFolder = Guid.Empty;
         if (text.StartsWith("folder:", StringComparison.Ordinal)) Guid.TryParse(text[7..], out _selectedFolder);
-        if (_trash != wasTrash || _favorites != wasFavorites) { LoadItems(); return; }
-        RebuildCards();
+        if (text.StartsWith("bin:", StringComparison.Ordinal)) Guid.TryParse(text[4..], out _selectedBinFolder);
+        if (wasView != (_trash, _favorites, _recent, _returned, _updated, _selectedFolder)) LoadItems(); // another section or folder: the server gives the list for it
     }
 
     private void SelectItem(Guid id)
@@ -341,16 +459,37 @@ public partial class InventoryPanel : Node3D
 
     // ---- drag and drop ---------------------------------------------------------------------------------------
 
-    private bool CanDrop(Vector2 position, Variant data) => data.VariantType == Variant.Type.Dictionary && data.AsGodotDictionary().TryGetValue("type", out var type) && type.AsString() == "inventory_item";
+    private enum FolderMode { Top, Sub, Rename }
+    private FolderMode _folderMode;
+
+    private bool CanDrop(Vector2 position, Variant data) => data.VariantType == Variant.Type.Dictionary && data.AsGodotDictionary().TryGetValue("type", out var type) && type.AsString() is "inventory_item" or "inventory_folder";
+
+    /// What the tree hands out when a folder is dragged: only real folders (not the sections) can be picked up.
+    private Variant FolderDragData(Vector2 position)
+    {
+        var node = _tree.GetItemAtPosition(position);
+        if (node is null || node.GetMetadata(0).VariantType != Variant.Type.String || !node.GetMetadata(0).AsString().StartsWith("folder:", StringComparison.Ordinal)) return default;
+        _tree.SetDragPreview(new Label { Text = node.GetText(0) });
+        return new Godot.Collections.Dictionary { ["type"] = "inventory_folder", ["folderId"] = node.GetMetadata(0).AsString()[7..] };
+    }
 
     private void Drop(Vector2 position, Variant data)
     {
-        if (!CanDrop(position, data) || !Guid.TryParse(data.AsGodotDictionary()["itemId"].AsString(), out var itemId)) return;
+        if (!CanDrop(position, data)) return;
         var node = _tree.GetItemAtPosition(position);
         if (node is null || node.GetMetadata(0).VariantType != Variant.Type.String) return;
-        var text = node.GetMetadata(0).AsString();
-        if (text == "all") MoveItem(itemId, null);
-        else if (text.StartsWith("folder:", StringComparison.Ordinal) && Guid.TryParse(text[7..], out var folderId)) MoveItem(itemId, folderId);
+        var text = node.GetMetadata(0).AsString(); Guid? target;
+        if (text == "all") target = null; else if (text.StartsWith("folder:", StringComparison.Ordinal) && Guid.TryParse(text[7..], out var folderId)) target = folderId; else return;
+        var dictionary = data.AsGodotDictionary();
+        if (dictionary["type"].AsString() == "inventory_folder") { if (Guid.TryParse(dictionary["folderId"].AsString(), out var moving)) MoveFolder(moving, target); }
+        else if (Guid.TryParse(dictionary["itemId"].AsString(), out var itemId)) MoveItem(itemId, target);
+    }
+
+    /// Whether the folder is the target itself or somewhere under it: a folder cannot go there. The server checks too; this only spares the round trip.
+    private bool FolderIsUnder(Guid? folder, Guid ancestor)
+    {
+        for (var hops = 0; folder is { } at && hops < 16; hops++) { if (at == ancestor) return true; folder = _folders.FirstOrDefault(f => f.Id == at)?.ParentId; }
+        return false;
     }
 
     public void MoveItem(Guid itemId, Guid? folderId)
@@ -358,23 +497,67 @@ public partial class InventoryPanel : Node3D
         if (!_items.TryGetValue(itemId, out var info) || info.FolderId == folderId) return;
         _items[itemId] = info with { FolderId = folderId };
         Rebuild();
-        Send(Godot.HttpClient.Method.Patch, $"/api/v1/inventory/items/{itemId}", JsonSerializer.Serialize(new { displayName = (string?)null, folderId, isFavorite = (bool?)null }), Pending.Action);
+        Send(Godot.HttpClient.Method.Post, "/api/v1/inventory/move", JsonSerializer.Serialize(new { itemIds = new[] { itemId }, folderIds = Array.Empty<Guid>(), targetFolderId = folderId }), Pending.Action); // all or nothing, and checked by the server
         _status.Text = folderId is null ? $"\"{info.Name}\" movido para fora das pastas." : $"\"{info.Name}\" movido para \"{_folders.FirstOrDefault(x => x.Id == folderId)?.Name ?? "pasta"}\".";
+    }
+
+    public void MoveFolder(Guid folderId, Guid? parentId)
+    {
+        var folder = _folders.FirstOrDefault(f => f.Id == folderId); if (folder is null || folder.ParentId == parentId) return;
+        if (parentId is { } target && FolderIsUnder(target, folderId)) { _status.Text = "Uma pasta não pode ir para dentro dela mesma ou de uma pasta que está dentro dela."; return; }
+        Send(Godot.HttpClient.Method.Post, "/api/v1/inventory/move", JsonSerializer.Serialize(new { itemIds = Array.Empty<Guid>(), folderIds = new[] { folderId }, targetFolderId = parentId }), Pending.Action);
+        _status.Text = $"Movendo a pasta \"{folder.Name}\"…";
+    }
+
+    private void OpenFolderDialog(string title, string ok)
+    {
+        if (_folderMode != FolderMode.Top && _selectedFolder == Guid.Empty) { _status.Text = "Selecione uma pasta primeiro."; return; }
+        _newFolderDialog.Title = title; _newFolderDialog.OkButtonText = ok;
+        _folderName.Text = _folderMode == FolderMode.Rename ? _folders.FirstOrDefault(f => f.Id == _selectedFolder)?.Name ?? string.Empty : string.Empty;
+        _newFolderDialog.PopupCentered(); _folderName.GrabFocus();
     }
 
     private void CreateFolder()
     {
         var name = _folderName.Text.Trim();
         if (name.Length is < 1 or > 120) { _status.Text = "Digite um nome de pasta (até 120 caracteres)."; return; }
-        Send(Godot.HttpClient.Method.Post, "/api/v1/inventory/folders", JsonSerializer.Serialize(new { name, parentId = (Guid?)null }), Pending.Action);
+        if (_folderMode == FolderMode.Rename) Send(Godot.HttpClient.Method.Patch, $"/api/v1/inventory/folders/{_selectedFolder}", JsonSerializer.Serialize(new { name }), Pending.Action);
+        else Send(Godot.HttpClient.Method.Post, "/api/v1/inventory/folders", JsonSerializer.Serialize(new { name, parentId = _folderMode == FolderMode.Sub && _selectedFolder != Guid.Empty ? _selectedFolder : (Guid?)null }), Pending.Action);
         _folderName.Clear();
     }
 
+    /// The folder goes to the bin with everything in it; it can come back from there for 30 days.
     private void DeleteFolder()
     {
-        if (_selectedFolder == Guid.Empty) { _status.Text = "Selecione uma pasta para excluir; os itens dela voltam para fora das pastas."; return; }
+        if (_selectedFolder == Guid.Empty) { _status.Text = "Selecione uma pasta para excluir; ela vai para a lixeira com tudo o que tem dentro."; return; }
         Send(Godot.HttpClient.Method.Delete, $"/api/v1/inventory/folders/{_selectedFolder}", null, Pending.Action);
-        _selectedFolder = Guid.Empty;
+        _status.Text = "Pasta enviada à lixeira com o que tem dentro. Dá para restaurar de lá."; _selectedFolder = Guid.Empty;
+    }
+
+    private void DeleteItem()
+    {
+        if (_selectedItem == Guid.Empty || !_items.ContainsKey(_selectedItem)) { _status.Text = "Escolha um item primeiro."; return; }
+        Send(Godot.HttpClient.Method.Delete, $"/api/v1/inventory/items/{_selectedItem}", null, Pending.Action); _status.Text = "Item enviado à lixeira.";
+    }
+
+    /// In the bin: a folder selected there is restored with what it held; an item selected is restored by itself.
+    private void RestoreFromBin()
+    {
+        if (_selectedBinFolder != Guid.Empty) { Send(Godot.HttpClient.Method.Post, $"/api/v1/inventory/folders/{_selectedBinFolder}/restore", null, Pending.Action); _status.Text = "Restaurando a pasta e o que tinha dentro…"; _selectedBinFolder = Guid.Empty; return; }
+        Restore();
+    }
+
+    private void PurgeSelected()
+    {
+        if (!_trash) { _status.Text = "Só dá para excluir definitivamente o que está na lixeira."; return; }
+        if (_selectedBinFolder != Guid.Empty) { Send(Godot.HttpClient.Method.Delete, $"/api/v1/inventory/folders/{_selectedBinFolder}/purge", null, Pending.Action); _selectedBinFolder = Guid.Empty; _status.Text = "Pasta excluída para sempre."; return; }
+        if (_selectedItem == Guid.Empty || !_items.ContainsKey(_selectedItem)) { _status.Text = "Escolha um item da lixeira."; return; }
+        Send(Godot.HttpClient.Method.Delete, $"/api/v1/inventory/items/{_selectedItem}/purge", null, Pending.Action); _status.Text = "Item excluído para sempre.";
+    }
+
+    private void EmptyTrash()
+    {
+        Send(Godot.HttpClient.Method.Post, "/api/v1/inventory/trash/empty", null, Pending.Action); _status.Text = "Esvaziando a lixeira…";
     }
 
     // ---- placing models --------------------------------------------------------------------------------------
@@ -494,18 +677,18 @@ public partial class InventoryPanel : Node3D
             _owner = owner; Info = info;
             CustomMinimumSize = list ? new Vector2(0, 64) : new Vector2(0, 178);
             SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            TooltipText = $"{info.Name}\n{info.Category} · {FormatSize(info.Size)} · v{info.Version}\nDireitos: {LifeVerse.Shared.Items.ItemRights.Describe(info.OwnerRights)}{(info.Status == "active" ? string.Empty : "\nEm oferta ou à venda: aguardando resposta")}";
+            TooltipText = $"{info.Name}\n{info.Category} · {FormatSize(info.Size)} · v{info.Version}\nDireitos: {LifeVerse.Shared.Items.ItemRights.Describe(info.OwnerRights)}{(info.Status == "active" ? string.Empty : "\nEm oferta ou à venda: aguardando resposta")}{(info.HasUpdate ? "\n● Tem versão nova: abra “Versões…”" : string.Empty)}";
             AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.RowFill, .75f), new Color(UiStyle.Divider, .9f), 14, 1, 8, 8));
             _thumbnail.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize; _thumbnail.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered; _thumbnail.MouseFilter = MouseFilterEnum.Ignore;
             _thumbnail.TextureFilter = TextureFilterEnum.LinearWithMipmaps;
-            var name = new Label { Text = info.Name, MouseFilter = MouseFilterEnum.Ignore, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
+            var name = new Label { Text = (info.HasUpdate ? "● " : string.Empty) + info.Name, MouseFilter = MouseFilterEnum.Ignore, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis };
             name.AddThemeFontSizeOverride("font_size", list ? 19 : 18); name.AddThemeFontOverride("font", UiStyle.Medium);
             if (list)
             {
                 var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 12); row.MouseFilter = MouseFilterEnum.Ignore;
                 _thumbnail.CustomMinimumSize = new Vector2(48, 48); row.AddChild(_thumbnail);
                 name.SizeFlagsHorizontal = SizeFlags.ExpandFill; name.VerticalAlignment = VerticalAlignment.Center; row.AddChild(name);
-                var detail = new Label { Text = $"{info.Category} · {FormatSize(info.Size)}", MouseFilter = MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
+                var detail = new Label { Text = $"{info.Category} · {FormatSize(info.Size)} · {LifeVerse.Shared.Items.ItemRights.Letters(info.OwnerRights)}", MouseFilter = MouseFilterEnum.Ignore, VerticalAlignment = VerticalAlignment.Center };
                 detail.AddThemeColorOverride("font_color", UiStyle.TextMuted); detail.AddThemeFontSizeOverride("font_size", 16); row.AddChild(detail);
                 if (Badge() is { } listBadge) row.AddChild(listBadge);
                 AddChild(row);
@@ -546,7 +729,7 @@ public partial class InventoryPanel : Node3D
         {
             if (input is not InputEventMouseButton { Pressed: true } click) return;
             _owner.SelectItem(Info.ItemId);
-            if (click.ButtonIndex == MouseButton.Left && click.DoubleClick && (IsModel(Info) || IsPackage(Info))) _owner.Place();
+            if (click.ButtonIndex == MouseButton.Left && click.DoubleClick) { if (IsModel(Info) || IsPackage(Info)) _owner.Place(); else _owner.PreviewSelected(); }
             else if (click.ButtonIndex == MouseButton.Right) _owner.OpenItemMenu(this, GetGlobalMousePosition());
         }
 
@@ -570,7 +753,8 @@ public partial class InventoryPanel : Node3D
     private void OpenItemMenu(Control anchor, Vector2 screen)
     {
         var menu = new PopupMenu();
-        menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5); menu.AddItem("Restaurar da lixeira", 6);
+        menu.AddItem("Pré-visualizar…", 16); menu.AddItem("Versões…", 21); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5);
+        menu.AddSeparator(); if (_trash) { menu.AddItem("Restaurar da lixeira", 6); menu.AddItem("Excluir definitivamente", 14); } else menu.AddItem("Excluir (vai para a lixeira)", 13);
         menu.AddSeparator(); menu.AddItem("Direitos e propriedades…", 8); menu.AddItem("Oferecer a alguém…", 9); menu.AddItem("Fazer uma cópia", 10);
         menu.IdPressed += id => { OnMenu(id); menu.QueueFree(); };
         menu.PopupHide += () => menu.QueueFree();
@@ -637,4 +821,103 @@ public partial class InventoryPanel
         if (!LifeVerse.Shared.Items.ItemRights.IsCopyable(info.OwnerRights)) { _status.Text = "Este item não pode ser copiado."; return; }
         Send(Godot.HttpClient.Method.Post, $"/api/v1/inventory/items/{_selectedItem}/copy", null, Pending.Action);
     }
+}
+
+public partial class InventoryPanel
+{
+    /// <summary>"Pré-visualizar…": opens the item in the preview window (a model turning, a texture to zoom, an animation playing, a sound to hear) and notes that it was used.</summary>
+    private async void PreviewSelected()
+    {
+        if (_selectedItem == Guid.Empty || !_items.TryGetValue(_selectedItem, out var info)) { _status.Text = "Escolha um item primeiro."; return; }
+        var kind = IsPackage(info) ? await _preview.OpenPackageAsync(info.ItemId, info.Name, info.Version) : await _preview.OpenAsync(info.AssetId, info.Name, info.Category, info.Mime, info.Hash, info.Size, info.Version);
+        _status.Text = kind == PreviewKind.None ? "Esse tipo de item não tem pré-visualização." : $"Pré-visualizando \"{info.Name}\".";
+        if (kind != PreviewKind.None && !info.Deleted) Send(Godot.HttpClient.Method.Post, $"/api/v1/inventory/items/{info.ItemId}/used", null, Pending.Used);
+    }
+
+    public Task<PreviewKind> OpenPreviewForTesting(Guid itemId) { SelectItem(itemId); var info = _items[itemId]; return _preview.OpenAsync(info.AssetId, info.Name, info.Category, info.Mime, info.Hash, info.Size, info.Version); }
+}
+
+public partial class InventoryPanel
+{
+    /// <summary>A live event: a delivery was offered to this person or answered. The inventory is read again when open (an accepted gift appears, an answered one frees its item).</summary>
+    public void OnLiveEvent(string json)
+    {
+        try { using var document = JsonDocument.Parse(json); if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("type", out var type) && type.GetString() is "item_offer_answer" or "item_offer" or "asset_updated") Refresh(); }
+        catch (JsonException) { }
+    }
+
+    public string IntegrityTextForTesting(string json) => ItemRightsApi.ParseIntegrity(json)?.Summary ?? string.Empty;
+}
+
+public partial class InventoryPanel
+{
+    /// <summary>"Objetos apagados": the window for getting back what was deleted from the world.</summary>
+    private void OpenLost()
+    {
+        _lostWindow ??= GetParent()?.GetNodeOrNull<LostObjectsWindow>("LostObjectsWindow");
+        if (_lostWindow is null) { _lostWindow = new LostObjectsWindow { Name = "LostObjectsWindow" }; GetParent()?.AddChild(_lostWindow); }
+        _lostWindow.Open(Refresh);
+    }
+
+    public LostObjectsWindow? LostWindowForTesting => _lostWindow;
+    public void OpenLostForTesting() => OpenLost();
+
+    /// <summary>Sends a zip of files; the server checks every file and creates all of them or none.</summary>
+    private void UploadZip(string path)
+    {
+        var session = GetNode<SessionManager>("/root/SessionManager");
+        var bytes = Godot.FileAccess.GetFileAsBytes(path); var filename = System.IO.Path.GetFileName(path);
+        if (bytes.Length == 0 || bytes.Length > 100 * 1024 * 1024) { _status.Text = "O pacote precisa ter de 1 byte a 100 MB."; return; }
+        var boundary = "----LifeVerse" + Guid.NewGuid().ToString("N");
+        var head = Encoding.UTF8.GetBytes($"--{boundary}\r\nContent-Disposition: form-data; name=file; filename=\"{filename}\"\r\nContent-Type: application/zip\r\n\r\n"); var tail = Encoding.UTF8.GetBytes($"\r\n--{boundary}--\r\n");
+        var payload = new byte[head.Length + bytes.Length + tail.Length]; Buffer.BlockCopy(head, 0, payload, 0, head.Length); Buffer.BlockCopy(bytes, 0, payload, head.Length, bytes.Length); Buffer.BlockCopy(tail, 0, payload, head.Length + bytes.Length, tail.Length);
+        _status.Text = $"Descompactando {filename} ({bytes.Length / 1024} KB)…";
+        _queue.Enqueue((Godot.HttpClient.Method.Post, "/api/v1/inventory/packs/unpack", null, Pending.Unpack, [$"Authorization: Bearer {session.AccessToken}", $"Content-Type: multipart/form-data; boundary={boundary}"], payload));
+        Pump();
+    }
+
+    private static string ProblemText(string code) => code switch
+    {
+        "unsafe_path" => "caminho perigoso", "unsupported_type" => "tipo não aceito (só modelos .glb/.gltf, imagens .png/.jpg/.webp e sons .ogg/.wav)", "nested_zip" => "zip dentro de zip", "file_too_large" => "arquivo grande demais",
+        "suspicious_compression" => "compactação suspeita", "unreadable" => "não deu para ler", _ => code
+    };
+
+    /// <summary>What to tell the person about the answer of an unzip: what was made, or why nothing was.</summary>
+    public static string UnpackText(long status, string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body); var root = document.RootElement;
+            if (status is >= 200 and < 300) return $"{(root.TryGetProperty("count", out var c) ? c.GetInt32() : 0)} arquivo(s) na pasta “{(root.TryGetProperty("folderName", out var n) ? n.GetString() : "pacote")}”.";
+            var code = root.TryGetProperty("error", out var e) ? e.GetString() ?? string.Empty : string.Empty;
+            if (code == "bad_files" && root.TryGetProperty("report", out var report) && report.TryGetProperty("problems", out var problems))
+            {
+                var list = problems.EnumerateArray().ToList();
+                return $"Nada foi importado: {list.Count} arquivo(s) com problema.\n" + string.Join("\n", list.Take(4).Select(p => $"• {p.GetProperty("file").GetString()}: {ProblemText(p.GetProperty("error").GetString() ?? string.Empty)}")) + (list.Count > 4 ? $"\n… e mais {list.Count - 4}." : string.Empty);
+            }
+            return code switch
+            {
+                "invalid_zip" => "Esse arquivo não é um .zip válido (ou passa de 100 MB).", "empty_zip" => "O pacote não tem nenhum arquivo.", "too_many_files" => "O pacote tem arquivos demais (no máximo 100).", "pack_too_large" => "O pacote é grande demais depois de descompactado.",
+                "inventory_full" => "Seu inventário não comporta tantos itens.", "folder_limit" => "Você chegou ao limite de pastas.", _ => $"Não foi possível descompactar (HTTP {status})."
+            };
+        }
+        catch (JsonException) { return $"Não foi possível descompactar (HTTP {status})."; }
+    }
+}
+
+public partial class InventoryPanel
+{
+    private AssetVersionsWindow? _versionsWindow;
+    public AssetVersionsWindow? VersionsWindowForTesting => _versionsWindow;
+
+    /// <summary>"Versões…": what changed in each version of the selected item's asset; the creator can publish a new one or go back.</summary>
+    private void OpenVersions()
+    {
+        if (_selectedItem == Guid.Empty || !_items.TryGetValue(_selectedItem, out var info)) { _status.Text = "Escolha um item primeiro."; return; }
+        _versionsWindow ??= GetParent()?.GetNodeOrNull<AssetVersionsWindow>("AssetVersionsWindow");
+        if (_versionsWindow is null) { _versionsWindow = new AssetVersionsWindow { Name = "AssetVersionsWindow" }; GetParent()?.AddChild(_versionsWindow); }
+        _versionsWindow.Open(info.AssetId, info.ItemId, info.Name, Refresh);
+    }
+
+    public void OpenVersionsForTesting(Guid itemId) { SelectItem(itemId); OpenVersions(); }
 }

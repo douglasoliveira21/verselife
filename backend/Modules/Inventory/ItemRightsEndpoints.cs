@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using LifeVerse.Api.Data;
+using LifeVerse.Api.Modules.Social;
 using LifeVerse.Shared.Items;
 
 namespace LifeVerse.Api.Modules.Inventory;
@@ -45,19 +46,41 @@ public static class ItemOfferEndpoints
     public static IEndpointRouteBuilder MapItemOfferEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/inventory").WithTags("Item offers").RequireAuthorization();
-        group.MapPost("/items/{itemId:guid}/offers", async (Guid itemId, OfferRequest body, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.OfferAsync(db, me, itemId, body.ToUserId, body.Kind, body.Message, body.KeepCopy, body.IdempotencyKey, t.GetUtcNow(), ct), created: true));
+        group.MapPost("/items/{itemId:guid}/offers", async (Guid itemId, OfferRequest body, HttpContext c, LifeVerseDbContext db, NotificationHub hub, TimeProvider t, CancellationToken ct) =>
+        {
+            if (!Who(c, out var me)) return Results.Unauthorized();
+            var result = await ItemTransfers.OfferAsync(db, me, itemId, body.ToUserId, body.Kind, body.Message, body.KeepCopy, body.IdempotencyKey, t.GetUtcNow(), ct);
+            if (result.Ok && result.Offer is { Status: "pending" } offer && t.GetUtcNow() - offer.CreatedAt < Fresh) await ItemOfferNotifier.OfferedAsync(hub, db, offer, ct); // the same request sent again is not announced again
+            return Answer(result, created: true);
+        });
         group.MapGet("/offers", async (string? box, bool? pending, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await ItemTransfers.ListAsync(db, me, box != "outgoing", pending ?? true, t.GetUtcNow(), ct)));
-        group.MapPost("/offers/{offerId:guid}/accept", async (Guid offerId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.AcceptAsync(db, me, offerId, t.GetUtcNow(), ct)));
-        group.MapPost("/offers/{offerId:guid}/reject", async (Guid offerId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.RejectAsync(db, me, offerId, t.GetUtcNow(), ct)));
-        group.MapPost("/offers/{offerId:guid}/cancel", async (Guid offerId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            !Who(c, out var me) ? Results.Unauthorized() : Answer(await ItemTransfers.CancelAsync(db, me, offerId, t.GetUtcNow(), ct)));
+        group.MapGet("/transfers", async ([AsParameters] TransferQuery q, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
+        {
+            if (!Who(c, out var me)) return Results.Unauthorized();
+            var (total, lines) = await ItemTransferHistory.QueryAsync(db, me, q, ct); var page = Math.Max(1, q.Page); var size = Math.Clamp(q.PageSize <= 0 ? 25 : q.PageSize, 1, ItemTransferHistory.MaxPageSize);
+            return Results.Ok(new { page, pageSize = size, total, hasMore = (long)page * size < total, items = lines });
+        });
+        group.MapPost("/offers/{offerId:guid}/accept", async (Guid offerId, HttpContext c, LifeVerseDbContext db, NotificationHub hub, TimeProvider t, CancellationToken ct) => await Respond(c, db, hub, t, ct, (me, now) => ItemTransfers.AcceptAsync(db, me, offerId, now, ct)));
+        group.MapPost("/offers/{offerId:guid}/reject", async (Guid offerId, HttpContext c, LifeVerseDbContext db, NotificationHub hub, TimeProvider t, CancellationToken ct) => await Respond(c, db, hub, t, ct, (me, now) => ItemTransfers.RejectAsync(db, me, offerId, now, ct)));
+        group.MapPost("/offers/{offerId:guid}/cancel", async (Guid offerId, HttpContext c, LifeVerseDbContext db, NotificationHub hub, TimeProvider t, CancellationToken ct) => await Respond(c, db, hub, t, ct, (me, now) => ItemTransfers.CancelAsync(db, me, offerId, now, ct)));
+        group.MapGet("/integrity", async (HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await InventoryIntegrity.CheckAsync(db, me, ct)));
+        group.MapPost("/integrity/repair", async (HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await InventoryIntegrity.RepairAsync(db, me, t.GetUtcNow(), ct)));
         return endpoints;
     }
 
+    private static readonly TimeSpan Fresh = TimeSpan.FromSeconds(15);
+
+    /// <summary>Runs an answer to an offer and, when it just changed the offer, tells the other person.</summary>
+    private static async Task<IResult> Respond(HttpContext c, LifeVerseDbContext db, NotificationHub hub, TimeProvider t, CancellationToken ct, Func<Guid, DateTimeOffset, Task<OfferResult>> action)
+    {
+        if (!Who(c, out var me)) return Results.Unauthorized();
+        var now = t.GetUtcNow(); var result = await action(me, now);
+        if (result.Ok && result.Offer is { } offer && offer.Status is "accepted" or "rejected" or "cancelled" && offer.RespondedAt is { } at && now - at < Fresh) await ItemOfferNotifier.AnsweredAsync(hub, db, offer, offer.Status, ct);
+        return Answer(result);
+    }
     private static IResult Answer(OfferResult r, bool created = false) => r.Ok ? (created ? Results.Created($"/api/v1/inventory/offers/{r.Offer!.Id}", new { r.Offer.Id, r.Offer.Status, r.Offer.ExpiresAt }) : Results.Ok(new { r.Offer?.Id, r.Offer?.Status, itemId = r.Item?.Id })) : r.Error switch
     {
         "not_found" or "recipient_not_found" => Results.NotFound(new { error = r.Error }),

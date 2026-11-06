@@ -61,6 +61,8 @@ builder.Services.AddHostedService<LandRentalWorker>();
 builder.Services.AddSingleton<LifeVerse.Api.Modules.Discovery.SearchMetrics>();
 builder.Services.AddHostedService<LifeVerse.Api.Modules.Discovery.SearchIndexWorker>();
 builder.Services.AddHostedService<LifeVerse.Api.Modules.Inventory.ItemOfferWorker>();
+builder.Services.AddHostedService<LifeVerse.Api.Modules.Inventory.InventoryTrashWorker>();
+builder.Services.AddHostedService<LifeVerse.Api.Modules.Inventory.InventoryIntegrityWorker>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();

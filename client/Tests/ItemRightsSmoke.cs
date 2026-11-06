@@ -35,9 +35,10 @@ public partial class ItemRightsSmoke : Node
         if (method == "POST" && path == $"/api/v1/inventory/items/{_item}/offers") return (201, "{\"id\":\"" + _offer + "\",\"status\":\"pending\"}");
         if (method == "POST" && path == "/api/v1/economy/products") return (201, "{}");
         if (method == "POST" && path == $"/api/v1/inventory/items/{_item}/copy") return (_copyable ? 200 : 403, _copyable ? "{}" : "{\"error\":\"not_allowed\"}");
-        if (method == "GET" && path.StartsWith("/api/v1/inventory/offers?box=incoming")) return (200, $"[{{\"id\":\"{_offer}\",\"itemId\":\"{_incomingItem}\",\"itemName\":\"Vaso\",\"fromUserId\":\"{_friend}\",\"fromName\":\"ana\",\"toUserId\":\"{Guid.NewGuid()}\",\"toName\":\"eu\",\"kind\":\"gift\",\"message\":\"Para você!\",\"keepCopy\":false,\"status\":\"pending\",\"createdAt\":\"2026-11-04T10:00:00Z\",\"expiresAt\":\"2026-11-11T10:00:00Z\"}}]");
+        if (method == "GET" && path.StartsWith("/api/v1/inventory/offers?box=incoming")) return (200, $"[{{\"id\":\"{_offer}\",\"itemId\":\"{_incomingItem}\",\"itemName\":\"Vaso\",\"fromUserId\":\"{_friend}\",\"fromName\":\"ana\",\"toUserId\":\"{Guid.NewGuid()}\",\"toName\":\"eu\",\"kind\":\"gift\",\"message\":\"Para você!\",\"keepCopy\":false,\"status\":\"pending\",\"createdAt\":\"2026-11-04T10:00:00Z\",\"expiresAt\":\"2026-11-11T10:00:00Z\",\"arrives\":7}}]");
         if (method == "GET" && path.StartsWith("/api/v1/inventory/offers?box=outgoing")) return (200, $"[{{\"id\":\"{_offer}\",\"itemId\":\"{_item}\",\"itemName\":\"Cadeira\",\"fromUserId\":\"{Guid.NewGuid()}\",\"fromName\":\"eu\",\"toUserId\":\"{_friend}\",\"toName\":\"ana\",\"kind\":\"transfer\",\"message\":\"\",\"keepCopy\":true,\"status\":\"pending\",\"createdAt\":\"2026-11-04T10:00:00Z\",\"expiresAt\":\"2026-11-11T10:00:00Z\"}}]");
         if (method == "POST" && path.StartsWith("/api/v1/inventory/offers/")) return path.EndsWith("/accept") && _offerClosed ? (409, "{\"error\":\"offer_expired\"}") : (200, "{}");
+        if (method == "GET" && path.StartsWith("/api/v1/inventory/transfers?")) return path.Contains("page=2") ? (200, $"{{\"page\":2,\"total\":3,\"hasMore\":false,\"items\":[{{\"id\":\"{Guid.NewGuid()}\",\"itemName\":\"Mesa\",\"direction\":\"out\",\"otherName\":\"cris\",\"kind\":\"transfer\",\"keepCopy\":false,\"status\":\"rejected\",\"at\":\"2026-11-09T12:00:00Z\"}}]}}") : (200, $"{{\"page\":1,\"total\":3,\"hasMore\":true,\"items\":[{{\"id\":\"{Guid.NewGuid()}\",\"itemName\":\"Sofá\",\"direction\":\"in\",\"otherName\":\"ana\",\"kind\":\"gift\",\"keepCopy\":false,\"status\":\"accepted\",\"at\":\"2026-11-09T12:05:00Z\"}},{{\"id\":\"{Guid.NewGuid()}\",\"itemName\":\"Lustre\",\"direction\":\"out\",\"otherName\":\"bia\",\"kind\":\"gift\",\"keepCopy\":true,\"status\":\"pending\",\"at\":\"2026-11-09T12:10:00Z\"}}]}}");
         return (404, "{}");
     }
 
@@ -96,6 +97,21 @@ public partial class ItemRightsSmoke : Node
             _offerClosed = true; offers.SelectForTesting(0); offers.AnswerForTesting("accept"); Require(offers.NoteForTesting.Contains("expirou") && accepted == 1, $"an expired offer is explained and nothing changes: {offers.NoteForTesting}");
             offers.ShowTabForTesting(1); Require(offers.Offers.Count == 1 && offers.Offers[0].KeepCopy && !offers.AcceptVisibleForTesting, "outgoing offers"); offers.SelectForTesting(0); Require(offers.CancelVisibleForTesting, "an offer you sent can be taken back");
             offers.AnswerForTesting("cancel"); Require(_calls.Any(c => c == $"POST /api/v1/inventory/offers/{_offer}/cancel"), "cancel asks the server");
+
+            // the history of deliveries: every outcome, filtered, a page at a time; and what the receiver would get
+            _calls.Clear(); offers.ShowTabForTesting(2);
+            Require(offers.FiltersVisibleForTesting && offers.Transfers.Count == 2 && offers.ListCountForTesting == 2 && offers.MoreVisibleForTesting, $"the history lists the first page: {offers.Transfers.Count}");
+            Require(offers.Transfers[0].Incoming && offers.Transfers[0].Status == "accepted" && offers.Transfers[0].Text.Contains("de ana") && offers.Transfers[0].Text.Contains("aceita") && !offers.Transfers[1].Incoming && offers.Transfers[1].KeepCopy && offers.Transfers[1].Text.Contains("esperando resposta"), "each line says who, what and how it ended");
+            Require(!offers.CancelVisibleForTesting && !offers.AcceptVisibleForTesting, "nothing is answered from the history");
+            offers.MoreForTesting(); Require(offers.Transfers.Count == 3 && offers.ListCountForTesting == 3 && !offers.MoreVisibleForTesting && offers.NoteForTesting.Contains("3 de 3"), $"the next page is added: {offers.NoteForTesting}");
+            _calls.Clear(); offers.FilterForTesting(1, 3, "mesa"); offers.Reload(); Require(_calls.Any(c => c.Contains("direction=in") && c.Contains("status=rejected") && c.Contains("search=mesa") && c.Contains("page=1")), $"the filters go to the server: {string.Join("|", _calls)}");
+            offers.SelectForTesting(0); Require(offers.DetailForTesting.Contains("Sofá") || offers.DetailForTesting.Contains("Mesa"), "choosing a line shows it in full");
+            offers.ShowTabForTesting(0); Require(!offers.FiltersVisibleForTesting && offers.Offers.Count == 1, "back to the offers, the filters are gone");
+            offers.OnLiveEvent("{\"type\":\"item_offer\",\"data\":{}}"); offers.OnLiveEvent("not json"); offers.OnLiveEvent("{\"type\":\"message\"}"); Require(offers.Visible, "live events are read without trouble");
+            Require(ItemRightsApi.ParseIntegrity("{\"checked\":9,\"findings\":[{\"rule\":\"stuck_offered\",\"severity\":\"error\",\"detail\":\"Preso.\",\"repairable\":true}]}") is { Clean: false } found && found.Summary.Contains("1 problema") && found.Summary.Contains("Preso."), "the duplication check is read");
+            Require(ItemRightsApi.ParseIntegrity("{\"checked\":9,\"findings\":[]}")!.Summary.Contains("Tudo certo") && ItemRightsApi.ParseIntegrity("garbage") is null, "a clean check says so, a broken answer is ignored");
+            Require(offers.Offers[0].Arrives == 7, $"the offer carries what the receiver would hold: {offers.Offers[0].Arrives}"); offers.SelectForTesting(0); Require(offers.DetailForTesting.Contains("Você receberá com estes direitos") && offers.DetailForTesting.Contains("Copiar"), $"the receiver sees what they would get: {offers.DetailForTesting}");
+
 
             GD.Print("event=item_rights_smoke result=passed");
             GetTree().Quit();
