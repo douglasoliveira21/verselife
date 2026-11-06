@@ -35,4 +35,14 @@ public sealed class ProtocolConsistencyTests
         Assert.NotEmpty(client);
         Assert.Equal(client, Signatures("island-server/Scripts/NetworkBridge.cs"));
     }
+
+    [Fact]
+    public void FlightStateChange_UsesReliableIdempotentRpc()
+    {
+        var client = File.ReadAllText(Path.Combine(RepositoryRoot(), "client", "Autoloads", "NetworkBridge.cs"));
+        var server = File.ReadAllText(Path.Combine(RepositoryRoot(), "island-server", "Scripts", "NetworkBridge.cs"));
+        const string reliable = "TransferMode = MultiplayerPeer.TransferModeEnum.Reliable";
+        Assert.Matches($@"\[Rpc\([^\]]*{System.Text.RegularExpressions.Regex.Escape(reliable)}[^\]]*\)\]\s*public void SetFlight\(bool enabled\)", client);
+        Assert.Matches($@"\[Rpc\([^\]]*{System.Text.RegularExpressions.Regex.Escape(reliable)}[^\]]*\)\]\s*public void SetFlight\(bool enabled\)", server);
+    }
 }

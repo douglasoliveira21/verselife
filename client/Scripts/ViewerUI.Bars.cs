@@ -6,8 +6,8 @@ namespace LifeVerse.Client.Scripts;
 /// The top menu bar and the bottom toolbar, built to match the design references (client/Assets/ui/01 and 02).
 public partial class ViewerUI
 {
-    private const int TopBarHeight = 44;
-    private const int ToolbarButtonHeight = 46;
+    private const int TopBarHeight = 38;
+    private const int ToolbarButtonHeight = 40;
 
     // ---- top bar ---------------------------------------------------------------------------------------------------
 
@@ -31,7 +31,7 @@ public partial class ViewerUI
             ("-", null, false),
             ("Sair da ilha", _network.Disconnect, false),
             ("Sair do LifeVerse", () => GetTree().Quit(), false));
-        AddChoiceSubmenu(me, "Escala da interface", ["80%", "90%", "100%", "110%", "125%", "150%"], index => SetUiScale(UiScales[index]));
+        AddChoiceSubmenu(me, "Escala da interface", ["70%", "80%", "90%", "100%", "110%", "125%"], index => SetUiScale(UiScales[index]));
         AddChoiceSubmenu(me, "Volume", ["Mudo", "25%", "50%", "75%", "100%"], index => SetVolume(Volumes[index]));
         AddMenu(row, "Comunicar",
             ("Conversa local   Enter", () => _chat.GrabFocus(), false),
@@ -46,7 +46,7 @@ public partial class ViewerUI
         var world = AddMenu(row, "Mundo",
             ("Mapa e destinos…", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle(), false),
             ("Mini-mapa", () => ToggleWindow(_miniMapWindow), false),
-            ("Ir para a Ilha de Boas-vindas", GoToWelcome, false),
+            ("Ir para a Ilha de Boas-vindas", () => GoToWelcome(), false),
             ("Ir para uma ilha…", () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); }, false),
             ("-", null, false),
             ("Editar terreno   T", () => _world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.SetActive(true), false),
@@ -165,7 +165,10 @@ public partial class ViewerUI
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 8); bar.AddChild(row);
 
         // Chat field: bubble icon, text, send arrow, all inside one rounded field.
-        var field = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(380, ToolbarButtonHeight) };
+        var field = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.Fill, CustomMinimumSize = new Vector2(300, ToolbarButtonHeight) };
+        void ResizeChatField() => field.CustomMinimumSize = new Vector2(Mathf.Clamp(_root.Size.X * .30f, 280f, 580f), ToolbarButtonHeight);
+        ResizeChatField();
+        _root.Resized += ResizeChatField;
         var fieldNormal = UiStyle.Box(UiStyle.FieldFill, UiStyle.Border, 12, 1, 12, 0);
         var fieldFocus = UiStyle.Box(UiStyle.FieldFill, UiStyle.Accent, 12, 2, 12, 0);
         field.AddThemeStyleboxOverride("panel", fieldNormal);
@@ -173,12 +176,12 @@ public partial class ViewerUI
         inner.AddChild(UiStyle.IconRect("chat", UiStyle.Text, 22));
         _chat = new LineEdit { PlaceholderText = "Clique aqui para conversar", MaxLength = 256, Flat = true, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "Conversa local (alcance de 30 m). Enter para focar, Esc para sair." };
         _chat.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); _chat.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-        _chat.AddThemeFontSizeOverride("font_size", 17);
+        _chat.AddThemeFontSizeOverride("font_size", 15);
         _chat.TextSubmitted += OnChatSubmit;
-        _chat.FocusEntered += () => field.AddThemeStyleboxOverride("panel", fieldFocus);
-        _chat.FocusExited += () => field.AddThemeStyleboxOverride("panel", fieldNormal);
+        _chat.FocusEntered += () => { field.AddThemeStyleboxOverride("panel", fieldFocus); OpenChatHistory(); };
+        _chat.FocusExited += () => { field.AddThemeStyleboxOverride("panel", fieldNormal); CloseChatInput(); };
         inner.AddChild(_chat);
-        var send = new Button { Icon = UiStyle.Icon("send", UiStyle.Text, 22), Flat = true, FocusMode = Control.FocusModeEnum.None, TooltipText = "Enviar", CustomMinimumSize = new Vector2(34, 0), ExpandIcon = false };
+        var send = new Button { Icon = UiStyle.Icon("send", UiStyle.Text, 18), Flat = true, FocusMode = Control.FocusModeEnum.None, TooltipText = "Enviar", CustomMinimumSize = new Vector2(28, 0), ExpandIcon = false };
         send.Pressed += () => { OnChatSubmit(_chat.Text); _chat.Clear(); };
         inner.AddChild(send);
         row.AddChild(field);
@@ -186,9 +189,8 @@ public partial class ViewerUI
         var voiceBar = new VoiceBar { Name = "VoiceBar", SizeFlagsVertical = Control.SizeFlags.ShrinkCenter }; row.AddChild(voiceBar); voiceBar.Bind(_network.Voice);
         row.AddChild(Divider(32));
 
-        _gestureButton = ToolButton(row, "hand", "Gestos", "Acenar, dançar e outras animações", ToggleGestures, toggle: true);
         _moveButton = ToolButton(row, "move", "Mover", "Andar, correr e voar", () => ToggleWindow(_moveWindow), toggle: true);
-        var view = new MenuButton { Text = "Ver", TooltipText = "Modos de câmera", FocusMode = Control.FocusModeEnum.None, Flat = false, Icon = UiStyle.Icon("camera", UiStyle.Text, 22), CustomMinimumSize = new Vector2(0, ToolbarButtonHeight) };
+        var view = new MenuButton { Text = "Ver", TooltipText = "Modos de câmera", FocusMode = Control.FocusModeEnum.None, Flat = false, Icon = UiStyle.Icon("camera", UiStyle.Text, 18), CustomMinimumSize = new Vector2(0, ToolbarButtonHeight) };
         StyleTool(view, UiStyle.ButtonKind.ToolSelected, selectedLook: false);
         var viewPopup = view.GetPopup();
         viewPopup.AddItem("Terceira pessoa (padrão)", 0); viewPopup.AddItem("Primeira pessoa   C", 1); viewPopup.AddItem("Câmera livre   V", 2); viewPopup.AddSeparator(); viewPopup.AddItem("Redefinir câmera   R", 3);
@@ -197,6 +199,7 @@ public partial class ViewerUI
         row.AddChild(view);
         ToolButton(row, "photo", "Foto", "Capturar a tela sem a interface", TakeSnapshot);
         ToolButton(row, "hammer", "Construir", "Ferramentas de construção (B)", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true));
+        ToolButton(row, "search", "Buscar", "Buscar ilhas, pessoas, amigos, grupos, lojas, eventos e lugares", () => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.Toggle());
         _peopleButton = ToolButton(row, "people", "Pessoas", "Buscar pessoas, amigos e grupos", () => _people?.Toggle(), toggle: true);
         ToolButton(row, "pin", "Mapa", "Mapa, busca e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle());
         _inventoryButton = ToolButton(row, "bag", "Inventário", "Seu inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), toggle: true, orange: true);
@@ -210,7 +213,7 @@ public partial class ViewerUI
     /// Toolbar button: icon and label. A toggle button looks "selected" (teal, or orange for the inventory) while its window is open.
     private static Button ToolButton(HBoxContainer row, string icon, string text, string tooltip, Action? action, bool toggle = false, bool orange = false)
     {
-        var button = new Button { Text = text, TooltipText = tooltip, ToggleMode = toggle, Icon = UiStyle.Icon(icon, UiStyle.Text, 22), CustomMinimumSize = new Vector2(0, ToolbarButtonHeight), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false };
+        var button = new Button { Text = text, TooltipText = tooltip, ToggleMode = toggle, Icon = UiStyle.Icon(icon, UiStyle.Text, 18), CustomMinimumSize = new Vector2(0, ToolbarButtonHeight), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false };
         StyleTool(button, orange ? UiStyle.ButtonKind.Secondary : UiStyle.ButtonKind.ToolSelected, selectedLook: toggle);
         if (action is not null) button.Pressed += action;
         row.AddChild(button);
@@ -219,7 +222,7 @@ public partial class ViewerUI
 
     private static void StyleTool(Button button, UiStyle.ButtonKind selected, bool selectedLook)
     {
-        const float marginX = 16, marginY = 6;
+        const float marginX = 11, marginY = 4;
         button.AddThemeStyleboxOverride("normal", UiStyle.ButtonBox(UiStyle.ButtonKind.Tool, UiStyle.ButtonState.Normal, marginX, marginY, 12));
         button.AddThemeStyleboxOverride("hover", UiStyle.ButtonBox(UiStyle.ButtonKind.Tool, UiStyle.ButtonState.Hover, marginX, marginY, 12));
         var pressedKind = selectedLook ? selected : UiStyle.ButtonKind.Tool;
@@ -227,10 +230,10 @@ public partial class ViewerUI
         button.AddThemeStyleboxOverride("hover_pressed", UiStyle.ButtonBox(pressedKind, selectedLook ? UiStyle.ButtonState.Hover : UiStyle.ButtonState.Pressed, marginX, marginY, 12));
         button.AddThemeStyleboxOverride("disabled", UiStyle.ButtonBox(UiStyle.ButtonKind.Tool, UiStyle.ButtonState.Disabled, marginX, marginY, 12));
         button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
-        button.AddThemeFontOverride("font", UiStyle.Medium); button.AddThemeFontSizeOverride("font_size", 17);
+        button.AddThemeFontOverride("font", UiStyle.Medium); button.AddThemeFontSizeOverride("font_size", 14);
         foreach (var color in new[] { "font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color" })
             button.AddThemeColorOverride(color, Colors.White);
-        button.AddThemeConstantOverride("icon_max_width", 22); button.AddThemeConstantOverride("h_separation", 10);
+        button.AddThemeConstantOverride("icon_max_width", 18); button.AddThemeConstantOverride("h_separation", 6);
     }
 
     private static string FormatCoins(long coins) => coins.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
@@ -435,21 +438,21 @@ public partial class ViewerUI
     private void BuildMoveWindow()
     {
         _moveWindow = new FloatingWindow("Mover", icon: "run", minimizable: true) { Visible = false };
-        _moveWindow.Place(.5f, 1, -250, -300, 250, -100);
+        _moveWindow.Place(.5f, 1, -170, -270, 170, -78);
         _moveWindow.CloseRequested += () => _moveButton.ButtonPressed = false;
-        var body = new HBoxContainer(); body.AddThemeConstantOverride("separation", 18);
+        var body = new HBoxContainer(); body.AddThemeConstantOverride("separation", 10);
         _moveWindow.Content.AddChild(body);
 
         // Direction pad: holding a button holds the matching movement key.
         var pad = new GridContainer { Columns = 3 }; pad.AddThemeConstantOverride("h_separation", 4); pad.AddThemeConstantOverride("v_separation", 4);
-        void Cell() => pad.AddChild(new Control { CustomMinimumSize = new Vector2(72, 72) });
+        void Cell() => pad.AddChild(new Control { CustomMinimumSize = new Vector2(44, 44) });
         Cell(); pad.AddChild(PadButton("up", "Andar para frente", "move_forward")); Cell();
         pad.AddChild(PadButton("left", "Girar para a esquerda", "move_left")); Cell(); pad.AddChild(PadButton("right", "Girar para a direita", "move_right"));
         Cell(); pad.AddChild(PadButton("down", "Andar para trás", "move_back")); Cell();
         body.AddChild(pad);
         body.AddChild(new ColorRect { Color = UiStyle.Divider, CustomMinimumSize = new Vector2(1, 0), MouseFilter = Control.MouseFilterEnum.Ignore });
 
-        var modes = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ShrinkCenter }; modes.AddThemeConstantOverride("separation", 12);
+        var modes = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ShrinkCenter }; modes.AddThemeConstantOverride("separation", 8);
         _walk = new Button { ToggleMode = true };   // kept for the status updates; the design has no separate "walk" button
         _run = ModeButton(modes, "run-fast", "Correr", true, () => { if (_player is null) return; _player.AlwaysRun = !_player.AlwaysRun; if (_player.IsFlying) _player.RequestFlightToggle(); });
         _fly = ModeButton(modes, "wing", "Voar", false, () => _player?.RequestFlightToggle());
@@ -460,7 +463,7 @@ public partial class ViewerUI
 
     private static Button PadButton(string direction, string tooltip, string action)
     {
-        var button = new PadArrowButton(direction) { TooltipText = tooltip, CustomMinimumSize = new Vector2(72, 72), FocusMode = Control.FocusModeEnum.None };
+        var button = new PadArrowButton(direction) { TooltipText = tooltip, CustomMinimumSize = new Vector2(44, 44), FocusMode = Control.FocusModeEnum.None };
         UiStyle.StyleButton(button, UiStyle.ButtonKind.Tool, 0, 0, 16);
         button.ButtonDown += () => Input.ActionPress(action);
         button.ButtonUp += () => Input.ActionRelease(action);
@@ -470,14 +473,14 @@ public partial class ViewerUI
 
     private static Button ModeButton(VBoxContainer column, string icon, string text, bool orange, Action action)
     {
-        var button = new Button { Text = text, ToggleMode = true, Icon = UiStyle.Icon(icon, orange ? UiStyle.Orange : UiStyle.Accent, 34), CustomMinimumSize = new Vector2(236, 66), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false };
+        var button = new Button { Text = text, ToggleMode = true, Icon = UiStyle.Icon(icon, orange ? UiStyle.Orange : UiStyle.Accent, 22), CustomMinimumSize = new Vector2(140, 44), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false };
         var kind = orange ? UiStyle.ButtonKind.Secondary : UiStyle.ButtonKind.Primary;
-        UiStyle.StyleButton(button, kind, 18, 6, 14);
-        button.AddThemeStyleboxOverride("pressed", UiStyle.ButtonBox(kind, UiStyle.ButtonState.Hover, 18, 6, 14));
-        button.AddThemeStyleboxOverride("hover_pressed", UiStyle.ButtonBox(kind, UiStyle.ButtonState.Hover, 18, 6, 14));
-        button.AddThemeFontSizeOverride("font_size", 24);
+        UiStyle.StyleButton(button, kind, 12, 4, 10);
+        button.AddThemeStyleboxOverride("pressed", UiStyle.ButtonBox(kind, UiStyle.ButtonState.Hover, 12, 4, 10));
+        button.AddThemeStyleboxOverride("hover_pressed", UiStyle.ButtonBox(kind, UiStyle.ButtonState.Hover, 12, 4, 10));
+        button.AddThemeFontSizeOverride("font_size", 16);
         foreach (var color in new[] { "icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_hover_pressed_color" }) button.AddThemeColorOverride(color, Colors.White);
-        button.AddThemeConstantOverride("icon_max_width", 34); button.AddThemeConstantOverride("h_separation", 16);
+        button.AddThemeConstantOverride("icon_max_width", 22); button.AddThemeConstantOverride("h_separation", 8);
         button.Pressed += action;
         column.AddChild(button);
         return button;
@@ -492,7 +495,7 @@ public partial class ViewerUI
 
     private void BuildChatWindow()
     {
-        var panel = new PanelContainer { Name = "Conversa_local" };
+        var panel = new PanelContainer { Name = "Conversa_local", Visible = false };
         panel.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.PanelFill, .80f), UiStyle.BorderBright, 16, 1, 6, 6, 14));
         panel.SetAnchorsPreset(Control.LayoutPreset.BottomLeft);
         panel.AnchorTop = panel.AnchorBottom = 1;
@@ -548,9 +551,10 @@ public partial class ViewerUI
     {
         var close = line.IndexOf("] ", StringComparison.Ordinal);
         var colon = close >= 0 ? line.IndexOf(": ", close, StringComparison.Ordinal) : -1;
-        if (close < 0 || colon < 0) { AppendLine(Esc(line)); return; }
+        if (close < 0 || colon < 0) { AppendLine(Esc(line)); ShowChatTemporarily(); return; }
         var name = line[(close + 2)..colon];
         AppendLine($"[color=#A9B3BD]{Esc(line[..(close + 1)])}[/color] [b][color=#{ColorForName(name).ToHtml(false)}]{Esc(name)}:[/color][/b] {Esc(line[(colon + 2)..])}");
+        ShowChatTemporarily();
     }
 }
 

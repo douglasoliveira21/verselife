@@ -32,8 +32,16 @@ public partial class PlayerController : CharacterBody3D
     private bool _inVehicle;
     private bool _flying;
     private bool _volumeSwimming;
-    private bool _flyFlagPending;
+    private bool _flightRequestPending;
+    private bool _flightRequestedState;
+    private ulong _flightRequestAt;
     private bool _alwaysRun;
+    private bool _doubleTapRun;
+    private ulong _lastForwardPress;
+    private float _spaceHeld;
+    private bool _spaceFlightTriggered;
+    private const ulong DoubleTapWindowMs = 320;
+    private const float HoldToFlySeconds = .45f;
     private bool _oceanSwimming;
     private IslandTerrain? _terrainNode;
     private bool _swimming => _volumeSwimming || _oceanSwimming;
@@ -111,6 +119,17 @@ public partial class PlayerController : CharacterBody3D
 
     public override void _UnhandledInput(InputEvent input)
     {
+        // A text field owns the keyboard while it has focus. In particular, Space must
+        // type a space instead of jumping and letter shortcuts must not open tools.
+        if (IsTyping())
+        {
+            if (input.IsActionPressed("ui_cancel"))
+            {
+                GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
+                GetViewport().SetInputAsHandled();
+            }
+            return;
+        }
         if (input.IsActionPressed("cursor_toggle")) SetCursorFree(true);
         if (input.IsActionPressed("first_person") && !_mirror) ToggleFirstPerson();
         if (input.IsActionPressed("camera_mode") && !_mirror) CycleCameraMode();
@@ -120,16 +139,17 @@ public partial class PlayerController : CharacterBody3D
             _contextMenu.Visible = false; _rightDragging = false; SetCursorFree(true);
             GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
         }
-        if (input.IsActionPressed("fly_toggle")) ToggleFlight();
+        if (input.IsActionPressed("fly_toggle")) RequestFlightToggle();
         if (input.IsActionPressed("interact")) InteractOrStand();
         if (input.IsActionPressed("emote_wave")) StartGesture(AvatarMotionState.Wave, 2.5f, InputFlags.Wave);
         if (input.IsActionPressed("emote_dance")) StartGesture(AvatarMotionState.Dance, 5f, InputFlags.Dance);
-        if (input is InputEventMouseMotion motion && _rightDragging && !IsTyping())
+        if (input is InputEventMouseMotion motion && (_rightDragging || _firstPerson))
         {
             if (motion.Relative.LengthSquared() > 0.01f) _rightDragMoved = true;
             _targetYaw -= motion.Relative.X * _cameraSensitivity;
             var direction = _invertY ? 1f : -1f;
             _targetPitch = Mathf.Clamp(_targetPitch + motion.Relative.Y * _cameraSensitivity * direction, -1.25f, .85f);
+            if (_firstPerson) _targetBodyYaw = _targetYaw;
         }
         if (input is InputEventMouseButton button)
         {
@@ -171,15 +191,19 @@ public partial class PlayerController : CharacterBody3D
         }
         if (_landingTime > 0) _landingTime -= dt;
         var blocked = IsTyping() || _contextMenu.Visible || _mirror;
+        UpdateDoubleTapRun(blocked);
+        UpdateHoldToFly(blocked, dt);
         var input = blocked ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_back");
         var strafe = blocked ? 0f : Input.GetAxis("strafe_left", "strafe_right");
         var steering = Mathf.Abs(input.X) > .01f || Mathf.Abs(input.Y) > .01f || Mathf.Abs(strafe) > .01f;
-        // Viewer-style controls: A/D turn the avatar, W/S move along its facing, Q/Z sidestep.
+        // Viewer-style controls in third person. First person follows the mouse like a
+        // crosshair: W/S go along the view and A/D strafe without changing that heading.
         if (steering) _walkTarget = null;
-        _targetBodyYaw = Mathf.Wrap(_targetBodyYaw - input.X * TurnRate * dt, -Mathf.Pi, Mathf.Pi);
+        if (_firstPerson) _targetBodyYaw = _targetYaw;
+        else _targetBodyYaw = Mathf.Wrap(_targetBodyYaw - input.X * TurnRate * dt, -Mathf.Pi, Mathf.Pi);
         var forward = new Vector3(-Mathf.Sin(_targetBodyYaw), 0, -Mathf.Cos(_targetBodyYaw));
         var right = new Vector3(Mathf.Cos(_targetBodyYaw), 0, -Mathf.Sin(_targetBodyYaw));
-        var direction = forward * -input.Y + right * strafe;
+        var direction = forward * -input.Y + right * (strafe + (_firstPerson ? input.X : 0f));
         if (direction.LengthSquared() > 1f) direction = direction.Normalized();
         var moving = Mathf.Abs(input.Y) > .01f || Mathf.Abs(strafe) > .01f;
         if (_walkTarget is Vector3 target)
@@ -203,12 +227,13 @@ public partial class PlayerController : CharacterBody3D
         _oceanSwimming = !_flying && _terrainNode is not null && _terrainNode.Map.WaterDepth(_terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z)) >= AuthoritativeMovement.WadeDepth;
         var flags = InputFlags.None;
         if (_mirror) _walkTarget = null;
-        if (RunHeld) flags |= InputFlags.Run;
-        if (_flying || _swimming ? Input.IsActionPressed("jump") : Input.IsActionJustPressed("jump")) flags |= InputFlags.Jump;
-        if (Input.IsActionJustPressed("fly_toggle") || _flyFlagPending) flags |= InputFlags.Fly;
-        _flyFlagPending = false;
+        var jumpPressed = !blocked && Input.IsActionPressed("jump");
+        var jumpJustPressed = !blocked && Input.IsActionJustPressed("jump");
+        var descendPressed = !blocked && Input.IsActionPressed("descend");
+        if (!blocked && RunHeld) flags |= InputFlags.Run;
+        if (_flying || _swimming ? jumpPressed : jumpJustPressed) flags |= InputFlags.Jump;
         if (_mirror) flags = InputFlags.None; // in front of the mirror the avatar stands still: no jumping, running or flying from the keys typed into the window
-        if (Input.IsActionPressed("descend")) flags |= InputFlags.Descend;
+        if (descendPressed) flags |= InputFlags.Descend;
         _network.SendInput(++_inputSequence, SentDirection(direction), flags);
         var velocity = Velocity;
 
@@ -218,24 +243,24 @@ public partial class PlayerController : CharacterBody3D
             var swimSpeed = RunHeld ? AuthoritativeMovement.SwimRunSpeed : AuthoritativeMovement.SwimSpeed;
             var floatY = (_terrainNode?.Map.SeaLevel ?? TerrainMap.DefaultSeaLevel) - AuthoritativeMovement.SwimFloatDepth;
             velocity.X = SmoothHorizontal(velocity.X, direction.X * swimSpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * swimSpeed, dt);
-            var verticalTarget = Input.IsActionPressed("jump") ? AuthoritativeMovement.SwimVerticalSpeed : Input.IsActionPressed("descend") ? -AuthoritativeMovement.SwimVerticalSpeed : Mathf.Clamp((floatY - GlobalPosition.Y) * 3f, -2f, 2f);
+            var verticalTarget = jumpPressed ? AuthoritativeMovement.SwimVerticalSpeed : descendPressed ? -AuthoritativeMovement.SwimVerticalSpeed : Mathf.Clamp((floatY - GlobalPosition.Y) * 3f, -2f, 2f);
             velocity.Y = Mathf.MoveToward(velocity.Y, verticalTarget, 14f * dt);
             if (GlobalPosition.Y + velocity.Y * dt > floatY + AuthoritativeMovement.SwimSurfaceMargin) velocity.Y = Mathf.Min(velocity.Y, (floatY + AuthoritativeMovement.SwimSurfaceMargin - GlobalPosition.Y) / dt);
         }
         else if (_swimming)
         {
             _flying = false; velocity.X = SmoothHorizontal(velocity.X, direction.X * SwimSpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * SwimSpeed, dt);
-            velocity.Y = Input.IsActionPressed("jump") ? SwimSpeed : Input.IsActionPressed("descend") ? -SwimSpeed : 0;
+            velocity.Y = jumpPressed ? SwimSpeed : descendPressed ? -SwimSpeed : 0;
         }
         else if (_flying)
         {
             velocity.X = SmoothHorizontal(velocity.X, direction.X * FlySpeed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * FlySpeed, dt);
-            velocity.Y = Input.IsActionPressed("jump") ? FlySpeed : Input.IsActionPressed("descend") ? -FlySpeed : 0;
+            velocity.Y = jumpPressed ? FlySpeed : descendPressed ? -FlySpeed : 0;
         }
         else
         {
             if (!IsOnFloor()) velocity.Y -= 9.8f * dt;
-            if (Input.IsActionJustPressed("jump") && IsOnFloor()) velocity.Y = JumpVelocity;
+            if (jumpJustPressed && IsOnFloor()) velocity.Y = JumpVelocity;
             var speed = (RunHeld ? RunSpeed : WalkSpeed) * SurfaceSpeedMultiplier();
             velocity.X = SmoothHorizontal(velocity.X, direction.X * speed, dt); velocity.Z = SmoothHorizontal(velocity.Z, direction.Z * speed, dt);
         }
@@ -243,7 +268,7 @@ public partial class PlayerController : CharacterBody3D
         Velocity = velocity;
         MoveAndSlide();
         _blockedVelocity = WallContact() ? new Vector2(Velocity.X, Velocity.Z) : null;
-        if (_flying && IsOnFloor() && Input.IsActionPressed("descend")) _flying = false;
+        if (_flying && IsOnFloor() && descendPressed) _flying = false;
         var grounded = IsOnFloor();
         if (grounded && !_wasGrounded) _landingTime = .22f;
         _wasGrounded = grounded;
@@ -288,11 +313,45 @@ public partial class PlayerController : CharacterBody3D
     public bool IsSwimming => _swimming;
     public bool IsRunning => RunHeld;
     public bool AlwaysRun { get => _alwaysRun; set => _alwaysRun = value; }
-    /// Shift temporarily inverts the always-run setting, so Shift still means "run" when it is off.
-    private bool RunHeld => Input.IsActionPressed("run") ^ _alwaysRun;
+    /// Shift temporarily inverts the always-run setting. A quick second press of W/Up
+    /// also runs until that second press is released.
+    private bool RunHeld => !IsTyping() && ((Input.IsActionPressed("run") ^ _alwaysRun) || _doubleTapRun);
+
+    private void UpdateDoubleTapRun(bool blocked)
+    {
+        if (blocked) { _doubleTapRun = false; _lastForwardPress = 0; return; }
+        if (Input.IsActionJustReleased("move_forward")) _doubleTapRun = false;
+        if (!Input.IsActionJustPressed("move_forward")) return;
+        var now = Time.GetTicksMsec();
+        _doubleTapRun = _lastForwardPress > 0 && now - _lastForwardPress <= DoubleTapWindowMs;
+        _lastForwardPress = now;
+    }
+
+    private void UpdateHoldToFly(bool blocked, float dt)
+    {
+        if (blocked || !Input.IsActionPressed("jump"))
+        {
+            _spaceHeld = 0;
+            _spaceFlightTriggered = false;
+            return;
+        }
+        if (_flying || _swimming || _seat is not null || _spaceFlightTriggered) return;
+        _spaceHeld += dt;
+        if (_spaceHeld < HoldToFlySeconds) return;
+        _spaceFlightTriggered = true;
+        RequestFlightToggle();
+    }
 
     /// Same logic as the F key, so the viewer's Fly button and the key behave identically (and the server is told).
-    public void RequestFlightToggle() { if (ToggleFlight()) _flyFlagPending = true; }
+    public void RequestFlightToggle()
+    {
+        if (!ToggleFlight()) return;
+        if (!_network.IsAuthenticated) return;
+        _flightRequestPending = true;
+        _flightRequestedState = _flying;
+        _flightRequestAt = Time.GetTicksMsec();
+        _network.SetFlight(_flying);
+    }
 
     private bool ToggleFlight()
     {
@@ -306,9 +365,19 @@ public partial class PlayerController : CharacterBody3D
     /// Turns the avatar and the camera to face a heading at once (after a teleport to an arrival point).
     public void FaceYaw(float radians) { _targetBodyYaw = radians; _targetYaw = radians; _cameraYaw = radians; Rotation = new Vector3(0, radians, 0); }
 
-    public void Reconcile(Vector3 authoritativePosition, Vector3 authoritativeVelocity, uint acknowledgedInput)
+    public void Reconcile(Vector3 authoritativePosition, Vector3 authoritativeVelocity, uint acknowledgedInput, NetworkMotionState motion)
     {
         if (_inVehicle) return;
+        var serverFlying = motion == NetworkMotionState.Fly;
+        if (_flightRequestPending)
+        {
+            if (serverFlying == _flightRequestedState || Time.GetTicksMsec() - _flightRequestAt >= 1500)
+            {
+                _flightRequestPending = false;
+                _flying = serverFlying;
+            }
+        }
+        else _flying = serverFlying;
         var error = GlobalPosition.DistanceTo(authoritativePosition);
         if (error > 3f) GlobalPosition = authoritativePosition; // a real teleport
         else if (error > .3f)
@@ -446,12 +515,25 @@ public partial class PlayerController : CharacterBody3D
         _cameraMode = mode; _firstPerson = mode == CameraMode.FirstPerson;
         _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance;
         _rig.Visible = !_firstPerson && !_avatarHidden;
+        if (_firstPerson)
+        {
+            _targetYaw = _targetBodyYaw;
+            _cameraYaw = _targetBodyYaw;
+            Input.MouseMode = Input.MouseModeEnum.Captured;
+            _cursorFree = false;
+        }
+        else if (Input.MouseMode == Input.MouseModeEnum.Captured) SetCursorFree(true);
     }
     private bool _avatarHidden;
     /// Hides the avatar while the build camera is in use (and shows it again afterwards).
     public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
     private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, _mirror ? .7f : 1.5f, _mirror ? 5f : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     private bool IsTyping() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
+    public void SetTextInputActive(bool active)
+    {
+        if (active) Input.MouseMode = Input.MouseModeEnum.Visible;
+        else if (_firstPerson) Input.MouseMode = Input.MouseModeEnum.Captured;
+    }
     private void SetWalkTarget(Vector2 screenPosition)
     {
         var from = _camera.ProjectRayOrigin(screenPosition); var to = from + _camera.ProjectRayNormal(screenPosition) * 200f;

@@ -76,6 +76,7 @@ public partial class TerrainEditor : Node3D
 
     public override void _UnhandledInput(InputEvent input)
     {
+        if (GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit) return;
         if (input.IsActionPressed("terrain_mode")) SetActive(!_active);
         if (!_active) return;
         if (input.IsActionPressed("ui_cancel")) SetActive(false);

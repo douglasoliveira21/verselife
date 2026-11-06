@@ -7,7 +7,9 @@ public static class NetworkProtocol
     // v4 adds touching scripted objects.
     // v5 adds server-driven vehicles (enter, exit, drive input, vehicle snapshots).
     // v6 adds proximity voice chat (Opus packets relayed by the island server).
-    public const int Version = 8;
+    // v9 moves the flight state change to an idempotent reliable RPC; continuous
+    // movement inputs remain unreliable/ordered so packet loss cannot toggle flight.
+    public const int Version = 9;
     public const int MaxVehicles = 64;
     public const int MaxTerrainEditsPerSecond = 20;
     public const int MaxTerrainImportBytes = 300_000;

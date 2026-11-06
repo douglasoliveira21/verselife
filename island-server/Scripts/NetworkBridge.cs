@@ -13,6 +13,9 @@ public partial class NetworkBridge : Node
     public void SubmitInput(long sequence, float x, float z, int flags) => Server.SubmitInput(Multiplayer.GetRemoteSenderId(), sequence, x, z, flags);
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
+    public void SetFlight(bool enabled) => Server.SetFlight(Multiplayer.GetRemoteSenderId(), enabled);
+
+    [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
     public void SendChat(string message) => Server.SendChat(Multiplayer.GetRemoteSenderId(), message);
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]

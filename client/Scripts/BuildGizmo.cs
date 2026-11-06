@@ -25,6 +25,7 @@ public partial class BuildGizmo : Node3D
     private float _startParameter;
     private Vector3 _startHit;
     private Vector3 _pivotAtStart;
+    private float _displayScale = 1f;
 
     public GizmoMode Mode { get; private set; } = GizmoMode.Move;
     public bool Dragging => _active >= 0;
@@ -52,6 +53,7 @@ public partial class BuildGizmo : Node3D
         var camera = GetViewport().GetCamera3D();
         if (camera is null) return;
         var size = Mathf.Max(.25f, camera.GlobalPosition.DistanceTo(GlobalPosition) * .13f);
+        _displayScale = size;
         GlobalTransform = new Transform3D(_axes.Orthonormalized().Scaled(Vector3.One * size), GlobalPosition);
         if (_active < 0) SetHighlight(HandleAt(camera.ProjectRayOrigin(GetViewport().GetMousePosition()), camera.ProjectRayNormal(GetViewport().GetMousePosition())));
     }
@@ -72,10 +74,62 @@ public partial class BuildGizmo : Node3D
     public int HandleAt(Vector3 rayOrigin, Vector3 rayDirection)
     {
         if (!Visible || !IsInsideTree()) return -1;
+        // Colliders from different axes overlap in perspective. Prefer the handle
+        // whose drawing is actually closest to the pointer on screen, then use the
+        // physics ray as a fallback for unusual camera angles.
+        var screenAxis = ScreenHandleAt();
+        if (screenAxis >= 0) return screenAxis;
         var query = PhysicsRayQueryParameters3D.Create(rayOrigin, rayOrigin + rayDirection * 500f, PhysicsLayer);
         query.CollideWithAreas = true; query.CollideWithBodies = false;
         var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
         return hit.Count > 0 && hit["collider"].AsGodotObject() is CollisionObject3D body && _handleAxis.TryGetValue(body, out var axis) ? axis : -1;
+    }
+
+    private int ScreenHandleAt()
+    {
+        var camera = GetViewport().GetCamera3D();
+        if (camera is null) return -1;
+        var mouse = GetViewport().GetMousePosition();
+        var bestAxis = -1;
+        var bestDistance = 16f;
+        for (var axis = 0; axis < 3; axis++)
+        {
+            var direction = AxisDirection(axis).Normalized();
+            var distance = Mode == GizmoMode.Rotate
+                ? DistanceToRing(camera, mouse, direction)
+                : DistanceToSegment(mouse, camera.UnprojectPosition(GlobalPosition + direction * (_displayScale * .12f)), camera.UnprojectPosition(GlobalPosition + direction * (_displayScale * 1.28f)));
+            if (distance >= bestDistance) continue;
+            bestDistance = distance;
+            bestAxis = axis;
+        }
+        return bestAxis;
+    }
+
+    private float DistanceToRing(Camera3D camera, Vector2 mouse, Vector3 normal)
+    {
+        var helper = Mathf.Abs(normal.Dot(Vector3.Up)) > .9f ? Vector3.Right : Vector3.Up;
+        var u = normal.Cross(helper).Normalized();
+        var v = normal.Cross(u).Normalized();
+        var best = float.MaxValue;
+        var previous = camera.UnprojectPosition(GlobalPosition + u * _displayScale);
+        const int samples = 48;
+        for (var i = 1; i <= samples; i++)
+        {
+            var angle = Mathf.Tau * i / samples;
+            var current = camera.UnprojectPosition(GlobalPosition + (u * Mathf.Cos(angle) + v * Mathf.Sin(angle)) * _displayScale);
+            best = Mathf.Min(best, DistanceToSegment(mouse, previous, current));
+            previous = current;
+        }
+        return best;
+    }
+
+    private static float DistanceToSegment(Vector2 point, Vector2 start, Vector2 end)
+    {
+        var segment = end - start;
+        var lengthSquared = segment.LengthSquared();
+        if (lengthSquared < .001f) return point.DistanceTo(start);
+        var amount = Mathf.Clamp((point - start).Dot(segment) / lengthSquared, 0f, 1f);
+        return point.DistanceTo(start + segment * amount);
     }
 
     public bool BeginDrag(int axis, Vector3 rayOrigin, Vector3 rayDirection)
@@ -134,7 +188,7 @@ public partial class BuildGizmo : Node3D
         var root = new Node3D { Name = $"Axis{axis}" };
         root.AddChild(Visual(new CylinderMesh { TopRadius = .018f, BottomRadius = .018f, Height = .85f }, new Vector3(0, .425f, 0), axis));
         root.AddChild(cube ? Visual(new BoxMesh { Size = Vector3.One * .15f }, new Vector3(0, .95f, 0), axis) : Visual(new CylinderMesh { TopRadius = 0, BottomRadius = .075f, Height = .24f }, new Vector3(0, .97f, 0), axis));
-        root.AddChild(Collider(new BoxShape3D { Size = new Vector3(.24f, 1.2f, .24f) }, new Vector3(0, .62f, 0), axis));
+        root.AddChild(Collider(new BoxShape3D { Size = new Vector3(.32f, 1.28f, .32f) }, new Vector3(0, .62f, 0), axis));
         // the letter of the axis at its tip, in the axis colour, so X, Y and Z are never confused
         root.AddChild(new Label3D { Text = "XYZ"[axis].ToString(), Position = new Vector3(0, 1.3f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FixedSize = false, PixelSize = .0035f, FontSize = 72, OutlineSize = 22, Modulate = Colors.White, OutlineModulate = AxisColors[axis], RenderPriority = 25, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
         return root;
@@ -145,7 +199,7 @@ public partial class BuildGizmo : Node3D
         var root = new Node3D { Name = $"Ring{axis}" };
         root.AddChild(Visual(new TorusMesh { InnerRadius = .975f, OuterRadius = 1f, Rings = 64, RingSegments = 6 }, Vector3.Zero, axis));
         var area = new Area3D { CollisionLayer = PhysicsLayer, CollisionMask = 0, Monitoring = false };
-        area.AddChild(new CollisionShape3D { Shape = new TorusMesh { InnerRadius = .86f, OuterRadius = 1.1f, Rings = 32, RingSegments = 8 }.CreateTrimeshShape() });
+        area.AddChild(new CollisionShape3D { Shape = new TorusMesh { InnerRadius = .80f, OuterRadius = 1.16f, Rings = 32, RingSegments = 8 }.CreateTrimeshShape() });
         _handleAxis[area] = axis; root.AddChild(area);
         return root;
     }

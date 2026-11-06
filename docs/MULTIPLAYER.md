@@ -13,7 +13,7 @@ O servidor nunca confia em posições, IDs ou nomes enviados pelo cliente. O cli
 
 | Canal | Transporte | Uso |
 |---|---|---|
-| 0 | confiável | handshake, spawn/despawn e chat |
+| 0 | confiável | handshake, spawn/despawn, chat e mudanças discretas de estado (como ligar/desligar voo) |
 | 1 | não confiável ordenado | inputs de movimento |
 | 2 | não confiável ordenado | snapshots de estado |
 
@@ -37,3 +37,4 @@ O processo headless é iniciado com `--headless --path island-server`. Ele expõ
 
 - Protocolo **7**: `RequestTeleport(parcelId, x, z)` (cliente → servidor) e `TeleportResult(ok, code, x, z, yaw)` (servidor → cliente), usados pelo teleporte de terrenos. Publique API e servidor de ilhas juntos.
 - Protocolo **8**: `RefreshAppearance()` (cliente → servidor) e `AppearanceChanged(peerId, displayName, appearanceJson)` (servidor → cliente). O servidor de ilha busca a aparência na API (`/api/v1/platform/avatars/{id}/appearance`, chave de serviço) e nunca usa o que o cliente diria. Publique API e servidor de ilhas juntos.
+- Protocolo **9**: `SetFlight(enabled)` é confiável e idempotente. Os inputs contínuos continuam no canal não confiável ordenado, mas perder um pacote não pode mais deixar cliente e servidor discordando sobre o voo. Publique cliente, API e servidores de ilha juntos.

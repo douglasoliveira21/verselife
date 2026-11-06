@@ -28,6 +28,22 @@ public partial class MovementSmoke : Node
             var runDistance = HorizontalDistance(runStart, player.GlobalPosition);
             Require(runDistance > walkDistance * 1.45f, $"run did not exceed walk: walk={walkDistance} run={runDistance}");
 
+            Input.ActionPress("move_forward"); await Frames(3); Input.ActionRelease("move_forward"); await Frames(3);
+            Input.ActionPress("move_forward"); await Frames(3);
+            Require(player.IsRunning, "double-tapping W/Up did not enable running");
+            Input.ActionRelease("move_forward"); await Frames(2);
+
+            var typing = new LineEdit { Text = "teste" }; AddChild(typing); typing.GrabFocus(); await Frames(2);
+            player.GlobalPosition = new Vector3(0, .05f, 1); player.Velocity = Vector3.Zero; await Frames(10);
+            var typingY = player.GlobalPosition.Y;
+            world.GetNode<BuildEditor>("BuildEditor")._UnhandledInput(Action("build_mode"));
+            world.GetNode<TerrainEditor>("TerrainEditor")._UnhandledInput(Action("terrain_mode"));
+            player._UnhandledInput(Action("fly_toggle"));
+            Input.ActionPress("jump"); await Frames(35); Input.ActionRelease("jump");
+            Require(!player.IsFlying && player.GlobalPosition.Y < typingY + .2f, "Space triggered movement while a text field had focus");
+            Require(!world.GetNode<BuildEditor>("BuildEditor").Active && !world.GetNode<TerrainEditor>("TerrainEditor").Active, "a tool shortcut opened while typing");
+            typing.ReleaseFocus(); typing.QueueFree(); await Frames(2);
+
             player.GlobalPosition = new Vector3(-5.35f, .8f, -5);
             player.Velocity = Vector3.Zero;
             await Frames(20);
@@ -59,6 +75,11 @@ public partial class MovementSmoke : Node
             Input.ActionPress("descend"); await Frames(90); Input.ActionRelease("descend");
             Require(player.IsOnFloor(), "flight landing failed");
 
+            player.GlobalPosition = new Vector3(0, .05f, 1); player.Velocity = Vector3.Zero; await Frames(10);
+            Input.ActionPress("jump"); await Frames(35);
+            Require(player.IsFlying, "holding Space did not start flight");
+            Input.ActionRelease("jump"); player.RequestFlightToggle(); await Frames(2);
+
             player.GlobalPosition = new Vector3(12, .5f, 8);
             player.Velocity = Vector3.Zero;
             player.SetSwimming(true);
@@ -76,6 +97,9 @@ public partial class MovementSmoke : Node
             var rig = player.GetNode<AvatarRig>("AvatarRig");
             player._UnhandledInput(Action("first_person"));
             Require(!rig.Visible, "first-person mode did not hide local avatar");
+            var facing = player.Rotation.Y;
+            player._UnhandledInput(new InputEventMouseMotion { Relative = new Vector2(120, 0) }); await Frames(10);
+            Require(Mathf.Abs(Mathf.AngleDifference(facing, player.Rotation.Y)) > .05f, "first-person mouse did not turn the avatar");
             player._UnhandledInput(Action("first_person"));
             Require(rig.Visible, "third-person mode did not restore local avatar");
             player._UnhandledInput(Action("cursor_toggle"));

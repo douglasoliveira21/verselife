@@ -89,10 +89,11 @@ public partial class BuildEditor : Node3D
 
     public override void _UnhandledInput(InputEvent input)
     {
+        if (GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit) return;
         if (input.IsActionPressed("build_mode")) { SetActive(!_active); return; }
         if (!_active) return;
         if (input.IsActionPressed("ui_cancel")) { if (_placeType is not null || _previewRoot is not null) DisarmPlacement("Colocação cancelada."); else if (_dragging) CancelDrag(); else SetActive(false); return; }
-        if (input is InputEventKey { Pressed: true, Echo: false } key && GetViewport().GuiGetFocusOwner() is not (LineEdit or TextEdit)) { if (HandleKey(key)) GetViewport().SetInputAsHandled(); return; }
+        if (input is InputEventKey { Pressed: true, Echo: false } key) { if (HandleKey(key)) GetViewport().SetInputAsHandled(); return; }
         if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: false } click)
         {
             if (_previewRoot is not null && TryConfirmPreview(click.Position)) { GetViewport().SetInputAsHandled(); return; }

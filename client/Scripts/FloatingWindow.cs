@@ -28,28 +28,28 @@ public partial class FloatingWindow : PanelContainer
         var bar = new PanelContainer { MouseDefaultCursorShape = CursorShape.Move };
         bar.AddThemeStyleboxOverride("panel", ViewerTheme.TitleBar());
         root.AddChild(bar);
-        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10);
+        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 7);
         bar.AddChild(row);
-        if (icon is not null) { var glyph = UiStyle.IconRect(icon, UiStyle.Text, 26); glyph.MouseFilter = MouseFilterEnum.Ignore; row.AddChild(glyph); }
+        if (icon is not null) { var glyph = UiStyle.IconRect(icon, UiStyle.Text, 21); glyph.MouseFilter = MouseFilterEnum.Ignore; row.AddChild(glyph); }
         _title.Text = title; _title.SizeFlagsHorizontal = SizeFlags.ExpandFill; _title.MouseFilter = MouseFilterEnum.Ignore; _title.VerticalAlignment = VerticalAlignment.Center;
-        _title.AddThemeColorOverride("font_color", UiStyle.Text); _title.AddThemeFontOverride("font", UiStyle.Bold); _title.AddThemeFontSizeOverride("font_size", 19);
+        _title.AddThemeColorOverride("font_color", UiStyle.Text); _title.AddThemeFontOverride("font", UiStyle.Bold); _title.AddThemeFontSizeOverride("font_size", 16);
         row.AddChild(_title);
         if (minimizable) row.AddChild(ChromeButton("minimize", "Minimizar", ToggleMinimized));
         if (expandable) row.AddChild(ChromeButton("expand", "Expandir", () => { _expanded = !_expanded; ExpandToggled?.Invoke(_expanded); }));
         if (closable) row.AddChild(ChromeButton("close", "Fechar", () => { Visible = false; CloseRequested?.Invoke(); }));
         var body = new MarginContainer { SizeFlagsVertical = SizeFlags.ExpandFill };
-        foreach (var side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) body.AddThemeConstantOverride(side, 14);
+        foreach (var side in new[] { "margin_left", "margin_right", "margin_top", "margin_bottom" }) body.AddThemeConstantOverride(side, 10);
         root.AddChild(body);
         _body = body;
         body.AddChild(Content);
-        Content.AddThemeConstantOverride("separation", 8);
+        Content.AddThemeConstantOverride("separation", 6);
         bar.GuiInput += OnBarInput;
         GuiInput += input => { if (input is InputEventMouseButton { Pressed: true }) MoveToFront(); };
     }
 
     private static Button ChromeButton(string icon, string tooltip, Action action)
     {
-        var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 22), Flat = true, FocusMode = FocusModeEnum.None, TooltipText = tooltip, CustomMinimumSize = new Vector2(34, 34), ExpandIcon = false };
+        var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 18), Flat = true, FocusMode = FocusModeEnum.None, TooltipText = tooltip, CustomMinimumSize = new Vector2(28, 28), ExpandIcon = false };
         var hover = UiStyle.Box(new Color(1, 1, 1, .10f), new Color(0, 0, 0, 0), UiStyle.RadiusSmall, 0, 0, 0);
         button.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); button.AddThemeStyleboxOverride("hover", hover); button.AddThemeStyleboxOverride("pressed", hover);
         button.AddThemeStyleboxOverride("hover_pressed", hover); button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());

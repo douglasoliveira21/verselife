@@ -196,6 +196,7 @@ public partial class NetworkManager : Node
     public void RegisterLocalPlayer(PlayerController player) => _localPlayer = player;
     public void UnregisterLocalPlayer(PlayerController player) { if (_localPlayer == player) _localPlayer = null; }
     public void SendInput(uint sequence, Vector2 direction, InputFlags flags) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitInput, (long)sequence, direction.X, direction.Y, (int)flags); }
+    public void SetFlight(bool enabled) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SetFlight, enabled); }
     public void SendChatMessage(string message) { if (IsAuthenticated && !string.IsNullOrWhiteSpace(message)) _bridge.RpcId(1, NetworkBridge.MethodName.SendChat, message[..Math.Min(message.Length, NetworkProtocol.MaxChatCharacters)]); }
     public void SubmitBuildOperation(string operationJson) { if (IsAuthenticated && operationJson.Length <= 100_000) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitBuildOperation, operationJson); }
     public bool CanEditTerrain { get; private set; }
@@ -246,7 +247,7 @@ public partial class NetworkManager : Node
         foreach (var state in snapshot.Players)
         {
             var position = new Vector3(state.X, state.Y, state.Z);
-            if (state.PeerId == ownPeer) { _localPlayer?.Reconcile(position, new Vector3(state.VelocityX, state.VelocityY, state.VelocityZ), state.LastProcessedInput); continue; }
+            if (state.PeerId == ownPeer) { _localPlayer?.Reconcile(position, new Vector3(state.VelocityX, state.VelocityY, state.VelocityZ), state.LastProcessedInput, state.Motion); continue; }
             if (_remote.TryGetValue(state.PeerId, out var remote))
             {
                 remote.TargetPosition = position; remote.TargetYaw = state.Yaw; remote.Rig.SetMotionState(ToAvatarMotion(state.Motion));

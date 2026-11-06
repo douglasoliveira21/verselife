@@ -187,6 +187,17 @@ public partial class ServerMain : Node
         player.LatestInput = new MovementInput((uint)sequence, Math.Clamp(x, -1f, 1f), Math.Clamp(z, -1f, 1f), (InputFlags)flags & allowed);
     }
 
+    /// Reliable and idempotent because flight is a state, not a per-frame input.
+    /// A repeated packet leaves the same result instead of toggling twice.
+    public void SetFlight(int peerId, bool enabled)
+    {
+        if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated || !player.State.CanFly || player.State.Seated) return;
+        player.State.Flying = enabled;
+        if (!enabled) return;
+        player.State.Swimming = false;
+        player.State.VelocityY = Math.Max(player.State.VelocityY, 2f);
+    }
+
     private static AvatarPresence PresenceOf(ConnectedPlayer player) => new(player.PeerId, player.AvatarId, player.UserId, player.DisplayName, player.State.X, player.State.Y, player.State.Z);
 
     /// Loads this island's objects and Lua scripts. A failure here must not keep the island from starting.

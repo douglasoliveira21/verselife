@@ -18,6 +18,7 @@ public partial class ViewerUI : CanvasLayer
     private LineEdit _chat = null!;
     private RichTextLabel _chatLog = null!;
     private Control _chatWindow = null!;
+    private ulong _chatVisibleUntil;
     private VBoxContainer _conversations = null!;
     private FloatingWindow _miniMapWindow = null!;
     private FloatingWindow _moveWindow = null!;
@@ -38,7 +39,7 @@ public partial class ViewerUI : CanvasLayer
     private Button _fly = null!;
     private Button _miniMapButton = null!;
     private Button _moveButton = null!;
-    private Button _gestureButton = null!;
+    private Button? _gestureButton;
     private LineEdit _islandId = null!;
     private Label _joinStatus = null!;
     private VBoxContainer _toasts = null!;
@@ -56,7 +57,7 @@ public partial class ViewerUI : CanvasLayer
     private string _state = "offline";
     private Theme _theme = null!;
     private const string PrefsPath = "user://viewer.cfg";
-    private static readonly float[] UiScales = [.8f, .9f, 1f, 1.1f, 1.25f, 1.5f];
+    private static readonly float[] UiScales = [.7f, .8f, .9f, 1f, 1.1f, 1.25f];
     private static readonly float[] Volumes = [0f, .25f, .5f, .75f, 1f];
     private static readonly string[] WeatherNames = ["clear", "cloudy", "rain", "storm", "fog"];
     private readonly ConfigFile _prefs = new();
@@ -97,7 +98,17 @@ public partial class ViewerUI : CanvasLayer
         _start = new HttpRequest(); AddChild(_start); _start.RequestCompleted += OnStart;
         _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected; _network.VehicleMessage += Toast;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
-        SetUiScale((float)(double)_prefs.GetValue("ui", "scale", 1.0), save: false);
+        var uiScale = (float)(double)_prefs.GetValue("ui", "scale", .8);
+        // One-time compact-layout migration. Existing larger layouts are reduced once,
+        // but the person's choice remains available in the menu afterwards.
+        if (!(bool)_prefs.GetValue("ui", "compact_v2", false))
+        {
+            uiScale = Mathf.Min(uiScale, .8f);
+            _prefs.SetValue("ui", "scale", (double)uiScale);
+            _prefs.SetValue("ui", "compact_v2", true);
+            _prefs.Save(PrefsPath);
+        }
+        SetUiScale(uiScale, save: false);
         SetVolume((float)(double)_prefs.GetValue("audio", "volume", 1.0), save: false);
         UpdateStatus();
         BuildRadial();
@@ -131,6 +142,11 @@ public partial class ViewerUI : CanvasLayer
     public override void _Process(double delta)
     {
         _statusTimer -= delta; _walletTimer += delta; RememberFacing(delta);
+        if (_chatWindow.Visible && !_chat.HasFocus() && _chatVisibleUntil > 0 && Time.GetTicksMsec() >= _chatVisibleUntil)
+        {
+            _chatWindow.Visible = false;
+            _chatVisibleUntil = 0;
+        }
         if (_statusTimer <= 0) { _statusTimer = .25; UpdateStatus(); }
         if (_walletTimer >= 60 && _network.IsAuthenticated && _wallet.GetHttpClientStatus() == Godot.HttpClient.Status.Disconnected) { _walletTimer = 0; RequestWallet(); }
     }
@@ -242,7 +258,7 @@ public partial class ViewerUI : CanvasLayer
     {
         _miniMapButton.SetPressedNoSignal(_miniMapWindow.Visible);
         _moveButton.SetPressedNoSignal(_moveWindow.Visible);
-        _gestureButton.SetPressedNoSignal(_gestures?.Visible ?? false);
+        _gestureButton?.SetPressedNoSignal(_gestures?.Visible ?? false);
     }
 
     private static void AddChoiceSubmenu(PopupMenu parent, string title, string[] choices, Action<int> chosen)
@@ -279,8 +295,8 @@ public partial class ViewerUI : CanvasLayer
     private static readonly string[] TutorialPages =
     [
         "Bem-vindo ao LifeVerse!\n\nEste é um mundo persistente onde você anda, conversa, constrói e explora ilhas com outras pessoas. Este guia rápido mostra o essencial. Você pode abri-lo de novo em Ajuda > Tutorial.",
-        "Andar e correr\n\nW/S andam para frente e para trás, A/D giram o personagem e Q/Z dão passos para o lado. Segure Shift para alternar entre andar e correr, Espaço pula e F liga o voo. Dê duplo clique no chão para andar até lá.",
-        "Câmera\n\nSegure o botão direito do mouse e arraste para girar a câmera, use a roda para aproximar ou afastar e o botão do meio para olhar para um ponto. C alterna a primeira pessoa e R redefine a câmera.",
+        "Andar e correr\n\nW/S ou as setas andam para frente e para trás, A/D giram o personagem e Q/Z dão passos para o lado. Segure Shift ou toque duas vezes para frente para correr. Toque Espaço para pular; segure Espaço para começar a voar. F também alterna o voo.",
+        "Câmera\n\nSegure o botão direito do mouse e arraste para girar a câmera, use a roda para aproximar ou afastar e o botão do meio para olhar para um ponto. C alterna a primeira pessoa; nela, o mouse funciona como mira e W segue a direção apontada.",
         "Conversar\n\nPressione Enter, digite e envie para falar com quem está a até 30 metros. Esc sai da barra de conversa. Em Pessoas você encontra amigos, grupos e mensagens.",
         "Construir e moldar o terreno\n\nB abre as ferramentas de construção e T abre as de terreno: elevar, rebaixar, nivelar, suavizar e pintar texturas, além do nível do mar. Só o dono da ilha, ou quem tem permissão, pode editar.",
         "Explorar\n\nO Mini-mapa mostra onde você está, o Mapa lista as ilhas e a Foto salva uma imagem sem a interface. O oceano cerca a ilha: entre na água e você nada. Divirta-se!"
@@ -367,27 +383,35 @@ public partial class ViewerUI : CanvasLayer
     {
         if (_entering || _network.IsAuthenticated || _network.CurrentIslandId != Guid.Empty) return;
         var session = GetNode<SessionManager>("/root/SessionManager"); if (!session.IsAuthenticated) return;
-        _entering = true; _joinStatus.Text = "Procurando a sua ilha…";
+        _entering = true; _joinStatus.Text = "Procurando a sua ilha…"; _joinWindow.Visible = false; // no list of islands while the server is taking the person to theirs
         _start.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/me/start", [$"Authorization: Bearer {session.AccessToken}"]);
     }
 
     private void OnStart(long result, long code, string[] headers, byte[] body)
     {
         _entering = false;
-        if (code is < 200 or >= 300 || StartPlace.Parse(Encoding.UTF8.GetString(body)) is not { } info) { _joinStatus.Text = "Escolha uma ilha para entrar."; return; }
+        if (code is < 200 or >= 300 || StartPlace.Parse(Encoding.UTF8.GetString(body)) is not { } info) { GoToWelcome(fromStart: true); return; } // an older server may not know "where do I start": the welcome island is the next best answer
         Toast(StartPlace.Message(info)); JoinIslandById(info.IslandId);
     }
 
+    /// <summary>Neither the island of last time nor the welcome island could be found: only then the person is asked to choose from the list.</summary>
+    private void NoWelcome(bool fromStart)
+    {
+        Toast("Não foi possível achar a Ilha de Boas-vindas.");
+        if (!fromStart) return;
+        _joinStatus.Text = "Não achei a sua ilha de início. Escolha uma ilha da lista (o servidor pode estar desatualizado)."; _joinWindow.Visible = true; _joinWindow.MoveToFront(); RefreshIslands();
+    }
+
     /// <summary>Goes to the welcome island, on purpose.</summary>
-    private void GoToWelcome()
+    private void GoToWelcome(bool fromStart = false)
     {
         var session = GetNode<SessionManager>("/root/SessionManager"); if (!session.IsAuthenticated) return;
         var http = new HttpRequest(); AddChild(http);
         http.RequestCompleted += (result, code, _, body) =>
         {
             http.QueueFree();
-            try { using var d = JsonDocument.Parse(Encoding.UTF8.GetString(body)); if (code is >= 200 and < 300 && Guid.TryParse(d.RootElement.GetProperty("islandId").GetString(), out var id)) { Toast("Indo para a Ilha de Boas-vindas."); JoinIslandById(id); } else Toast("Não foi possível achar a Ilha de Boas-vindas."); }
-            catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { Toast("Não foi possível achar a Ilha de Boas-vindas."); }
+            try { using var d = JsonDocument.Parse(Encoding.UTF8.GetString(body)); if (code is >= 200 and < 300 && Guid.TryParse(d.RootElement.GetProperty("islandId").GetString(), out var id)) { Toast("Indo para a Ilha de Boas-vindas."); JoinIslandById(id); } else NoWelcome(fromStart); }
+            catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { NoWelcome(fromStart); }
         };
         http.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/welcome", [$"Authorization: Bearer {session.AccessToken}"]);
     }
@@ -428,8 +452,29 @@ public partial class ViewerUI : CanvasLayer
         text = text.Trim();
         _chat.Clear(); _chat.ReleaseFocus();
         if (text.Length == 0) return;
+        ShowChatTemporarily();
         if (!_network.IsAuthenticated) { AppendSystem("Você precisa estar em uma ilha para conversar."); return; }
         _network.SendChatMessage(text);
+    }
+
+    private void OpenChatHistory()
+    {
+        _chatWindow.Visible = true;
+        _chatVisibleUntil = 0;
+        _player?.SetTextInputActive(true);
+        _root.MoveChild(_chatWindow, -1);
+    }
+
+    private void ShowChatTemporarily(double seconds = 6)
+    {
+        _chatWindow.Visible = true;
+        _chatVisibleUntil = Time.GetTicksMsec() + (ulong)(seconds * 1000);
+    }
+
+    private void CloseChatInput()
+    {
+        _player?.SetTextInputActive(false);
+        if (_chatWindow.Visible) _chatVisibleUntil = Time.GetTicksMsec() + 6000;
     }
 
 
@@ -513,7 +558,7 @@ public partial class ViewerUI : CanvasLayer
             _helpWindow.Place(.5f, .5f, -230, -170, 230, 170);
             _helpWindow.Content.AddChild(new Label
             {
-                Text = "Movimento\n  W/S ou ↑/↓ — andar    A/D ou ←/→ — girar    Q/Z — passo lateral\n  Shift — inverte andar/correr    Espaço — pular/subir    Ctrl — descer\n  F — voar    C — primeira pessoa    V — câmera livre    R — redefinir câmera\n\nCâmera\n  Botão direito + arrastar — orbitar    Roda — zoom    Botão do meio — olhar\n\nInterface\n  Enter — conversar    Esc — sair da conversa    B — construir    T — terreno\n  E — interagir/levantar    G — acenar    H — dançar    Duplo clique — andar até o ponto",
+                Text = "Movimento\n  W/S ou ↑/↓ — andar    A/D ou ←/→ — girar    Q/Z — passo lateral\n  Shift ou duplo toque para frente — correr    Toque Espaço — pular    Segure Espaço — iniciar voo/subir\n  Ctrl — descer    F — alternar voo    C — primeira pessoa    V — câmera livre    R — redefinir câmera\n\nCâmera\n  Botão direito + arrastar — orbitar    Primeira pessoa — mouse aponta e W segue a mira\n  Roda — zoom    Botão do meio — olhar\n\nInterface\n  Enter — conversar    Esc — sair da conversa    B — construir    T — terreno\n  E — interagir/levantar    G — acenar    H — dançar    Duplo clique — andar até o ponto",
                 AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(440, 0)
             });
             _root.AddChild(_helpWindow);
