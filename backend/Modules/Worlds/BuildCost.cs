@@ -55,16 +55,18 @@ public static class BuildCost
     public static CostParts Breakdown(string primitiveType, string? geometryJson, string? materialJson, string? physicsJson, string? contentJson)
     {
         var geometry = Math.Max(1, Triangles(primitiveType, geometryJson) / 20);
-        var physics = 0; var solid = true;
+        var physics = 0; var solid = true; var collisionProfile = "box";
         try
         {
             using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(physicsJson) ? "{}" : physicsJson);
             solid = !(document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("collision", out var c) && c.ValueKind == JsonValueKind.False);
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("shape", out var profile) && profile.ValueKind == JsonValueKind.String) collisionProfile = profile.GetString() ?? "box";
+            if (collisionProfile == "none") solid = false;
             physics = solid ? (primitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase) ? 2 : 1) + (ObjectPhysics.IsPhysical(physicsJson) ? 2 : 0) : 0; // a body that moves by physics costs more than one that stands still
         }
         catch (JsonException) { physics = 1; }
         // a hollow, twisted or cut shape needs a collision mesh of its own instead of a simple box
-        var collision = solid && ComplexCollision(geometryJson) ? 1 : 0;
+        var collision = solid ? collisionProfile switch { "convex" => 3, "triangle" => 8, _ => ComplexCollision(geometryJson) ? 1 : 0 } : 0;
         var textures = MaterialAssets.TextureIds(materialJson).Count * 3; var effects = 0;
         try
         {

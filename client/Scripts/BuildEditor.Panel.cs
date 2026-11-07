@@ -25,11 +25,11 @@ public partial class BuildEditor
     private HSlider _hollow = null!, _taperX = null!, _taperY = null!, _twist = null!;
     private ColorPickerButton _colorPicker = null!, _emissionPicker = null!;
     private CheckBox _glow = null!, _ghost = null!;
-    private OptionButton _physMode = null!; private LineEdit _physMass = null!, _physFriction = null!, _physBounce = null!;
+    private OptionButton _physMode = null!, _collisionShape = null!; private LineEdit _physMass = null!, _physFriction = null!, _physBounce = null!;
     private HSlider _roughness = null!, _metallic = null!, _opacity = null!;
     private Label _status = null!, _selectionLabel = null!;
     private Button _toolSelect = null!, _toolMove = null!, _toolRotate = null!, _toolScale = null!, _toolFace = null!;
-    private CheckBox _gridSnap = null!, _showGrid = null!;
+    private CheckBox _gridSnap = null!, _showGrid = null!, _showCollision = null!;
     private OptionButton _rotSnap = null!;
     private Label _faceLabel = null!;
     private bool _filling;
@@ -197,14 +197,15 @@ public partial class BuildEditor
     private string PhysicsFromFields(string existing)
     {
         var physical = _physMode.Selected == 1;
-        return PhysicsRules.Write(existing, new PhysicsSettings(!_ghost.ButtonPressed, Trigger: ParseObject(existing)["trigger"] is JsonValue t && t.TryGetValue<bool>(out var isTrigger) && isTrigger, physical,
-            NumOr(_physMass, 1f), NumOr(_physFriction, .5f), NumOr(_physBounce, 0f)));
+        var shape = new[] { "none", "box", "convex", "triangle" }.ElementAtOrDefault(_collisionShape.Selected) ?? "box";
+        return PhysicsRules.Write(existing, new PhysicsSettings(!_ghost.ButtonPressed && shape != "none", Trigger: ParseObject(existing)["trigger"] is JsonValue t && t.TryGetValue<bool>(out var isTrigger) && isTrigger, physical,
+            NumOr(_physMass, 1f), NumOr(_physFriction, .5f), NumOr(_physBounce, 0f), shape));
     }
 
     private void FillPhysics(string physicsJson)
     {
         var p = PhysicsRules.Read(physicsJson);
-        _physMode.Select(p.Physical ? 1 : 0); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2);
+        _physMode.Select(p.Physical ? 1 : 0); _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, p.CollisionShape) is var index && index >= 0 ? index : 1); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2);
     }
 
     public void SetPhysicsForTesting(bool physical, float mass = 1f, float friction = .5f, float bounce = 0f) { _physMode.Select(physical ? 1 : 0); _physMass.Text = Disp(mass, 2); _physFriction.Text = Disp(friction, 2); _physBounce.Text = Disp(bounce, 2); ApplySelected(); }
@@ -400,6 +401,8 @@ public partial class BuildEditor
     public void PaintFaceForTesting(bool clear) => PaintFace(clear);
     public bool GridVisibleForTesting => _grid.Visible;
     public void SetGridForTesting(bool show, bool snap) { _showGrid.ButtonPressed = show; _gridSnap.ButtonPressed = snap; UpdateGrid(); }
+    public void SetCollisionPreviewForTesting(bool show) { _showCollision.ButtonPressed = show; SetCollisionPreview(show); }
+    private void SetCollisionPreview(bool show) { foreach (var view in _objects.Values) view.SetCollisionPreview(show); }
     public void SetPaintColorForTesting(Color color) => _colorPicker.Color = color;
 }
 

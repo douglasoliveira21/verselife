@@ -36,6 +36,7 @@ public sealed class ObstacleField
             if (document.RootElement.ValueKind != JsonValueKind.Object) return true;
             if (document.RootElement.TryGetProperty("collision", out var collision) && collision.ValueKind == JsonValueKind.False) return false;
             if (document.RootElement.TryGetProperty("trigger", out var trigger) && trigger.ValueKind == JsonValueKind.True) return false;
+            if (document.RootElement.TryGetProperty("shape", out var shape) && shape.ValueKind == JsonValueKind.String && shape.GetString() == "none") return false;
         }
         catch (JsonException) { }
         return true;

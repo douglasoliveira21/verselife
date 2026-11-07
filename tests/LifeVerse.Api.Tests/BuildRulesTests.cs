@@ -87,6 +87,15 @@ public sealed class BuildCostTests
         Assert.Equal(BuildCost.Of("cube", "{}", "{}", "{\"collision\":true}", "[]") - 1, BuildCost.Of("cube", "{}", "{}", "{\"collision\":false}", "[]"));
 
     [Fact]
+    public void CollisionProfilesAffectBothAuthorityAndIslandBudget()
+    {
+        Assert.False(LifeVerse.Shared.Networking.ObstacleField.Blocks("{\"shape\":\"none\"}"));
+        var box = BuildCost.Of("mesh", "{}", "{}", "{\"shape\":\"box\"}", "[]");
+        Assert.True(BuildCost.Of("mesh", "{}", "{}", "{\"shape\":\"convex\"}", "[]") > box);
+        Assert.True(BuildCost.Of("mesh", "{}", "{}", "{\"shape\":\"triangle\"}", "[]") > box);
+    }
+
+    [Fact]
     public void TexturesLightsFacesAndContentsAddUp()
     {
         var a = Guid.NewGuid(); var b = Guid.NewGuid();

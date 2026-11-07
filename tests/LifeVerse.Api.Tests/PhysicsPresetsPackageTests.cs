@@ -20,7 +20,7 @@ public sealed class PhysicsAndPackageRulesTests
     [
         [null], [""], ["{}"], ["{\"collision\":true}"], ["{\"collision\":false}"], ["{\"collision\":true,\"trigger\":true}"], ["not json"], ["[]"], ["\"text\""], ["{\"collision\":\"yes\"}"],
         ["{\"mode\":\"physical\"}"], ["{\"mode\":\"physical\",\"collision\":true,\"mass\":5,\"friction\":0.4,\"bounce\":0.2}"], ["{\"mode\":\"static\"}"], ["{\"mode\":\"flying\"}"], ["{\"mode\":3}"],
-        ["{\"mode\":\"physical\",\"collision\":false}"], ["{\"mode\":\"physical\",\"trigger\":true}"], ["{\"mass\":0}"], ["{\"mass\":10001}"], ["{\"mass\":\"heavy\"}"], ["{\"friction\":1.5}"], ["{\"bounce\":-0.1}"], ["{\"mass\":0.01,\"friction\":0,\"bounce\":1}"],
+        ["{\"mode\":\"physical\",\"collision\":false}"], ["{\"mode\":\"physical\",\"trigger\":true}"], ["{\"shape\":\"convex\"}"], ["{\"shape\":\"triangle\",\"mode\":\"physical\"}"], ["{\"shape\":\"decomposition\"}"], ["{\"mass\":0}"], ["{\"mass\":10001}"], ["{\"mass\":\"heavy\"}"], ["{\"friction\":1.5}"], ["{\"bounce\":-0.1}"], ["{\"mass\":0.01,\"friction\":0,\"bounce\":1}"],
     ];
 
     [Theory, MemberData(nameof(PhysicsCases))]
@@ -43,6 +43,14 @@ public sealed class PhysicsAndPackageRulesTests
         var ghost = PhysicsRules.Write(null, new PhysicsSettings(false, false, true)); Assert.DoesNotContain("physical", ghost); Assert.Contains("\"collision\":false", ghost); // a ghost cannot be physical
         var wild = PhysicsRules.Write("{}", new PhysicsSettings(true, false, true, 1e9f, 9, -4)); Assert.Null(PhysicsRules.Validate(wild)); Assert.Equal(PhysicsRules.MaxMass, PhysicsRules.Read(wild).Mass);
         Assert.False(PhysicsRules.Read("garbage").Physical);
+    }
+
+    [Fact]
+    public void CollisionShapePersistsAndTriangleMeshesCannotBecomeDynamic()
+    {
+        var written = PhysicsRules.Write("{}", new PhysicsSettings(true, false, false, CollisionShape: "convex"));
+        Assert.Equal("convex", PhysicsRules.Read(written).CollisionShape); Assert.Null(PhysicsRules.Validate(written));
+        Assert.NotNull(PhysicsRules.Validate("{\"shape\":\"triangle\",\"mode\":\"physical\"}"));
     }
 
     [Fact]

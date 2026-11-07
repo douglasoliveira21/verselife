@@ -165,6 +165,9 @@ public partial class BuildEditor
         ghostBody.AddChild(_ghost);
         var physRow = Row(8); ghostBody.AddChild(physRow);
         physRow.AddChild(Txt("Física", 19, true)); _physMode = Pick("Estático", "Físico"); _physMode.TooltipText = "Físico marca um corpo que deve se mover por física (cair, ser empurrado). Ainda não é simulado no mundo: fica onde foi posto."; physRow.AddChild(_physMode);
+        var shapeRow = Row(8); ghostBody.AddChild(shapeRow); shapeRow.AddChild(Txt("Colisão", 19, true)); _collisionShape = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "Caixa é leve; casco segue a forma; malha triangular preserva portas e aberturas, mas é apenas estática." };
+        _collisionShape.AddItem("Nenhuma"); _collisionShape.AddItem("Caixa"); _collisionShape.AddItem("Casco convexo"); _collisionShape.AddItem("Malha triangular (estática)"); _collisionShape.Select(1); shapeRow.AddChild(_collisionShape);
+        _showCollision = new CheckBox { Text = " Visualizar colisão", TooltipText = "Mostra em ciano a geometria que gera a colisão. A malha triangular acompanha as partes importadas." }; _showCollision.AddThemeFontSizeOverride("font_size", 18); _showCollision.Toggled += SetCollisionPreview; ghostBody.AddChild(_showCollision);
         var physNumbers = Row(8); ghostBody.AddChild(physNumbers);
         physNumbers.AddChild(Txt("Massa", 18)); _physMass = Field("1", 8); _physMass.Text = "1"; physNumbers.AddChild(_physMass);
         physNumbers.AddChild(Txt("Atrito", 18)); _physFriction = Field("0,5", 6); _physFriction.Text = "0,5"; physNumbers.AddChild(_physFriction);

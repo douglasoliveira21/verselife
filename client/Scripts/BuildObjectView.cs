@@ -157,12 +157,7 @@ public partial class BuildObjectView : Node3D
         var proxy = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = new BoxMesh { Size = Vector3.One }, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, MaterialOverride = new StandardMaterial3D { Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(.6f, .7f, .8f, .35f) } };
         AddChild(proxy);
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, .8f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
-        if (TryGetBool(state.PhysicsJson, "collision", true))
-        {
-            var body = new StaticBody3D { Name = "CollisionBody", CollisionLayer = 1u, CollisionMask = 1u };
-            body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = Vector3.One } });
-            AddChild(body);
-        }
+        AddMeshCollision(state, null, Vector3.One); // a safe box is kept until the imported model arrives
         _modelAsset = AssetIdOf(state.GeometryJson);
         RequestModel();
     }
@@ -189,7 +184,67 @@ public partial class BuildObjectView : Node3D
             proxy.Mesh = new BoxMesh { Size = model.Size };
             proxy.MaterialOverride = new StandardMaterial3D { Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(1, 1, 1, 0) };
         }
-        if (GetNodeOrNull<StaticBody3D>("CollisionBody")?.GetChildOrNull<CollisionShape3D>(0) is { } shape) shape.Shape = new BoxShape3D { Size = model.Size };
+        GetNodeOrNull<StaticBody3D>("CollisionBody")?.QueueFree();
+        AddMeshCollision(State, model.Node, model.Size);
+    }
+
+    private static string CollisionMode(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var mode = document.RootElement.TryGetProperty("shape", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+            return mode is "none" or "box" or "convex" or "triangle" ? mode : "box";
+        }
+        catch (JsonException) { return "box"; }
+    }
+
+    /// <summary>Creates real Godot collision shapes for an imported model. Triangle mesh is intentionally static;
+    /// the API rejects it for physical bodies and this client never turns it into a rigid body.</summary>
+    private void AddMeshCollision(BuildObjectState state, Node3D? model, Vector3 fallbackSize)
+    {
+        var mode = CollisionMode(state.PhysicsJson);
+        if (!TryGetBool(state.PhysicsJson, "collision", true) || mode == "none") return;
+        var trigger = TryGetBool(state.PhysicsJson, "trigger", false);
+        var body = new StaticBody3D { Name = trigger ? "Trigger" : "CollisionBody", CollisionLayer = trigger ? 0u : 1u, CollisionMask = trigger ? 0u : 1u };
+        var debug = new Node3D { Name = "CollisionDebug", Visible = false };
+        if (mode == "box" || model is null)
+        {
+            body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = fallbackSize } });
+            debug.AddChild(DebugMesh(new BoxMesh { Size = fallbackSize }, Transform3D.Identity));
+        }
+        else
+        {
+            var found = 0;
+            foreach (var node in model.FindChildren("*", "MeshInstance3D", true, false).OfType<MeshInstance3D>())
+            {
+                if (node.Mesh is null || node.Mesh.GetFaces().Length == 0) continue;
+                Shape3D shape = mode == "triangle" ? node.Mesh.CreateTrimeshShape() : new ConvexPolygonShape3D { Points = node.Mesh.GetFaces() };
+                var collision = new CollisionShape3D { Shape = shape };
+                // The body is a direct child of this view. Preserve each imported node's
+                // transform relative to the view rather than its world transform, so moving
+                // the placed object does not apply its position twice.
+                collision.Transform = GlobalTransform.AffineInverse() * node.GlobalTransform;
+                body.AddChild(collision); found++;
+                // Godot does not expose a render mesh for ConvexPolygonShape3D. The imported
+                // source faces are still a useful translucent inspection layer; the actual
+                // collider remains the convex/triangle shape created above.
+                debug.AddChild(DebugMesh(node.Mesh, collision.Transform));
+            }
+            if (found == 0) { body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = fallbackSize } }); debug.AddChild(DebugMesh(new BoxMesh { Size = fallbackSize }, Transform3D.Identity)); }
+        }
+        AddChild(body); AddChild(debug);
+    }
+
+    private static MeshInstance3D DebugMesh(Mesh mesh, Transform3D transform) => new()
+    {
+        Mesh = mesh, Transform = transform, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+        MaterialOverride = new StandardMaterial3D { Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(0f, .9f, 1f, .28f), ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, CullMode = BaseMaterial3D.CullModeEnum.Disabled, NoDepthTest = true }
+    };
+
+    public void SetCollisionPreview(bool visible)
+    {
+        if (GetNodeOrNull<Node3D>("CollisionDebug") is { } debug) debug.Visible = visible;
     }
 
     private static Guid? AssetIdOf(string geometryJson)

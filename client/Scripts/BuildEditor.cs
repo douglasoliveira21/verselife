@@ -566,7 +566,7 @@ public partial class BuildEditor : Node3D
     {
         _hierarchyDirty = true;
         if (_objects.TryGetValue(state.Id, out var existing)) { existing.Apply(state); if (_selection.Contains(existing)) existing.SetSelected(true); RefreshLockTag(existing); return; }
-        var view = new BuildObjectView(); GetParent().AddChild(view); view.Apply(state); _objects[state.Id] = view; RefreshLockTag(view);
+        var view = new BuildObjectView(); GetParent().AddChild(view); view.Apply(state); view.SetCollisionPreview(_showCollision?.ButtonPressed ?? false); _objects[state.Id] = view; RefreshLockTag(view);
     }
 
     public void SelectForTesting(Guid id, bool additive = false) { if (_objects.TryGetValue(Resolve(id), out var view)) SelectView(view, additive); }

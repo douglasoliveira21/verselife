@@ -21,10 +21,12 @@ public static class ObjectPhysics
         foreach (var key in new[] { "collision", "trigger" }) if (o[key] is { } flag && !(flag is JsonValue v && v.TryGetValue<bool>(out _))) return $"Physics '{key}' must be true or false.";
         string? mode = null;
         if (o["mode"] is { } m) { if (m is not JsonValue mv || !mv.TryGetValue<string>(out mode) || mode is not ("static" or "physical")) return "Physics 'mode' must be static or physical."; }
+        var shape = "box"; if (o["shape"] is { } s) { if (s is not JsonValue sv || !sv.TryGetValue<string>(out shape) || shape is not ("none" or "box" or "convex" or "triangle")) return "Physics 'shape' must be none, box, convex or triangle."; }
         if (Number(o, "mass", MinMass, MaxMass) is { } massError) return massError;
         if (Number(o, "friction", 0f, 1f) is { } frictionError) return frictionError;
         if (Number(o, "bounce", 0f, 1f) is { } bounceError) return bounceError;
         if (mode == "physical" && (Flag(o, "collision", true) == false || Flag(o, "trigger", false))) return "A physical object needs solid collision (not a ghost, not a trigger).";
+        if (mode == "physical" && shape == "triangle") return "Triangle mesh collision is static only; use box or convex for a physical object.";
         return null;
     }
 
