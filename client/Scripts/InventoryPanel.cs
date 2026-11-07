@@ -85,6 +85,15 @@ public partial class InventoryPanel : Node3D
     /// Sends an image to the inventory as a texture (used by the build window's Importar imagem).
     public void ImportTexture(string path) => Upload(path);
     public void Toggle() { _window.Visible = !_window.Visible; if (_window.Visible) { _window.MoveToFront(); LoadItems(); } }
+    /// Opens the same validated importer used by the inventory's + menu. It keeps a
+    /// single, safe upload path for meshes, images and audio instead of making the
+    /// top menu upload files independently.
+    public void OpenImporter()
+    {
+        if (!_window.Visible) _window.Visible = true;
+        _window.MoveToFront(); LoadItems();
+        _fileDialog.PopupCentered(new Vector2I(800, 500));
+    }
 
     public override void _Process(double delta)
     {
@@ -165,7 +174,7 @@ public partial class InventoryPanel : Node3D
         _folderName = new LineEdit { PlaceholderText = "Nome da pasta", CustomMinimumSize = new Vector2(280, 0) };
         _newFolderDialog.AddChild(_folderName); _newFolderDialog.Confirmed += CreateFolder; _folderName.TextSubmitted += _ => { _newFolderDialog.Hide(); CreateFolder(); };
         AddChild(_newFolderDialog);
-        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.glb,*.gltf,*.png,*.jpg,*.jpeg,*.webp,*.ogg,*.wav"] };
+        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Importar para o inventário", Filters = ["*.glb,*.gltf ; Meshes e animações 3D", "*.png,*.jpg,*.jpeg,*.webp ; Imagens e texturas", "*.ogg,*.wav ; Sons e áudios"] };
         AddChild(_fileDialog);
         _zipDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.zip"], Title = "Importar pacote de arquivos" }; AddChild(_zipDialog); _zipDialog.FileSelected += UploadZip;
         _fileDialog.FileSelected += Upload;

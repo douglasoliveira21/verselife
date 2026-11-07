@@ -63,6 +63,7 @@ public partial class ViewerUI
         world.AddSubmenuNodeItem("Ambiente (somente neste computador)", environment);
         AddChoiceSubmenu(world, "Clima (somente neste computador)", ["Limpo", "Nublado", "Chuva", "Tempestade", "Neblina"], index => SetWeather(WeatherNames[index]));
         AddMenu(row, "Conteúdo",
+            ("Importar conteúdo…", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OpenImporter(), false),
             ("Construir   B", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
             ("Marketplace e carteira…", () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle(), false),
