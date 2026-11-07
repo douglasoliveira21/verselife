@@ -44,6 +44,8 @@ public sealed class BuildObjectState
 
 public partial class BuildObjectView : Node3D
 {
+    /// A raycast-only layer: ghost/trigger objects stay editable without becoming solid to avatars.
+    private const uint SelectionPhysicsLayer = 1u << 18;
     public BuildObjectState State { get; private set; } = new();
     private int _applyId;
     private Guid? _modelAsset;
@@ -141,11 +143,12 @@ public partial class BuildObjectView : Node3D
         AddObjectLight(material);
         for (var i = 0; i < _faceIds.Count; i++) _faceBase.Add(visual.GetSurfaceOverrideMaterial(i));
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
-        if (!TryGetBool(state.PhysicsJson, "collision", true) || mesh.GetSurfaceCount() == 0) return;
+        if (!TryGetBool(state.PhysicsJson, "collision", true) || mesh.GetSurfaceCount() == 0) { AddSelectionBody(new BoxShape3D { Size = mesh.GetAabb().Size }); return; }
         var trigger = TryGetBool(state.PhysicsJson, "trigger", false);
         var body = new StaticBody3D { Name = trigger ? "Trigger" : "CollisionBody", CollisionLayer = trigger ? 0u : 1u, CollisionMask = trigger ? 0u : 1u };
         body.AddChild(new CollisionShape3D { Shape = shared.Shape ??= mesh.CreateTrimeshShape() });
         AddChild(body);
+        if (trigger) AddSelectionBody(new BoxShape3D { Size = mesh.GetAabb().Size });
     }
 
     public override void _EnterTree() { if (_modelAsset is not null && GetNodeOrNull("Model") is null) RequestModel(); }
@@ -158,6 +161,7 @@ public partial class BuildObjectView : Node3D
         AddChild(proxy);
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, .8f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         AddMeshCollision(state, null, Vector3.One); // a safe box is kept until the imported model arrives
+        if (!TryGetBool(state.PhysicsJson, "collision", true) || CollisionMode(state.PhysicsJson) == "none" || TryGetBool(state.PhysicsJson, "trigger", false)) AddSelectionBody(new BoxShape3D { Size = Vector3.One });
         _modelAsset = AssetIdOf(state.GeometryJson);
         RequestModel();
     }
@@ -236,6 +240,13 @@ public partial class BuildObjectView : Node3D
         AddChild(body); AddChild(debug);
     }
 
+    private void AddSelectionBody(Shape3D shape)
+    {
+        if (GetNodeOrNull<StaticBody3D>("SelectionBody") is not null) return;
+        var body = new StaticBody3D { Name = "SelectionBody", CollisionLayer = SelectionPhysicsLayer, CollisionMask = 0 };
+        body.AddChild(new CollisionShape3D { Shape = shape }); AddChild(body);
+    }
+
     private static MeshInstance3D DebugMesh(Mesh mesh, Transform3D transform) => new()
     {
         Mesh = mesh, Transform = transform, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
@@ -268,8 +279,9 @@ public partial class BuildObjectView : Node3D
         if (PrimMesh.Supports(state.PrimitiveType)) { BuildProcedural(state); return; }
         var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var materialJson = ParseMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = MaterialBuilder.Build(materialJson, null, Textures) }; AddChild(visual); ApplyRange(visual); AddObjectLight(materialJson);
         if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
-        if (!TryGetBool(state.PhysicsJson, "collision", true)) return;
+        if (!TryGetBool(state.PhysicsJson, "collision", true)) { AddSelectionBody(CreateShape(state.PrimitiveType)); return; }
         var body = new StaticBody3D { Name = TryGetBool(state.PhysicsJson, "trigger", false) ? "Trigger" : "CollisionBody" }; body.CollisionLayer = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.CollisionMask = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.AddChild(new CollisionShape3D { Shape = CreateShape(state.PrimitiveType) }); AddChild(body);
+        if (TryGetBool(state.PhysicsJson, "trigger", false)) AddSelectionBody(CreateShape(state.PrimitiveType));
     }
     private void ApplyRange(MeshInstance3D visual)
     {

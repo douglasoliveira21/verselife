@@ -90,6 +90,9 @@ public sealed class BuildCostTests
     public void CollisionProfilesAffectBothAuthorityAndIslandBudget()
     {
         Assert.False(LifeVerse.Shared.Networking.ObstacleField.Blocks("{\"shape\":\"none\"}"));
+        // The island simulation has no downloaded triangle mesh yet. It must not replace a
+        // house's doorways with one solid bounding box; client-side Godot collision remains exact.
+        Assert.False(LifeVerse.Shared.Networking.ObstacleField.Blocks("{\"shape\":\"triangle\"}"));
         var box = BuildCost.Of("mesh", "{}", "{}", "{\"shape\":\"box\"}", "[]");
         Assert.True(BuildCost.Of("mesh", "{}", "{}", "{\"shape\":\"convex\"}", "[]") > box);
         Assert.True(BuildCost.Of("mesh", "{}", "{}", "{\"shape\":\"triangle\"}", "[]") > box);

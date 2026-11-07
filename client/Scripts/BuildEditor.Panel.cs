@@ -196,8 +196,9 @@ public partial class BuildEditor
 
     private string PhysicsFromFields(string existing)
     {
-        var physical = _physMode.Selected == 1;
         var shape = new[] { "none", "box", "convex", "triangle" }.ElementAtOrDefault(_collisionShape.Selected) ?? "box";
+        var physical = _physMode.Selected == 1 && shape != "triangle";
+        if (_physMode.Selected == 1 && shape == "triangle") { _physMode.Select(0); _status.Text = "Malha triangular só funciona como colisão estática."; }
         return PhysicsRules.Write(existing, new PhysicsSettings(!_ghost.ButtonPressed && shape != "none", Trigger: ParseObject(existing)["trigger"] is JsonValue t && t.TryGetValue<bool>(out var isTrigger) && isTrigger, physical,
             NumOr(_physMass, 1f), NumOr(_physFriction, .5f), NumOr(_physBounce, 0f), shape));
     }
