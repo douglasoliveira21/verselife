@@ -58,4 +58,13 @@ public sealed class AssetValidationTests
 
         Assert.True(result.Valid, result.Error);
     }
+
+    [Fact]
+    public async Task Validator_DoesNotConfuseMetadataUrlsWithExternalResources()
+    {
+        var json = GltfLimitsTests.Model(indices: 3).Replace("\"asset\":{\"version\":\"2.0\"}", "\"asset\":{\"version\":\"2.0\",\"generator\":\"https://example.test/exporter\"}");
+        var result = await AssetValidator.InspectAsync("model.glb", "model/gltf-binary", GltfLimitsTests.Glb(json), CancellationToken.None);
+
+        Assert.True(result.Valid, result.Error);
+    }
 }
