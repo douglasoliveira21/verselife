@@ -57,11 +57,11 @@ public sealed partial class GroupsWindow
 
     private Control BuildPanel(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 8); stack.AddChild(page);
+        var scroll = PageScroll(stack, 8, out var page);
         page.AddChild(Heading("Visão geral"));
         _panelLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(420, 0) }; _panelLabel.AddThemeFontSizeOverride("font_size", 16); page.AddChild(_panelLabel);
         page.AddChild(Note("Cada aba do grupo mostra só o que o seu cargo deixa fazer. As regras valem no servidor, não importa o que a tela mostre."));
-        return page;
+        return scroll;
     }
 
     // ---- identity ---------------------------------------------------------------------------------------------------------------------------------------------------

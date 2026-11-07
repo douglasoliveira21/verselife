@@ -208,19 +208,19 @@ public sealed partial class GroupsWindow
 
     private Control BuildChest(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         _chestInfo = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(420, 40) }; _chestInfo.AddThemeFontSizeOverride("font_size", 16); page.AddChild(_chestInfo);
         _ledgerList = List(110); page.AddChild(_ledgerList);
         _giveAmount = Field("Quantas moedas", 10); _giveNote = Field("Recado (opcional)", 120); _give = Act("Contribuir", UiStyle.ButtonKind.Primary, Contribute); page.AddChild(Row(_giveAmount, _giveNote, _give));
         page.AddChild(Note("Contribuir é voluntário e definitivo: as moedas não voltam se você sair do grupo."));
         _takeAmount = Field("Moedas", 10); _takeTo = Choice(); _takeReason = Field("Motivo (obrigatório)", 200); _take = Act("Retirar do cofre", UiStyle.ButtonKind.Secondary, Withdraw); page.AddChild(Row(_takeAmount, _takeTo)); page.AddChild(Row(_takeReason, _take));
         _freezeBox = new CheckBox { Text = "Congelar o cofre (só o líder tira moedas)", FocusMode = Control.FocusModeEnum.None }; _freezeBox.AddThemeFontSizeOverride("font_size", 14); _freezeBox.Toggled += SetFrozen; page.AddChild(_freezeBox);
-        return page;
+        return scroll;
     }
 
     private Control BuildShop(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         var box = new VBoxContainer(); box.AddThemeConstantOverride("separation", 6);
         _shopNote = Note("O grupo ainda não vende nada."); box.AddChild(_shopNote);
         box.AddChild(Heading("Produtos no mercado")); _productList = List(70); _productList.ItemSelected += _ => UpdateEconomyButtons(); box.AddChild(_productList);
@@ -231,7 +231,7 @@ public sealed partial class GroupsWindow
         box.AddChild(Row(_storeIsland, _storeProduct)); box.AddChild(Row(_storeName, _openStore, _closeStore));
         box.AddChild(Note("A loja precisa ficar em terreno do grupo ou em uma ilha sua."));
         page.AddChild(Scroll(box));
-        return page;
+        return scroll;
     }
 
     // ---- hooks for tests ------------------------------------------------------------------------------------------------------------------------------------------

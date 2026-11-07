@@ -350,36 +350,44 @@ public sealed partial class GroupsWindow : Node
 
     // ---- building the window ------------------------------------------------------------------------------------------------------------------------------------
 
-    private static Button Act(string text, UiStyle.ButtonKind kind, Action action) { var b = new Button { Text = text, CustomMinimumSize = new Vector2(0, 38), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None }; UiStyle.StyleButton(b, kind, 10, 6); b.AddThemeFontSizeOverride("font_size", 16); b.Pressed += action; return b; }
-    private static LineEdit Field(string placeholder, int max = 120) { var e = new LineEdit { PlaceholderText = placeholder, MaxLength = max, CustomMinimumSize = new Vector2(0, 38), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; e.AddThemeFontSizeOverride("font_size", 16); return e; }
-    private static OptionButton Choice(params string[] items) { var o = new OptionButton { CustomMinimumSize = new Vector2(0, 38), FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; foreach (var i in items) o.AddItem(i); return o; }
-    private static ItemList List(int height) { var l = new ItemList { CustomMinimumSize = new Vector2(0, height), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill }; l.AddThemeFontSizeOverride("font_size", 16); return l; }
+    private static Button Act(string text, UiStyle.ButtonKind kind, Action action) { var b = new Button { Text = text, CustomMinimumSize = new Vector2(0, 34), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None, TooltipText = text }; UiStyle.StyleButton(b, kind, 8, 5); b.AddThemeFontSizeOverride("font_size", 14); b.Pressed += action; return b; }
+    private static LineEdit Field(string placeholder, int max = 120) { var e = new LineEdit { PlaceholderText = placeholder, MaxLength = max, CustomMinimumSize = new Vector2(0, 34), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; e.AddThemeFontSizeOverride("font_size", 14); return e; }
+    private static OptionButton Choice(params string[] items) { var o = new OptionButton { CustomMinimumSize = new Vector2(0, 34), FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; foreach (var i in items) o.AddItem(i); o.AddThemeFontSizeOverride("font_size", 14); return o; }
+    private static ItemList List(int height) { var l = new ItemList { CustomMinimumSize = new Vector2(0, height), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill }; l.AddThemeFontSizeOverride("font_size", 14); return l; }
     private static Label Heading(string text) { var l = new Label { Text = text }; l.AddThemeFontOverride("font", UiStyle.Bold); l.AddThemeFontSizeOverride("font_size", 18); return l; }
-    private static Label Note(string text) { var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(300, 0) }; l.AddThemeColorOverride("font_color", UiStyle.TextMuted); l.AddThemeFontSizeOverride("font_size", 15); return l; }
+    private static Label Note(string text) { var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; l.AddThemeColorOverride("font_color", UiStyle.TextMuted); l.AddThemeFontSizeOverride("font_size", 14); return l; }
     private static HBoxContainer Row(params Control[] children) { var r = new HBoxContainer(); r.AddThemeConstantOverride("separation", 8); foreach (var c in children) r.AddChild(c); return r; }
     private static ScrollContainer Scroll(VBoxContainer box) { var s = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; box.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; s.AddChild(box); return s; }
+    private static ScrollContainer PageScroll(Control stack, int separation, out VBoxContainer page)
+    {
+        page = new VBoxContainer(); page.AddThemeConstantOverride("separation", separation);
+        var scroll = Scroll(page); scroll.SetAnchorsPreset(Control.LayoutPreset.FullRect); scroll.Visible = false;
+        stack.AddChild(scroll); return scroll;
+    }
 
     private void Build()
     {
         _window = new FloatingWindow("Grupos", icon: "people") { Name = "GroupsWindow", Visible = false };
-        _window.Place(.5f, .5f, -440, -300, 440, 300);
+        // Keep the complete group manager inside a 1366×768 viewer. Individual
+        // pages scroll where needed instead of extending below the window.
+        _window.Place(.5f, .5f, -400, -280, 400, 280);
         var content = _window.Content; content.AddThemeConstantOverride("separation", 8);
         _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 16 }; _tabs.AddTab("Meus grupos", "people"); _tabs.AddTab("Procurar", "search"); _tabs.AddTab("Criar grupo", "plus"); _tabs.AddTab("Avisos"); content.AddChild(_tabs);
-        var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(860, 470) }; content.AddChild(stack);
+        var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(760, 410) }; content.AddChild(stack);
 
         // my groups: the list on the left, the group on the right
         var mine = new HBoxContainer { Visible = true }; mine.SetAnchorsPreset(Control.LayoutPreset.FullRect); mine.AddThemeConstantOverride("separation", 10); stack.AddChild(mine); _minePage = mine;
-        var left = new VBoxContainer { CustomMinimumSize = new Vector2(230, 0) }; mine.AddChild(left); left.AddChild(Heading("Seus grupos"));
-        _mineList = List(380); _mineList.ItemSelected += i => { if (i >= 0 && i < _mine.Count) OpenGroup(_mine[(int)i].Id); }; left.AddChild(_mineList);
-        left.AddChild(Heading("Convites recebidos")); _inviteList = List(70); _inviteList.ItemSelected += _ => UpdateInviteButtons(); left.AddChild(_inviteList);
+        var left = new VBoxContainer { CustomMinimumSize = new Vector2(190, 0) }; mine.AddChild(left); left.AddChild(Heading("Seus grupos"));
+        _mineList = List(220); _mineList.ItemSelected += i => { if (i >= 0 && i < _mine.Count) OpenGroup(_mine[(int)i].Id); }; left.AddChild(_mineList);
+        left.AddChild(Heading("Convites recebidos")); _inviteList = List(52); _inviteList.ItemSelected += _ => UpdateInviteButtons(); left.AddChild(_inviteList);
         _inviteAccept = Act("Aceitar", UiStyle.ButtonKind.Primary, () => AnswerInvite(true)); _inviteDecline = Act("Recusar", UiStyle.ButtonKind.Secondary, () => AnswerInvite(false)); left.AddChild(Row(_inviteAccept, _inviteDecline)); UpdateInviteButtons();
         _detail = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, Visible = false }; mine.AddChild(_detail);
-        _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(400, 0) }; _overview.AddThemeFontSizeOverride("font_size", 16);
-        _groupImage = new TextureRect { CustomMinimumSize = new Vector2(96, 96), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, Visible = false };
+        _overview = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(280, 0), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; _overview.AddThemeFontSizeOverride("font_size", 15);
+        _groupImage = new TextureRect { CustomMinimumSize = new Vector2(72, 72), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, Visible = false };
         _detail.AddChild(Row(_groupImage, _overview));
         _leave = Act("Sair do grupo", UiStyle.ButtonKind.Secondary, LeaveCurrent); _detail.AddChild(_leave);
         _inner = new UiTabs { Flat = true, FontSize = 14 }; foreach (var t in new[] { "Painel", "Chat", "Anúncios", "Eventos", "Terrenos", "Cofre", "Loja", "Membros", "Cargos", "Pedidos", "Histórico", "Ajustes" }) _inner.AddTab(t); _innerBar = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Auto, VerticalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 48) }; _innerBar.AddChild(_inner); _detail.AddChild(_innerBar);
-        var innerStack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 280) }; _detail.AddChild(innerStack);
+        var innerStack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 190) }; _detail.AddChild(innerStack);
         _innerPages.Add(BuildPanel(innerStack)); _innerPages.Add(BuildChat(innerStack)); _innerPages.Add(BuildAnnouncements(innerStack)); _innerPages.Add(BuildEvents(innerStack)); _innerPages.Add(BuildLands(innerStack)); _innerPages.Add(BuildChest(innerStack)); _innerPages.Add(BuildShop(innerStack)); _innerPages.Add(BuildMembers(innerStack)); _innerPages.Add(BuildRoles(innerStack)); _innerPages.Add(BuildRequests(innerStack)); _innerPages.Add(BuildAudit(innerStack)); _innerPages.Add(BuildSettings(innerStack));
         _inner.TabChanged += i => { for (var p = 0; p < _innerPages.Count; p++) _innerPages[p].Visible = p == i; };
         _innerPages[0].Visible = true;
@@ -387,11 +395,12 @@ public sealed partial class GroupsWindow : Node
         // search
         var search = new VBoxContainer { Visible = false }; search.SetAnchorsPreset(Control.LayoutPreset.FullRect); search.AddThemeConstantOverride("separation", 8); stack.AddChild(search); _searchPage = search;
         _query = Field("Nome, sigla ou assunto"); _query.TextSubmitted += _ => Search(); search.AddChild(Row(_query, Act("Procurar", UiStyle.ButtonKind.Primary, () => Search())));
-        _foundList = List(300); _foundList.ItemSelected += _ => UpdateSearchButtons(); search.AddChild(_foundList);
+        _foundList = List(220); _foundList.ItemSelected += _ => UpdateSearchButtons(); search.AddChild(_foundList);
         _join = Act("Entrar", UiStyle.ButtonKind.Primary, JoinSelected); _cancelRequest = Act("Cancelar meu pedido", UiStyle.ButtonKind.Secondary, CancelRequestSelected); search.AddChild(Row(_join, _cancelRequest));
 
         // create
-        var create = new VBoxContainer { Visible = false }; create.SetAnchorsPreset(Control.LayoutPreset.FullRect); create.AddThemeConstantOverride("separation", 8); stack.AddChild(create); _createPage = create;
+        var create = new VBoxContainer(); create.AddThemeConstantOverride("separation", 8);
+        var createScroll = Scroll(create); createScroll.SetAnchorsPreset(Control.LayoutPreset.FullRect); createScroll.Visible = false; stack.AddChild(createScroll); _createPage = createScroll;
         _newName = Field("Nome do grupo (3 a 40 caracteres)", 40); _newTag = Field("Sigla (2 a 5 letras ou números, opcional)", 5); _newDescription = Field("Descrição (até 600 caracteres)", 600);
         _newPrivacy = Choice("Público (aparece na busca)", "Privado (só por convite)"); _newPolicy = Choice("Entrada livre", "Entra com aprovação", "Só por convite"); _newPolicy.Select(1);
         _newPrivacy.ItemSelected += i => { _newPolicy.Disabled = i == 1; if (i == 1) _newPolicy.Select(2); };
@@ -400,7 +409,7 @@ public sealed partial class GroupsWindow : Node
         create.AddChild(Note("Você será o líder. Depois dá para criar cargos, definir permissões, convidar e aprovar pedidos."));
         create.AddChild(Act("Criar grupo", UiStyle.ButtonKind.Primary, Create));
 
-        _status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(500, 0) }; _status.AddThemeColorOverride("font_color", UiStyle.AccentText); _status.AddThemeFontSizeOverride("font_size", 16); content.AddChild(_status);
+        _status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; _status.AddThemeColorOverride("font_color", UiStyle.AccentText); _status.AddThemeFontSizeOverride("font_size", 15); content.AddChild(_status);
         _noticesPage = BuildNotices(stack);
         _tabs.TabChanged += i => { _minePage.Visible = i == 0; _searchPage.Visible = i == 1; _createPage.Visible = i == 2; _noticesPage.Visible = i == 3; if (i == 1) Search(); if (i == 3) LoadNotices(); };
         AddChild(_window);
@@ -408,43 +417,43 @@ public sealed partial class GroupsWindow : Node
 
     private Control BuildMembers(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         _memberList = List(150); _memberList.ItemSelected += _ => UpdateButtons(); page.AddChild(_memberList);
         _kick = Act("Expulsar", UiStyle.ButtonKind.Secondary, KickSelected); _ban = Act("Banir", UiStyle.ButtonKind.Secondary, () => BanSelected()); _mute = Act("Silenciar 30 min / liberar", UiStyle.ButtonKind.Secondary, () => MuteSelected());
         page.AddChild(Row(_kick, _ban, _mute));
         _roleChoice = Choice(); _assign = Act("Dar este cargo", UiStyle.ButtonKind.Primary, AssignSelected); page.AddChild(Row(_roleChoice, _assign));
         _inviteName = Field("Nome de quem convidar"); _invite = Act("Convidar", UiStyle.ButtonKind.Primary, InviteByName); _inviteName.TextSubmitted += _ => InviteByName(); page.AddChild(Row(_inviteName, _invite));
-        return page;
+        return scroll;
     }
 
     private Control BuildRoles(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         _roleList = List(90); _roleList.ItemSelected += _ => ShowRole(); page.AddChild(_roleList);
         _roleName = Field("Nome do cargo", 32); _roleRank = Field("Nível (1 a 99)", 2); _roleRank.CustomMinimumSize = new Vector2(120, 38); _roleRank.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin; page.AddChild(Row(_roleName, _roleRank));
         var grid = new GridContainer { Columns = 2 }; foreach (var (key, label, help) in GroupPermissions.All) { var box = new CheckBox { Text = label, TooltipText = help, FocusMode = Control.FocusModeEnum.None }; box.AddThemeFontSizeOverride("font_size", 14); grid.AddChild(box); _permissionBoxes[key] = box; }
         page.AddChild(Scroll(new VBoxContainer { Name = "PermissionHolder" })); page.GetChild<ScrollContainer>(page.GetChildCount() - 1).GetChild(0).AddChild(grid); page.GetChild<ScrollContainer>(page.GetChildCount() - 1).CustomMinimumSize = new Vector2(0, 90);
         _roleCreate = Act("Criar cargo", UiStyle.ButtonKind.Primary, CreateRole); _roleSave = Act("Salvar", UiStyle.ButtonKind.Secondary, SaveRole); _roleDelete = Act("Apagar", UiStyle.ButtonKind.Secondary, DeleteRole); page.AddChild(Row(_roleCreate, _roleSave, _roleDelete));
         page.AddChild(Note("Cada cargo tem um nível: só se age sobre quem tem nível menor que o seu, e só se dá permissões que você mesmo tem."));
-        return page;
+        return scroll;
     }
 
     private Control BuildRequests(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         page.AddChild(Heading("Pedidos de entrada")); _requestList = List(100); _requestList.ItemSelected += _ => UpdateButtons(); page.AddChild(_requestList);
         _approve = Act("Aprovar", UiStyle.ButtonKind.Primary, () => DecideSelected(true)); _deny = Act("Recusar", UiStyle.ButtonKind.Secondary, () => DecideSelected(false)); page.AddChild(Row(_approve, _deny));
         page.AddChild(Heading("Banidos")); _banList = List(80); _banList.ItemSelected += _ => UpdateButtons(); page.AddChild(_banList);
         _unban = Act("Desbanir", UiStyle.ButtonKind.Secondary, UnbanSelected); page.AddChild(_unban);
-        return page;
+        return scroll;
     }
 
     private Control BuildAudit(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         page.AddChild(Note("O que foi feito na administração do grupo, do mais novo para o mais antigo. Só quem tem permissão enxerga.")); _auditList = List(230); page.AddChild(_auditList);
         _auditMore = Act("Carregar mais antigos", UiStyle.ButtonKind.Secondary, () => LoadAudit(true)); _auditMore.Visible = false; page.AddChild(_auditMore);
-        return page;
+        return scroll;
     }
 
     private Control BuildSettings(Control stack)

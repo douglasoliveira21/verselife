@@ -242,31 +242,31 @@ public sealed partial class GroupsWindow
 
     private Control BuildChat(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         _chatList = List(190); _chatList.ItemSelected += _ => UpdateCommunicationButtons(); page.AddChild(_chatList);
         _chatInput = Field("Escreva uma mensagem para o grupo", 1000); _chatSend = Act("Enviar", UiStyle.ButtonKind.Primary, SendChat); _chatSend.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd; _chatInput.TextSubmitted += _ => SendChat();
         page.AddChild(Row(_chatInput, _chatSend));
         _chatDelete = Act("Apagar mensagem escolhida", UiStyle.ButtonKind.Secondary, DeleteChatSelected);
         _notifyOff = new CheckBox { Text = "Silenciar avisos deste grupo", FocusMode = Control.FocusModeEnum.None }; _notifyOff.AddThemeFontSizeOverride("font_size", 14); _notifyOff.Toggled += SetNotificationsOff;
         page.AddChild(Row(_chatDelete, _notifyOff));
-        return page;
+        return scroll;
     }
 
     private Control BuildAnnouncements(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         _announceList = List(80); _announceList.ItemSelected += _ => UpdateCommunicationButtons(); page.AddChild(_announceList);
         _announceBody = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(400, 60) }; _announceBody.AddThemeFontSizeOverride("font_size", 15); page.AddChild(_announceBody);
         _annPin = Act("Fixar", UiStyle.ButtonKind.Secondary, TogglePinned); _annDelete = Act("Apagar", UiStyle.ButtonKind.Secondary, DeleteAnnouncement); page.AddChild(Row(_annPin, _annDelete));
         _annTitle = Field("Título do anúncio (até 80 caracteres)", 80); page.AddChild(_annTitle);
         _annText = new TextEdit { PlaceholderText = "Texto do anúncio (até 2000 caracteres)", CustomMinimumSize = new Vector2(0, 60), WrapMode = TextEdit.LineWrappingMode.Boundary }; _annText.AddThemeFontSizeOverride("font_size", 15); page.AddChild(_annText);
         _annPinned = new CheckBox { Text = "Fixar no topo", FocusMode = Control.FocusModeEnum.None }; _annPost = Act("Publicar para todos", UiStyle.ButtonKind.Primary, PostAnnouncement); page.AddChild(Row(_annPinned, _annPost));
-        return page;
+        return scroll;
     }
 
     private Control BuildEvents(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         page.AddChild(Note("Eventos que só os membros do grupo veem e podem participar."));
         _eventList = List(70); _eventList.ItemSelected += _ => ShowEvent(); page.AddChild(_eventList);
         _eventBody = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(400, 50) }; _eventBody.AddThemeFontSizeOverride("font_size", 15); page.AddChild(_eventBody);
@@ -275,16 +275,16 @@ public sealed partial class GroupsWindow
         var now = DateTime.Now.AddHours(1); _evStart = Field("dd/MM/aaaa hh:mm", 16); _evStart.Text = new DateTime(now.Year, now.Month, now.Day, now.Hour, 0, 0).ToString("dd/MM/yyyy HH:mm", Pt);
         _evMinutes = Field("Duração (min)", 5); _evMinutes.Text = "120"; _evCapacity = Field("Vagas", 4); _evCapacity.Text = "50";
         _evCreate = Act("Criar evento", UiStyle.ButtonKind.Primary, CreateEvent); page.AddChild(Row(_evStart, _evMinutes, _evCapacity, _evCreate));
-        return page;
+        return scroll;
     }
 
     private Control BuildNotices(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 8); stack.AddChild(page);
+        var scroll = PageScroll(stack, 8, out var page);
         page.AddChild(Note("Anúncios e eventos dos seus grupos, guardados até você ler. ● marca o que ainda não foi lido."));
         _noticeList = List(320); page.AddChild(_noticeList);
         _noticesRead = Act("Marcar tudo como lido", UiStyle.ButtonKind.Primary, MarkNoticesRead); page.AddChild(_noticesRead);
-        return page;
+        return scroll;
     }
 
     // ---- hooks for tests --------------------------------------------------------------------------------------------------------------------------------------

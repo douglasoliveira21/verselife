@@ -33,7 +33,7 @@ public static class GltfLimits
             if (total > bytes.Length || type != 0x4E4F534A || length == 0 || 20L + length > bytes.Length) { error = "The GLB file is damaged (its JSON part is missing or cut off)."; return null; }
             json = System.Text.Encoding.UTF8.GetString(bytes, 20, (int)length);
         }
-        else json = System.Text.Encoding.UTF8.GetString(bytes);
+        else json = DecodeJson(bytes);
 
         try
         {
@@ -62,6 +62,12 @@ public static class GltfLimits
             return new GltfStats(meshes, (int)Math.Min(triangles, int.MaxValue), Count("materials"), Count("textures"), Count("images"), Count("nodes"), Count("animations"));
         }
         catch (JsonException) { error = "The model's JSON is not valid."; return null; }
+    }
+
+    private static string DecodeJson(byte[] bytes)
+    {
+        var offset = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
+        return System.Text.Encoding.UTF8.GetString(bytes, offset, bytes.Length - offset);
     }
 
     /// <summary>Null when the model is within the limits, otherwise a message the person can act on.</summary>

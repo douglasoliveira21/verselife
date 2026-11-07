@@ -229,7 +229,7 @@ public partial class ModelImportDialog : Node
         Clear();
         _placement = PlacementSize;
         _path = path;
-        var report = _report = ModelInspector.Inspect(bytes);
+        var report = _report = ModelInspector.Inspect(path, bytes);
         var name = System.IO.Path.GetFileName(path);
         _fileName.Text = name;
         if (report.Scene is { } scene)

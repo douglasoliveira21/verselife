@@ -32,4 +32,30 @@ public sealed class AssetValidationTests
         Assert.True(accepted.Valid);
         Assert.Equal(32, accepted.Width);
     }
+
+    [Fact]
+    public async Task Validator_ExplainsThatStandaloneGltfCannotReferenceNeighbouringFiles()
+    {
+        var gltf = System.Text.Encoding.UTF8.GetBytes("""
+            { "asset": { "version": "2.0" }, "buffers": [{ "uri": "mesh.bin", "byteLength": 12 }] }
+            """);
+
+        var result = await AssetValidator.InspectAsync("house.gltf", "model/gltf+json", gltf, CancellationToken.None);
+
+        Assert.False(result.Valid);
+        Assert.Contains("external files", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Validator_AcceptsAUtf8BomInAValidGltfDocument()
+    {
+        var json = GltfLimitsTests.Model(indices: 3);
+        var bytes = new byte[3 + System.Text.Encoding.UTF8.GetByteCount(json)];
+        bytes[0] = 0xEF; bytes[1] = 0xBB; bytes[2] = 0xBF;
+        System.Text.Encoding.UTF8.GetBytes(json, bytes.AsSpan(3));
+
+        var result = await AssetValidator.InspectAsync("bom.gltf", "model/gltf+json", bytes, CancellationToken.None);
+
+        Assert.True(result.Valid, result.Error);
+    }
 }

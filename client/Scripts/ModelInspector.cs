@@ -9,14 +9,26 @@ public sealed record ModelReport(bool Valid, string? Error, Vector3 Size, int Tr
 
 public static class ModelInspector
 {
-    public static ModelReport Inspect(byte[] bytes)
+    public static ModelReport Inspect(byte[] bytes) => Inspect(string.Empty, bytes);
+
+    /// <summary>
+    /// Inspects a model selected from disk. A textual glTF is first packed with its local
+    /// .bin and image files, exactly as it will be uploaded, then inspected as a GLB.
+    /// </summary>
+    public static ModelReport Inspect(string path, byte[] bytes)
     {
         ModelReport Fail(string error) => new(false, error, Vector3.Zero, 0, 0, 0, 0, 0, null);
         if (bytes.Length == 0) return Fail("O arquivo está vazio.");
         if (bytes.Length > ModelLimits.MaxBytes) return Fail(ModelLimits.Check(1, 0, 0, 0, bytes.Length)!);
+        var extension = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        if (extension == ".gltf")
+        {
+            if (!GltfUploadPackager.TryPack(path, bytes, out bytes, out var packageError)) return Fail(packageError ?? "Não foi possível reunir os arquivos do glTF.");
+            extension = ".glb";
+        }
         var document = new GltfDocument(); var state = new GltfState();
-        // no base path: a model can only use what it carries inside, never files next to it
-        if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) return Fail("O arquivo não é um modelo glTF/GLB válido.");
+        // The packer produces a self-contained GLB, so no external path is resolved by Godot.
+        if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) return Fail("O arquivo não é um modelo GLB válido.");
         if (document.GenerateScene(state) is not Node3D scene) return Fail("O modelo não tem uma cena para mostrar.");
 
         var triangles = 0; var parts = 0;

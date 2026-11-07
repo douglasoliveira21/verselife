@@ -41,6 +41,7 @@ public static class AssetValidator
             if (extension == ".glb" && (bytes.Length < 12 || bytes[0] != (byte)'g' || bytes[1] != (byte)'l' || bytes[2] != (byte)'T' || bytes[3] != (byte)'F')) return new(false, "Invalid GLB header.", contentType, null, null, null);
             if (extension == ".gltf" && !LooksLikeJson(bytes)) return new(false, "Invalid glTF JSON.", contentType, null, null, null);
             if (ContainsAscii(bytes, "script") || ContainsAscii(bytes, "javascript")) return new(false, "Embedded scripts are not permitted.", contentType, null, null, null);
+            if (extension == ".gltf" && GltfExternalReferenceProblem(bytes) is { } referenceProblem) return new(false, referenceProblem, contentType, null, null, null);
             if (ContainsAscii(bytes, "http://") || ContainsAscii(bytes, "https://") || ContainsAscii(bytes, "file://") || ContainsAscii(bytes, "../") || ContainsAscii(bytes, "..\\")) return new(false, "External or unsafe glTF references are not permitted.", contentType, null, null, null);
             var primitives = CountAscii(bytes, "primitives"); if (primitives > 10000) return new(false, "Mesh complexity exceeds the primitive limit.", contentType, null, null, null);
             var stats = GltfLimits.Inspect(bytes, extension == ".glb", out var statsError); if (stats is null) return new(false, statsError ?? "The model could not be read.", contentType, null, null, null); if (GltfLimits.Check(stats) is { } limitError) return new(false, limitError, contentType, null, null, null);
@@ -60,7 +61,27 @@ public static class AssetValidator
         }
         return new(false, "Only GLB/glTF, PNG/JPEG/WebP, OGG and WAV are accepted.", contentType, null, null, null);
     }
-    private static bool LooksLikeJson(byte[] bytes) { var text = System.Text.Encoding.UTF8.GetString(bytes.AsSpan(0, Math.Min(bytes.Length, 4096))); return text.TrimStart().StartsWith('{') && text.Contains("\"asset\"", StringComparison.Ordinal); }
+    private static bool LooksLikeJson(byte[] bytes) { var text = System.Text.Encoding.UTF8.GetString(bytes.AsSpan(0, Math.Min(bytes.Length, 4096))); return text.TrimStart('\uFEFF', ' ', '\t', '\r', '\n').StartsWith('{') && text.Contains("\"asset\"", StringComparison.Ordinal); }
+    private static string? GltfExternalReferenceProblem(byte[] bytes)
+    {
+        try
+        {
+            var offset = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
+            using var document = System.Text.Json.JsonDocument.Parse(System.Text.Encoding.UTF8.GetString(bytes, offset, bytes.Length - offset));
+            foreach (var collection in new[] { "buffers", "images" })
+            {
+                if (!document.RootElement.TryGetProperty(collection, out var entries) || entries.ValueKind != System.Text.Json.JsonValueKind.Array) continue;
+                foreach (var entry in entries.EnumerateArray())
+                    if (entry.TryGetProperty("uri", out var uri) && uri.ValueKind == System.Text.Json.JsonValueKind.String && !uri.GetString()!.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                        return "This glTF references external files. Upload a self-contained GLB or a glTF with embedded buffers and textures.";
+            }
+            return null;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return "The model's JSON is not valid.";
+        }
+    }
     private static bool Has(byte[] bytes, string value) => bytes.Length >= value.Length && System.Text.Encoding.ASCII.GetString(bytes.AsSpan(0, Math.Min(bytes.Length, 64))).Contains(value, StringComparison.Ordinal);
     private static bool ContainsAscii(byte[] bytes, string value) => System.Text.Encoding.ASCII.GetString(bytes).Contains(value, StringComparison.OrdinalIgnoreCase);
     private static int CountAscii(byte[] bytes, string value) { var text = System.Text.Encoding.ASCII.GetString(bytes); var count = 0; for (var index = 0; (index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0; index += value.Length) count++; return count; }

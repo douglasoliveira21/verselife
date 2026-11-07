@@ -310,7 +310,13 @@ public partial class InventoryPanel : Node3D
     private static string ErrorText(long code, byte[] body)
     {
         var error = string.Empty;
-        try { using var document = JsonDocument.Parse(Encoding.UTF8.GetString(body)); if (document.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String) error = e.GetString() ?? string.Empty; }
+        try
+        {
+            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(body));
+            if (document.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String) error = e.GetString() ?? string.Empty;
+            else if (document.RootElement.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object && errors.TryGetProperty("file", out var fileErrors) && fileErrors.ValueKind == JsonValueKind.Array)
+                error = fileErrors.EnumerateArray().FirstOrDefault().GetString() ?? string.Empty;
+        }
         catch (JsonException) { }
         return error switch
         {
@@ -658,6 +664,11 @@ public partial class InventoryPanel : Node3D
         var session = GetNode<SessionManager>("/root/SessionManager");
         var bytes = Godot.FileAccess.GetFileAsBytes(path);
         var filename = System.IO.Path.GetFileName(path);
+        if (System.IO.Path.GetExtension(filename).Equals(".gltf", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!GltfUploadPackager.TryPack(path, bytes, out bytes, out var packageError)) { _status.Text = packageError ?? "Não foi possível reunir os arquivos do glTF."; return; }
+            filename = System.IO.Path.ChangeExtension(filename, ".glb");
+        }
         var category = CategoryFor(filename);
         var boundary = "----LifeVerse" + Guid.NewGuid().ToString("N");
         var head = Encoding.UTF8.GetBytes($"--{boundary}\r\nContent-Disposition: form-data; name=category\r\n\r\n{category}\r\n--{boundary}\r\nContent-Disposition: form-data; name=file; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n");

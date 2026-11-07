@@ -119,7 +119,7 @@ public sealed partial class GroupsWindow
 
     private Control BuildLands(Control stack)
     {
-        var page = new VBoxContainer { Visible = false }; page.SetAnchorsPreset(Control.LayoutPreset.FullRect); page.AddThemeConstantOverride("separation", 6); stack.AddChild(page);
+        var scroll = PageScroll(stack, 6, out var page);
         _landNote = Note("O grupo ainda não tem terrenos."); page.AddChild(_landNote);
         _landList = List(80); _landList.ItemSelected += _ => ShowLand(); page.AddChild(_landList);
         _landHeir = Choice(); _landRelease = Act("Devolver a um membro", UiStyle.ButtonKind.Secondary, ReleaseLand); page.AddChild(Row(_landHeir, _landRelease));
@@ -128,7 +128,7 @@ public sealed partial class GroupsWindow
         _grantList = List(50); _grantList.ItemSelected += _ => UpdateButtons(); page.AddChild(_grantList);
         _grantGroup = Choice(); _grantKind = Choice("Pode entrar", "Pode construir"); _grantAdd = Act("Dar acesso", UiStyle.ButtonKind.Primary, GrantAccess); _grantRemove = Act("Retirar", UiStyle.ButtonKind.Secondary, RevokeAccess);
         page.AddChild(Row(_grantGroup, _grantKind)); page.AddChild(Row(_grantAdd, _grantRemove));
-        return page;
+        return scroll;
     }
 
     // ---- hooks for tests ---------------------------------------------------------------------------------------------------------------------------------------------
