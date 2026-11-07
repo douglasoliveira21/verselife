@@ -328,6 +328,7 @@ public partial class InventoryPanel : Node3D
             "not_found" => "Isso não existe mais, ou não é seu. A lista foi atualizada.",
             "invalid_move" => "Nada para mover (ou itens demais de uma vez).",
             "item_busy" => "Esse item está em uso agora (oferta ou venda).",
+            _ when !string.IsNullOrWhiteSpace(error) => $"Inventário: {error}",
             _ => $"Inventário: HTTP {code}"
         };
     }
@@ -671,7 +672,10 @@ public partial class InventoryPanel : Node3D
         }
         var category = CategoryFor(filename);
         var boundary = "----LifeVerse" + Guid.NewGuid().ToString("N");
-        var head = Encoding.UTF8.GetBytes($"--{boundary}\r\nContent-Disposition: form-data; name=category\r\n\r\n{category}\r\n--{boundary}\r\nContent-Disposition: form-data; name=file; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n");
+        // Strict multipart parsers require quoted names. Keep the header filename ASCII as
+        // non-ASCII desktop filenames otherwise make the entire request malformed.
+        var headerFilename = new string(filename.Select(ch => ch is >= ' ' and <= '~' && ch is not '"' and not '\\' ? ch : '_').ToArray());
+        var head = Encoding.UTF8.GetBytes($"--{boundary}\r\nContent-Disposition: form-data; name=\"category\"\r\n\r\n{category}\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{headerFilename}\"\r\nContent-Type: application/octet-stream\r\n\r\n");
         var tail = Encoding.UTF8.GetBytes($"\r\n--{boundary}--\r\n");
         var payload = new byte[head.Length + bytes.Length + tail.Length];
         Buffer.BlockCopy(head, 0, payload, 0, head.Length); Buffer.BlockCopy(bytes, 0, payload, head.Length, bytes.Length); Buffer.BlockCopy(tail, 0, payload, head.Length + bytes.Length, tail.Length);
