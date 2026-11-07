@@ -100,13 +100,16 @@ public static class ViewerTheme
         theme.SetColor("default_color", "RichTextLabel", UiStyle.Text);
         theme.SetStylebox("normal", "RichTextLabel", empty);
 
-        // menus
-        var popup = UiStyle.Box(new Color(UiStyle.PanelFillSolid, .97f), UiStyle.BorderSoft, UiStyle.Radius, 1, 6, 6, 14);
+        // Menus must remain fully opaque: a translucent popup over a bright 3D scene
+        // makes labels and the submenu arrow look soft and hard to read.  Use a dark
+        // solid surface, a crisp outline and slightly roomier items instead.
+        var popup = UiStyle.Box(new Color("#111920"), UiStyle.BorderBright, UiStyle.Radius, 1, 8, 7, 18);
         theme.SetStylebox("panel", "PopupMenu", popup);
-        theme.SetStylebox("hover", "PopupMenu", UiStyle.Box(UiStyle.AccentFill, UiStyle.Accent, UiStyle.RadiusSmall, 1, 6, 4));
-        theme.SetColor("font_color", "PopupMenu", UiStyle.Text); theme.SetColor("font_hover_color", "PopupMenu", Colors.White); theme.SetColor("font_disabled_color", "PopupMenu", UiStyle.TextDisabled);
+        theme.SetStylebox("hover", "PopupMenu", UiStyle.Box(UiStyle.AccentFillHover, UiStyle.Accent, UiStyle.RadiusSmall, 1, 8, 5));
+        theme.SetColor("font_color", "PopupMenu", Colors.White); theme.SetColor("font_hover_color", "PopupMenu", Colors.White); theme.SetColor("font_disabled_color", "PopupMenu", UiStyle.TextDisabled);
         theme.SetColor("font_separator_color", "PopupMenu", UiStyle.TextMuted);
-        theme.SetConstant("v_separation", "PopupMenu", 8); theme.SetConstant("item_start_padding", "PopupMenu", 10); theme.SetConstant("item_end_padding", "PopupMenu", 10);
+        theme.SetFont("font", "PopupMenu", UiStyle.Medium); theme.SetFontSize("font_size", "PopupMenu", 16);
+        theme.SetConstant("v_separation", "PopupMenu", 9); theme.SetConstant("item_start_padding", "PopupMenu", 14); theme.SetConstant("item_end_padding", "PopupMenu", 14);
         theme.SetStylebox("separator", "PopupMenu", new StyleBoxLine { Color = UiStyle.Divider, Thickness = 1 });
 
         theme.SetStylebox("normal", "MenuBar", new StyleBoxEmpty { ContentMarginLeft = 12, ContentMarginRight = 12 });

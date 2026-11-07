@@ -91,7 +91,7 @@ public sealed partial class GroupsWindow : Node
         "bad_name" => "O nome precisa ter de 3 a 40 caracteres (cargos: de 2 a 32).",
         "bad_tag" => "A sigla tem de 2 a 5 letras ou números.",
         "bad_description" => "A descrição passa de 600 caracteres.",
-        "bad_identity" => "Cor, emblema ou imagem inválidos (a imagem precisa ser https).",
+        "bad_identity" => "Cor ou emblema inválido, ou a imagem não é uma textura sua do inventário.",
         "bad_policy" => "Um grupo privado só recebe gente por convite.",
         "bad_rank" => "O nível do cargo vai de 1 a 99.",
         "bad_permissions" => "Permissão desconhecida.",

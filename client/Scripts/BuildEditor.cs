@@ -419,6 +419,11 @@ public partial class BuildEditor : Node3D
     private void DeleteSelection()
     {
         if (_selection.Count == 0 || SelectionProtected()) return;
+        if (_selection.FirstOrDefault(view => !IsOwner(view.State)) is { } someoneElses)
+        {
+            _status.Text = $"“{someoneElses.State.Name}” não é seu e não pode ser excluído.";
+            return;
+        }
         var entry = new HistoryEntry("delete", []);
         foreach (var view in _selection.ToList())
         {
@@ -546,6 +551,8 @@ public partial class BuildEditor : Node3D
 
     private bool IsMine(BuildObjectState state) => _session.UserId == Guid.Empty || state.CreatorUserId == _session.UserId;
 
+    private bool IsOwner(BuildObjectState state) => _session.UserId == Guid.Empty || state.OwnerUserId == _session.UserId;
+
     private void OnRejected(string code)
     {
         _createCallbacks.Clear(); RollBackHistoryOfRefusal(); SettleAll();
@@ -563,6 +570,24 @@ public partial class BuildEditor : Node3D
     }
 
     public void SelectForTesting(Guid id, bool additive = false) { if (_objects.TryGetValue(Resolve(id), out var view)) SelectView(view, additive); }
+    /// Selects an object from the world context menu without opening the build window.
+    public void SelectFromContext(Guid id)
+    {
+        if (!_objects.ContainsKey(Resolve(id))) return;
+        SelectIds([id]);
+        if (_objects.TryGetValue(Resolve(id), out var view)) _status.Text = IsOwner(view.State)
+            ? $"“{view.State.Name}” selecionado. Pressione Delete para excluir."
+            : $"“{view.State.Name}” selecionado. Você não é o proprietário.";
+    }
+
+    /// The client offers deletion only to the owner. The backend repeats this check.
+    public void DeleteOwnedObject(Guid id)
+    {
+        if (!_objects.TryGetValue(Resolve(id), out var view)) return;
+        SelectIds([id]);
+        if (!IsOwner(view.State)) { _status.Text = $"“{view.State.Name}” não é seu e não pode ser excluído."; return; }
+        DeleteSelection();
+    }
     public void LoadStatesForTesting(IEnumerable<BuildObjectState> states) { foreach (var state in states) AddOrUpdate(state); }
     public BuildObjectView? ViewForTesting(Guid id) => _objects.GetValueOrDefault(Resolve(id));
     public int ObjectCountForTesting => _objects.Count;

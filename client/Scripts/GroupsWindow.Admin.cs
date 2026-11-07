@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Godot;
+using LifeVerse.Client.Autoloads;
 using LifeVerse.Shared.Groups;
 
 namespace LifeVerse.Client.Scripts;
@@ -19,6 +20,11 @@ public sealed partial class GroupsWindow
     private TextureRect _groupImage = null!;
     private OptionButton _newEmblem = null!, _setEmblem = null!;
     private LineEdit _newImage = null!, _setImage = null!;
+    private ConfirmationDialog? _imagePicker;
+    private FileDialog? _imageUpload;
+    private ItemList? _imageChoices;
+    private LineEdit? _imageTarget;
+    private readonly List<(Guid AssetId, string Name)> _imageAssets = [];
     private ItemList _inviteList = null!;
     private Button _inviteAccept = null!, _inviteDecline = null!, _cancelRequest = null!, _auditMore = null!;
 
@@ -62,23 +68,122 @@ public sealed partial class GroupsWindow
 
     private void AddIdentityToCreate(VBoxContainer create)
     {
-        _newEmblem = Choice(EmblemNames); _newImage = Field("Endereço da imagem do grupo (https, opcional)", 512);
-        create.AddChild(Row(new Label { Text = "Emblema" }, _newEmblem)); create.AddChild(_newImage);
+        _newEmblem = Choice(EmblemNames); _newImage = ImageField();
+        create.AddChild(Row(new Label { Text = "Emblema" }, _newEmblem)); AddImageControls(create, _newImage);
     }
 
     private void AddIdentityToSettings(VBoxContainer box)
     {
-        _setEmblem = Choice(EmblemNames); _setImage = Field("Endereço da imagem do grupo (https; vazio tira a imagem)", 512);
-        box.AddChild(Row(new Label { Text = "Emblema" }, _setEmblem)); box.AddChild(_setImage);
+        _setEmblem = Choice(EmblemNames); _setImage = ImageField();
+        box.AddChild(Row(new Label { Text = "Emblema" }, _setEmblem)); AddImageControls(box, _setImage);
     }
 
-    private void FillIdentity(GroupCardData g) { _setEmblem.Select(Math.Max(Array.IndexOf(GroupRules.Emblems, g.Emblem), 0)); _setImage.Text = g.ImageUrl; }
+    private static LineEdit ImageField() => new() { PlaceholderText = "Sem imagem selecionada", Editable = false, CustomMinimumSize = new Vector2(0, 38), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "A imagem do grupo vem do seu inventário." };
 
-    /// <summary>Shows the picture of the group when it has one; a bad address or file just leaves the picture out.</summary>
+    private void AddImageControls(VBoxContainer box, LineEdit target)
+    {
+        var pick = Act("Escolher do inventário", UiStyle.ButtonKind.Secondary, () => OpenImagePicker(target));
+        var upload = Act("Enviar imagem", UiStyle.ButtonKind.Secondary, () => UploadImage(target));
+        var clear = Act("Remover", UiStyle.ButtonKind.Secondary, () => target.Text = string.Empty);
+        box.AddChild(Row(target, pick)); box.AddChild(Row(upload, clear));
+        box.AddChild(Note("PNG, JPG ou WebP. Ao enviar, a imagem entra primeiro no seu inventário e só então pode ser usada pelo grupo."));
+    }
+
+    private static string AssetReference(Guid assetId) => $"asset://{assetId}";
+
+    private void EnsureImagePicker()
+    {
+        if (_imagePicker is not null) return;
+        _imagePicker = new ConfirmationDialog { Title = "Escolher imagem do inventário", MinSize = new Vector2I(500, 400) };
+        _imageChoices = new ItemList { CustomMinimumSize = new Vector2(460, 280) }; _imagePicker.AddChild(_imageChoices);
+        _imagePicker.GetOkButton().Text = "Usar imagem";
+        _imagePicker.Confirmed += () =>
+        {
+            var selected = _imageChoices.GetSelectedItems();
+            if (_imageTarget is null || selected.Length == 0 || selected[0] >= _imageAssets.Count) return;
+            _imageTarget.Text = AssetReference(_imageAssets[selected[0]].AssetId);
+            Say($"Imagem “{_imageAssets[selected[0]].Name}” selecionada para o grupo.");
+        };
+        AddChild(_imagePicker);
+    }
+
+    private void OpenImagePicker(LineEdit target)
+    {
+        _imageTarget = target;
+        Call(Godot.HttpClient.Method.Get, "/api/v1/inventory/items?category=textures&page=1&pageSize=100", null, (status, body) =>
+        {
+            if (status is < 200 or >= 300) { Say("Não foi possível abrir as imagens do inventário."); return; }
+            try
+            {
+                using var document = JsonDocument.Parse(body);
+                _imageAssets.Clear();
+                foreach (var item in document.RootElement.GetProperty("items").EnumerateArray())
+                {
+                    var mime = Str(item, "mimeType"); var id = IdOf(item, "assetId");
+                    if (id != Guid.Empty && mime is "image/png" or "image/jpeg" or "image/webp") _imageAssets.Add((id, Str(item, "name")));
+                }
+            }
+            catch (JsonException) { Say("A lista de imagens do inventário está inválida."); return; }
+            EnsureImagePicker(); _imageChoices!.Clear();
+            foreach (var image in _imageAssets) _imageChoices.AddItem(image.Name);
+            if (_imageAssets.Count == 0) { Say("Você ainda não tem imagens no inventário. Use “Enviar imagem”."); return; }
+            _imagePicker!.PopupCentered();
+        });
+    }
+
+    private void UploadImage(LineEdit target)
+    {
+        _imageTarget = target;
+        if (_imageUpload is null)
+        {
+            _imageUpload = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Enviar imagem para o inventário", Filters = ["*.png,*.jpg,*.jpeg,*.webp ; Imagens"] };
+            _imageUpload.FileSelected += UploadSelectedImage;
+            AddChild(_imageUpload);
+        }
+        _imageUpload.PopupCentered();
+    }
+
+    private void UploadSelectedImage(string path)
+    {
+        var extension = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        if (extension is not (".png" or ".jpg" or ".jpeg" or ".webp")) { Say("Escolha uma imagem PNG, JPG ou WebP."); return; }
+        var bytes = Godot.FileAccess.GetFileAsBytes(path);
+        if (bytes.Length == 0 || bytes.Length > 100 * 1024 * 1024) { Say("A imagem deve ter entre 1 byte e 100 MB."); return; }
+        var app = GetNodeOrNull<AppManager>("/root/AppManager"); var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
+        if (app is null || session is null || !session.IsAuthenticated || _imageTarget is null) { Say("Entre na conta antes de enviar uma imagem."); return; }
+        var boundary = "----LifeVerseGroup" + Guid.NewGuid().ToString("N"); var name = System.IO.Path.GetFileName(path);
+        var head = Encoding.UTF8.GetBytes($"--{boundary}\r\nContent-Disposition: form-data; name=category\r\n\r\ntextures\r\n--{boundary}\r\nContent-Disposition: form-data; name=file; filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n");
+        var tail = Encoding.UTF8.GetBytes($"\r\n--{boundary}--\r\n"); var payload = new byte[head.Length + bytes.Length + tail.Length];
+        Buffer.BlockCopy(head, 0, payload, 0, head.Length); Buffer.BlockCopy(bytes, 0, payload, head.Length, bytes.Length); Buffer.BlockCopy(tail, 0, payload, head.Length + bytes.Length, tail.Length);
+        var request = new HttpRequest { Timeout = 30 }; AddChild(request); Say($"Enviando {name} para o inventário…");
+        request.RequestCompleted += (result, code, _, response) =>
+        {
+            request.QueueFree();
+            if (result != (long)HttpRequest.Result.Success || code is < 200 or >= 300) { Say("Não foi possível enviar a imagem para o inventário."); return; }
+            try
+            {
+                using var document = JsonDocument.Parse(response.GetStringFromUtf8()); var id = IdOf(document.RootElement, "assetId");
+                if (id == Guid.Empty || _imageTarget is null) { Say("O servidor não retornou a imagem enviada."); return; }
+                _imageTarget.Text = AssetReference(id); Say("Imagem enviada ao inventário e selecionada para o grupo.");
+            }
+            catch (JsonException) { Say("Resposta inválida ao enviar a imagem."); }
+        };
+        var headers = new[] { $"Authorization: Bearer {session.AccessToken}", $"Content-Type: multipart/form-data; boundary={boundary}" };
+        if (request.RequestRaw($"{app.ApiBaseUrl}/api/v1/assets/upload", headers, Godot.HttpClient.Method.Post, payload) != Error.Ok) { request.QueueFree(); Say("Não foi possível iniciar o envio da imagem."); }
+    }
+
+    private void FillIdentity(GroupCardData g)
+    {
+        _setEmblem.Select(Math.Max(Array.IndexOf(GroupRules.Emblems, g.Emblem), 0));
+        // Legacy external URLs are deliberately not carried into a later save.
+        _setImage.Text = g.ImageUrl.StartsWith("asset://", StringComparison.OrdinalIgnoreCase) ? g.ImageUrl : string.Empty;
+    }
+
+    /// <summary>Loads group artwork through the API, which checks visibility and never follows a caller-provided URL.</summary>
     private void LoadGroupImage(GroupCardData g)
     {
         _imageFor = g.Id; _groupImage.Texture = null; _groupImage.Visible = false;
-        if (Transport is not null || !g.ImageUrl.StartsWith("https://", StringComparison.Ordinal)) return;
+        if (Transport is not null || !g.ImageUrl.StartsWith("asset://", StringComparison.Ordinal)) return;
         var http = new HttpRequest { BodySizeLimit = 2_000_000, Timeout = 10 }; AddChild(http);
         http.RequestCompleted += (result, code, _, bytes) =>
         {
@@ -89,7 +194,8 @@ public sealed partial class GroupsWindow
             if (error != Error.Ok || image.GetWidth() == 0) return;
             image.Resize(96, 96, Image.Interpolation.Bilinear); _groupImage.Texture = ImageTexture.CreateFromImage(image); _groupImage.Visible = true;
         };
-        if (http.Request(g.ImageUrl) != Error.Ok) http.QueueFree();
+        var app = GetNodeOrNull<AppManager>("/root/AppManager"); var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
+        if (app is null || session is null || !session.IsAuthenticated || http.Request($"{app.ApiBaseUrl}/api/v1/groups/{g.Id}/image", [$"Authorization: Bearer {session.AccessToken}"]) != Error.Ok) http.QueueFree();
     }
 
     // ---- invitations and requests ----------------------------------------------------------------------------------------------------------------------------

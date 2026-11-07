@@ -39,6 +39,7 @@ public partial class RadialMenu : Control
     public IReadOnlyList<string> Labels => _levels.Count > 0 ? _levels[^1].Items.Select(x => x.Label).ToList() : [];
     public Vector2 CenterForTesting => _center;
     public event Action? Closed;
+    public event Action? DeleteRequested;
 
     public RadialMenu()
     {
@@ -148,6 +149,7 @@ public partial class RadialMenu : Control
                 {
                     case Key.Escape: Close(); break;
                     case Key.Backspace: Back(); break;
+                    case Key.Delete: DeleteRequested?.Invoke(); break;
                     case Key.Enter or Key.KpEnter or Key.Space: Pick(_hover); break;
                     case Key.Left or Key.Up: _hover = RadialMath.Step(_hover, -1, Items.Count); QueueRedraw(); break;
                     case Key.Right or Key.Down: _hover = RadialMath.Step(_hover, 1, Items.Count); QueueRedraw(); break;

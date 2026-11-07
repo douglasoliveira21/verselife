@@ -27,6 +27,30 @@ public static partial class GroupService
     private static readonly string[] ModerationActions = ["member_kicked", "member_banned", "member_muted", "role_assigned"];
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
+    /// <summary>Group artwork is always an image asset already present in the
+    /// creator's inventory. Keeping only an asset reference prevents arbitrary
+    /// remote URLs from being fetched by clients and keeps uploaded artwork in the
+    /// normal inventory/moderation pipeline.</summary>
+    internal static bool TryImageAssetId(string? value, out Guid assetId)
+    {
+        assetId = Guid.Empty;
+        return !string.IsNullOrWhiteSpace(value) && value.StartsWith("asset://", StringComparison.OrdinalIgnoreCase)
+            && Guid.TryParse(value[8..], out assetId);
+    }
+
+    private static async Task<bool> ValidOwnedImageAsync(LifeVerseDbContext db, Guid userId, string? value, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        if (!TryImageAssetId(value, out var assetId)) return false;
+        return await (from item in db.InventoryItems
+                      join asset in db.Assets on item.AssetId equals asset.Id
+                      join version in db.AssetVersions on new { AssetId = asset.Id, Version = asset.CurrentVersion } equals new { version.AssetId, version.Version }
+                      where item.OwnerUserId == userId && item.AssetId == assetId && item.DeletedAt == null && item.Status == "active"
+                         && asset.DeletedAt == null && asset.Category == "textures"
+                         && (version.MimeType == "image/png" || version.MimeType == "image/jpeg" || version.MimeType == "image/webp")
+                      select item.Id).AnyAsync(ct);
+    }
+
     // ---- loading ------------------------------------------------------------------------------------------------------------------------
 
     private sealed record Ctx(SocialGroup Group, GroupMember? Member, Dictionary<Guid, GroupRole> Roles, RoleView? Actor);
@@ -93,7 +117,7 @@ public static partial class GroupService
         var privacy = request.Privacy ?? "public"; var policy = request.JoinPolicy ?? (privacy == "private" ? GroupRules.InviteOnly : GroupRules.Request);
         if (!GroupRules.Privacies.Contains(privacy) || !GroupRules.JoinPolicies.Contains(policy) || privacy == "private" && policy != GroupRules.InviteOnly) return GroupResult.Fail("bad_policy");
         var accent = request.AccentColor ?? "#12F2E0"; var emblem = request.Emblem ?? "people";
-        if (!GroupRules.ValidColour(accent) || !GroupRules.Emblems.Contains(emblem) || !GroupRules.ValidImageUrl(request.ImageUrl)) return GroupResult.Fail("bad_identity");
+        if (!GroupRules.ValidColour(accent) || !GroupRules.Emblems.Contains(emblem) || !await ValidOwnedImageAsync(db, me, request.ImageUrl, ct)) return GroupResult.Fail("bad_identity");
         if (!GroupRules.ValidTag(request.Tag)) return GroupResult.Fail("bad_tag");
         var limit = Math.Clamp(request.MemberLimit ?? GroupRules.DefaultMemberLimit, 2, GroupRules.MaxMemberLimit);
         if (await db.SocialGroups.CountAsync(g => g.OwnerUserId == me && g.DeletedAt == null, ct) >= GroupRules.MaxGroupsCreated) return GroupResult.Fail("too_many_groups_created");
@@ -122,7 +146,7 @@ public static partial class GroupService
             g.Name = name; g.NameKey = key; changed.Add("name");
         }
         if (r.Description is not null) { var d = r.Description.Trim(); if (d.Length > 600) return GroupResult.Fail("bad_description"); if (d != g.Description) { g.Description = d; changed.Add("description"); } }
-        if (r.ImageUrl is not null) { if (!GroupRules.ValidImageUrl(r.ImageUrl)) return GroupResult.Fail("bad_identity"); var url = r.ImageUrl.Length == 0 ? null : r.ImageUrl; if (url != g.ImageUrl) { g.ImageUrl = url; changed.Add("image"); } }
+        if (r.ImageUrl is not null) { if (!await ValidOwnedImageAsync(db, me, r.ImageUrl, ct)) return GroupResult.Fail("bad_identity"); var url = r.ImageUrl.Length == 0 ? null : r.ImageUrl; if (url != g.ImageUrl) { g.ImageUrl = url; changed.Add("image"); } }
         if (r.AccentColor is not null) { if (!GroupRules.ValidColour(r.AccentColor) || r.AccentColor.Length == 0) return GroupResult.Fail("bad_identity"); if (!string.Equals(r.AccentColor, g.AccentColor, StringComparison.OrdinalIgnoreCase)) { g.AccentColor = r.AccentColor.ToUpperInvariant(); changed.Add("color"); } }
         if (r.Emblem is not null) { if (!GroupRules.Emblems.Contains(r.Emblem)) return GroupResult.Fail("bad_identity"); if (r.Emblem != g.Emblem) { g.Emblem = r.Emblem; changed.Add("emblem"); } }
         if (r.Tag is not null)

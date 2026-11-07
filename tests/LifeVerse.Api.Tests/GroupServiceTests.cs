@@ -29,6 +29,15 @@ public sealed class GroupServiceTests : IDisposable
 
     private Guid User(string name) { var id = Guid.NewGuid(); _db.Users.Add(new User { Id = id, Username = name, NormalizedUsername = name.ToUpperInvariant(), Email = $"{name}@t.local", NormalizedEmail = $"{name}@T.LOCAL", PasswordHash = "x", CreatedAt = _now, UpdatedAt = _now }); _db.SaveChanges(); return id; }
 
+    private async Task<string> Image(Guid owner)
+    {
+        var asset = new Asset { Id = Guid.NewGuid(), OwnerUserId = owner, CreatorUserId = owner, Name = "marca", Category = "textures", CreatedAt = _now, UpdatedAt = _now };
+        _db.Assets.Add(asset); _db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = Guid.NewGuid().ToString("N"), StorageKey = "tests/marca.png", MimeType = "image/png", ByteSize = 10, CreatedAt = _now });
+        _db.InventoryItems.Add(new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = owner, AssetId = asset.Id, DisplayName = "marca", CreatedAt = _now, UpdatedAt = _now });
+        await _db.SaveChangesAsync();
+        return $"asset://{asset.Id}";
+    }
+
     private async Task<Guid> Made(string name, string? tag = null, string privacy = "public", string? policy = null, Guid? by = null, int? limit = null)
     {
         var result = await GroupService.CreateAsync(_db, by ?? _leader, new GroupProfileRequest(name, "Um grupo para testes", null, privacy, policy, null, null, tag, limit), _now, default);
@@ -104,7 +113,7 @@ public sealed class GroupServiceTests : IDisposable
         Assert.Equal("bad_policy", await Try(new("Outro Grupo", "", null, "private", "open", null, null, null, null))); // a hidden group is entered by invitation
         Assert.Equal("bad_policy", await Try(new("Outro Grupo", "", null, "secret", null, null, null, null, null)));
         Assert.Equal("bad_description", await Try(new("Outro Grupo", new string('x', 601), null, null, null, null, null, null, null)));
-        Assert.Null(await Try(new("Outro Grupo", "", "https://cdn.example.com/g.png", "private", null, "#112233", "star", "OG", 50)));
+        Assert.Null(await Try(new("Outro Grupo", "", await Image(_stranger), "private", null, "#112233", "star", "OG", 50)));
         var made = await _db.SocialGroups.AsNoTracking().SingleAsync(g => g.Name == "Outro Grupo"); Assert.Equal("invite", made.JoinPolicy); Assert.Equal("#112233", made.AccentColor); Assert.Equal(50, made.MemberLimit);
     }
 
@@ -122,7 +131,7 @@ public sealed class GroupServiceTests : IDisposable
     {
         Assert.Equal("forbidden", (await GroupService.UpdateProfileAsync(_db, _member, _group, new("Novo Nome", null, null, null, null, null, null, null, null), _now, default)).Error);
         Assert.Equal("forbidden", (await GroupService.UpdateProfileAsync(_db, _stranger, _group, new("Novo Nome", null, null, null, null, null, null, null, null), _now, default)).Error);
-        Assert.True((await GroupService.UpdateProfileAsync(_db, _admin, _group, new("Novo Nome", "Descrição nova", "https://cdn.example.com/g.png", null, "open", "#FF8800", "star", "NN", 100), _now, default)).Ok);
+        Assert.True((await GroupService.UpdateProfileAsync(_db, _admin, _group, new("Novo Nome", "Descrição nova", await Image(_admin), null, "open", "#FF8800", "star", "NN", 100), _now, default)).Ok);
         var g = await _db.SocialGroups.AsNoTracking().SingleAsync(); Assert.Equal(("Novo Nome", "open", "#FF8800", "star", "NN", 100), (g.Name, g.JoinPolicy, g.AccentColor, g.Emblem, g.Tag, g.MemberLimit)); Assert.Equal("novo nome", g.NameKey);
         Assert.Contains("profile_updated", await Actions());
         Assert.Equal("name_taken", (await GroupService.UpdateProfileAsync(_db, _admin, _group, new((await Made("Rivais", by: _stranger)) is var other ? "Rivais" : "", null, null, null, null, null, null, null, null), _now, default)).Error);

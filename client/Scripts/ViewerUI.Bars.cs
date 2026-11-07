@@ -296,6 +296,8 @@ public partial class ViewerUI
             Touch = id => _network.TouchObject(id),
             EditObject = (id, mode) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.EditObject(id, mode),
             ObjectCommand = (_, command) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.RunCommand(command),
+            SelectObject = id => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SelectFromContext(id),
+            DeleteObject = id => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.DeleteOwnedObject(id),
             StartBuilding = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true),
             StartPlacing = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.StartPlacing(),
             AboutLand = point => _world.GetNodeOrNull<LandManager>("LandManager")?.AboutAt(point),

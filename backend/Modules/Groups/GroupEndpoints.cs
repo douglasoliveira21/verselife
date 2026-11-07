@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using LifeVerse.Api.Modules.Assets;
 using LifeVerse.Api.Data;
 using LifeVerse.Api.Modules.Social;
 using LifeVerse.Shared.Groups;
@@ -24,6 +25,9 @@ public static class GroupEndpoints
         g.MapGet("/mine", Run(async (c, db, me, now, hub) => GroupResult.Done(await GroupService.MineAsync(db, me, now, c.RequestAborted))));
         g.MapGet("/search", async (string? q, int? page, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await GroupService.SearchAsync(db, me, q, page ?? 0, t.GetUtcNow(), ct)));
         g.MapPost("", async (GroupProfileRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.CreateAsync(db, me, r, t.GetUtcNow(), ct), created: true));
+        // A group card is allowed to display the selected inventory image to people
+        // who can see the group. The file itself never comes from a caller supplied URL.
+        g.MapGet("/{groupId:guid}/image", GroupImageAsync);
         g.MapGet("/{groupId:guid}", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.ViewAsync(db, me, groupId, t.GetUtcNow(), ct)));
         g.MapPut("/{groupId:guid}", async (Guid groupId, GroupProfileRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.UpdateProfileAsync(db, me, groupId, r, t.GetUtcNow(), ct)));
 
@@ -105,6 +109,22 @@ public static class GroupEndpoints
         g.MapPost("/notifications/read", async (ReadRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.MarkNotificationsReadAsync(db, me, r.Ids, r.GroupId, t.GetUtcNow(), ct)));
         g.MapPut("/{groupId:guid}/notification-settings", async (Guid groupId, MutedRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.SetNotificationsMutedAsync(db, me, groupId, r.Muted, t.GetUtcNow(), ct)));
         return endpoints;
+    }
+
+    private static async Task<IResult> GroupImageAsync(Guid groupId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
+    {
+        if (!Who(context, out var user)) return Results.Unauthorized();
+        var group = await db.SocialGroups.AsNoTracking().SingleOrDefaultAsync(x => x.Id == groupId && x.DeletedAt == null, ct);
+        if (group is null || !GroupService.TryImageAssetId(group.ImageUrl, out var assetId)) return Results.NotFound();
+        var member = await db.GroupMembers.AsNoTracking().AnyAsync(x => x.GroupId == groupId && x.UserId == user, ct);
+        if (group.Privacy != "public" && !member) return Results.Forbid();
+        var version = await (from asset in db.Assets.AsNoTracking()
+                             join itemVersion in db.AssetVersions.AsNoTracking() on new { AssetId = asset.Id, Version = asset.CurrentVersion } equals new { itemVersion.AssetId, itemVersion.Version }
+                             where asset.Id == assetId && asset.DeletedAt == null
+                             select itemVersion).SingleOrDefaultAsync(ct);
+        if (version is null || version.MimeType is not ("image/png" or "image/jpeg" or "image/webp")) return Results.NotFound();
+        var stream = await storage.OpenReadAsync(version.StorageKey, ct);
+        return stream is null ? Results.NotFound() : Results.File(stream, version.MimeType);
     }
 
 

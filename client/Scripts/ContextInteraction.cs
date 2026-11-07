@@ -32,6 +32,8 @@ public sealed class ContextServices
     public Action<Guid> Touch { get; init; } = _ => { };
     public Action<Guid, GizmoMode?> EditObject { get; init; } = (_, _) => { };
     public Action<Guid, string> ObjectCommand { get; init; } = (_, _) => { };
+    public Action<Guid> SelectObject { get; init; } = _ => { };
+    public Action<Guid> DeleteObject { get; init; } = _ => { };
     public Action StartBuilding { get; init; } = () => { };
     public Action StartPlacing { get; init; } = () => { };
     public Action<Vector3> AboutLand { get; init; } = _ => { };
@@ -155,6 +157,7 @@ public partial class ContextInteractionManager : Node
     private RadialMenu _menu = null!;
     private ContextServices _services = new();
     private NetworkManager? _network;
+    private ObjectTarget? _selectedObject;
 
     public RadialMenu Menu => _menu;
 
@@ -162,6 +165,7 @@ public partial class ContextInteractionManager : Node
     {
         _world = world; _player = player; _menu = menu; _services = services;
         _network = GetNodeOrNull<NetworkManager>("/root/NetworkManager");
+        _menu.DeleteRequested += () => DeleteSelectedObject();
     }
 
     /// Opens the menu for whatever is under a screen position; returns the kind of target, or null when there is nothing to show.
@@ -170,8 +174,21 @@ public partial class ContextInteractionManager : Node
         if (_menu.IsOpen) { _menu.Close(); }
         var target = Resolve(screen);
         if (target is null) return null;
+        _selectedObject = target as ObjectTarget;
+        // A right click is an explicit object selection, even with the build window closed.
+        if (_selectedObject is { } selected) _services.SelectObject(selected.View.State.Id);
         _menu.Open(screen, target.Title, target.Icon, InteractionRegistry.Build(target, _services));
         return target;
+    }
+
+    /// Only the owner can ask to delete; the API validates the same rule authoritatively.
+    public bool DeleteSelectedObject()
+    {
+        if (_selectedObject is not { } selected) return false;
+        if (!_services.Owns(selected.View)) { _services.Tell("Você não é o proprietário deste objeto e não pode excluí-lo."); return false; }
+        _menu.Close();
+        _services.DeleteObject(selected.View.State.Id);
+        return true;
     }
 
     public ContextTarget? Resolve(Vector2 screen)

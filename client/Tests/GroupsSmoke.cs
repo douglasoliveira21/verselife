@@ -169,7 +169,7 @@ public partial class GroupsSmoke : Node
             auditJson = "[" + string.Join(",", Enumerable.Range(0, 100).Select(i => "{\"id\":\"" + Guid.NewGuid() + "\",\"at\":\"2026-11-0" + (1 + i % 5) + "T10:00:00Z\",\"action\":\"member_joined\",\"actor\":\"u" + i + "\",\"target\":null}")) + "]";
             window.OpenGroup(group);
             Require(window.PanelTextForTesting.Contains("Estrela · Clube") && window.PanelTextForTesting.Contains("Membros: 2/500") && window.PanelTextForTesting.Contains("Terrenos: 1") && window.PanelTextForTesting.Contains("Cofre: 1.500"), $"the overview panel summarises the group: {window.PanelTextForTesting}");
-            Require(window.OverviewTextForTesting.Contains("Emblema: Estrela") && window.SettingsEmblemForTesting == 1 && window.SettingsImageForTesting == "https://x.test/a.png", "the identity of the group is shown and filled in");
+            Require(window.OverviewTextForTesting.Contains("Emblema: Estrela") && window.SettingsEmblemForTesting == 1 && window.SettingsImageForTesting == string.Empty, "the identity of the group is shown and legacy external images are not reused");
             window.SetSettingsIdentityForTesting(2, ""); window.SetSettingsForTesting("Clube", "d"); window.SaveSettings();
             Require(requests.Any(r => r.StartsWith("Put ") && r.Contains($"/{group} {{") && r.Contains("\"emblem\":\"hammer\"") && r.Contains("\"imageUrl\":\"\"")), "saving the identity is sent");
             window.OpenGroup(group);
@@ -201,9 +201,9 @@ public partial class GroupsSmoke : Node
             Require(requests.Any(r => r.Contains($"/{group}/join")), "join request wrong");
 
             // creating
-            window.SetCreateForTesting("Novo Clube", "NVO", "bom", 0, 0); window.SetCreateIdentityForTesting(1, "https://x.test/n.png");
+            window.SetCreateForTesting("Novo Clube", "NVO", "bom", 0, 0); window.SetCreateIdentityForTesting(1, "asset://11111111-1111-1111-1111-111111111111");
             window.Create();
-            Require(requests.Any(r => r.StartsWith("Post  ") && r.Contains("\"name\":\"Novo Clube\"") && r.Contains("\"joinPolicy\":\"open\"") && r.Contains("\"privacy\":\"public\"") && r.Contains("\"emblem\":\"star\"") && r.Contains("\"imageUrl\":\"https://x.test/n.png\"")), $"create wrong: {requests.LastOrDefault(r => r.Contains("Novo"))}");
+            Require(requests.Any(r => r.StartsWith("Post  ") && r.Contains("\"name\":\"Novo Clube\"") && r.Contains("\"joinPolicy\":\"open\"") && r.Contains("\"privacy\":\"public\"") && r.Contains("\"emblem\":\"star\"") && r.Contains("\"imageUrl\":\"asset://11111111-1111-1111-1111-111111111111\"")), $"create wrong: {requests.LastOrDefault(r => r.Contains("Novo"))}");
 
             Require(GroupsWindow.Explain(403, "{\"error\":\"outranked\"}").Contains("abaixo"), "errors should be explained");
             GD.Print("event=groups_smoke result=passed");

@@ -153,6 +153,11 @@ public partial class ViewerUI : CanvasLayer
 
     public override void _UnhandledInput(InputEvent input)
     {
+        if (input is InputEventKey { Pressed: true, Echo: false, PhysicalKeycode: Key.Delete } && GetViewport().GuiGetFocusOwner() is null && _context?.DeleteSelectedObject() == true)
+        {
+            GetViewport().SetInputAsHandled();
+            return;
+        }
         if (input is InputEventKey { Pressed: true, Echo: false, PhysicalKeycode: Key.Enter or Key.KpEnter } && GetViewport().GuiGetFocusOwner() is null)
         {
             _chat.GrabFocus();
