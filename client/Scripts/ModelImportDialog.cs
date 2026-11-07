@@ -20,6 +20,7 @@ public partial class ModelImportDialog : Node
     private PanelContainer _banner = null!;
     private readonly LineEdit[] _dims = new LineEdit[3];
     private Button _confirm = null!, _spinButton = null!;
+    private OptionButton _collisionShape = null!;
     private string _path = string.Empty;
     private ModelReport? _report;
     private Vector3 _original = Vector3.Zero;
@@ -40,6 +41,18 @@ public partial class ModelImportDialog : Node
             try { var config = new ConfigFile(); if (config.Load(PrefsPath) == Error.Ok) return Mathf.Clamp((float)(double)config.GetValue("models", "placement_size", 2.0), .1f, 64f); }
             catch (Exception) { /* a damaged preferences file means the default */ }
             return 2f;
+        }
+    }
+
+    /// Default applied when this imported model is later placed in the world. The server still
+    /// validates the resulting object setting; this is never a client-side authority bypass.
+    public static string ImportedCollisionShape
+    {
+        get
+        {
+            try { var config = new ConfigFile(); if (config.Load(PrefsPath) == Error.Ok && config.GetValue("models", "collision_shape", "box").AsString() is var shape && shape is "none" or "box" or "convex" or "triangle") return shape; }
+            catch (Exception) { }
+            return "box";
         }
     }
 
@@ -107,6 +120,15 @@ public partial class ModelImportDialog : Node
         UiStyle.StyleButton(link, UiStyle.ButtonKind.ToolSelected, 6, 6, 12); link.AddThemeConstantOverride("icon_max_width", 28); link.CustomMinimumSize = new Vector2(52, 96); sizeRow.AddChild(link);
         sizeBody.AddChild(Muted("Mantém as proporções do modelo.", 16));
         cards.AddChild(sizeCard);
+
+        var physics = Card("Física ao colocar", "shield", out var physicsBody, out _, 8);
+        var physicsRow = new HBoxContainer(); physicsRow.AddThemeConstantOverride("separation", 10); physicsBody.AddChild(physicsRow);
+        var physicsLabel = Muted("Colisão:", 18); physicsRow.AddChild(physicsLabel);
+        _collisionShape = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "Caixa é leve; casco convexo serve para objetos simples; malha triangular preserva interiores e só pode ser estática." };
+        _collisionShape.AddItem("Nenhuma"); _collisionShape.AddItem("Caixa"); _collisionShape.AddItem("Casco convexo"); _collisionShape.AddItem("Malha triangular (estática)");
+        _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, ImportedCollisionShape) is var collisionIndex && collisionIndex >= 0 ? collisionIndex : 1); physicsRow.AddChild(_collisionShape);
+        physicsBody.AddChild(Muted("A escolha é salva como padrão de colocação; você pode refiná-la depois no editor.", 15));
+        right.AddChild(physics);
 
         _banner = new PanelContainer { Visible = false, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         _banner.AddThemeStyleboxOverride("panel", UiStyle.Box(UiStyle.OrangeFill, UiStyle.Orange, 12, 2, 16, 10));
@@ -286,6 +308,8 @@ public partial class ModelImportDialog : Node
         if (_report is not { Valid: true } || _path.Length == 0) return;
         if (!float.IsFinite(size) || size is < .1f or > 64f) { SetProblem("O tamanho deve ficar entre 0,1 e 64 metros."); return; }
         SavePlacementSize(size);
+        var collision = new[] { "none", "box", "convex", "triangle" }.ElementAtOrDefault(_collisionShape.Selected) ?? "box";
+        var config = new ConfigFile(); config.Load(PrefsPath); config.SetValue("models", "collision_shape", collision); config.Save(PrefsPath);
         var path = _path;
         Close();
         Confirmed?.Invoke(path);

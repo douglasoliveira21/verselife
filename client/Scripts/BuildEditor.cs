@@ -348,7 +348,7 @@ public partial class BuildEditor : Node3D
         if (!_active) SetActive(true);
         var template = new BuildObjectState
         {
-            PrimitiveType = "mesh", Name = string.IsNullOrWhiteSpace(name) ? "Modelo" : name.Trim(), MaterialJson = "{}", PhysicsJson = "{\"collision\":true}",
+            PrimitiveType = "mesh", Name = string.IsNullOrWhiteSpace(name) ? "Modelo" : name.Trim(), MaterialJson = "{}", PhysicsJson = JsonSerializer.Serialize(new { collision = ModelImportDialog.ImportedCollisionShape != "none", shape = ModelImportDialog.ImportedCollisionShape }),
             GeometryJson = JsonSerializer.Serialize(new { assetId = assetId.ToString().ToLowerInvariant() }), ScaleX = ModelImportDialog.PlacementSize, ScaleY = ModelImportDialog.PlacementSize, ScaleZ = ModelImportDialog.PlacementSize
         };
         var entry = new HistoryEntry("create", []);
