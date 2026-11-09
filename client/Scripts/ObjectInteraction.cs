@@ -10,7 +10,6 @@ public partial class ObjectInteraction : Node3D
     private NetworkManager _network = null!;
     private BuildEditor? _build;
     private TerrainEditor? _terrain;
-    private BuildObjectView? _hovered;
 
     public override void _Ready()
     {
@@ -20,15 +19,6 @@ public partial class ObjectInteraction : Node3D
     }
 
     private bool ToolsActive => (_build?.Active ?? false) || (_terrain?.Active ?? false);
-
-    public override void _Process(double delta)
-    {
-        var target = ToolsActive || GetViewport().GuiGetHoveredControl() is not null ? null : ViewUnderMouse();
-        if (target == _hovered) return;
-        SetNameVisible(_hovered, false);
-        _hovered = target;
-        SetNameVisible(_hovered, true);
-    }
 
     public override void _UnhandledInput(InputEvent input)
     {
@@ -50,8 +40,4 @@ public partial class ObjectInteraction : Node3D
         return node as BuildObjectView;
     }
 
-    private static void SetNameVisible(BuildObjectView? view, bool visible)
-    {
-        if (view is not null && IsInstanceValid(view) && view.GetNodeOrNull<Label3D>("ObjectName") is { } label) label.Visible = visible;
-    }
 }

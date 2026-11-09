@@ -8,6 +8,8 @@ namespace LifeVerse.Client.Scripts;
 public partial class BuildEditor
 {
     private UiTabs _tabs = null!;
+    private UiTabs _advancedTabs = null!;
+    private bool _advancedHierarchyOpen;
     private readonly List<ObjectPreview> _previews = [];
     private Label _selectedCount = null!, _primsLabel = null!;
     private readonly float[] _lastSize = [1, 1, 1];
@@ -16,15 +18,18 @@ public partial class BuildEditor
 
     private void BuildPanel()
     {
-        _window = new FloatingWindow("Editor de Construção", icon: "hammer", minimizable: true) { Name = "BuildTools", Visible = false };
+        _window = new FloatingWindow("Construir", icon: "hammer", minimizable: true, expandable: true) { Name = "BuildTools", Visible = false };
         _window.Place(0, 0, 18, 56, 1418, 1280);
-        _window.Scale = new Vector2(.55f, .55f); // drawn smaller so it does not cover the world; the layout itself is unchanged
+        _window.Scale = SmallBuildScale; // compact by default so it does not cover the world
         _window.CloseRequested += () => SetActive(false);
+        _window.ExpandToggled += SetBuildWindowExpanded;
         var content = _window.Content;
         content.AddThemeConstantOverride("separation", 10);
+        Control[] pages = [];
+        Control[] advancedPages = [];
 
         _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 22 };
-        foreach (var (text, icon) in new[] { ("Geral", "list"), ("Objeto", "cube"), ("Textura", "image"), ("Recursos", "bulb"), ("Conteúdo", "folder"), ("Alinhar", "move"), ("Hierarquia", "layers"), ("Transformar", "rotate") }) _tabs.AddTab(text, icon);
+        foreach (var (text, icon) in new[] { ("Geral", "list"), ("Objeto", "cube"), ("Recursos", "bulb"), ("Textura", "image"), ("Conteúdo", "folder") }) _tabs.AddTab(text, icon);
         content.AddChild(_tabs);
 
         // everyday actions, always at hand whatever the tab
@@ -37,8 +42,8 @@ public partial class BuildEditor
         quick.AddChild(_cameraButton);
         foreach (var (icon, text, tip, action) in new (string, string, string, Action)[]
         {
-            ("focus", "Focar", "Aponta a câmera para a seleção (Home)", FocusSelection), ("cube", "Criar", "Cria a forma escolhida em Geral: depois clique onde quer colocá-la", CreateObject),
-            ("undo", "", "Desfazer (Ctrl+Z)", Undo), ("redo", "", "Refazer (Ctrl+Y)", Redo), ("help", "Tutorial", "Mostra o passo a passo de construção", RestartTutorial)
+            ("undo", "", "Desfazer (Ctrl+Z)", Undo), ("redo", "", "Refazer (Ctrl+Y)", Redo), ("layers", "Avançado", "Alinhar, conjuntos vinculados, pivôs e duplicação múltipla", () => ShowEditPages(true)),
+            ("help", "Tutorial", "Mostra o passo a passo de construção", RestartTutorial)
         })
         {
             var button = IconButton(icon, text, tip, action, UiStyle.ButtonKind.Tool, 44);
@@ -53,8 +58,37 @@ public partial class BuildEditor
 
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 640) };
         content.AddChild(stack);
-        var pages = new[] { Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildContentTab()), Scroll(stack, BuildAlignTab()), Scroll(stack, BuildHierarchyTab()), Scroll(stack, BuildTransformTab()) };
+        pages = [Scroll(stack, BuildGeneral()), Scroll(stack, BuildObjectTab()), Scroll(stack, BuildResourcesTab()), Scroll(stack, BuildTextureTab()), Scroll(stack, BuildContentTab())];
+        advancedPages = [Scroll(stack, BuildAlignTab()), Scroll(stack, BuildHierarchyTab()), Scroll(stack, BuildTransformTab())];
+        foreach (var page in advancedPages) page.Visible = false;
+        _advancedTabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 21, Visible = false };
+        foreach (var (text, icon) in new[] { ("Alinhar", "move"), ("Conjuntos", "layers"), ("Transformar", "rotate") }) _advancedTabs.AddTab(text, icon);
+        content.AddChild(_advancedTabs);
+        content.MoveChild(_advancedTabs, 2);
+        _advancedTabs.TabChanged += index =>
+        {
+            _advancedHierarchyOpen = index == 1;
+            for (var i = 0; i < advancedPages.Length; i++) advancedPages[i].Visible = i == index;
+            RefreshPreviews();
+            if (_advancedHierarchyOpen) RefreshHierarchy();
+        };
         _tabs.TabChanged += index => { for (var i = 0; i < pages.Length; i++) pages[i].Visible = i == index; RefreshPreviews(); };
+
+        void ShowEditPages(bool advanced)
+        {
+            _tabs.Visible = !advanced; _advancedTabs.Visible = advanced;
+            for (var i = 0; i < pages.Length; i++) pages[i].Visible = !advanced && i == _tabs.Selected;
+            for (var i = 0; i < advancedPages.Length; i++) advancedPages[i].Visible = advanced && i == _advancedTabs.Selected;
+            _advancedHierarchyOpen = advanced && _advancedTabs.Selected == 1;
+            if (_advancedHierarchyOpen) RefreshHierarchy();
+            RefreshPreviews();
+        }
+
+        // The classic build flow starts with a tool, then exposes the five editing tabs.
+        // Keep LifeVerse-specific tools available below instead of crowding the main tabs.
+        _stack = stack; _showEditPages = ShowEditPages;
+        var modes = BuildModeBar(); var modePanels = BuildModePanels();
+        content.AddChild(modes); content.MoveChild(modes, 0); content.AddChild(modePanels); content.MoveChild(modePanels, 1); content.MoveChild(_advancedTabs, 3);
 
         var footer = Row(10); content.AddChild(footer);
         var infoIcon = UiStyle.IconRect("info", UiStyle.TextMuted, 22); infoIcon.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter; footer.AddChild(infoIcon);
@@ -62,8 +96,24 @@ public partial class BuildEditor
         _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); _status.AddThemeFontSizeOverride("font_size", 18);
         footer.AddChild(_status);
         AddChild(_window);
+        RestoreBuildWindowLayout();
         _tabs.Select(1);
         UpdateToolButtons();
+        ShowModeUi();
+    }
+
+    /// The terrain editor already has its own authoritative workflow and undo history.
+    /// Opening it here deliberately hands over the mouse instead of leaving two editors active.
+    private void OpenTerrainTools()
+    {
+        var terrain = GetParent()?.GetNodeOrNull<TerrainEditor>("TerrainEditor");
+        if (terrain is null)
+        {
+            _status.Text = "As ferramentas de terreno não estão disponíveis nesta ilha.";
+            return;
+        }
+        SetActive(false);
+        terrain.SetActive(true);
     }
 
     private ObjectPreview NewPreview(int minHeight = 280)
@@ -174,6 +224,12 @@ public partial class BuildEditor
         physNumbers.AddChild(Txt("Massa", 18)); _physMass = Field("1", 8); _physMass.Text = "1"; physNumbers.AddChild(_physMass);
         physNumbers.AddChild(Txt("Atrito", 18)); _physFriction = Field("0,5", 6); _physFriction.Text = "0,5"; physNumbers.AddChild(_physFriction);
         physNumbers.AddChild(Txt("Quique", 18)); _physBounce = Field("0", 6); _physBounce.Text = "0"; physNumbers.AddChild(_physBounce);
+        var matRow = Row(8); ghostBody.AddChild(matRow);
+        matRow.AddChild(Txt("Material", 19, true)); _physMaterial = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 44), FocusMode = Control.FocusModeEnum.None, TooltipText = "Define o atrito e o quique do objeto de uma vez" }; _physMaterial.AddItem("Nenhum");
+        foreach (var (key, (label, _, _)) in PhysicsRules.Materials) { _physMaterial.AddItem(label); _physMaterial.SetItemMetadata(_physMaterial.ItemCount - 1, key); }
+        _physMaterial.ItemSelected += index => { if (index > 0 && PhysicsRules.Materials.TryGetValue(_physMaterial.GetItemMetadata((int)index).AsString(), out var m)) { _physFriction.Text = Disp(m.Friction, 2); _physBounce.Text = Disp(m.Bounce, 2); } };
+        matRow.AddChild(_physMaterial);
+        _physTemporary = new CheckBox { Text = " Temporário", TooltipText = "Objeto passageiro: quase não pesa no orçamento da ilha" }; _physTemporary.AddThemeFontSizeOverride("font_size", 19); matRow.AddChild(_physTemporary);
         left.AddChild(ghostCard);
 
         var shape = Card("Forma", "layers", out var shapeBody, out _, 12); shape.SizeFlagsStretchRatio = 1.2f;
@@ -182,6 +238,8 @@ public partial class BuildEditor
         shapeBody.AddChild(SliderLine(null, "Afunilar Y", _taperY, 3, false, 130)); shapeBody.AddChild(SliderLine(null, "Torção", _twist, 3, false, 130));
         shapeBody.AddChild(Txt("Vale para caixa, prisma, cilindro, tubo, cone e pirâmide.", 17, false, UiStyle.TextMuted));
         bottom.AddChild(shape);
+
+        page.AddChild(BuildAdvancedShapeCard());
 
         // footer of the tab
         var footer = Card(null, null, out var footerBody, out _, 0, false, 16, 8); page.AddChild(footer);

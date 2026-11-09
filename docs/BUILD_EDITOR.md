@@ -196,3 +196,73 @@ Testes: `CollaborationTests` (edição velha recusada sem perder o trabalho do o
 ## Correção posterior — mudanças na árvore de uma ilha fazem fila
 
 O teste de carga de conjuntos (`LinksetChaosTests`) falhou uma vez em cada dez ou mais rodadas com "broken_link" quando a máquina estava ocupada: uma ligação a um pai que estava sendo apagado no mesmo instante deixava um conjunto com peça sem pai. Cada operação decidia a partir da árvore como ela estava, e duas operações ao mesmo tempo podiam, cada uma certa sozinha, deixar o conjunto errado juntas. Agora vincular, apagar, devolver, colocar uma construção e criar uma peça já ligada a um conjunto **fazem fila por ilha** no PostgreSQL (trava consultiva até salvar); mover, pintar e demais edições seguem livres. Em 12 rodadas seguidas do teste sob carga não houve mais falha.
+
+## Janela Construir: modos (redesenho, fase 1)
+
+A janela tem cinco modos na barra superior, como na referência: **Foco**, **Mover**, **Editar**, **Criar** e **Terreno**. Cada modo mostra o seu próprio painel de opções (`client/Scripts/BuildEditor.Modes.cs`); só o modo **Editar** mostra as abas de propriedades (Geral, Objeto, Recursos, Textura, Conteúdo).
+
+- **Foco**: foca a câmera na seleção e liga/desliga a câmera de edição.
+- **Mover**: Mover/Girar/Esticar, encaixar na grade e mostrar grade.
+- **Editar**: Selecionar/Mover/Girar/Esticar, “Editar partes vinculadas”, grade; abas de propriedades.
+- **Criar**: grade com todas as primitivas; clicar arma a criação (Shift + clique cria várias; Esc cancela). Sair do modo Criar desarma a colocação.
+- **Terreno**: abre as ferramentas de terreno (janela própria, com histórico próprio).
+- As caixas dos painéis são espelhos de duas vias das mesmas opções das abas: não há controle decorativo.
+- Linha de estado: “Selecionado: N objeto(s) / Prims: N”.
+- Objetos bloqueados por outra pessoa ou com edição travada ficam **somente leitura**: todos os campos das abas são desabilitados e voltam ao normal ao trocar a seleção.
+- Teste: `BuildSmoke` cobre troca de modos, abas só no modo Editar, contagem de seleção e estado somente leitura.
+
+Pendente nas próximas fases: abas internas redesenhadas (Geral, Objeto, Recursos, Textura, Conteúdo), terreno embutido na própria janela e arrastar para redimensionar (hoje: mover e alternar tamanho compacto/grande).
+
+## Aba Geral: permissões, grupo e venda (redesenho, fase 2)
+
+- Operação nova `properties` (só o proprietário ou um admin da ilha): muda direitos do proprietário e do próximo proprietário (Modificar, Copiar, Transferir), grupo, compartilhamento e venda. Fluxo: cliente → servidor da ilha → API (`BuildProperties.cs`, `BuildOperations.PropertiesAsync`).
+- Regras do servidor: direitos só diminuem (`cannot_raise_rights`); o próximo proprietário nunca tem mais que o proprietário; grupo só se a pessoa for membro (`not_group_member`); vender “Cópia” exige o direito de copiar e vender “Original” exige transferir (`no_copy`/`no_transfer`); preço 0 a 10.000.000.
+- Compartilhamento e venda ficam em `PermissionsJson` (`groupShare`, `anyoneMove`, `anyoneCopy`, `saleType`, `salePrice`); sem migração.
+- **Aplicado de verdade**: “Qualquer um pode mover” deixa outras pessoas moverem e girarem (nunca mudar forma/tamanho); “Compartilhar com o grupo” deixa membros do grupo editarem.
+- **Guardado, ainda sem efeito**: “Qualquer um pode copiar” e “À venda” (tipo e preço) são gravados e validados, mas a compra e a cópia por terceiros ainda não existem; ficam para a fase de conteúdo/ferramentas avançadas.
+- Cliente: `BuildEditor.Sharing.cs`. Só os campos tocados são enviados; com várias seleções mostra o que todos permitem. Objetos de outra pessoa ficam só para leitura.
+- Testes: `BuildPropertiesTests` (5) e `BuildSmoke`.
+
+## Aba Objeto: geometria e física (redesenho, fase 3)
+
+- **Geometria real** (`shared/Building/PrimMesh.cs`, `RoundMesh.cs`): caixa, prisma, cilindro, tubo, cone e pirâmide (perfil varrido por um caminho reto) e agora também **esfera, semiesfera, toro e anel** (perfil varrido por um caminho: polo a polo, ou um círculo/espiral). Todos usam malha de verdade, uma face por parede, com colisão pela mesma malha.
+- Parâmetros (todos no `GeometryJson`, validados e limitados no servidor e no gerador): oco, afunilar X/Y, torção, **corte do perfil** (`cutStart/cutEnd`), **corte do caminho** (`pathBegin/pathEnd`: altura de uma caixa, concavidade da esfera, começo/fim do toro), **cisalhar topo** (`shearX/shearZ`), **tamanho do furo X/Y** (`holeX/holeY`; no toro e no anel é a espessura do perfil), **deslocar raio** (`radiusOffset`), **revoluções** (1 a 3), **inclinação** (`skew`, espiral).
+- A janela tem o cartão “Forma avançada”: um controle por parâmetro; os que a forma escolhida não usa ficam desabilitados. Valores no padrão não são gravados, então objetos antigos ficam iguais.
+- **Física**: Fantasma, Estático/Físico, forma de colisão, massa, atrito e quique já existiam; agora há **Material** (pedra, metal, vidro, madeira, carne, plástico, borracha — preenche atrito e quique) e **Temporário** (conta quase nada no orçamento da ilha).
+- Custo: esfera/toro com forma própria custa o que a malha tem de triângulos.
+- **Pendente**: o mundo ainda não simula corpos “Físicos” (já era assim), e “Temporário” ainda não apaga o objeto sozinho: só reduz o custo. Torção de toro e cisalhamento de esfera usam a mesma fórmula do perfil, sem uma prévia dedicada.
+- Testes: `PrimMeshAdvancedTests`, `BuildPropertiesTests` e `BuildSmoke`.
+
+## Aba Recursos: luz, projetor e caminho flexível (redesenho, fase 4)
+
+Tudo fica no `MaterialJson` do objeto, é validado no servidor (`MaterialAssets.ValidateResources`) e tem efeito de verdade no cliente (`BuildObjectView`).
+
+- **Luz**: cor, intensidade, alcance e **atenuação** (`falloff`, 0,1 a 4: o expoente de queda da luz). A janela agora mostra os valores do objeto selecionado.
+- **Projetor de luz**: imagem (uma textura embutida ou a escolhida na biblioteca da aba Textura), **campo de visão** (10 a 120°), **foco** (alcance da projeção) e **ambiência** (a parte da luz que cai fora da imagem). É um `SpotLight3D` com `LightProjector` apontando para a frente do objeto; a luz redonda vira só a ambiência. Só vale com a luz ligada, e a imagem é uma das partes do objeto (direitos e posse valem como numa textura).
+- **Caminho flexível**: maciez, gravidade, arrasto, vento, tensão e força X/Y/Z (`flex`). A base fica parada e o topo se inclina e balança (mola amortecida, `FlexSimulation` em `shared/Building/ObjectResources.cs`); maciez 0 é rígido, tensão alta cede menos. Só a malha visível dobra: a colisão não muda.
+- Custo: projetor +4 pontos, flexível +3.
+- Testes: `ObjectResourcesTests` e `BuildSmoke`.
+- **Pendente**: o flexível é uma inclinação do objeto inteiro, não uma dobra ao longo da altura; o vento é igual para todo mundo (mesmo tempo, fase própria por objeto).
+
+## Aba Textura: várias faces e material avançado (redesenho, fase 5)
+
+- **Várias faces**: com a ferramenta Face (5), Shift + clique soma (ou tira) faces do mesmo objeto; “Todas as faces” seleciona todas e “Sem faces” volta ao objeto inteiro. Cor, textura, mapa normal, UV e material avançado valem para todas as faces escolhidas de uma vez. Esfera, semiesfera, toro e anel também têm faces agora (fase 3).
+- **Material avançado** (objeto inteiro ou faces, `MaterialBuilder`): **alinhamento** padrão ou planar (a textura em metros, projetada pelo eixo principal da face, sem esticar quando o objeto muda de tamanho), **brilho total** (sem luz nem sombra), **modo alfa** opaco/misturar/cortar com **corte alfa**, **dupla face**, além de rugosidade, metalicidade, opacidade (transparência) e brilho (emissão) já existentes, textura, cor, repetição, deslocamento, rotação e espelhamento.
+- O servidor valida as chaves novas (`alphaMode`, `alphaCutoff`, `mapping`, `fullBright`, `doubleSided`) no objeto e em cada face.
+- Testes: `ObjectResourcesTests` e `BuildSmoke`.
+- **Pendente**: o mapa de metalicidade/rugosidade/emissivo ainda é um valor por alvo (não uma imagem); só o mapa normal aceita imagem.
+
+## Conteúdo e ferramentas avançadas (redesenho, fase 6)
+
+- **Conteúdo**: cada item do objeto mostra ícone, nome, tipo e **permissões** (as letras C, M, T, R do item no seu inventário) e tem ações: **Abrir** (pré-visualiza), **Propriedades** (a janela de direitos do item), **Copiar** (faz uma cópia no inventário, só se o item permitir) e **Transferir** (vai direto à oferta). Além de **Adicionar do inventário**, **Renomear** e **Remover**. As ações são feitas no item do inventário que o objeto referencia, com as mesmas regras; se o item não está na lista carregada, o inventário abre para você achá-lo.
+- **Esticar dos dois lados**: ligado, o objeto cresce do centro; desligado, a face oposta ao puxador fica parada.
+- **Esticar texturas**: desligado, ao redimensionar um objeto com textura ela vira planar e mantém o tamanho em metros (desfazer restaura).
+- **Eixos de referência**: além de “Do mundo” e “Locais”, há “De referência (objeto escolhido)”; “Usar como referência” fixa o primeiro objeto selecionado. Os eixos do gizmo e a **grade** seguem a referência.
+- Já existiam e continuam: editar partes vinculadas, mostrar grade, encaixar na grade, vincular/desvincular, duplicar, excluir, desfazer/refazer.
+- Correção: o card de Conteúdo tinha ganhado, por engano, os cartões de projetor e caminho flexível; foi desfeito.
+
+## Critério final da janela Construir
+
+Dentro da janela é possível criar uma primitiva (modo Criar), mudar a geometria (aba Objeto, “Forma avançada”), posicionar/redimensionar/girar (Mover/Editar e campos numéricos), aplicar textura e material por face (aba Textura), mudar nome, permissões e venda (aba Geral), luz, projetor e movimento flexível (aba Recursos), guardar e gerir conteúdo, vincular e continuar editando. Controles que a forma ou o direito do objeto não permitem ficam desabilitados; objetos bloqueados ou de outra pessoa ficam só para leitura.
+
+**Ainda não é igual ao Second Life**: compra de objetos à venda e cópia por terceiros (“Qualquer um pode copiar”), remoção automática de objetos temporários, simulação de corpos físicos, terreno embutido na própria janela e redimensionar a janela por arraste.

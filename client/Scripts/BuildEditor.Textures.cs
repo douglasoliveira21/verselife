@@ -44,12 +44,11 @@ public partial class BuildEditor
         foreach (var view in _selection)
         {
             var after = FromView(view); var material = ParseObject(after.MaterialJson);
-            if (_lightOn.ButtonPressed) material["light"] = new JsonObject { ["color"] = "#" + _lightColor.Color.ToHtml(false), ["energy"] = Math.Round(_lightEnergy.Value, 1), ["range"] = Math.Round(_lightRange.Value, 1) };
-            else material.Remove("light");
+            WriteResources(material);
             after.MaterialJson = material.ToJsonString(); afters.Add(after);
         }
         CommitUpdates(afters);
-        _status.Text = _lightOn.ButtonPressed ? "Luz aplicada." : "Luz removida.";
+        _status.Text = "Recursos aplicados.";
     }
 
     // ---- library ---------------------------------------------------------------------------------------------
@@ -174,28 +173,29 @@ public partial class BuildEditor
 
     // ---- applying to the object or to a face -----------------------------------------------------------------
 
-    /// The material layer the tools write to: the selected face's entry when a face is selected, else the whole object's material.
-    private JsonObject TargetLayer(JsonObject material)
+    /// The material layer the tools write to for one face (its entry, made when missing), or the whole object's material when face is -1.
+    private static JsonObject TargetLayer(JsonObject material, int face)
     {
-        if (_selectedFace < 0) return material;
+        if (face < 0) return material;
         var faces = material["faces"] as JsonArray ?? [];
-        foreach (var node in faces) if (node is JsonObject entry && entry["index"]?.GetValue<int>() == _selectedFace) { material["faces"] = faces; return entry; }
-        var created = new JsonObject { ["index"] = _selectedFace };
+        foreach (var node in faces) if (node is JsonObject entry && entry["index"]?.GetValue<int>() == face) { material["faces"] = faces; return entry; }
+        var created = new JsonObject { ["index"] = face };
         faces.Add(created); material["faces"] = faces;
         return created;
     }
 
     private bool EditTarget(Action<JsonObject> change, string done)
     {
-        var view = _selectedFace >= 0 && _faceView is not null && IsInstanceValid(_faceView) ? _faceView : _selection.Count == 1 ? _selection[0] : null;
+        var onFaces = _faceSet.Count > 0 && _faceView is not null && IsInstanceValid(_faceView);
+        var view = onFaces ? _faceView : _selection.Count == 1 ? _selection[0] : null;
         if (view is null) { _status.Text = _selection.Count > 1 ? "Selecione um só objeto para aplicar texturas." : "Selecione um objeto primeiro."; return false; }
         var after = FromView(view); var material = ParseObject(after.MaterialJson);
-        change(TargetLayer(material));
+        if (onFaces) foreach (var face in _faceSet.ToArray()) change(TargetLayer(material, face)); else change(material);
         after.MaterialJson = material.ToJsonString();
-        var face = _selectedFace;
+        var kept = _selectedFace;
         CommitUpdates([after]);
-        _selectedFace = face;
-        _status.Text = done;
+        _selectedFace = kept;
+        _status.Text = onFaces && _faceSet.Count > 1 ? done.TrimEnd('.') + $" em {_faceSet.Count} faces." : done;
         return true;
     }
 
@@ -243,6 +243,7 @@ public partial class BuildEditor
         _offsetX.Text = Disp(Read(layer, "uvOffsetX", 0), 2); _offsetY.Text = Disp(Read(layer, "uvOffsetY", 0), 2); _uvRotation.Text = Disp(Read(layer, "uvRotation", 0), 2);
         _flipU.ButtonPressed = layer["flipU"] is JsonValue u && u.TryGetValue<bool>(out var fu) && fu; _flipV.ButtonPressed = layer["flipV"] is JsonValue v && v.TryGetValue<bool>(out var fv) && fv;
         _glowStrength.Value = Mathf.Clamp(Read(material, "emissionStrength", 1f) / 8f, 0, 1);
+        FillAdvancedMaterial(layer, material);
         var light = material["light"] as JsonObject;
         _lightOn.ButtonPressed = light is not null;
         if (light is not null) { _lightEnergy.Value = Read(light, "energy", 1.5f); _lightRange.Value = Read(light, "range", 8f); if (light["color"]?.GetValue<string>() is { } c) _lightColor.Color = Color.FromHtml(c); }

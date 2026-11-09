@@ -109,6 +109,80 @@ public sealed class PrimMeshTests
     }
 
     [Theory]
-    [InlineData("sphere")] [InlineData("torus")] [InlineData("plane")]
+    [InlineData("plane")] [InlineData("mesh")]
     public void OtherPrimitivesAreNotProcedural(string type) => Assert.False(PrimMesh.Supports(type));
+}
+
+public sealed class PrimMeshAdvancedTests
+{
+    public static IEnumerable<object[]> All => new[] { "cube", "prism", "cylinder", "tube", "cone", "pyramid", "sphere", "hemisphere", "torus", "ring" }.Select(x => new object[] { x });
+    public static IEnumerable<object[]> Round => new[] { "sphere", "hemisphere", "torus", "ring" }.Select(x => new object[] { x });
+
+    [Theory, MemberData(nameof(All))]
+    public void EverySettingKeepsTheMeshFiniteAndWindingOutward(string type)
+    {
+        var settings = new[]
+        {
+            new PrimParams(), new PrimParams(Hollow: .5f), new PrimParams(PathBegin: .2f, PathEnd: .8f), new PrimParams(ShearX: .3f, ShearZ: -.2f),
+            new PrimParams(HoleX: .6f, HoleY: .3f), new PrimParams(CutStart: .25f, CutEnd: .75f, Hollow: .4f), new PrimParams(Twist: 90, TaperX: .4f, TaperY: -.3f),
+            new PrimParams(RadiusOffset: .5f, Revolutions: 2, Skew: .5f), new PrimParams(Hollow: 99, PathBegin: -4, PathEnd: 9, ShearX: 40, HoleX: 50, Revolutions: 99, Skew: 9, RadiusOffset: 9)
+        };
+        foreach (var parameters in settings)
+        {
+            var mesh = PrimMesh.Build(type, parameters);
+            Assert.True(mesh.TriangleCount is > 0 and < 12000, $"{type} has {mesh.TriangleCount} triangles with {parameters}");
+            foreach (var face in mesh.Faces)
+            {
+                foreach (var position in face.Positions) Assert.True(float.IsFinite(position.X + position.Y + position.Z), $"{type} {parameters}");
+                foreach (var normal in face.Normals) Assert.True(float.IsFinite(normal.X + normal.Y + normal.Z), $"{type} normal {parameters}");
+            }
+        }
+    }
+
+    [Fact]
+    public void PathCutShortensABoxAndShearSlidesItsTop()
+    {
+        var whole = PrimMesh.Build("cube", new PrimParams()); var cut = PrimMesh.Build("cube", new PrimParams(PathBegin: .25f, PathEnd: .75f));
+        Assert.Equal(.5f, cut.Max.Y - cut.Min.Y, 3); Assert.Equal(1f, whole.Max.Y - whole.Min.Y, 3);
+        var sheared = PrimMesh.Build("cube", new PrimParams(ShearX: .25f));
+        Assert.Equal(.75f, sheared.Max.X, 3); Assert.Equal(-.5f, sheared.Min.X, 3);
+    }
+
+    [Fact]
+    public void HoleSizeXAndYAreIndependent()
+    {
+        var wide = PrimMesh.Build("cube", new PrimParams(HoleX: .8f, HoleY: .2f));
+        var inner = wide.Faces.Single(f => f.Id == PrimMesh.InnerFace("cube"));
+        Assert.Equal(.4f, inner.Positions.Max(p => p.X), 3); Assert.Equal(.1f, inner.Positions.Max(p => p.Z), 3);
+    }
+
+    [Theory, MemberData(nameof(Round))]
+    public void RoundShapesAreRealGeometryThatReactsToTheirSettings(string type)
+    {
+        var plain = PrimMesh.Build(type, new PrimParams()); Assert.True(plain.TriangleCount > 100);
+        Assert.NotEqual(plain.TriangleCount, PrimMesh.Build(type, new PrimParams(Hollow: .5f)).TriangleCount);
+        Assert.NotEqual(plain.TriangleCount, PrimMesh.Build(type, new PrimParams(CutStart: .25f, CutEnd: .75f)).TriangleCount);
+        Assert.True(PrimMesh.Build(type, new PrimParams(CutStart: .25f, CutEnd: .75f)).Faces.Any(f => f.Id == PrimMesh.ProfileCutStartFace), "a profile cut leaves flat faces");
+        Assert.NotEqual(plain.TriangleCount, PrimMesh.Build(type, new PrimParams(PathBegin: .3f, PathEnd: .7f)).TriangleCount);
+    }
+
+    [Fact]
+    public void ATorusReactsToHoleSizeRevolutionsRadiusOffsetAndSkew()
+    {
+        var plain = PrimMesh.Build("torus", new PrimParams());
+        Assert.True(Math.Abs(plain.Max.X - .5f) < .01f && Math.Abs(plain.Max.Y - .15f) < .01f, $"{plain.Max}");
+        Assert.True(PrimMesh.Build("torus", new PrimParams(HoleX: .6f)).Max.X - 0 > 0); Assert.True(PrimMesh.Build("torus", new PrimParams(HoleY: .6f)).Max.Y > plain.Max.Y + .1f);
+        Assert.True(PrimMesh.Build("torus", new PrimParams(Revolutions: 2)).TriangleCount > plain.TriangleCount * 1.8);
+        Assert.True(PrimMesh.Build("torus", new PrimParams(Skew: .8f)).Max.Y - PrimMesh.Build("torus", new PrimParams(Skew: .8f)).Min.Y > plain.Max.Y - plain.Min.Y + .5f);
+        Assert.NotEqual(plain.Max.X, PrimMesh.Build("torus", new PrimParams(RadiusOffset: .5f)).Max.X);
+    }
+
+    [Fact]
+    public void ASphereDimpleCutsItsPolesAndParseReadsEveryField()
+    {
+        var sphere = PrimMesh.Build("sphere", new PrimParams()); var dimpled = PrimMesh.Build("sphere", new PrimParams(PathBegin: .25f));
+        Assert.True(dimpled.Min.Y > sphere.Min.Y + .05f); Assert.Contains(dimpled.Faces, f => f.Id == PrimMesh.BottomFace);
+        var parsed = PrimParams.Parse("{\"pathBegin\":0.2,\"pathEnd\":0.9,\"shearX\":0.1,\"shearZ\":-0.1,\"holeX\":0.4,\"holeY\":0.3,\"radiusOffset\":0.2,\"revolutions\":2,\"skew\":0.3}");
+        Assert.Equal(new PrimParams(PathBegin: .2f, PathEnd: .9f, ShearX: .1f, ShearZ: -.1f, HoleX: .4f, HoleY: .3f, RadiusOffset: .2f, Revolutions: 2, Skew: .3f), parsed);
+    }
 }

@@ -9,6 +9,8 @@ public partial class BuildEditor
 {
     private const int LoadPerFrame = 40;
     private const string PrefsFile = "user://build_prefs.cfg";
+    private static readonly Vector2 SmallBuildScale = new(.55f, .55f);
+    private static readonly Vector2 LargeBuildScale = new(.68f, .68f);
 
     // ---- paced loading ---------------------------------------------------------------------------------------
 
@@ -23,6 +25,46 @@ public partial class BuildEditor
 
     public void QueueStatesForTesting(IEnumerable<BuildObjectState> states) { foreach (var state in states) _loadQueue.Enqueue(state); }
     public void PumpLoadForTesting() => PumpLoad();
+
+    // ---- build window layout ---------------------------------------------------------------------------------
+
+    /// The expand button is an actual resize mode, not just a visual state. The compact
+    /// size keeps the world usable; the larger size is practical for material/content work.
+    private void SetBuildWindowExpanded(bool expanded)
+    {
+        _window.Scale = expanded ? LargeBuildScale : SmallBuildScale;
+        _status.Text = expanded ? "Janela de construção ampliada." : "Janela de construção compacta.";
+        SaveBuildWindowLayout();
+    }
+
+    private void RestoreBuildWindowLayout()
+    {
+        try
+        {
+            var config = new ConfigFile();
+            if (config.Load(PrefsFile) != Error.Ok) return;
+            var x = Convert.ToSingle(config.GetValue("build_window", "x", _window.Position.X));
+            var y = Convert.ToSingle(config.GetValue("build_window", "y", _window.Position.Y));
+            var scale = Mathf.Clamp(Convert.ToSingle(config.GetValue("build_window", "scale", SmallBuildScale.X)), SmallBuildScale.X, LargeBuildScale.X);
+            _window.Position = new Vector2(x, y);
+            _window.Scale = new Vector2(scale, scale);
+        }
+        catch (Exception) { /* A corrupt local preference must never stop the build tools. */ }
+    }
+
+    private void SaveBuildWindowLayout()
+    {
+        if (_window is null || !IsInstanceValid(_window)) return;
+        try
+        {
+            var config = new ConfigFile(); config.Load(PrefsFile);
+            config.SetValue("build_window", "x", _window.Position.X);
+            config.SetValue("build_window", "y", _window.Position.Y);
+            config.SetValue("build_window", "scale", _window.Scale.X);
+            config.Save(PrefsFile);
+        }
+        catch (Exception) { /* Preferences are local convenience only. */ }
+    }
 
     // ---- editing camera --------------------------------------------------------------------------------------
 

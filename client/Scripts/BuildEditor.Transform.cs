@@ -31,8 +31,12 @@ public partial class BuildEditor
     private static Vector3 EulerOf(NQ q) => new Basis(new Quaternion(q.X, q.Y, q.Z, q.W)).GetEuler();
     private static Pose PoseOf(BuildObjectView view) => new(N(view.Position), QuatOf(view.Rotation), N(view.Scale));
 
-    private AxisSpace Space => _axesSpace is not null && _axesSpace.Selected == 1 ? AxisSpace.Local : AxisSpace.World;
-    private NQ Frame => Space == AxisSpace.Local && _selection.Count > 0 ? QuatOf(_selection[0].Rotation) : NQ.Identity;
+    private Guid _referenceObject;
+    private bool ReferenceChosen => _axesSpace is not null && _axesSpace.Selected == 2 && _objects.TryGetValue(_referenceObject, out var reference) && IsInstanceValid(reference);
+    private AxisSpace Space => _axesSpace is not null && _axesSpace.Selected is 1 or 2 ? AxisSpace.Local : AxisSpace.World;
+    /// The turn the axes follow: the world (none), the first selected object, or the reference object chosen with "Usar como referência".
+    private Vector3 AxesEuler => ReferenceChosen ? _objects[_referenceObject].Rotation : _selection.Count > 0 ? _selection[0].Rotation : Vector3.Zero;
+    private NQ Frame => Space == AxisSpace.Local && (_selection.Count > 0 || ReferenceChosen) ? QuatOf(AxesEuler) : NQ.Identity;
 
     /// Where things turn and stretch around, according to the chosen mode.
     private Vector3 PivotWorld()
@@ -218,10 +222,12 @@ public partial class BuildEditor
         whereBody.AddChild(Txt("As alças e os números abaixo giram e esticam em torno do pivô, e movem pelos eixos escolhidos.", 18, false, UiStyle.TextMuted));
         var line = Row(12); whereBody.AddChild(line);
         line.AddChild(Txt("Onde girar", 20, true)); _pivotMode = Pick(PivotModes); _pivotMode.ItemSelected += _ => { RefreshGizmo(); UpdatePivotInfo(); }; line.AddChild(_pivotMode);
-        line.AddChild(Txt("Eixos", 20, true)); _axesSpace = Pick("Do mundo", "Locais (do primeiro selecionado)"); _axesSpace.ItemSelected += _ => { RefreshGizmo(); UpdatePivotInfo(); }; line.AddChild(_axesSpace);
+        line.AddChild(Txt("Eixos", 20, true)); _axesSpace = Pick("Do mundo", "Locais (do primeiro selecionado)", "De referência (objeto escolhido)"); _axesSpace.ItemSelected += _ => { RefreshGizmo(); UpdatePivotInfo(); }; line.AddChild(_axesSpace);
+        line.AddChild(IconButton("pin", "Usar como referência", "O primeiro objeto selecionado passa a ser a referência dos eixos e da grade (escolha “De referência” em Eixos)", UseSelectionAsReference, UiStyle.ButtonKind.Tool, 44));
         var point = Row(10); whereBody.AddChild(point); point.AddChild(Txt("Ponto escolhido", 19)); _pivotAt = TripleOf(point, "x", "y", "z", "0"); foreach (var f in _pivotAt) f.TextChanged += _ => { if (_pivotMode.Selected == PivotPoint) { RefreshGizmo(); UpdatePivotInfo(); } };
         point.AddChild(IconButton("pin", "Usar o primeiro", "Põe aqui a posição do primeiro objeto selecionado", () => { if (_selection.Count == 0) return; var p = _selection[0].Position; _pivotAt[0].Text = Disp(p.X); _pivotAt[1].Text = Disp(p.Y); _pivotAt[2].Text = Disp(p.Z); _pivotMode.Select(PivotPoint); RefreshGizmo(); UpdatePivotInfo(); }, UiStyle.ButtonKind.Secondary, 44));
         _pivotInfo = Txt("Selecione algo para ver onde fica o pivô.", 18, false, UiStyle.TextMuted); whereBody.AddChild(_pivotInfo);
+        AddStretchOptions(whereBody);
 
         var own = Card("Pivô do objeto", "pin", out var ownBody, out _, 10); page.AddChild(own);
         ownBody.AddChild(Txt("Cada objeto pode ter um pivô próprio: um deslocamento (em metros, nos eixos dele) a partir do centro. Fica salvo com o objeto, como a dobradiça de uma porta.", 18, false, UiStyle.TextMuted));
@@ -284,4 +290,19 @@ public partial class BuildEditor
     }
     public string ArrayInfoForTesting => _arrayInfo.Text;
     public string PivotInfoForTesting { get { UpdatePivotInfo(); return _pivotInfo.Text; } }
+}
+
+public partial class BuildEditor
+{
+    private void UseSelectionAsReference()
+    {
+        if (_selection.Count == 0) { _status.Text = "Selecione o objeto que será a referência."; return; }
+        _referenceObject = _selection[0].State.Id; _axesSpace.Select(2); RefreshGizmo(); UpdatePivotInfo();
+        _status.Text = $"“{_selection[0].State.Name}” é a referência dos eixos e da grade.";
+    }
+
+    public void UseSelectionAsReferenceForTesting() => UseSelectionAsReference();
+    public void SetAxesForTesting(int index) { _axesSpace.Select(index); RefreshGizmo(); }
+    public Vector3 AxesEulerForTesting => AxesEuler;
+    public Vector3 GridRotationForTesting => _grid.Rotation;
 }

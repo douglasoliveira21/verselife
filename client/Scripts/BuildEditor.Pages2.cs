@@ -113,6 +113,7 @@ public partial class BuildEditor
         foreach (var flip in new[] { _flipU, _flipV }) { flip.AddThemeFontSizeOverride("font_size", 19); flips.AddChild(flip); }
         var applyUv = IconButton("check", "Aplicar UV", "Aplica repetição, deslocamento, rotação e espelhamento ao alvo", ApplyUv, UiStyle.ButtonKind.Secondary, 44); applyUv.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd; applyUv.CustomMinimumSize = new Vector2(220, 44); uvHeader.AddChild(applyUv);
         page.AddChild(uv);
+        page.AddChild(BuildAdvancedMaterialCard());
 
         // footer
         var footer = Card(null, null, out var footerBody, out _, 0, false, 16, 8); page.AddChild(footer);
@@ -176,10 +177,11 @@ public partial class BuildEditor
         _lightEnergy = NewSlider(0, 8, .1, 1.5); _lightRange = NewSlider(.5, 30, .5, 8);
         body.AddChild(SliderLine("sun", "Intensidade", _lightEnergy, 2, true, 170));
         body.AddChild(SliderLine("waves", "Alcance", _lightRange, 2, true, 170));
+        body.AddChild(SliderLine("waves", "Atenuação", LightFalloffSlider(), 2, true, 170));
         body.AddChild(Rule());
-        var apply = IconButton("check", "Aplicar luz", "Envia a luz ao servidor; desligue Ativado para remover", ApplyLight, UiStyle.ButtonKind.Primary, 62); apply.AddThemeFontSizeOverride("font_size", 24); body.AddChild(apply);
+        var apply = IconButton("check", "Aplicar recursos", "Envia luz, projetor e caminho flexível ao servidor; desligue Ativado para remover", ApplyLight, UiStyle.ButtonKind.Primary, 62); apply.AddThemeFontSizeOverride("font_size", 24); body.AddChild(apply);
         body.AddChild(Filler());
-        main.AddChild(card);
+        var column = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; column.AddThemeConstantOverride("separation", 12); column.AddChild(card); column.AddChild(BuildProjectorCard()); column.AddChild(BuildFlexCard()); main.AddChild(column);
         page.AddChild(NoteBar("Nota:", "A luz deixa o ambiente mais real, mas luzes demais pesam no desempenho: só as 16 mais próximas ficam acesas por vez. O brilho do material fica na aba Textura."));
         return page;
     }
@@ -212,7 +214,8 @@ public partial class BuildEditor
         var headRow = Row(8); head.AddChild(headRow);
         var itemHead = Txt("Item", 20, true); itemHead.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; headRow.AddChild(itemHead);
         var typeHead = Txt("Tipo", 20, true); typeHead.CustomMinimumSize = new Vector2(250, 0); headRow.AddChild(typeHead);
-        var actionsHead = Txt("Ações", 20, true); actionsHead.CustomMinimumSize = new Vector2(90, 0); actionsHead.HorizontalAlignment = HorizontalAlignment.Center; headRow.AddChild(actionsHead);
+        var rightsHead = Txt("Permissões", 20, true); rightsHead.CustomMinimumSize = new Vector2(120, 0); headRow.AddChild(rightsHead);
+        var actionsHead = Txt("Ações", 20, true); actionsHead.CustomMinimumSize = new Vector2(330, 0); actionsHead.HorizontalAlignment = HorizontalAlignment.Center; headRow.AddChild(actionsHead);
         body.AddChild(head);
         _contentRows = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill }; _contentRows.AddThemeConstantOverride("separation", 4); body.AddChild(_contentRows);
         _contentInfo = Txt("Selecione um objeto.", 17, false, UiStyle.TextMuted); body.AddChild(_contentInfo);
@@ -250,7 +253,7 @@ public partial class BuildEditor
     }
 
     /// One line of the list: a small picture of the kind, the name, the kind in words and a button that removes the item.
-    private void AddContentRow(int index, string name, string category)
+    private void AddContentRow(int index, string name, string category, Guid asset, string rights)
     {
         var row = PanelWith(ContentRowBox(false)); row.MouseFilter = Control.MouseFilterEnum.Stop;
         var line = Row(12); row.AddChild(line);
@@ -259,7 +262,11 @@ public partial class BuildEditor
         var title = Txt(name, 22, true); title.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; line.AddChild(title);
         var kind = Row(10); kind.CustomMinimumSize = new Vector2(250, 0); kind.AddChild(UiStyle.IconRect(CategoryIcon(category), UiStyle.Text, 26)); kind.AddChild(Txt(CategoryLabel(category), 21)); line.AddChild(kind);
         var trash = SquareIcon("trash", "Tira o item do objeto", () => { SelectContent(index); RemoveContent(); }); trash.CustomMinimumSize = new Vector2(62, 48); trash.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
-        var actions = new CenterContainer { CustomMinimumSize = new Vector2(90, 0) }; actions.AddChild(trash); line.AddChild(actions);
+        var rightsLabel = Txt(rights, 20, true, UiStyle.AccentText); rightsLabel.CustomMinimumSize = new Vector2(120, 0); rightsLabel.TooltipText = "O que você pode fazer com este item: C copiar, M modificar, T transferir, R revender"; line.AddChild(rightsLabel);
+        var actions = Row(6); actions.CustomMinimumSize = new Vector2(330, 0); actions.Alignment = BoxContainer.AlignmentMode.Center;
+        foreach (var (icon, tip, action) in new[] { ("eye", "Abrir: pré-visualiza o item", "open"), ("info", "Propriedades e direitos do item", "properties"), ("copy", "Fazer uma cópia no inventário", "copy"), ("send", "Transferir para outra pessoa", "transfer") })
+        { var act = SquareIcon(icon, tip, () => { SelectContent(index); RunContentAction(asset, action); }); act.CustomMinimumSize = new Vector2(62, 48); actions.AddChild(act); }
+        actions.AddChild(trash); line.AddChild(actions);
         row.GuiInput += input => { if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) SelectContent(index); };
         _contentRowNodes.Add(row); _contentRows.AddChild(row);
     }

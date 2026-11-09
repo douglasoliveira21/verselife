@@ -63,6 +63,7 @@ public partial class BuildEditor : Node3D
 
     public override void _ExitTree()
     {
+        SaveBuildWindowLayout();
         if (_network is null) return;
         _network.BuildOperationReceived -= OnOperation; _network.BuildOperationRejected -= OnRejected; _network.ConnectionStateChanged -= OnConnectionState;
     }
@@ -79,7 +80,7 @@ public partial class BuildEditor : Node3D
     public void SetActive(bool active)
     {
         _active = active; _window.Visible = active;
-        if (!active) { CancelDrag(); DisarmPlacement(null); ClearSelection(); _cameraRig?.Exit(); return; }
+        if (!active) { SaveBuildWindowLayout(); CancelDrag(); DisarmPlacement(null); ClearSelection(); _cameraRig?.Exit(); return; }
         _islandId = _network.CurrentIslandId;
         if (_islandId == Guid.Empty && Guid.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_ID"), out var id)) _islandId = id;
         if (_islandId != Guid.Empty) LoadObjects();
@@ -108,7 +109,7 @@ public partial class BuildEditor : Node3D
         UpdateGhost(); UpdatePreview();
         PumpRez(delta);
         PumpCollab(delta);
-        if (_hierarchyDirty && _tabs is not null && _tabs.Selected == 6) RefreshHierarchy();
+        if (_hierarchyDirty && _advancedHierarchyOpen) RefreshHierarchy();
         UpdateSaveLabel();
         PumpMarquee();
         if (!_active || !_dragging) return;
@@ -153,8 +154,8 @@ public partial class BuildEditor : Node3D
         if (axis >= 0 && _selection.Count > 0) return BeginDrag(axis, origin, direction);
         var picked = PickObject(origin, direction, out var face);
         if (picked is null) { BeginMarquee(screen, additive); if (!additive) ClearSelection(); return false; }
-        SelectView(picked, additive);
-        if (_faceTool) SelectFace(picked, face);
+        if (!(_faceTool && additive && ReferenceEquals(_faceView, picked))) SelectView(picked, additive); // Shift + click on the same object adds faces instead of toggling the object
+        if (_faceTool) SelectFace(picked, face, additive);
         return false;
     }
 
@@ -208,8 +209,8 @@ public partial class BuildEditor : Node3D
         UpdateGrid();
         if (_selection.Count == 0 || !_active || _selectOnly || _faceTool || SelectionLockedByOther(out _) || _selection.Any(v => v.State.EditLocked)) { _gizmo.HideHandles(); return; }
         var center = PivotWorld(); // where things turn and stretch around: the centre of the selection unless another pivot was chosen
-        var local = Space == AxisSpace.Local || (_mode == GizmoMode.Scale && _selection.Count == 1);
-        var axes = local ? Basis.FromEuler(_selection[0].Rotation) : Basis.Identity;
+        var local = Space == AxisSpace.Local || (_mode == GizmoMode.Scale && _selection.Count == 1 && !ReferenceChosen);
+        var axes = local ? Basis.FromEuler(ReferenceChosen ? AxesEuler : _selection[0].Rotation) : Basis.Identity;
         _gizmo.ShowAt(center, _mode, axes);
         UpdatePivotInfo();
     }
@@ -274,6 +275,7 @@ public partial class BuildEditor : Node3D
                     if (_dragStart.Count == 1)
                     {
                         var scale = start.Scale; scale[drag.Axis] = ClampScale(start.Scale[drag.Axis] * drag.Amount); start.View.Scale = scale;
+                        if (_stretchBoth is not null && !_stretchBoth.ButtonPressed && _dragPivot.DistanceTo(start.Position) <= .001f) start.View.Position = start.Position + drag.AxisDirection.Normalized() * (scale[drag.Axis] - start.Scale[drag.Axis]) * .5f; // one-sided: the opposite face stays put
                         if (_dragPivot.DistanceTo(start.Position) > .001f) // a pivot away from the centre: the object grows away from it
                         {
                             var factors = drag.Axis switch { 0 => new NV(drag.Amount, 1, 1), 1 => new NV(1, drag.Amount, 1), _ => new NV(1, 1, drag.Amount) };
@@ -334,6 +336,7 @@ public partial class BuildEditor : Node3D
         foreach (var after in afters)
         {
             if (!_objects.TryGetValue(after.Id, out var view)) continue;
+            KeepTextureSize(view.State, after);
             entry.Items.Add(new HistoryItem(after.Id, Clone(view.State), Clone(after)));
             TeachFromChange(view.State, after);
             Send(Command("update", after.Id, view.State.Revision, PayloadFrom(after)));
@@ -530,7 +533,7 @@ public partial class BuildEditor : Node3D
             var operation = doc.RootElement.GetProperty("operation").GetString();
             if (operation is "lock" or "unlock") { HandleLockMessage(doc.RootElement, operation); return; }
             if (operation == "rez") { OnRezzed(doc.RootElement); return; }
-            if (operation is "structure" or "protect") { if (doc.RootElement.TryGetProperty("objects", out var changed)) ApplyObjects(changed); return; }
+            if (operation is "structure" or "protect" or "properties") { if (doc.RootElement.TryGetProperty("objects", out var changed)) ApplyObjects(changed); return; }
             if (doc.RootElement.TryGetProperty("objectState", out var state) && state.ValueKind != JsonValueKind.Null)
             {
                 var objectState = JsonSerializer.Deserialize<BuildObjectState>(state.GetRawText(), Web)!;

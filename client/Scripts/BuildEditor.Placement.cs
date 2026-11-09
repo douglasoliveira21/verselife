@@ -47,7 +47,10 @@ public partial class BuildEditor
         var camera = GetViewport().GetCamera3D();
         if (camera is null) return null;
         var origin = camera.ProjectRayOrigin(screen); var direction = camera.ProjectRayNormal(screen);
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(origin, origin + direction * 150f, uint.MaxValue & ~BuildGizmo.PhysicsLayer));
+        // The placement ghost has a selection-only body. Exclude it from the surface
+        // query, otherwise the preview can repeatedly raycast itself and flicker.
+        var mask = uint.MaxValue & ~BuildGizmo.PhysicsLayer & ~BuildObjectView.SelectionPhysicsLayer;
+        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(origin, origin + direction * 150f, mask));
         if (hit.Count == 0) return null;
         var spot = hit["position"].AsVector3() + hit["normal"].AsVector3() * .5f;
         if (_gridSnap.ButtonPressed && GridStep() > 0f) spot = new Vector3(AlignMath.SnapToGrid(spot.X, GridStep()), spot.Y, AlignMath.SnapToGrid(spot.Z, GridStep()));

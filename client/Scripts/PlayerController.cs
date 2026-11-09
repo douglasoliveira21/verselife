@@ -379,7 +379,20 @@ public partial class PlayerController : CharacterBody3D
         }
         else _flying = serverFlying;
         var error = GlobalPosition.DistanceTo(authoritativePosition);
-        if (error > 3f) GlobalPosition = authoritativePosition; // a real teleport
+        if (error > 3f)
+        {
+            // A server snapshot can be far away when its simplified obstacle model
+            // does not describe an imported triangular mesh. Never assign that position
+            // blindly: doing so lets a snapshot carry the local capsule through a wall.
+            // Real teleports still apply immediately when the direct path is clear.
+            var displacement = authoritativePosition - GlobalPosition;
+            if (!TestMove(GlobalTransform, displacement)) GlobalPosition = authoritativePosition;
+            else
+            {
+                var safeCorrection = displacement.Length() > .75f ? displacement.Normalized() * .75f : displacement;
+                MoveAndCollide(safeCorrection);
+            }
+        }
         else if (error > .3f)
         {
             // The server's shapes are simpler than the ones the engine collides with, so small differences are normal and are left alone.

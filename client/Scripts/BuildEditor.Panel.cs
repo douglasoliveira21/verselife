@@ -25,7 +25,7 @@ public partial class BuildEditor
     private HSlider _hollow = null!, _taperX = null!, _taperY = null!, _twist = null!;
     private ColorPickerButton _colorPicker = null!, _emissionPicker = null!;
     private CheckBox _glow = null!, _ghost = null!;
-    private OptionButton _physMode = null!, _collisionShape = null!; private LineEdit _physMass = null!, _physFriction = null!, _physBounce = null!;
+    private OptionButton _physMode = null!, _collisionShape = null!; private LineEdit _physMass = null!, _physFriction = null!, _physBounce = null!; private OptionButton _physMaterial = null!; private CheckBox _physTemporary = null!;
     private HSlider _roughness = null!, _metallic = null!, _opacity = null!;
     private Label _status = null!, _selectionLabel = null!;
     private Button _toolSelect = null!, _toolMove = null!, _toolRotate = null!, _toolScale = null!, _toolFace = null!;
@@ -99,7 +99,7 @@ public partial class BuildEditor
     private void FillFields()
     {
         if (_selectionLabel is null) return;
-        _filling = true;
+        _filling = true; RefreshModeStatus(); ApplyReadOnly(); FillSharing(); FillResources(); if (_selection.Count != 1) FillShape([]);
         _selectedCount.Text = _selection.Count switch { 0 => "nenhum", 1 => "1 objeto", _ => $"{_selection.Count} objetos" };
         if (_selection.Count == 0) _primsLabel.Text = $"Prims: {_objects.Count:N0}".Replace(",", ".");
         _selectionLabel.Text = _selection.Count switch
@@ -121,6 +121,7 @@ public partial class BuildEditor
             }
             var geometry = ParseObject(s.GeometryJson); var material = ParseObject(s.MaterialJson); var physics = ParseObject(s.PhysicsJson);
             _hollow.Value = Read(geometry, "hollow", 0); _taperX.Value = Read(geometry, "taperX", 0); _taperY.Value = Read(geometry, "taperY", 0); _twist.Value = Read(geometry, "twist", 0);
+            FillShape(geometry);
             if (material["color"]?.GetValue<string>() is { } color) _colorPicker.Color = Color.FromHtml(color);
             _roughness.Value = Read(material, "roughness", .7f); _metallic.Value = Read(material, "metallic", 0f); _opacity.Value = Read(material, "transparency", 1f);
             _glow.ButtonPressed = material["emission"] is not null;
@@ -167,7 +168,7 @@ public partial class BuildEditor
                 if (!string.IsNullOrWhiteSpace(_name.Text)) after.Name = _name.Text.Trim();
                 after.Description = _description.Text.Trim();
             }
-            after.GeometryJson = GeometryFromFields(after.GeometryJson);
+            after.GeometryJson = GeometryFromFields(after.GeometryJson, after.PrimitiveType);
             after.MaterialJson = MaterialFromFields(after.MaterialJson);
             after.PhysicsJson = PhysicsFromFields(after.PhysicsJson);
             afters.Add(after);
@@ -176,11 +177,12 @@ public partial class BuildEditor
         _status.Text = "Alterações enviadas ao servidor.";
     }
 
-    private string GeometryFromFields(string existing)
+    private string GeometryFromFields(string existing, string type)
     {
         var node = ParseObject(existing);
         node["hollow"] = Math.Round(Mathf.Clamp((float)_hollow.Value, 0f, .95f), 3); node["taperX"] = Math.Round(Mathf.Clamp((float)_taperX.Value, -1f, 1f), 3);
         node["taperY"] = Math.Round(Mathf.Clamp((float)_taperY.Value, -1f, 1f), 3); node["twist"] = Math.Round(Mathf.Clamp((float)_twist.Value, -180f, 180f), 2);
+        WriteShape(node, type.ToLowerInvariant());
         return node.ToJsonString();
     }
 
@@ -200,13 +202,13 @@ public partial class BuildEditor
         var physical = _physMode.Selected == 1 && shape != "triangle";
         if (_physMode.Selected == 1 && shape == "triangle") { _physMode.Select(0); _status.Text = "Malha triangular só funciona como colisão estática."; }
         return PhysicsRules.Write(existing, new PhysicsSettings(!_ghost.ButtonPressed && shape != "none", Trigger: ParseObject(existing)["trigger"] is JsonValue t && t.TryGetValue<bool>(out var isTrigger) && isTrigger, physical,
-            NumOr(_physMass, 1f), NumOr(_physFriction, .5f), NumOr(_physBounce, 0f), shape));
+            NumOr(_physMass, 1f), NumOr(_physFriction, .5f), NumOr(_physBounce, 0f), shape, _physMaterial.Selected > 0 ? _physMaterial.GetItemMetadata(_physMaterial.Selected).AsString() : "", _physTemporary.ButtonPressed));
     }
 
     private void FillPhysics(string physicsJson)
     {
         var p = PhysicsRules.Read(physicsJson);
-        _physMode.Select(p.Physical ? 1 : 0); _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, p.CollisionShape) is var index && index >= 0 ? index : 1); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2);
+        _physMode.Select(p.Physical ? 1 : 0); _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, p.CollisionShape) is var index && index >= 0 ? index : 1); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2); _physMaterial.Select(Math.Max(0, Array.IndexOf(PhysicsRules.Materials.Keys.ToArray(), p.Material) + 1)); _physTemporary.SetPressedNoSignal(p.Temporary);
     }
 
     public void SetPhysicsForTesting(bool physical, float mass = 1f, float friction = .5f, float bounce = 0f) { _physMode.Select(physical ? 1 : 0); _physMass.Text = Disp(mass, 2); _physFriction.Text = Disp(friction, 2); _physBounce.Text = Disp(bounce, 2); ApplySelected(); }
@@ -264,6 +266,7 @@ public partial class BuildEditor
         var boxes = _selection.Select(WorldBounds).ToList();
         var low = boxes.Min(x => x.Min.Y); var center = boxes.Aggregate(System.Numerics.Vector3.Zero, (sum, x) => sum + x.Center) / boxes.Count;
         _grid.ShowAround(new Vector3(center.X, 0, center.Z), low, GridStep(), _showGrid.ButtonPressed);
+        _grid.Rotation = new Vector3(0, Space == AxisSpace.Local ? AxesEuler.Y : 0f, 0); // the grid follows the reference: world, the first object or the chosen reference
     }
 
     private void FaceTool()
@@ -273,37 +276,60 @@ public partial class BuildEditor
         _status.Text = "Clique em uma face para selecioná-la; depois use a aba Textura.";
     }
 
-    private void SelectFace(BuildObjectView view, int face)
+    private readonly SortedSet<int> _faceSet = [];
+    public IReadOnlyCollection<int> SelectedFacesForTesting => _faceSet;
+
+    private void SelectFace(BuildObjectView view, int face, bool additive = false)
     {
-        ClearFace();
+        var keep = additive && ReferenceEquals(_faceView, view) && face >= 0;
+        var previous = keep ? _faceSet.ToArray() : [];
+        if (!keep) ClearFace();
         if (!view.IsProcedural || face < 0) { _faceLabel.Text = "Esta forma não tem faces separadas; use caixa, prisma, cilindro, tubo, cone ou pirâmide."; return; }
-        _selectedFace = face; _faceView = view; view.HighlightFace(face);
-        _faceLabel.Text = $"Face selecionada: {face}"; FillTextureFields(); _status.Text = "Face selecionada. Escolha a cor na aba Textura e use Cor na face.";
+        _faceView = view; foreach (var old in previous) _faceSet.Add(old);
+        if (keep && _faceSet.Contains(face)) { _faceSet.Remove(face); face = _faceSet.Count > 0 ? _faceSet.Max : -1; } else _faceSet.Add(face); // shift + click on a chosen face takes it off
+        _selectedFace = face; view.HighlightFaces(_faceSet);
+        if (_faceSet.Count == 0) { ClearFace(); return; }
+        ShowFaceLabel(); FillTextureFields(); _status.Text = "Face selecionada. Shift + clique soma mais faces; escolha a cor ou a textura na aba Textura.";
     }
+
+    private void ShowFaceLabel() => _faceLabel.Text = _faceSet.Count == 1 ? $"Face selecionada: {_faceSet.First()}" : $"{_faceSet.Count} faces selecionadas: {string.Join(", ", _faceSet)}";
+
+    /// Selects every face of the chosen object (or the first selected one) so a texture can go on all of them at once.
+    private void SelectAllFaces()
+    {
+        var view = _faceView is not null && IsInstanceValid(_faceView) ? _faceView : _selection.Count == 1 ? _selection[0] : null;
+        if (view is null || !view.IsProcedural) { _status.Text = "Selecione um objeto com faces separadas."; return; }
+        ClearFace(); _faceView = view; foreach (var id in view.FaceIds) _faceSet.Add(id);
+        _selectedFace = _faceSet.Max; view.HighlightFaces(_faceSet); ShowFaceLabel(); FillTextureFields();
+    }
+
+    public void SelectAllFacesForTesting() => SelectAllFaces();
+    public void SelectFaceForTesting(Guid id, int face, bool additive) { if (_objects.TryGetValue(Resolve(id), out var view)) { if (!_selection.Contains(view)) SelectView(view, false); _faceTool = true; SelectFace(view, face, additive); } }
 
     private BuildObjectView? _faceView;
 
     private void ClearFace()
     {
         if (_faceView is not null && IsInstanceValid(_faceView)) _faceView.HighlightFace(-1);
-        _faceView = null; _selectedFace = -1;
-        if (_faceLabel is not null) { _faceLabel.Text = "Face (tecla 5): clique em uma face."; FillTextureFields(); }
+        _faceView = null; _selectedFace = -1; _faceSet.Clear();
+        if (_faceLabel is not null) { _faceLabel.Text = "Face (tecla 5): clique em uma face; Shift + clique soma mais."; FillTextureFields(); }
     }
 
     private void PaintFace(bool clear)
     {
-        if (_selectedFace < 0 || _faceView is null || !IsInstanceValid(_faceView)) { _status.Text = "Selecione uma face com a ferramenta Face (5)."; return; }
+        if (_faceSet.Count == 0 || _faceView is null || !IsInstanceValid(_faceView)) { _status.Text = "Selecione uma face com a ferramenta Face (5)."; return; }
         var after = FromView(_faceView);
         var material = ParseObject(after.MaterialJson);
         var faces = material["faces"] as JsonArray ?? [];
-        for (var i = faces.Count - 1; i >= 0; i--) if (faces[i] is JsonObject entry && entry["index"]?.GetValue<int>() == _selectedFace) faces.RemoveAt(i);
-        if (!clear) faces.Add(new JsonObject { ["index"] = _selectedFace, ["color"] = "#" + _colorPicker.Color.ToHtml(false) });
+        var chosen = _faceSet.ToArray();
+        for (var i = faces.Count - 1; i >= 0; i--) if (faces[i] is JsonObject entry && entry["index"]?.GetValue<int>() is { } index && chosen.Contains(index)) faces.RemoveAt(i);
+        if (!clear) foreach (var face in chosen) faces.Add(new JsonObject { ["index"] = face, ["color"] = "#" + _colorPicker.Color.ToHtml(false) });
         if (faces.Count > 0) material["faces"] = faces; else material.Remove("faces");
         after.MaterialJson = material.ToJsonString();
-        var face = _selectedFace;
+        var kept = _selectedFace;
         CommitUpdates([after]);
-        _status.Text = clear ? "Cor da face removida." : "Face colorida.";
-        _selectedFace = face;
+        _selectedFace = kept;
+        _status.Text = clear ? "Cor das faces removida." : chosen.Length == 1 ? "Face colorida." : $"{chosen.Length} faces coloridas.";
     }
 
     /// World-space box around an object's visible mesh.

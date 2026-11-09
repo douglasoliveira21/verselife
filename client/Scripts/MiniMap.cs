@@ -14,6 +14,8 @@ public partial class MiniMap : Control
     private ImageTexture? _texture;
     private float _viewMeters = 300f;
     private bool _showPlayers = true;
+    private bool _showBuildings = true;
+    private int _visibleBuildings;
     private static readonly Color[] DotColors = [new("#16D6C4"), new("#F4A340"), new("#E94B9A"), new("#7C5CFF"), new("#3BF45F")];
 
     public override void _Ready()
@@ -78,6 +80,7 @@ public partial class MiniMap : Control
             var half = _terrain.Map.HalfExtent;
             DrawTextureRect(_texture, new Rect2(center + new Vector2(-half - origin.X, -half - origin.Z) * scale, new Vector2(half * 2, half * 2) * scale), false);
         }
+        DrawBuildings(origin, scale);
         if (_network is not null && _showPlayers)
             foreach (var (other, index) in _network.RemotePositions.Select((position, i) => (position, i)))
             {
@@ -95,9 +98,34 @@ public partial class MiniMap : Control
         DrawColoredPolygon(arrow, Colors.White);
     }
 
+    /// The map reads the same BuildObjectView instances that draw the island, so its top-down
+    /// footprint is never a separate or stale representation of the current region.
+    private void DrawBuildings(Vector3 origin, float scale)
+    {
+        _visibleBuildings = 0;
+        if (!_showBuildings) return;
+        foreach (var node in GetTree().GetNodesInGroup("lifeverse_build_objects"))
+        {
+            if (node is not BuildObjectView view || !IsInstanceValid(view) || !view.Visible) continue;
+            var state = view.State;
+            var point = new Vector2(view.GlobalPosition.X - origin.X, view.GlobalPosition.Z - origin.Z) * scale + Size / 2f;
+            var half = new Vector2(Mathf.Abs(view.Scale.X), Mathf.Abs(view.Scale.Z)) * .5f * scale;
+            if (half.X < 1f) half.X = 1f; if (half.Y < 1f) half.Y = 1f;
+            if (!new Rect2(Vector2.Zero, Size).Grow(24).HasPoint(point)) continue;
+            var x = new Vector2(view.GlobalTransform.Basis.X.X, view.GlobalTransform.Basis.X.Z).Normalized() * half.X;
+            var z = new Vector2(view.GlobalTransform.Basis.Z.X, view.GlobalTransform.Basis.Z.Z).Normalized() * half.Y;
+            if (x.LengthSquared() < .01f) x = Vector2.Right * half.X; if (z.LengthSquared() < .01f) z = Vector2.Down * half.Y;
+            var footprint = new[] { point - x - z, point + x - z, point + x + z, point - x + z };
+            var color = state.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase) ? new Color(.18f, .9f, 1f, .56f) : new Color(.92f, .78f, .34f, .48f);
+            DrawColoredPolygon(footprint, color); DrawPolyline([.. footprint, footprint[0]], new Color(1, 1, 1, .72f), 1.2f, true);
+            _visibleBuildings++;
+        }
+    }
+
     public void ZoomIn() => _viewMeters = Mathf.Clamp(_viewMeters * .8f, 80f, 700f);
     public void ZoomOut() => _viewMeters = Mathf.Clamp(_viewMeters / .8f, 80f, 700f);
     public bool ShowPlayers { get => _showPlayers; set => _showPlayers = value; }
+    public bool ShowBuildings { get => _showBuildings; set => _showBuildings = value; }
     public float ViewMeters => _viewMeters;
 
     /// The round compass letters, the zoom buttons and the layers button drawn over the map (client/Assets/ui/06).
@@ -118,6 +146,16 @@ public partial class MiniMap : Control
         var layers = MapButton(frame, "layers", "Camadas: mostrar ou ocultar jogadores", 0, 1, new Vector2(34, -34), () => { });
         layers.ToggleMode = true; layers.ButtonPressed = true;
         layers.Toggled += on => _showPlayers = on;
+        var buildings = MapButton(frame, "cube", "Camada de construções da ilha", 0, 1, new Vector2(88, -34), () => { });
+        buildings.ToggleMode = true; buildings.ButtonPressed = true; buildings.Toggled += on => _showBuildings = on;
+        var status = new Label { MouseFilter = MouseFilterEnum.Ignore, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        status.AddThemeFontOverride("font", UiStyle.Medium); status.AddThemeFontSizeOverride("font_size", 14); status.AddThemeColorOverride("font_color", Colors.White);
+        var plate = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore }; plate.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color("#102230", .86f), new Color(UiStyle.Accent, .5f), 9, 1, 9, 3)); plate.AddChild(status); frame.AddChild(plate);
+        plate.SetAnchorsPreset(LayoutPreset.BottomLeft); plate.OffsetLeft = 12; plate.OffsetBottom = -12; plate.OffsetRight = 176; plate.OffsetTop = -40;
+        status.Text = "Construções: 0";
+        status.SetProcess(true); status.ProcessMode = ProcessModeEnum.Inherit;
+        status.SetMeta("minimap_status", true);
+        status.Draw += () => status.Text = $"Construções: {_visibleBuildings} · {ViewMeters:0} m";
     }
 
     private static Button MapButton(Control frame, string icon, string tooltip, float anchorX, float anchorY, Vector2 offset, Action action)

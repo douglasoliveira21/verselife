@@ -12,13 +12,13 @@ namespace LifeVerse.Api.Modules.Assets;
 public static class MaterialAssets
 {
     public static readonly string[] BuiltInTextures = ["checker", "bricks", "planks", "stripes", "noise", "tiles"];
-    private static readonly string[] ImageKeys = ["texture", "normalMap"];
+    private static readonly string[] ImageKeys = ["texture", "normalMap", "projectorTexture"];
     public const int MaxTexturesPerObject = 8;
 
     private static readonly (string Key, float Min, float Max)[] Ranges =
     [
         ("uvRepeatX", .01f, 100f), ("uvRepeatY", .01f, 100f), ("uvOffsetX", -100f, 100f), ("uvOffsetY", -100f, 100f), ("uvRotation", -360f, 360f),
-        ("emissionStrength", 0f, 16f), ("roughness", 0f, 1f), ("metallic", 0f, 1f), ("transparency", 0f, 1f)
+        ("emissionStrength", 0f, 16f), ("roughness", 0f, 1f), ("metallic", 0f, 1f), ("transparency", 0f, 1f), ("alphaCutoff", 0f, 1f)
     ];
 
     /// <summary>Every image asset the material refers to, across the object and its faces.</summary>
@@ -60,6 +60,7 @@ public static class MaterialAssets
                 foreach (var face in faces.EnumerateArray()) if (face.ValueKind == JsonValueKind.Object && CheckLayer(face) is { } faceError) return faceError;
             }
             if (TextureIds(materialJson).Count > MaxTexturesPerObject) return $"An object can use at most {MaxTexturesPerObject} textures.";
+            if (ValidateResources(root) is { } resourceError) return resourceError;
             if (root.TryGetProperty("light", out var light) && light.ValueKind == JsonValueKind.Object)
             {
                 if (!InRange(light, "energy", 0f, 8f) || !InRange(light, "range", .5f, 30f)) return "Light intensity must be 0 to 8 and range 0.5 to 30 metres.";
@@ -69,8 +70,31 @@ public static class MaterialAssets
         return null;
     }
 
+    /// <summary>Flexible path, light falloff and projector settings: the ranges the client also clamps to. A projector needs a light.</summary>
+    private static string? ValidateResources(JsonElement root)
+    {
+        if (root.TryGetProperty("light", out var light) && light.ValueKind == JsonValueKind.Object && !InRange(light, "falloff", .1f, 4f)) return "Light falloff must be 0.1 to 4.";
+        if (root.TryGetProperty("flex", out var flex))
+        {
+            if (flex.ValueKind != JsonValueKind.Object) return "Flexible path settings must be an object.";
+            foreach (var (key, min, max) in new[] { ("softness", 0f, 3f), ("gravity", -10f, 10f), ("drag", 0f, 10f), ("wind", 0f, 10f), ("tension", 0f, 10f), ("forceX", -10f, 10f), ("forceY", -10f, 10f), ("forceZ", -10f, 10f) })
+                if (!InRange(flex, key, min, max)) return $"Flexible path setting '{key}' must be between {min} and {max}.";
+        }
+        var hasProjector = root.TryGetProperty("projector", out var projector) || root.TryGetProperty("projectorTexture", out _) || root.TryGetProperty("projectorBuiltin", out _);
+        if (hasProjector)
+        {
+            if (!root.TryGetProperty("light", out var owner) || owner.ValueKind != JsonValueKind.Object) return "A projector needs the light to be on.";
+            if (root.TryGetProperty("projector", out projector) && (projector.ValueKind != JsonValueKind.Object || !InRange(projector, "fov", 10f, 120f) || !InRange(projector, "focus", 0f, 30f) || !InRange(projector, "ambiance", 0f, 1f))) return "Projector field of view must be 10 to 120, focus 0 to 30 and ambiance 0 to 1.";
+            if (root.TryGetProperty("projectorBuiltin", out var builtin) && (builtin.ValueKind != JsonValueKind.String || !BuiltInTextures.Contains(builtin.GetString(), StringComparer.Ordinal))) return "Unknown built-in texture.";
+        }
+        return null;
+    }
+
     private static string? CheckLayer(JsonElement layer)
     {
+        if (layer.TryGetProperty("alphaMode", out var alphaMode) && (alphaMode.ValueKind != JsonValueKind.String || alphaMode.GetString() is not ("none" or "blend" or "mask"))) return "Alpha mode must be none, blend or mask.";
+        if (layer.TryGetProperty("mapping", out var mapping) && (mapping.ValueKind != JsonValueKind.String || mapping.GetString() is not ("default" or "planar"))) return "Mapping must be default or planar.";
+        foreach (var flag in new[] { "fullBright", "doubleSided", "flipU", "flipV" }) if (layer.TryGetProperty(flag, out var on) && on.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return $"Material setting '{flag}' must be true or false.";
         foreach (var (key, min, max) in Ranges) if (!InRange(layer, key, min, max)) return $"Material setting '{key}' must be between {min} and {max}.";
         if (layer.TryGetProperty("builtin", out var builtin) && (builtin.ValueKind != JsonValueKind.String || !BuiltInTextures.Contains(builtin.GetString(), StringComparer.Ordinal))) return "Unknown built-in texture.";
         foreach (var key in ImageKeys)

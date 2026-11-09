@@ -39,6 +39,7 @@ public static partial class BuildOperations
             case "return": return await Exclusive(db, island.Id, ct, () => ReturnAsync(request, island, actor, isAdmin, parcels, db, storage, now, ct));
             case "structure": return await Exclusive(db, island.Id, ct, () => StructureAsync(request, island, actor, isAdmin, parcels, db, now, ct));
             case "protect": return await ProtectAsync(request, island, actor, isAdmin, parcels, db, now, ct);
+            case "properties": return await PropertiesAsync(request, island, actor, isAdmin, db, now, ct);
             case "rez": return await Exclusive(db, island.Id, ct, () => RezAsync(request, island, actor, isAdmin, hasBuild, parcels, db, storage, now, ct));
             default: return Refuse(400, "invalid_operation");
         }
@@ -87,7 +88,7 @@ public static partial class BuildOperations
         if (item.EditLocked) return Refuse(403, "object_protected");
         if (item.Revision != request.ExpectedRevision) return Results.Json(new { code = "revision_conflict", currentRevision = item.Revision }, statusCode: 409);
         var here = BuildRules.ParcelAt(parcels, item.PositionX, item.PositionZ);
-        if (BuildRules.CanEditObject(actor, item.OwnerUserId, isAdmin, here) is { } notOwner) return Refuse(403, notOwner);
+        if (BuildRules.CanEditObject(actor, item.OwnerUserId, isAdmin, here) is { } notOwner && !await SharedAccessAsync(db, item, actor, ObjectRights.ChangesWhatItIs(item, o), ct)) return Refuse(403, notOwner);
         if (await ValidateAsync(db, actor, o, item, ct) is { } invalid) return Refuse(400, "invalid_object", invalid);
         var there = BuildRules.ParcelAt(parcels, o.PositionX, o.PositionZ);
         if (there?.Id != here?.Id && BuildRules.CanBuildAt(there, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);

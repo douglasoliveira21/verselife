@@ -1009,3 +1009,32 @@ public partial class InventoryPanel
     public double StorageBarForTesting => _storageBar.Value;
     public bool StorageWarningColorForTesting => _storageText.GetThemeColor("font_color") == UiStyle.Orange;
 }
+
+public partial class InventoryPanel
+{
+    private ItemInfo? ItemOfAsset(Guid asset) => _items.Values.FirstOrDefault(i => i.AssetId == asset && !i.Deleted);
+
+    /// <summary>The rights the person holds on the inventory item of an asset (what an object that carries it may do), or null when the item is not in the loaded list.</summary>
+    public int? OwnerRightsOfAsset(Guid asset) => ItemOfAsset(asset)?.OwnerRights;
+
+    /// <summary>
+    /// What the Conteúdo tab asks of the inventory for a thing an object carries: "open" (preview), "properties" (rights window), "copy" or "transfer" (the offer section).
+    /// Returns a sentence when it cannot be done, null when it started.
+    /// </summary>
+    public string? RunOnAsset(Guid asset, string action)
+    {
+        var info = ItemOfAsset(asset);
+        if (info is null) { if (!_window.Visible) Toggle(); return "Não achei esse item no inventário carregado; ele foi aberto, procure o item e tente de novo."; }
+        SelectItem(info.ItemId);
+        switch (action)
+        {
+            case "open": PreviewSelected(); return null;
+            case "properties": OpenRights(false); return null;
+            case "transfer": OpenRights(true); return null;
+            case "copy":
+                if (!LifeVerse.Shared.Items.ItemRights.IsCopyable(info.OwnerRights)) return "Este item não pode ser copiado.";
+                MakeCopy(); return null;
+            default: return "Ação desconhecida.";
+        }
+    }
+}

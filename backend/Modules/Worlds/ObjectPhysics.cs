@@ -10,6 +10,7 @@ namespace LifeVerse.Api.Modules.Worlds;
 public static class ObjectPhysics
 {
     public const float MinMass = .01f, MaxMass = 10_000f;
+    public static readonly HashSet<string> KnownMaterials = ["stone", "metal", "glass", "wood", "flesh", "plastic", "rubber"];
 
     /// <summary>Null when the settings are acceptable, otherwise why not.</summary>
     public static string? Validate(string? json)
@@ -18,16 +19,23 @@ public static class ObjectPhysics
         JsonNode? node;
         try { node = JsonNode.Parse(json); } catch (JsonException) { return "Physics settings must be valid JSON."; }
         if (node is not JsonObject o) return "Physics settings must be an object.";
-        foreach (var key in new[] { "collision", "trigger" }) if (o[key] is { } flag && !(flag is JsonValue v && v.TryGetValue<bool>(out _))) return $"Physics '{key}' must be true or false.";
+        foreach (var key in new[] { "collision", "trigger", "temporary" }) if (o[key] is { } flag && !(flag is JsonValue v && v.TryGetValue<bool>(out _))) return $"Physics '{key}' must be true or false.";
         string? mode = null;
         if (o["mode"] is { } m) { if (m is not JsonValue mv || !mv.TryGetValue<string>(out mode) || mode is not ("static" or "physical")) return "Physics 'mode' must be static or physical."; }
         var shape = "box"; if (o["shape"] is { } s) { if (s is not JsonValue sv || !sv.TryGetValue<string>(out shape) || shape is not ("none" or "box" or "convex" or "triangle")) return "Physics 'shape' must be none, box, convex or triangle."; }
+        if (o["material"] is { } material && !(material is JsonValue mv2 && mv2.TryGetValue<string>(out var materialName) && KnownMaterials.Contains(materialName))) return "Physics 'material' is not a known material.";
         if (Number(o, "mass", MinMass, MaxMass) is { } massError) return massError;
         if (Number(o, "friction", 0f, 1f) is { } frictionError) return frictionError;
         if (Number(o, "bounce", 0f, 1f) is { } bounceError) return bounceError;
         if (mode == "physical" && (Flag(o, "collision", true) == false || Flag(o, "trigger", false))) return "A physical object needs solid collision (not a ghost, not a trigger).";
         if (mode == "physical" && shape == "triangle") return "Triangle mesh collision is static only; use box or convex for a physical object.";
         return null;
+    }
+
+    public static bool IsTemporary(string? json)
+    {
+        try { return !string.IsNullOrWhiteSpace(json) && JsonNode.Parse(json) is JsonObject o && o["temporary"] is JsonValue t && t.TryGetValue<bool>(out var on) && on; }
+        catch (JsonException) { return false; }
     }
 
     public static bool IsPhysical(string? json)

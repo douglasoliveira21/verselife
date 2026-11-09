@@ -121,8 +121,8 @@ public partial class BuildSmoke : Node
             // The Portuguese build window: eleven primitives, numeric fields applied through revisioned updates.
             Require(_editor.PrimitiveIdsForTesting.Contains("torus") && _editor.PrimitiveIdsForTesting.Contains("hemisphere"), "torus and hemisphere must be creatable");
             var hemisphere = Add(new Vector3(-4, .5f, -6), "hemisphere"); var torus = Add(new Vector3(-6, .5f, -6), "torus");
-            Require(_editor.ViewForTesting(hemisphere)!.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh is SphereMesh { IsHemisphere: true }, "a hemisphere must render as half a sphere");
-            Require(_editor.ViewForTesting(torus)!.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh is TorusMesh, "a torus must render as a torus");
+            Require(_editor.ViewForTesting(hemisphere)!.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh is ArrayMesh hemi && hemi.GetAabb().Size.Y is > .45f and < .55f, "a hemisphere must render as half a sphere");
+            Require(_editor.ViewForTesting(torus)!.GetNode<MeshInstance3D>("PrimitiveMesh").Mesh is ArrayMesh ring && ring.GetAabb().Size.Y is > .25f and < .35f && ring.GetAabb().Size.X is > .95f, "a torus must render as a torus");
             _editor.SelectIds([torus]);
             _editor.ApplyFieldsForTesting(new Vector3(5, 1, -2), new Vector3(2, 3, 4), "Parede", .3f);
             var edited = _server[torus];
@@ -602,6 +602,75 @@ public partial class BuildSmoke : Node
             var objectsBeforeRez = _editor.ObjectCountForTesting; var madeA = new BuildObjectState { Id = Guid.NewGuid(), Name = "A", PrimitiveType = "cube", PositionX = 5, PositionY = 1, PositionZ = 7, Revision = 1, OwnerRights = 6, NextOwnerRights = 4 }; var madeB = new BuildObjectState { Id = Guid.NewGuid(), Name = "B", PrimitiveType = "cube", PositionX = 7, PositionY = 1, PositionZ = 7, Revision = 1, OwnerRights = 6, NextOwnerRights = 4 };
             _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation = "rez", itemId = rezItem, consumed = true, objects = new[] { madeA, madeB } }, Web));
             Require(_editor.ObjectCountForTesting == objectsBeforeRez + 2 && _editor.StatusForTesting.Contains("Construção colocada (2 objeto(s))") && _editor.StatusForTesting.Contains("não pode ser copiado"), $"the placed construction must arrive whole: {_editor.StatusForTesting}");
+
+            // Build window modes: each shows its own panel, only Editar shows the tabs, the status counts the selection, and locked objects are read-only
+            _editor.SelectIds([openOne]);
+            _editor.SetBuildModeForTesting(BuildMode.Move); Require(_editor.CurrentBuildMode == BuildMode.Move && !_editor.EditAreaVisibleForTesting, "Mover hides the property tabs");
+            Require(_editor.ModeStatusForTesting == "Selecionado: 1 objeto / Prims: 1", $"the mode status counts the selection: {_editor.ModeStatusForTesting}");
+            _editor.SetBuildModeForTesting(BuildMode.Create); Require(!_editor.EditAreaVisibleForTesting, "Criar hides the property tabs");
+            _editor.SetBuildModeForTesting(BuildMode.Focus); Require(_editor.CurrentBuildMode == BuildMode.Focus && !_editor.IsPlacingForTesting, "leaving Criar disarms placement");
+            _editor.SetBuildModeForTesting(BuildMode.Edit); Require(_editor.EditAreaVisibleForTesting, "Editar shows the property tabs");
+            _editor.SelectIds([closedOne, openOne]); Require(_editor.ModeStatusForTesting == "Selecionado: 2 objetos / Prims: 2", "the status counts several objects");
+            _editor.SelectIds([]); Require(!_editor.ReadOnlyForTesting && _editor.ModeStatusForTesting.StartsWith("Selecionado: 0"), "an empty selection is not read-only");
+
+            // Geral tab sharing: only the fields that were touched are sent, with the real operation name
+            var sinkBeforeSharing = _editor.OperationSink; _editor.OperationSink = _ => true;
+            _editor.SelectIds([openOne]); _editor.ApplySharingForTesting(); Require(_editor.SharingCommandForTesting.Length == 0 || !_editor.SharingCommandForTesting.Contains("anyoneMove"), "nothing touched, nothing sent");
+            _editor.ToggleSharingForTesting("anyoneMove", true); _editor.ToggleSharingForTesting("ownerCopy", false); _editor.SetSaleForTesting(2, "250"); _editor.ApplySharingForTesting();
+            Require(_editor.SharingCommandForTesting.Contains("\"operation\":\"properties\"") && _editor.SharingCommandForTesting.Contains("\"anyoneMove\":true") && _editor.SharingCommandForTesting.Contains("\"saleType\":\"copy\"") && _editor.SharingCommandForTesting.Contains("\"salePrice\":250") && _editor.SharingCommandForTesting.Contains("ownerRights"), $"the properties command: {_editor.SharingCommandForTesting}");
+            Require(!_editor.SharingCommandForTesting.Contains("groupShare") && !_editor.SharingCommandForTesting.Contains("anyoneCopy"), "untouched fields stay out of the command");
+            _editor.OperationSink = sinkBeforeSharing;
+            _editor.SelectIds([]);
+
+            // Objeto tab: advanced shape sliders are real, type-aware settings
+            _editor.SelectIds([openOne]);
+            Require(_editor.ShapeEnabledForTesting("pathBegin") && _editor.ShapeEnabledForTesting("shearX") && !_editor.ShapeEnabledForTesting("radiusOffset") && !_editor.ShapeEnabledForTesting("revolutions"), "a box uses path cut and shear, not the torus settings");
+            var shapeCommands = new List<string>(); var sinkBeforeShape = _editor.OperationSink; _editor.OperationSink = command => { shapeCommands.Add(command); return true; };
+            _editor.SetShapeForTesting("pathBegin", .25); _editor.SetShapeForTesting("shearX", .2); _editor.SetShapeForTesting("holeX", .5); _editor.ApplyForTesting();
+            Require(shapeCommands.Count > 0 && shapeCommands[^1].Contains("pathBegin") && shapeCommands[^1].Contains("shearX") && shapeCommands[^1].Contains("holeX") && !shapeCommands[^1].Contains("revolutions"), $"only the settings the shape uses are written: {(shapeCommands.Count > 0 ? shapeCommands[^1] : "no command")}");
+            _editor.OperationSink = sinkBeforeShape; _editor.SelectIds([]);
+
+            // Recursos tab: flexible path, light and projector really change what the object is and does
+            _editor.SelectIds([openOne]); _editor.SetResourcesForTesting(true, 6, 2, true, "bricks"); await Frames(3);
+            var resourceView = _editor.ViewForTesting(openOne)!;
+            Require(resourceView.GetNodeOrNull("FlexDriver") is not null, "a flexible object is animated"); Require(resourceView.GetNodeOrNull<SpotLight3D>("ObjectProjector") is { LightProjector: not null }, "the projector shines an image");
+            Require(resourceView.GetNodeOrNull<OmniLight3D>("ObjectLight") is not null, "the round light stays as the ambiance");
+            _editor.SelectIds([]); _editor.SelectIds([openOne]); Require(_editor.FlexOnForTesting, "the flexible settings come back when the object is selected again");
+            _editor.SetResourcesForTesting(false, 0, 1, false, null); await Frames(3);
+            Require(_editor.ViewForTesting(openOne)!.GetNodeOrNull("FlexDriver") is null && _editor.ViewForTesting(openOne)!.GetNodeOrNull("ObjectProjector") is null, "turning them off removes them");
+            _editor.SelectIds([]);
+
+            // Textura tab: several faces at once and the advanced material settings
+            _editor.SelectIds([openOne]); _editor.SelectFaceForTesting(openOne, 2, false); _editor.SelectFaceForTesting(openOne, 3, true);
+            Require(_editor.SelectedFacesForTesting.SequenceEqual([2, 3]), $"shift + click adds a face: {string.Join(",", _editor.SelectedFacesForTesting)}");
+            _editor.SetAdvancedMaterialForTesting(true, 2, true, true, .3); await Frames(2);
+            var advancedJson = System.Text.Json.Nodes.JsonNode.Parse(_editor.ViewForTesting(openOne)!.State.MaterialJson)!.AsObject();
+            var faceEntries = advancedJson["faces"]!.AsArray().Select(n => n!.AsObject()).Where(n => n["fullBright"]?.GetValue<bool>() == true).ToList();
+            Require(faceEntries.Count == 2 && faceEntries.All(n => n["mapping"]?.GetValue<string>() == "planar" && n["alphaMode"]?.GetValue<string>() == "mask" && n["doubleSided"]?.GetValue<bool>() == true), $"both faces got the settings: {advancedJson.ToJsonString()}");
+            Require(advancedJson["fullBright"] is null, "the rest of the object keeps its material");
+            var builtMaterial = MaterialBuilder.Build(advancedJson, faceEntries[0], null);
+            Require(builtMaterial is StandardMaterial3D { ShadingMode: BaseMaterial3D.ShadingModeEnum.Unshaded, CullMode: BaseMaterial3D.CullModeEnum.Disabled, Transparency: BaseMaterial3D.TransparencyEnum.AlphaScissor }, "full bright, double sided and mask change the real material");
+            _editor.SelectAllFacesForTesting(); Require(_editor.SelectedFacesForTesting.Count == 6, "all the faces of a box");
+            _editor.SelectIds([]);
+
+            // Conteúdo tab actions and the advanced edit options
+            _editor.SelectIds([openOne]); var contentAsset = Guid.NewGuid(); _editor.AddContentForTesting(contentAsset, "Som do portão", "sounds"); await Frames(2);
+            Require(_editor.ContentCountForTesting >= 1, "the item is in the object");
+            var lastContent = _editor.ContentCountForTesting - 1;
+            foreach (var action in new[] { "open", "properties", "copy", "transfer" }) { _editor.RunContentActionForTesting(lastContent, action); Require(_editor.LastContentActionForTesting.Length > 0, $"content action {action} answers"); }
+            var textured = Add(new Vector3(310, .5f, -6), "cube"); _server[textured].MaterialJson = "{\"builtin\":\"bricks\"}"; _editor.LoadStatesForTesting([_server[textured]]); _editor.SelectIds([textured]);
+            _editor.SetStretchOptionsForTesting(true, false); _editor.ApplyFieldsForTesting(new Vector3(310, .5f, -6), new Vector3(3, 1, 1), "Parede", 0); await Frames(2);
+            Require(_editor.ViewForTesting(textured)!.State.MaterialJson.Contains("\"mapping\":\"planar\""), $"textures keep their size when stretching is off: {_editor.ViewForTesting(textured)!.State.MaterialJson}");
+            var plainBox = Add(new Vector3(313, .5f, -6), "cube"); _editor.LoadStatesForTesting([_server[plainBox]]); _editor.SelectIds([plainBox]); _editor.SetStretchOptionsForTesting(true, true);
+            _editor.ApplyFieldsForTesting(new Vector3(313, .5f, -6), new Vector3(3, 1, 1), "Parede", 0); await Frames(2);
+            Require(!_editor.ViewForTesting(plainBox)!.State.MaterialJson.Contains("planar"), "with stretching on nothing changes");
+            var turned = Add(new Vector3(316, .5f, -6), "cube"); _server[turned].RotationY = 40; _editor.LoadStatesForTesting([_server[turned]]); _editor.SelectIds([turned]);
+            _editor.SetAxesForTesting(1); Require(Mathf.Abs(Mathf.RadToDeg(_editor.AxesEulerForTesting.Y) - 40) < .5f, "local axes follow the object");
+            _editor.SelectIds([turned]); _editor.UseSelectionAsReferenceForTesting(); _editor.SelectIds([plainBox]);
+            Require(Mathf.Abs(Mathf.RadToDeg(_editor.AxesEulerForTesting.Y) - 40) < .5f, "the reference frame stays the chosen object while another is selected");
+            _editor.SetAxesForTesting(2); Require(Mathf.Abs(Mathf.RadToDeg(_editor.GridRotationForTesting.Y) - 40) < .5f, "the grid follows the reference");
+            _editor.SetAxesForTesting(0); Require(Mathf.IsZeroApprox(_editor.GridRotationForTesting.Y), "world axes keep the grid straight");
+            _editor.SelectIds([]);
 
             GD.Print("event=build_smoke result=passed");
             GetTree().Quit();

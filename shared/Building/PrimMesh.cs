@@ -10,10 +10,20 @@ namespace LifeVerse.Shared.Building;
 /// <param name="Twist">-180 to 180 degrees of rotation between bottom and top.</param>
 /// <param name="CutStart">0 to 0.95: where the outline starts, as a fraction of its perimeter (a wedge is cut away).</param>
 /// <param name="CutEnd">0.05 to 1: where the outline ends.</param>
-public readonly record struct PrimParams(float Hollow = 0, float TaperX = 0, float TaperY = 0, float Twist = 0, float CutStart = 0, float CutEnd = 1)
+/// <param name="PathBegin">0 to 0.95: where the path starts (a box or cylinder is cut from its base; a sphere from its bottom, which is its dimple; a torus from its first end).</param>
+/// <param name="PathEnd">0.05 to 1: where the path ends.</param>
+/// <param name="ShearX">-0.5 to 0.5: how far the top slides sideways along X relative to the base (top shear).</param>
+/// <param name="ShearZ">-0.5 to 0.5: the same along Z.</param>
+/// <param name="HoleX">-1 or 0 to 0.95: size of the hole along X (-1 means the same as Hollow); for a torus or ring, the thickness of the profile (0.05 to 1).</param>
+/// <param name="HoleY">-1 or 0 to 0.95: size of the hole along the depth (Z), or the height of a torus profile.</param>
+/// <param name="RadiusOffset">-0.9 to 0.9: how much the radius of a torus grows (positive) or shrinks along its path.</param>
+/// <param name="Revolutions">1 to 3: turns of a torus path.</param>
+/// <param name="Skew">-0.95 to 0.95: how far the end of a torus path is lifted above its start (a spiral when there is more than one turn).</param>
+public readonly record struct PrimParams(float Hollow = 0, float TaperX = 0, float TaperY = 0, float Twist = 0, float CutStart = 0, float CutEnd = 1,
+    float PathBegin = 0, float PathEnd = 1, float ShearX = 0, float ShearZ = 0, float HoleX = -1, float HoleY = -1, float RadiusOffset = 0, float Revolutions = 1, float Skew = 0)
 {
     /// <summary>A struct's own default would leave the cut end at 0, which means nothing is left; the shape starts whole.</summary>
-    public PrimParams() : this(0, 0, 0, 0, 0, 1) { }
+    public PrimParams() : this(0, 0, 0, 0, 0, 1, 0, 1, 0, 0, -1, -1, 0, 1, 0) { }
 
     public static PrimParams Parse(string? json)
     {
@@ -22,7 +32,8 @@ public readonly record struct PrimParams(float Hollow = 0, float TaperX = 0, flo
         {
             using var document = JsonDocument.Parse(json);
             float Read(string key, float fallback) => document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetSingle(out var number) && float.IsFinite(number) ? number : fallback;
-            return new PrimParams(Read("hollow", 0), Read("taperX", 0), Read("taperY", 0), Read("twist", 0), Read("cutStart", 0), Read("cutEnd", 1)).Clamped();
+            return new PrimParams(Read("hollow", 0), Read("taperX", 0), Read("taperY", 0), Read("twist", 0), Read("cutStart", 0), Read("cutEnd", 1),
+                Read("pathBegin", 0), Read("pathEnd", 1), Read("shearX", 0), Read("shearZ", 0), Read("holeX", -1), Read("holeY", -1), Read("radiusOffset", 0), Read("revolutions", 1), Read("skew", 0)).Clamped();
         }
         catch (JsonException) { return new PrimParams(); }
     }
@@ -30,10 +41,11 @@ public readonly record struct PrimParams(float Hollow = 0, float TaperX = 0, flo
     /// <summary>Forces every value into the range the generator and the server accept, so no setting can produce a broken mesh.</summary>
     public PrimParams Clamped()
     {
-        var start = Math.Clamp(CutStart, 0f, .95f);
-        var end = Math.Clamp(CutEnd, .05f, 1f);
-        if (end - start < .05f) { if (start > .9f) start = end - .05f; else end = start + .05f; }
-        return new PrimParams(Math.Clamp(Hollow, 0f, .95f), Math.Clamp(TaperX, -1f, 1f), Math.Clamp(TaperY, -1f, 1f), Math.Clamp(Twist, -180f, 180f), start, end);
+        static (float, float) Range(float a, float b) { var s = Math.Clamp(a, 0f, .95f); var e = Math.Clamp(b, .05f, 1f); if (e - s < .05f) { if (s > .9f) s = e - .05f; else e = s + .05f; } return (s, e); }
+        var (start, end) = Range(CutStart, CutEnd); var (pathBegin, pathEnd) = Range(PathBegin, PathEnd);
+        float Hole(float v) => v < 0 ? -1f : Math.Clamp(v, 0f, .95f);
+        return new PrimParams(Math.Clamp(Hollow, 0f, .95f), Math.Clamp(TaperX, -1f, 1f), Math.Clamp(TaperY, -1f, 1f), Math.Clamp(Twist, -180f, 180f), start, end,
+            pathBegin, pathEnd, Math.Clamp(ShearX, -.5f, .5f), Math.Clamp(ShearZ, -.5f, .5f), Hole(HoleX), Hole(HoleY), Math.Clamp(RadiusOffset, -.9f, .9f), Math.Clamp(Revolutions, 1f, 3f), Math.Clamp(Skew, -.95f, .95f));
     }
 }
 
@@ -63,7 +75,7 @@ public sealed class PrimMeshData
 /// Face ids are stable: 0 top, 1 bottom, 2.. the walls (one per edge, or one round wall), then the inner wall and the two cut faces.
 /// Triangles wind clockwise seen from outside, which is what Godot treats as the front.
 /// </summary>
-public static class PrimMesh
+public static partial class PrimMesh
 {
     public const int TopFace = 0, BottomFace = 1, FirstWallFace = 2;
     private const int RoundSegments = 24;
@@ -72,7 +84,7 @@ public static class PrimMesh
     private static readonly Vector2[] SquareCorners = [new(.5f, .5f), new(-.5f, .5f), new(-.5f, -.5f), new(.5f, -.5f)];
     private static readonly Vector2[] TriangleCorners = [new(0, .5f), new(-.5f, -.5f), new(.5f, -.5f)];
 
-    public static bool Supports(string type) => type.ToLowerInvariant() is "cube" or "prism" or "cylinder" or "tube" or "cone" or "pyramid";
+    public static bool Supports(string type) => type.ToLowerInvariant() is "cube" or "prism" or "cylinder" or "tube" or "cone" or "pyramid" || IsRound(type);
 
     /// <summary>Number of walls (and so face ids) the outline of this primitive has: 4 for a box, 3 for a prism, 1 when it is round.</summary>
     public static int WallCount(string type) => type.ToLowerInvariant() switch { "cube" or "pyramid" => 4, "prism" => 3, _ => 1 };
@@ -85,31 +97,34 @@ public static class PrimMesh
     {
         type = type.ToLowerInvariant();
         if (!Supports(type)) throw new ArgumentException($"'{type}' is not a procedural primitive.", nameof(type));
+        if (IsRound(type)) return BuildRound(type, parameters);
         var p = parameters.Clamped();
-        if (type == "tube") p = p with { Hollow = Math.Max(p.Hollow, .6f) };
+        if (type == "tube") p = p with { Hollow = Math.Max(p.Hollow, .6f), HoleX = p.HoleX >= 0 ? Math.Max(p.HoleX, .6f) : -1, HoleY = p.HoleY >= 0 ? Math.Max(p.HoleY, .6f) : -1 };
         if (type is "cone" or "pyramid") p = p with { TaperX = 1, TaperY = 1 };
 
         var corners = type switch { "cube" or "pyramid" => SquareCorners, "prism" => TriangleCorners, _ => null };
         var round = corners is null;
         var outline = Outline(corners, p.CutStart, p.CutEnd);
         var cut = p.CutStart > 0 || p.CutEnd < 1;
-        var hollow = p.Hollow > 0;
+        var holeX = p.HoleX >= 0 ? p.HoleX : p.Hollow; var holeZ = p.HoleY >= 0 ? p.HoleY : p.Hollow;
+        var hollow = holeX > 0 || holeZ > 0; holeX = MathF.Max(holeX, .02f); holeZ = MathF.Max(holeZ, .02f);
         var levels = p.Twist == 0 ? 1 : Math.Clamp((int)MathF.Ceiling(MathF.Abs(p.Twist) / 10f), 2, 18);
         var walls = WallCount(type);
         var builders = new Dictionary<int, FaceBuilder>();
         FaceBuilder Face(int id, string name) { if (!builders.TryGetValue(id, out var face)) builders[id] = face = new FaceBuilder(id, name); return face; }
 
-        Vector3 Place(Vector2 point, float t, float scale = 1f)
+        Vector3 Place(Vector2 point, float t, bool inner = false)
         {
-            var sx = MathF.Max(0f, 1f - p.TaperX * t); var sz = MathF.Max(0f, 1f - p.TaperY * t);
-            var x = point.X * scale * sx; var z = point.Y * scale * sz;
-            var angle = MathF.PI / 180f * p.Twist * t;
+            var tp = p.PathBegin + t * (p.PathEnd - p.PathBegin); // a path cut keeps only this part of the height
+            var sx = MathF.Max(0f, 1f - p.TaperX * tp); var sz = MathF.Max(0f, 1f - p.TaperY * tp);
+            var x = point.X * (inner ? holeX : 1f) * sx; var z = point.Y * (inner ? holeZ : 1f) * sz;
+            var angle = MathF.PI / 180f * p.Twist * tp;
             var cos = MathF.Cos(angle); var sin = MathF.Sin(angle);
-            return new Vector3(x * cos + z * sin, t - .5f, -x * sin + z * cos);
+            return new Vector3(x * cos + z * sin + p.ShearX * tp, tp - .5f, -x * sin + z * cos + p.ShearZ * tp);
         }
         Vector3 Spin(Vector3 direction, float t)
         {
-            var angle = MathF.PI / 180f * p.Twist * t; var cos = MathF.Cos(angle); var sin = MathF.Sin(angle);
+            var angle = MathF.PI / 180f * p.Twist * (p.PathBegin + t * (p.PathEnd - p.PathBegin)); var cos = MathF.Cos(angle); var sin = MathF.Sin(angle);
             return new Vector3(direction.X * cos + direction.Z * sin, direction.Y, -direction.X * sin + direction.Z * cos);
         }
 
@@ -128,7 +143,7 @@ public static class PrimMesh
                 Vector3[]? smooth = round ? [Spin(Radial(p0), t0), Spin(Radial(p1), t0), Spin(Radial(p1), t1), Spin(Radial(p0), t1)] : null;
                 outer.Quad(a, b, c, d, [new(u0, t0), new(u1, t0), new(u1, t1), new(u0, t1)], hint, smooth);
                 if (inner is null) continue;
-                var ia = Place(p0, t0, p.Hollow); var ib = Place(p1, t0, p.Hollow); var ic = Place(p1, t1, p.Hollow); var id = Place(p0, t1, p.Hollow);
+                var ia = Place(p0, t0, true); var ib = Place(p1, t0, true); var ic = Place(p1, t1, true); var id = Place(p0, t1, true);
                 Vector3[]? innerSmooth = round ? [-smooth![0], -smooth[1], -smooth[2], -smooth[3]] : null;
                 inner.Quad(ia, ib, ic, id, [new(u0, t0), new(u1, t0), new(u1, t1), new(u0, t1)], -hint, innerSmooth);
             }
@@ -138,13 +153,13 @@ public static class PrimMesh
         foreach (var (id, name, t, normal) in new[] { (TopFace, "Cima", 1f, Vector3.UnitY), (BottomFace, "Base", 0f, -Vector3.UnitY) })
         {
             var cap = Face(id, name);
-            var center = new Vector3(0, t - .5f, 0);
+            var center = Place(Vector2.Zero, t);
             for (var i = 0; i < outline.Length - 1; i++)
             {
                 var a = Place(outline[i].Point, t); var b = Place(outline[i + 1].Point, t);
                 if (hollow)
                 {
-                    var ia = Place(outline[i].Point, t, p.Hollow); var ib = Place(outline[i + 1].Point, t, p.Hollow);
+                    var ia = Place(outline[i].Point, t, true); var ib = Place(outline[i + 1].Point, t, true);
                     cap.Quad(a, b, ib, ia, [Planar(a), Planar(b), Planar(ib), Planar(ia)], normal, null);
                 }
                 else cap.Triangle(center, a, b, [Planar(center), Planar(a), Planar(b)], normal);
@@ -162,11 +177,11 @@ public static class PrimMesh
                 var direction = Vector2.Normalize(outline[neighbour].Point - edgePoint);
                 var away = new Vector3(-direction.X, 0, -direction.Y); // points out of the solid, along the outline
                 var face = Face(id, name);
-                var inside = hollow ? p.Hollow : 0f;
+                var inside = hollow;
                 for (var level = 0; level < levels; level++)
                 {
                     float t0 = level / (float)levels, t1 = (level + 1) / (float)levels;
-                    var a = Place(edgePoint, t0, inside); var b = Place(edgePoint, t0); var c = Place(edgePoint, t1); var d = Place(edgePoint, t1, inside);
+                    var a = inside ? Place(edgePoint, t0, true) : Place(Vector2.Zero, t0); var b = Place(edgePoint, t0); var c = Place(edgePoint, t1); var d = inside ? Place(edgePoint, t1, true) : Place(Vector2.Zero, t1);
                     face.Quad(a, b, c, d, [new(0, t0), new(1, t0), new(1, t1), new(0, t1)], Spin(away, (t0 + t1) / 2f), null);
                 }
             }

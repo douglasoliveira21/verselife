@@ -45,7 +45,11 @@ public sealed class BuildObjectState
 public partial class BuildObjectView : Node3D
 {
     /// A raycast-only layer: ghost/trigger objects stay editable without becoming solid to avatars.
-    private const uint SelectionPhysicsLayer = 1u << 18;
+    /// A raycast-only layer: selection bodies must never be treated as a placement surface.
+    public const uint SelectionPhysicsLayer = 1u << 18;
+    /// Import assets may render up to 300k triangles, but creating an exact runtime physics
+    /// shape for that many faces freezes the Godot main thread. This is deliberately lower.
+    private const int MaxRuntimeMeshCollisionTriangles = 50_000;
     public BuildObjectState State { get; private set; } = new();
     private int _applyId;
     private Guid? _modelAsset;
@@ -81,11 +85,12 @@ public partial class BuildObjectView : Node3D
     private readonly List<Material?> _faceBase = [];
 
     /// Lights up one face of a procedural mesh (-1 clears it) so the person sees which face the texture tools will change.
-    public void HighlightFace(int faceId)
+    public void HighlightFace(int faceId) => HighlightFaces(faceId < 0 ? [] : [faceId]);
+    public void HighlightFaces(IReadOnlyCollection<int> faceIdsToMark)
     {
         if (GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is not { } visual || _faceIds.Count == 0) return;
         for (var i = 0; i < _faceIds.Count; i++)
-            visual.SetSurfaceOverrideMaterial(i, _faceIds[i] == faceId ? new StandardMaterial3D { AlbedoColor = new Color(1, .85f, .2f), EmissionEnabled = true, Emission = new Color(1, .75f, .1f), EmissionEnergyMultiplier = .6f } : _faceBase[i]);
+            visual.SetSurfaceOverrideMaterial(i, faceIdsToMark.Contains(_faceIds[i]) ? new StandardMaterial3D { AlbedoColor = new Color(1, .85f, .2f), EmissionEnabled = true, Emission = new Color(1, .75f, .1f), EmissionEnergyMultiplier = .6f } : _faceBase[i]);
     }
 
     /// The face id that owns a triangle of the collision mesh (what a ray reports as face_index), or -1.
@@ -100,7 +105,7 @@ public partial class BuildObjectView : Node3D
     private void BuildProcedural(BuildObjectState state)
     {
         var parameters = PrimParams.Parse(state.GeometryJson);
-        var meshKey = $"{state.PrimitiveType.ToLowerInvariant()}|{parameters.Hollow}|{parameters.TaperX}|{parameters.TaperY}|{parameters.Twist}|{parameters.CutStart}|{parameters.CutEnd}";
+        var meshKey = $"{state.PrimitiveType.ToLowerInvariant()}|{parameters}";
         if (!MeshCache.TryGetValue(meshKey, out var shared))
         {
             var data = PrimMesh.Build(state.PrimitiveType, parameters);
@@ -142,7 +147,6 @@ public partial class BuildObjectView : Node3D
         }
         AddObjectLight(material);
         for (var i = 0; i < _faceIds.Count; i++) _faceBase.Add(visual.GetSurfaceOverrideMaterial(i));
-        if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         if (!TryGetBool(state.PhysicsJson, "collision", true) || mesh.GetSurfaceCount() == 0) { AddSelectionBody(new BoxShape3D { Size = mesh.GetAabb().Size }); return; }
         var trigger = TryGetBool(state.PhysicsJson, "trigger", false);
         var body = new StaticBody3D { Name = trigger ? "Trigger" : "CollisionBody", CollisionLayer = trigger ? 0u : 1u, CollisionMask = trigger ? 0u : 1u };
@@ -151,7 +155,7 @@ public partial class BuildObjectView : Node3D
         if (trigger) AddSelectionBody(new BoxShape3D { Size = mesh.GetAabb().Size });
     }
 
-    public override void _EnterTree() { if (_modelAsset is not null && GetNodeOrNull("Model") is null) RequestModel(); }
+    public override void _EnterTree() { AddToGroup("lifeverse_build_objects"); if (_modelAsset is not null && GetNodeOrNull("Model") is null) RequestModel(); }
 
     /// A mesh object shows an imported 3D model. Until the model arrives a translucent box stands in for it; the
     /// invisible "PrimitiveMesh" box afterwards only exists so selection highlighting works like on primitives.
@@ -159,7 +163,6 @@ public partial class BuildObjectView : Node3D
     {
         var proxy = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = new BoxMesh { Size = Vector3.One }, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, MaterialOverride = new StandardMaterial3D { Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(.6f, .7f, .8f, .35f) } };
         AddChild(proxy);
-        if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, .8f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         AddMeshCollision(state, null, Vector3.One); // a safe box is kept until the imported model arrives
         if (!TryGetBool(state.PhysicsJson, "collision", true) || CollisionMode(state.PhysicsJson) == "none" || TryGetBool(state.PhysicsJson, "trigger", false)) AddSelectionBody(new BoxShape3D { Size = Vector3.One });
         _modelAsset = AssetIdOf(state.GeometryJson);
@@ -219,11 +222,21 @@ public partial class BuildObjectView : Node3D
         }
         else
         {
-            var found = 0;
-            foreach (var node in model.FindChildren("*", "MeshInstance3D", true, false).OfType<MeshInstance3D>())
+            var sourceMeshes = model.FindChildren("*", "MeshInstance3D", true, false).OfType<MeshInstance3D>().Where(n => n.Mesh is not null).ToArray();
+            var totalTriangles = sourceMeshes.Sum(n => TriangleCount(n.Mesh!));
+            if (totalTriangles > MaxRuntimeMeshCollisionTriangles)
             {
-                if (node.Mesh is null || node.Mesh.GetFaces().Length == 0) continue;
-                Shape3D shape = mode == "triangle" ? node.Mesh.CreateTrimeshShape() : new ConvexPolygonShape3D { Points = node.Mesh.GetFaces() };
+                body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = fallbackSize } });
+                debug.AddChild(DebugMesh(new BoxMesh { Size = fallbackSize }, Transform3D.Identity));
+                AddPhysicsWarning($"Colisão simplificada: {totalTriangles:N0} triângulos excedem o limite de {MaxRuntimeMeshCollisionTriangles:N0}.");
+                AddChild(body); AddChild(debug); return;
+            }
+            var found = 0;
+            foreach (var node in sourceMeshes)
+            {
+                if (TriangleCount(node.Mesh!) == 0) continue;
+                var faces = node.Mesh!.GetFaces();
+                Shape3D shape = mode == "triangle" ? node.Mesh.CreateTrimeshShape() : new ConvexPolygonShape3D { Points = faces };
                 var collision = new CollisionShape3D { Shape = shape };
                 // The body is a direct child of this view. Preserve each imported node's
                 // transform relative to the view rather than its world transform, so moving
@@ -238,6 +251,25 @@ public partial class BuildObjectView : Node3D
             if (found == 0) { body.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = fallbackSize } }); debug.AddChild(DebugMesh(new BoxMesh { Size = fallbackSize }, Transform3D.Identity)); }
         }
         AddChild(body); AddChild(debug);
+    }
+
+    private static int TriangleCount(Mesh mesh)
+    {
+        if (mesh is not ArrayMesh array) return mesh.GetFaces().Length / 3;
+        var total = 0;
+        for (var surface = 0; surface < array.GetSurfaceCount(); surface++)
+        {
+            if (array.SurfaceGetPrimitiveType(surface) != Mesh.PrimitiveType.Triangles) continue;
+            var indices = array.SurfaceGetArrayIndexLen(surface);
+            total += (indices > 0 ? indices : array.SurfaceGetArrayLen(surface)) / 3;
+        }
+        return total;
+    }
+
+    private void AddPhysicsWarning(string text)
+    {
+        GetNodeOrNull<Label3D>("PhysicsWarning")?.QueueFree();
+        AddChild(new Label3D { Name = "PhysicsWarning", Text = text, Position = new Vector3(0, 1.8f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FontSize = 26, OutlineSize = 6, Modulate = new Color(1f, .7f, .2f) });
     }
 
     private void AddSelectionBody(Shape3D shape)
@@ -278,7 +310,6 @@ public partial class BuildObjectView : Node3D
         if (state.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase)) { BuildMeshObject(state); return; }
         if (PrimMesh.Supports(state.PrimitiveType)) { BuildProcedural(state); return; }
         var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var materialJson = ParseMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = MaterialBuilder.Build(materialJson, null, Textures) }; AddChild(visual); ApplyRange(visual); AddObjectLight(materialJson);
-        if (!string.IsNullOrWhiteSpace(state.Name)) AddChild(new Label3D { Name = "ObjectName", Text = state.Name, Position = new Vector3(0, 1.1f, 0), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, Visible = false });
         if (!TryGetBool(state.PhysicsJson, "collision", true)) { AddSelectionBody(CreateShape(state.PrimitiveType)); return; }
         var body = new StaticBody3D { Name = TryGetBool(state.PhysicsJson, "trigger", false) ? "Trigger" : "CollisionBody" }; body.CollisionLayer = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.CollisionMask = TryGetBool(state.PhysicsJson, "trigger", false) ? 0u : 1u; body.AddChild(new CollisionShape3D { Shape = CreateShape(state.PrimitiveType) }); AddChild(body);
         if (TryGetBool(state.PhysicsJson, "trigger", false)) AddSelectionBody(CreateShape(state.PrimitiveType));
@@ -331,10 +362,52 @@ public partial class BuildObjectView : Node3D
     /// A glowing object lights its surroundings: a light with the colour, strength and reach saved with the material.
     private void AddObjectLight(JsonObject material)
     {
+        AddFlex(material);
         if (material["light"] is not JsonObject light) return;
         float Read(string key, float fallback) => light[key] is JsonValue v && v.TryGetValue<double>(out var n) && double.IsFinite(n) ? (float)n : fallback;
         Color color; try { color = light["color"] is JsonValue c && c.TryGetValue<string>(out var text) ? Color.FromHtml(text) : Colors.White; } catch { color = Colors.White; }
-        AddChild(new ObjectLight { Name = "ObjectLight", LightColor = color, LightEnergy = Mathf.Clamp(Read("energy", 1f), 0, 8), OmniRange = Mathf.Clamp(Read("range", 6f), .5f, 30f), ShadowEnabled = false });
+        var energy = Mathf.Clamp(Read("energy", 1f), 0, 8); var range = Mathf.Clamp(Read("range", 6f), .5f, 30f);
+        var projector = material["projector"] as JsonObject;
+        var hasImage = material["projectorTexture"] is JsonValue || material["projectorBuiltin"] is JsonValue;
+        float Projector(string key, float fallback) => projector?[key] is JsonValue v && v.TryGetValue<double>(out var n) && double.IsFinite(n) ? (float)n : fallback;
+        // with a projector the round light is only the "ambiance" (the share of the light that falls outside the image)
+        var ambient = hasImage ? Mathf.Clamp(Projector("ambiance", .1f), 0f, 1f) : 1f;
+        AddChild(new ObjectLight { Name = "ObjectLight", LightColor = color, LightEnergy = energy * ambient, OmniRange = range, OmniAttenuation = Mathf.Clamp(Read("falloff", 1f), .1f, 4f), ShadowEnabled = false });
+        if (!hasImage) return;
+        var spot = new SpotLight3D
+        {
+            Name = "ObjectProjector", LightColor = color, LightEnergy = energy, SpotAngle = Mathf.Clamp(Projector("fov", 45f) / 2f, 5f, 60f), SpotRange = Mathf.Max(range, Mathf.Clamp(Projector("focus", 0f), 0f, 30f)),
+            SpotAttenuation = Mathf.Clamp(Read("falloff", 1f), .1f, 4f), ShadowEnabled = false
+        };
+        AddChild(spot);
+        if (material["projectorBuiltin"] is JsonValue builtin && builtin.TryGetValue<string>(out var name)) spot.LightProjector = BuiltInTextures.Get(name);
+        else if (material["projectorTexture"] is JsonValue asset && asset.TryGetValue<string>(out var text2) && Guid.TryParse(text2, out var assetId))
+            Textures?.Request(assetId, texture => { if (texture is not null && IsInstanceValid(spot)) spot.LightProjector = texture; });
+    }
+
+    private void AddFlex(JsonObject material)
+    {
+        if (LifeVerse.Shared.Building.FlexSettings.FromMaterial(material.ToJsonString()) is not { } flex) return;
+        if (GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is not { } visual) return;
+        AddChild(new FlexDriver { Name = "FlexDriver", Settings = flex, Visual = visual, Phase = (State.Id.GetHashCode() & 0xFFFF) / 10000f });
+    }
+
+    /// Bends the visible mesh like a flag or a plant: the base stays where it is and the top leans, swaying with the wind and the force.
+    public partial class FlexDriver : Node
+    {
+        public LifeVerse.Shared.Building.FlexSettings Settings;
+        public MeshInstance3D? Visual;
+        public float Phase;
+        private readonly LifeVerse.Shared.Building.FlexSimulation _sim = new();
+        public Vector2 LeanForTesting => new(_sim.Lean.X, _sim.Lean.Y);
+
+        public override void _Process(double delta)
+        {
+            if (Visual is null || !IsInstanceValid(Visual)) return;
+            _sim.Step(Settings, (float)delta, Time.GetTicksMsec() / 1000f, Phase);
+            var lean = _sim.Lean; var sag = _sim.Sag;
+            Visual.Transform = new Transform3D(new Basis(new Vector3(1, 0, 0), new Vector3(lean.X, 1f + sag, lean.Y), new Vector3(0, 0, 1)), new Vector3(.5f * lean.X, .5f * sag, .5f * lean.Y));
+        }
     }
 
     /// Dynamic lights are expensive, so only the first few in the world are switched on; the rest stay dark until some go away.

@@ -26,6 +26,7 @@ public static class BuildCost
             }
             catch (JsonException) { }
         var type = primitiveType.ToLowerInvariant();
+        if (LifeVerse.Shared.Building.PrimMesh.IsRound(type) && !string.IsNullOrWhiteSpace(geometryJson) && geometryJson.Trim() != "{}") return Math.Clamp(LifeVerse.Shared.Building.PrimMesh.Build(type, LifeVerse.Shared.Building.PrimParams.Parse(geometryJson)).TriangleCount, 2, 20_000); // a shaped sphere or torus costs what its mesh really has
         double basic = type switch
         {
             "cube" => 16, "prism" => 12, "pyramid" => 12, "cone" => 56, "cylinder" => 96, "tube" => 192, "plane" => 2,
@@ -50,6 +51,7 @@ public static class BuildCost
 
     /// <summary>The cost of one object: geometry (a point per 20 triangles), solid physics, the complexity of its collision shape, textures, light and see-through or glowing materials, and what it carries (scripts weigh most, then animations).</summary>
     public static int Of(string primitiveType, string? geometryJson, string? materialJson, string? physicsJson, string? contentJson) =>
+        ObjectPhysics.IsTemporary(physicsJson) ? 1 : // a temporary object barely weighs on the budget
         Math.Min(MaxObjectCost, Breakdown(primitiveType, geometryJson, materialJson, physicsJson, contentJson).Total);
 
     public static CostParts Breakdown(string primitiveType, string? geometryJson, string? materialJson, string? physicsJson, string? contentJson)
@@ -76,6 +78,8 @@ public static class BuildCost
                 var root = document.RootElement;
                 if (root.TryGetProperty("builtin", out _)) textures += 1;
                 if (root.TryGetProperty("light", out _)) textures += 5;
+                if (root.TryGetProperty("projector", out _) || root.TryGetProperty("projectorTexture", out _) || root.TryGetProperty("projectorBuiltin", out _)) textures += 4; // a projector adds a shadowless spot light and an image
+                if (root.TryGetProperty("flex", out _)) effects += 3; // a flexible object is animated every frame
                 if (root.TryGetProperty("faces", out var faces) && faces.ValueKind == JsonValueKind.Array) textures += Math.Min(faces.GetArrayLength(), 32);
                 if (root.TryGetProperty("transparency", out var alpha) && alpha.ValueKind == JsonValueKind.Number && alpha.TryGetDouble(out var a) && a < .999) effects += 1; // see-through surfaces cost more to draw
                 if (root.TryGetProperty("emission", out _)) effects += 1;

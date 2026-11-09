@@ -34,7 +34,8 @@ public partial class BuildEditor
         for (var i = 0; i < entries.Count; i++)
         {
             var name = entries[i]["name"]?.GetValue<string>() ?? "Item"; var category = entries[i]["category"]?.GetValue<string>() ?? "";
-            _contentTexts.Add($"{name}  ·  {CategoryLabel(category)}"); AddContentRow(i, name, category);
+            var asset = Guid.TryParse(entries[i]["assetId"]?.GetValue<string>(), out var parsed) ? parsed : Guid.Empty; var rights = InventoryOf()?.OwnerRightsOfAsset(asset) is { } mask ? LifeVerse.Shared.Items.ItemRights.Letters(mask) : "—";
+            _contentTexts.Add($"{name}  ·  {CategoryLabel(category)}"); AddContentRow(i, name, category, asset, rights);
         }
         _contentCount.Text = entries.Count == 1 ? "1 item" : $"{entries.Count} itens";
         _contentInfo.Text = entries.Count == 0 ? "Este objeto está vazio." : $"{entries.Count} item(ns) de até 64.";
@@ -127,4 +128,21 @@ public partial class BuildEditor
     public void RenameContentForTesting(int index, string name) { SelectContent(index); _contentName.Text = name; RenameContent(); }
     public void RemoveContentForTesting(int index) { SelectContent(index); RemoveContent(); }
     public string ContentTextForTesting(int index) => _contentTexts[index];
+}
+
+public partial class BuildEditor
+{
+    private InventoryPanel? InventoryOf() => GetParent()?.GetNodeOrNull<InventoryPanel>("InventoryPanel");
+
+    /// Open, properties, copy or transfer of a thing the object carries: they are done on the inventory item it refers to, with the same rules and windows.
+    private void RunContentAction(Guid asset, string action)
+    {
+        if (InventoryOf() is not { } inventory) { _status.Text = "O inventário não está disponível aqui."; return; }
+        var problem = inventory.RunOnAsset(asset, action);
+        _status.Text = problem ?? action switch { "open" => "Item aberto.", "properties" => "Propriedades do item.", "copy" => "Cópia pedida ao inventário.", _ => "Escolha para quem transferir." };
+        LastContentActionForTesting = problem ?? "ok:" + action;
+    }
+
+    public string LastContentActionForTesting { get; private set; } = string.Empty;
+    public void RunContentActionForTesting(int index, string action) { var entries = Entries(); if (index < entries.Count && Guid.TryParse(entries[index]["assetId"]?.GetValue<string>(), out var asset)) RunContentAction(asset, action); }
 }
