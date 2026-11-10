@@ -200,7 +200,7 @@ public partial class BuildEditor
 
     private string PhysicsFromFields(string existing)
     {
-        var shape = new[] { "none", "box", "convex", "triangle" }.ElementAtOrDefault(_collisionShape.Selected) ?? "box";
+        var shape = new[] { "none", "box", "convex", "triangle", "sphere", "cylinder" }.ElementAtOrDefault(_collisionShape.Selected) ?? "box";
         var physical = _physMode.Selected == 1 && shape != "triangle";
         if (_physMode.Selected == 1 && shape == "triangle") { _physMode.Select(0); _status.Text = "Malha triangular só funciona como colisão estática."; }
         return PhysicsRules.Write(existing, new PhysicsSettings(!_ghost.ButtonPressed && shape != "none", Trigger: ParseObject(existing)["trigger"] is JsonValue t && t.TryGetValue<bool>(out var isTrigger) && isTrigger, physical,
@@ -210,7 +210,8 @@ public partial class BuildEditor
     private void FillPhysics(string physicsJson)
     {
         var p = PhysicsRules.Read(physicsJson);
-        _physMode.Select(p.Physical ? 1 : 0); SyncPhysicsUi(); _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, p.CollisionShape) is var index && index >= 0 ? index : 1); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2); _physMaterial.Select(Math.Max(0, Array.IndexOf(PhysicsRules.Materials.Keys.ToArray(), p.Material) + 1)); _physTemporary.SetPressedNoSignal(p.Temporary);
+        _physMode.Select(p.Physical ? 1 : 0); SyncPhysicsUi(); _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle", "sphere", "cylinder" }, p.CollisionShape) is var index && index >= 0 ? index : 1); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2); _physMaterial.Select(Math.Max(0, Array.IndexOf(PhysicsRules.Materials.Keys.ToArray(), p.Material) + 1)); _physTemporary.SetPressedNoSignal(p.Temporary);
+        if (_selection.Count == 1 && _selection[0].State.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase) && ParseObject(physicsJson)["shape"] is null) _collisionShape.Select(3); // a model with no shape chosen collides exactly
     }
 
     public void SetPhysicsForTesting(bool physical, float mass = 1f, float friction = .5f, float bounce = 0f) { _physMode.Select(physical ? 1 : 0); _physMass.Text = Disp(mass, 2); _physFriction.Text = Disp(friction, 2); _physBounce.Text = Disp(bounce, 2); ApplySelected(); }

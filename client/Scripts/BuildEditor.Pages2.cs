@@ -24,14 +24,6 @@ public partial class BuildEditor
 
     // ---- the Textura tab ---------------------------------------------------------------------------------------
 
-    private VBoxContainer UvGroup(string title, LineEdit[] fields, double start)
-    {
-        var group = new VBoxContainer { CustomMinimumSize = new Vector2(290, 0) }; group.AddThemeConstantOverride("separation", 6);
-        group.AddChild(Txt(title, 20));
-        var row = Row(10); group.AddChild(row);
-        for (var i = 0; i < 2; i++) { row.AddChild(AxisField(fields, i, () => .1f, _ => { })); fields[i].Text = Disp(start, 2); }
-        return group;
-    }
 
     private int _applyToken;
 

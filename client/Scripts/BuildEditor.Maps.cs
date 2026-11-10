@@ -12,6 +12,7 @@ public partial class BuildEditor
     private CheckBox _uvSync = null!;
     private ColorPickerButton _specColor = null!;
     private HSlider _gloss = null!, _env = null!;
+    private readonly List<Control> _pbrRows = [], _blinnRows = [];
 
     public const string DefaultMaterialJson = "{\"shading\":\"blinnphong\",\"builtin\":\"plywood\",\"color\":\"#FFFFFF\",\"glossiness\":0.4}";
     private static readonly string[] MapNames = ["Cor base / difusa", "Normal", "Especular (Blinn-Phong)", "Metal-rugosidade-oclusão (PBR)", "Emissivo"];
@@ -28,8 +29,9 @@ public partial class BuildEditor
         _mapPick.ItemSelected += _ => { _filling = true; FillMapTransform(); _filling = false; };
         page.AddChild(FormRow("Mapa:", _mapPick, 140));
         _specColor = ColorButton(Colors.White, 100); _gloss = NewSlider(0, 1, .01, .4); _env = NewSlider(0, 1, .01, 0);
-        var specRow = Row(10); specRow.AddChild(Txt("Cor do brilho (especular)", 19)); specRow.AddChild(Filler()); specRow.AddChild(_specColor); page.AddChild(specRow);
-        page.AddChild(PairRow("Brilho (glossiness)", ("", SpinFor(_gloss)))); page.AddChild(PairRow("Ambiente", ("", SpinFor(_env))));
+        var specRow = Row(10); specRow.AddChild(Txt("Cor do brilho (especular)", 19)); specRow.AddChild(Filler()); specRow.AddChild(_specColor); page.AddChild(specRow); _blinnRows.Add(specRow);
+        var glossRow = PairRow("Brilho (glossiness)", ("", SpinFor(_gloss))); page.AddChild(glossRow); _blinnRows.Add(glossRow); page.AddChild(PairRow("Ambiente", ("", SpinFor(_env))));
+        _shadingPick.ItemSelected += _ => UpdateShadingRows();
         _uvSync = Check("Mesmo mapeamento em todos os mapas", "Desligado: cada mapa tem a sua própria repetição, deslocamento e rotação (os campos abaixo editam o mapa escolhido)"); _uvSync.ButtonPressed = true;
         _uvSync.Toggled += _ => { if (!_filling) { _filling = true; FillMapTransform(); _filling = false; } };
         page.AddChild(_uvSync);
@@ -119,7 +121,7 @@ public partial class BuildEditor
         try { _specColor.Color = Get("specularColor") is JsonValue c && c.TryGetValue<string>(out var hex) ? Color.FromHtml(hex) : Colors.White; } catch { _specColor.Color = Colors.White; }
         _gloss.SetValueNoSignal(Get("glossiness") is JsonValue g && g.TryGetValue<double>(out var gloss) ? gloss : .4); _env.SetValueNoSignal(Get("environment") is JsonValue e && e.TryGetValue<double>(out var env) ? env : 0);
         _uvSync.SetPressedNoSignal(layer["mapUv"] is not JsonObject { Count: > 0 });
-        FillMapTransform();
+        FillMapTransform(); UpdateShadingRows();
     }
 
     /// The five mapping fields for the map chosen in "Mapa" (when the mapping is shared they show the general values).
@@ -132,6 +134,13 @@ public partial class BuildEditor
         float Pick(string field, string general, float fallback) => entry?[field] is JsonValue v && v.TryGetValue<double>(out var n) ? (float)n : Read(layer, general, fallback);
         _repeatX.Text = Disp(Pick("repeatX", "uvRepeatX", 1), 2); _repeatY.Text = Disp(Pick("repeatY", "uvRepeatY", 1), 2);
         _offsetX.Text = Disp(Pick("offsetX", "uvOffsetX", 0), 2); _offsetY.Text = Disp(Pick("offsetY", "uvOffsetY", 0), 2); _uvRotation.Text = Disp(Pick("rotation", "uvRotation", 0), 2);
+    }
+
+    /// Blinn-Phong shows the specular colour and glossiness; PBR shows roughness and metallic. The other model's rows would change nothing, so they are hidden.
+    private void UpdateShadingRows()
+    {
+        var blinn = _shadingPick is not null && _shadingPick.Selected == 0;
+        foreach (var row in _blinnRows) row.Visible = blinn; foreach (var row in _pbrRows) row.Visible = !blinn;
     }
 
     public void SetShadingForTesting(bool blinn, double gloss, double env, Color specular) { _shadingPick.Select(blinn ? 0 : 1); _gloss.Value = gloss; _env.Value = env; _specColor.Color = specular; ApplyShading(); }

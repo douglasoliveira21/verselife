@@ -70,7 +70,6 @@ public partial class BuildEditor
         _description.AddThemeFontSizeOverride("font_size", 19);
         _description.TextChanged += () => { if (_description.Text.Length > 4000) _description.Text = _description.Text[..4000]; };
         box.AddChild(FormRow("Descrição:", _description, 150));
-        var apply = IconButton("check", "Aplicar nome e descrição", "Envia as alterações ao servidor", ApplySelected, height: 40); apply.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd; apply.CustomMinimumSize = new Vector2(300, 40); box.AddChild(apply);
         _creatorValue = Txt("—", 19, true, UiStyle.AccentText); _ownerValue = Txt("—", 19, true, UiStyle.AccentText);
         box.AddChild(FormRow("Criador:", _creatorValue, 150)); box.AddChild(FormRow("Proprietário:", _ownerValue, 150));
         _infoLeft = Muted(string.Empty, 17); _infoRight = Muted(string.Empty, 16); _infoRight.AutowrapMode = TextServer.AutowrapMode.Arbitrary; box.AddChild(_infoRight);
@@ -100,8 +99,7 @@ public partial class BuildEditor
         page.AddChild(TripleRow("Rotação", _rotationFields, RotationStep, _ => ApplySelected(), SquareIcon("reset", "Zera a rotação", () => { foreach (var field in _rotationFields) field.Text = Disp(0); ApplySelected(); })));
         _sizeLock = SquareIcon("link", "Mantém as proporções ao mudar um lado", () => { }, toggle: true);
         page.AddChild(TripleRow("Tamanho", _size, () => GridStep(), SizeCommitted, _sizeLock));
-        var stepSlider = NewSlider(.05, 5, .05, .5); stepSlider.ValueChanged += value => { if (!_filling) _snap.Text = Disp(value); };
-        _snap.TextChanged += _ => { var value = Mathf.Clamp(NumOr(_snap, .5f), .05f, 5f); if (!Mathf.IsEqualApprox((float)stepSlider.Value, value)) stepSlider.SetValueNoSignal(value); UpdateGrid(); };
+        _snap.TextChanged += _ => UpdateGrid();
         page.AddChild(FormRow("Passo de movimento:", _snap, 230));
         _showGrid = Check("Exibir grade"); _showGrid.Toggled += _ => UpdateGrid();
         _gridSnap = Check("Encaixar na grade", "A posição final cai em múltiplos do passo de movimento");
@@ -126,7 +124,6 @@ public partial class BuildEditor
         page.AddChild(PairRow("Torção (Twist)", ("Fim", SpinFor(_twist))));
         page.AddChild(PairRow("Afinar (Taper)", ("X", SpinFor(_taperX)), ("Y", SpinFor(_taperY))));
         page.AddChild(PairRow("Cisalhamento do topo", ("X", SpinFor(s["shearX"])), ("Y", SpinFor(s["shearZ"]))));
-        page.AddChild(PairRow("Dimple", ("Início", SpinFor(s["pathBegin"])), ("Fim", SpinFor(s["pathEnd"]))));
         page.AddChild(PairRow("Corte do perfil", ("Início", SpinFor(s["cutStart"])), ("Fim", SpinFor(s["cutEnd"]))));
         page.AddChild(PairRow("Raio e espiral", ("Desloc.", SpinFor(s["radiusOffset"])), ("Inclin.", SpinFor(s["skew"]))));
         page.AddChild(PairRow("Revoluções", ("", SpinFor(s["revolutions"]))));
@@ -137,10 +134,6 @@ public partial class BuildEditor
         footer.AddChild(Txt("Selecionado:", 19)); _selectedCount = Txt("nenhum", 19, true, UiStyle.AccentText); footer.AddChild(_selectedCount);
         footer.AddChild(Filler()); _primsLabel = Txt("Prims: —", 19); footer.AddChild(_primsLabel);
         page.AddChild(footer);
-        var buttons = Row(10);
-        var restore = OrangeButton("undo", "Restaurar", "Volta os campos ao que o servidor confirmou", () => { FillFields(); _status.Text = "Valores restaurados."; }, 44); restore.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; buttons.AddChild(restore);
-        var apply = IconButton("check", "Aplicar à seleção", "Envia posição, rotação, tamanho, forma e física ao servidor", ApplySelected, UiStyle.ButtonKind.Primary, 44); apply.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; buttons.AddChild(apply);
-        page.AddChild(buttons);
         return page;
     }
 

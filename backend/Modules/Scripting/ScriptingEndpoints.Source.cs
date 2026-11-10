@@ -37,3 +37,13 @@ public static partial class ScriptingEndpoints
         return Results.NoContent();
     }
 }
+
+public static partial class ScriptingEndpoints
+{
+    /// <summary>Models that use what the object carries (a sound) and floating text.</summary>
+    private static readonly object[] SoundTemplates =
+    [
+        new { name = "campainha", eventName = "on_touch", source = "-- Toca o som \"Campainha\" que está no Conteúdo deste objeto.\nfunction on_touch(event)\n  object.play_sound(\"Campainha\", 1.0)\nend\n" },
+        new { name = "texto_flutuante", eventName = "on_start", source = "function on_start(event)\n  object.set_text(\"Toque em mim\", \"#12F2E0\")\nend\n\nfunction on_touch(event)\n  object.set_text(\"Olá!\", \"#F4A340\")\nend\n" }
+    ];
+}

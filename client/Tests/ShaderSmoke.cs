@@ -41,6 +41,12 @@ public partial class ShaderSmoke : Node
             var (repeat, offset, rotation) = MaterialBuilder.MapTransform(JsonNode.Parse("{\"uvRepeatX\":2,\"uvRotation\":15,\"mapUv\":{\"normalMap\":{\"repeatX\":5,\"offsetY\":0.25}}}")!.AsObject(), null, "normalMap");
             Require(repeat.X == 5 && repeat.Y == 1 && offset.Y == .25f && rotation == 15, "a map overrides only what it sets, the rest is the layer's");
             Require(MaterialBuilder.MapTransform(JsonNode.Parse("{\"uvRepeatX\":2}")!.AsObject(), null, "texture").Repeat.X == 2, "maps without their own transform follow the layer");
+            var meshView = new BuildObjectView(); AddChild(meshView);
+            var model = new Node3D(); var own = new StandardMaterial3D(); var part = new MeshInstance3D { Mesh = new BoxMesh(), MaterialOverride = null }; part.Mesh.SurfaceSetMaterial(0, own); model.AddChild(part);
+            meshView.ApplyModelMaterialForTesting(model, "{\"override\":true,\"shading\":\"pbr\",\"color\":\"#336699\",\"metallic\":0.8}");
+            Require(part.GetSurfaceOverrideMaterial(0) is StandardMaterial3D { Metallic: > 0.7f }, "a textured imported mesh takes the object's material");
+            part.SetSurfaceOverrideMaterial(0, null); meshView.ApplyModelMaterialForTesting(model, "{\"color\":\"#336699\"}");
+            Require(part.GetSurfaceOverrideMaterial(0) is null, "an untouched imported mesh keeps the materials of its file");
             await Frames(6);
             var path = OS.GetEnvironment("LIFEVERSE_CAPTURE_PATH");
             if (!string.IsNullOrWhiteSpace(path) && DisplayServer.GetName() != "headless") GetViewport().GetTexture().GetImage().SavePng($"{path}-materials.png");

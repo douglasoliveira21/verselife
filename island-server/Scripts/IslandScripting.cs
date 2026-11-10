@@ -6,6 +6,9 @@ using LifeVerse.Shared.Networking;
 
 namespace LifeVerse.IslandServer.Scripts;
 
+/// <summary>An object as the physics simulation needs it: where it is, how big, and its physics settings.</summary>
+public sealed record PhysicsBodyDefinition(Guid Id, string PrimitiveType, Vec3 Position, Vec3 Rotation, Vec3 Scale, string PhysicsJson, bool Blocks);
+
 public sealed record AvatarPresence(int PeerId, Guid AvatarId, Guid UserId, string Name, float X, float Y, float Z);
 
 /// Connects the Lua script host to this island: loads its objects and scripts from the API, turns avatar actions
@@ -15,7 +18,7 @@ public sealed class IslandScripting : IScriptWorld
 {
     private sealed class CachedObject
     {
-        public Guid Id, OwnerUserId; public Guid? GroupId, ParentObjectId; public string Name = "", PrimitiveType = "cube", MaterialJson = "{}", GeometryJson = "{}", PhysicsJson = "{}";
+        public Guid Id, OwnerUserId; public Guid? GroupId, ParentObjectId; public string Name = "", PrimitiveType = "cube", MaterialJson = "{}", GeometryJson = "{}", PhysicsJson = "{}", ContentJson = "[]";
         public Vec3 Position, Rotation, Scale = new(1, 1, 1); public int Revision;
     }
 
@@ -32,8 +35,15 @@ public sealed class IslandScripting : IScriptWorld
     /// What stops walking avatars, kept in step with the objects (the movement simulation uses it so the server and the players agree on walls and floors).
     public ObstacleField Obstacles { get; } = new();
 
-    private void UpdateObstacle(CachedObject o) =>
-        Obstacles.Set(o.Id, ObstacleField.Blocks(o.PhysicsJson) ? ObstacleField.For(o.PrimitiveType, new System.Numerics.Vector3(o.Position.X, o.Position.Y, o.Position.Z), new System.Numerics.Vector3(o.Rotation.X, o.Rotation.Y, o.Rotation.Z), new System.Numerics.Vector3(o.Scale.X, o.Scale.Y, o.Scale.Z)) : null);
+    /// <summary>Goes up whenever an object is added, changed or removed; the physics simulation looks at it to know when to read the objects again.</summary>
+    public int ObjectsVersion { get; private set; }
+
+    public IEnumerable<PhysicsBodyDefinition> Bodies() => _objects.Values.Select(o => new PhysicsBodyDefinition(o.Id, o.PrimitiveType, o.Position, o.Rotation, o.Scale, o.PhysicsJson, ObstacleField.Blocks(o.PhysicsJson, o.PrimitiveType)));
+
+    private void UpdateObstacle(CachedObject o) { ObjectsVersion++; UpdateObstacleCore(o); }
+
+    private void UpdateObstacleCore(CachedObject o) =>
+        Obstacles.Set(o.Id, ObstacleField.Blocks(o.PhysicsJson, o.PrimitiveType) ? ObstacleField.For(o.PrimitiveType, new System.Numerics.Vector3(o.Position.X, o.Position.Y, o.Position.Z), new System.Numerics.Vector3(o.Rotation.X, o.Rotation.Y, o.Rotation.Z), new System.Numerics.Vector3(o.Scale.X, o.Scale.Y, o.Scale.Z)) : null);
     private readonly Dictionary<(Guid Object, Guid Avatar), bool> _inside = [];
     private readonly Dictionary<Guid, Queue<double>> _touches = [];
     private readonly Dictionary<Guid, Queue<double>> _changeTimes = [];
@@ -72,7 +82,7 @@ public sealed class IslandScripting : IScriptWorld
             foreach (var element in root.GetProperty("objects").EnumerateArray()) { var cached = Parse(element); fresh[cached.Id] = cached; }
             // Objects with a change in flight keep their newer local view until the server answers.
             foreach (var id in _inFlight) if (_objects.TryGetValue(id, out var local)) fresh[id] = local;
-            _objects.Clear(); Obstacles.Clear(); foreach (var (id, cached) in fresh) { _objects[id] = cached; UpdateObstacle(cached); }
+            _objects.Clear(); Obstacles.Clear(); ObjectsVersion++; foreach (var (id, cached) in fresh) { _objects[id] = cached; UpdateObstacle(cached); }
             var definitions = root.GetProperty("scripts").EnumerateArray().Select(s => new ScriptDefinition(s.GetProperty("id").GetGuid(), s.GetProperty("objectId").GetGuid(), s.GetProperty("ownerUserId").GetGuid(), s.GetProperty("name").GetString() ?? "script", s.GetProperty("source").GetString() ?? "", s.GetProperty("version").GetInt32(), s.GetProperty("instructionBudget").GetInt32())).ToList();
             var state = new Dictionary<Guid, Dictionary<string, string>>();
             if (root.TryGetProperty("state", out var states))
@@ -100,12 +110,56 @@ public sealed class IslandScripting : IScriptWorld
             using var document = JsonDocument.Parse(acceptedJson);
             var root = document.RootElement;
             if (root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object) { var cached = Parse(state); _objects[cached.Id] = cached; UpdateObstacle(cached); }
-            else if (root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) { _objects.Remove(removed); Obstacles.Remove(removed); }
+            else if (root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) { _objects.Remove(removed); Obstacles.Remove(removed); ObjectsVersion++; }
             foreach (var listName in new[] { "objects", "healed" }) if (root.TryGetProperty(listName, out var placed) && placed.ValueKind == JsonValueKind.Array) foreach (var one in placed.EnumerateArray()) { var cached = Parse(one); _objects[cached.Id] = cached; UpdateObstacle(cached); } // constructions placed, linksets changed, objects protected or re-hung: every object it carries
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
     }
 
+
+    // ---- sound and floating text, asked for by scripts -------------------------------------------------------
+
+    private readonly Dictionary<Guid, (string Text, string Color)> _texts = [];
+
+    /// <summary>The sound of the object with that name (or the first when no name is given), from what the object carries: the asset id, or null.</summary>
+    private static Guid? SoundOf(CachedObject target, string name)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(target.ContentJson) ? "[]" : target.ContentJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Array) return null;
+            Guid? first = null;
+            foreach (var entry in document.RootElement.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object || !entry.TryGetProperty("category", out var category) || category.GetString() != "sounds" || !entry.TryGetProperty("assetId", out var asset) || !Guid.TryParse(asset.GetString(), out var id)) continue;
+                first ??= id;
+                if (entry.TryGetProperty("name", out var entryName) && string.Equals(entryName.GetString(), name, StringComparison.OrdinalIgnoreCase)) return id;
+            }
+            return string.IsNullOrWhiteSpace(name) ? first : null;
+        }
+        catch (JsonException) { return null; }
+    }
+
+    public bool PlaySound(ScriptDefinition script, string soundName, float volume, bool loop)
+    {
+        if (!_objects.TryGetValue(script.ObjectId, out var target) || SoundOf(target, soundName) is not { } asset) return false;
+        _broadcastApplied(JsonSerializer.Serialize(new { operation = "sound", objectId = target.Id, assetId = asset, x = target.Position.X, y = target.Position.Y, z = target.Position.Z, volume, loop }));
+        return true;
+    }
+
+    public void StopSound(ScriptDefinition script) => _broadcastApplied(JsonSerializer.Serialize(new { operation = "sound_stop", objectId = script.ObjectId }));
+
+    public void SetText(ScriptDefinition script, string text, string color)
+    {
+        if (!_objects.ContainsKey(script.ObjectId)) return;
+        if (text.Length == 0) _texts.Remove(script.ObjectId); else _texts[script.ObjectId] = (text, color);
+        _broadcastApplied(TextOp(script.ObjectId, text, color));
+    }
+
+    /// <summary>The floating texts the island shows now, as messages for somebody who has just arrived.</summary>
+    public IEnumerable<string> TextOps() => _texts.Where(pair => _objects.ContainsKey(pair.Key)).Select(pair => TextOp(pair.Key, pair.Value.Text, pair.Value.Color));
+
+    private string TextOp(Guid id, string text, string color) { var o = _objects[id]; return JsonSerializer.Serialize(new { operation = "text", objectId = id, text, color, x = o.Position.X, y = o.Position.Y + o.Scale.Y / 2, z = o.Position.Z }); }
     // ---- events from the world -------------------------------------------------------------------------------
 
     public void Touch(AvatarPresence who, Guid objectId)
@@ -232,7 +286,7 @@ public sealed class IslandScripting : IScriptWorld
         return new CachedObject
         {
             Id = e.GetProperty("id").GetGuid(), OwnerUserId = OptionalGuid("ownerUserId") ?? Guid.Empty, GroupId = OptionalGuid("groupId"), ParentObjectId = OptionalGuid("parentObjectId"),
-            Name = Text("name", "Object"), PrimitiveType = Text("primitiveType", "cube"), MaterialJson = Text("materialJson", "{}"), GeometryJson = Text("geometryJson", "{}"), PhysicsJson = Text("physicsJson", "{}"),
+            Name = Text("name", "Object"), PrimitiveType = Text("primitiveType", "cube"), MaterialJson = Text("materialJson", "{}"), GeometryJson = Text("geometryJson", "{}"), PhysicsJson = Text("physicsJson", "{}"), ContentJson = Text("contentJson", "[]"),
             Position = new Vec3(Number("positionX"), Number("positionY"), Number("positionZ")), Rotation = new Vec3(Number("rotationX"), Number("rotationY"), Number("rotationZ")),
             Scale = new Vec3(Number("scaleX", 1), Number("scaleY", 1), Number("scaleZ", 1)), Revision = e.TryGetProperty("revision", out var r) && r.TryGetInt32(out var revision) ? revision : 1
         };

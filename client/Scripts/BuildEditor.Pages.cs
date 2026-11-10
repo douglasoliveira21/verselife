@@ -9,6 +9,7 @@ public partial class BuildEditor
 {
     private UiTabs _tabs = null!;
     private UiTabs _advancedTabs = null!;
+    private Action _applyBarRefresh = () => { };
     private bool _advancedHierarchyOpen;
     private readonly List<ObjectPreview> _previews = [];
     private Label _selectedCount = null!, _primsLabel = null!;
@@ -79,7 +80,7 @@ public partial class BuildEditor
             _tabs.Visible = !advanced; _advancedTabs.Visible = advanced;
             for (var i = 0; i < pages.Length; i++) pages[i].Visible = !advanced && i == _tabs.Selected;
             for (var i = 0; i < advancedPages.Length; i++) advancedPages[i].Visible = advanced && i == _advancedTabs.Selected;
-            _advancedHierarchyOpen = advanced && _advancedTabs.Selected == 1;
+            _advancedHierarchyOpen = advanced && _advancedTabs.Selected == 1; _applyBarRefresh();
             if (_advancedHierarchyOpen) RefreshHierarchy();
             RefreshPreviews();
         }
@@ -89,6 +90,14 @@ public partial class BuildEditor
         _stack = stack; _showEditPages = ShowEditPages;
         var modes = BuildModeBar(); var modePanels = BuildModePanels();
         content.AddChild(modes); content.MoveChild(modes, 0); content.AddChild(modePanels); content.MoveChild(modePanels, 1); content.MoveChild(_advancedTabs, 3);
+
+        // one Restaurar / Aplicar bar for the tabs that send their fields to the server on request (Geral, Objeto, Recursos); Textura and Conteúdo apply as you go
+        var applyBar = Row(10);
+        var restoreAll = OrangeButton("undo", "Restaurar", "Volta os campos ao que o servidor confirmou", () => { FillFields(); _status.Text = "Valores restaurados."; }, 44); restoreAll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; applyBar.AddChild(restoreAll);
+        var applyAll = IconButton("check", "Aplicar", "Envia nome, posição, forma, estados, luz e colisão da seleção ao servidor", () => { if (_tabs.Selected == 2) ApplyLight(); ApplySelected(); }, UiStyle.ButtonKind.Primary, 44); applyAll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; applyBar.AddChild(applyAll);
+        content.AddChild(applyBar);
+        void ShowApplyBar() => applyBar.Visible = _tabs.Visible && _tabs.Selected <= 2 && _stack.Visible;
+        _tabs.TabChanged += _ => ShowApplyBar(); _applyBarRefresh = ShowApplyBar;
 
         var footer = Row(10); content.AddChild(footer);
         var infoIcon = UiStyle.IconRect("info", UiStyle.TextMuted, 22); infoIcon.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter; footer.AddChild(infoIcon);

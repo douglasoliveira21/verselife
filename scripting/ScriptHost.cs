@@ -29,6 +29,11 @@ public interface IScriptWorld
     ScriptObjectState? GetObject(Guid id);
     void ApplyChange(ScriptDefinition script, ObjectChange change);
     void Say(ScriptDefinition script, string text);
+    /// <summary>Plays a sound that is in the object (by name) for the people near it. False when the object has no such sound.</summary>
+    bool PlaySound(ScriptDefinition script, string soundName, float volume, bool loop) => false;
+    void StopSound(ScriptDefinition script) { }
+    /// <summary>Floating text above the object (empty text removes it).</summary>
+    void SetText(ScriptDefinition script, string text, string color) { }
 }
 
 public sealed record ScriptHostOptions(int MaxEventsPerSecond = 20, int MaxQueuedEvents = 400, int MaxTimersPerScript = 4, double MinTimerSeconds = .25, int MaxStateKeys = 32, int MaxStateValueLength = 1024, int ViolationsBeforeQuarantine = 3, double ViolationWindowSeconds = 60, double ReportIntervalSeconds = 5, int StoredEntriesLimit = 20_000, double MaxCoordinate = 5000, double MillisecondsPerEvent = 12);
@@ -60,6 +65,8 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
         public Queue<double> Recent { get; } = new();
         public Queue<double> Violations { get; } = new();
         public Queue<double> Says { get; } = new();
+        public Queue<double> Sounds { get; } = new();
+        public Queue<double> Texts { get; } = new();
         public List<Timer> Timers { get; } = [];
         public Dictionary<string, string> State { get; } = [];
         public bool StateDirty { get; set; }
@@ -259,7 +266,9 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
         Add("cancel_timers", _ => { instance.Timers.Clear(); return DynValue.Nil; });
         Add("state_get", args => StateGet(instance, Key(args)));
         Add("state_set", args => StateSet(instance, Key(args), args.Count > 1 ? args[1] : DynValue.Nil));
-        Add("play_sound", _ => DynValue.False);            // no audio assets yet
+        Add("play_sound", args => PlaySound(instance, args));
+        Add("stop_sound", _ => { world.StopSound(instance.Definition); return DynValue.Nil; });
+        Add("set_text", args => SetText(instance, args));
         Add("teleport_authorized", _ => DynValue.False);   // reserved: needs the world manager
         script.Globals["object"] = objectApi;
 
@@ -275,6 +284,31 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
         if (instance.Says.Count >= 5) throw new ScriptRuntimeException("say: at most 5 messages every 10 seconds");
         instance.Says.Enqueue(now);
         world.Say(instance.Definition, text.Length > 256 ? text[..256] : text);
+    }
+
+    private void Limit(Queue<double> times, int most, string what)
+    {
+        var now = world.Now;
+        while (times.Count > 0 && now - times.Peek() > 10) times.Dequeue();
+        if (times.Count >= most) throw new ScriptRuntimeException($"{what}: at most {most} calls every 10 seconds");
+        times.Enqueue(now);
+    }
+
+    private DynValue PlaySound(Instance instance, CallbackArguments args)
+    {
+        var name = Text(args, 0); Limit(instance.Sounds, 5, "play_sound");
+        var volume = args.Count > 1 && args[1].CastToNumber() is { } v && !double.IsNaN(v) ? (float)Math.Clamp(v, 0, 1) : 1f;
+        var loop = args.Count > 2 && args[2].CastToBool();
+        return DynValue.NewBoolean(world.PlaySound(instance.Definition, name.Length > 120 ? name[..120] : name, volume, loop));
+    }
+
+    private DynValue SetText(Instance instance, CallbackArguments args)
+    {
+        var text = args.Count == 0 || args[0].Type == DataType.Nil || args[0].Type == DataType.String && args[0].String.Length == 0 ? string.Empty : Text(args, 0); Limit(instance.Texts, 5, "set_text"); // an empty text takes the label away
+        var color = args.Count > 1 && args[1].Type == DataType.String ? args[1].String : "#FFFFFF";
+        if (color.Length != 7 || color[0] != '#' || !color.Skip(1).All(Uri.IsHexDigit)) throw new ScriptRuntimeException("set_text: color must be like #RRGGBB");
+        world.SetText(instance.Definition, text.Length > 120 ? text[..120] : text, color);
+        return DynValue.Nil;
     }
 
     private DynValue SendMessage(Instance instance, CallbackArguments args)

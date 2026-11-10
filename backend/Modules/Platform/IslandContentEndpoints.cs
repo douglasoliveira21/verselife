@@ -34,7 +34,7 @@ public static class IslandContentEndpoints
             {
                 x.Id, x.OwnerUserId, x.CreatorUserId, x.GroupId, x.ParentObjectId, x.Name, x.PrimitiveType,
                 x.PositionX, x.PositionY, x.PositionZ, x.RotationX, x.RotationY, x.RotationZ, x.ScaleX, x.ScaleY, x.ScaleZ,
-                x.MaterialJson, x.GeometryJson, x.PhysicsJson, x.Revision
+                x.MaterialJson, x.GeometryJson, x.PhysicsJson, x.ContentJson, x.Revision
             }).ToListAsync(ct);
         var scripts = await db.ObjectScripts.AsNoTracking()
             .Where(script => script.Status == "active" && db.BuildObjects.Any(o => o.Id == script.ObjectId && o.IslandId == server.IslandId && o.DeletedAt == null))

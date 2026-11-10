@@ -22,7 +22,7 @@ public static class ObjectPhysics
         foreach (var key in new[] { "collision", "trigger", "temporary" }) if (o[key] is { } flag && !(flag is JsonValue v && v.TryGetValue<bool>(out _))) return $"Physics '{key}' must be true or false.";
         string? mode = null;
         if (o["mode"] is { } m) { if (m is not JsonValue mv || !mv.TryGetValue<string>(out mode) || mode is not ("static" or "physical")) return "Physics 'mode' must be static or physical."; }
-        var shape = "box"; if (o["shape"] is { } s) { if (s is not JsonValue sv || !sv.TryGetValue<string>(out shape) || shape is not ("none" or "box" or "convex" or "triangle")) return "Physics 'shape' must be none, box, convex or triangle."; }
+        var shape = "box"; if (o["shape"] is { } s) { if (s is not JsonValue sv || !sv.TryGetValue<string>(out shape) || shape is not ("none" or "box" or "convex" or "triangle" or "sphere" or "cylinder")) return "Physics 'shape' must be none, box, convex, triangle, sphere or cylinder."; }
         if (o["material"] is { } material && !(material is JsonValue mv2 && mv2.TryGetValue<string>(out var materialName) && KnownMaterials.Contains(materialName))) return "Physics 'material' is not a known material.";
         if (Number(o, "mass", MinMass, MaxMass) is { } massError) return massError;
         if (Number(o, "friction", 0f, 1f) is { } frictionError) return frictionError;

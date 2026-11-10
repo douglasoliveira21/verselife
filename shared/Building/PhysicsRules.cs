@@ -5,7 +5,7 @@ namespace LifeVerse.Shared.Building;
 
 /// <summary>
 /// How an object takes part in physics. <see cref="Physical"/> marks an object that is meant to move by physics (fall, be pushed) instead of standing still;
-/// the settings are stored, validated and carried through saved constructions. The world does not simulate those bodies yet: a physical object stands where it was put.
+/// the settings are stored, validated and carried through saved constructions. The island server simulates those bodies (gravity, collisions, rolling) and sends their poses to everyone.
 /// </summary>
 public sealed record PhysicsSettings(bool Collision = true, bool Trigger = false, bool Physical = false, float Mass = 1f, float Friction = .5f, float Bounce = 0f, string CollisionShape = "box", string Material = "", bool Temporary = false);
 
@@ -31,7 +31,7 @@ public static class PhysicsRules
         foreach (var key in new[] { "collision", "trigger", "temporary" }) if (o[key] is { } flag && !(flag is JsonValue v && v.TryGetValue<bool>(out _))) return $"Physics '{key}' must be true or false.";
         string? mode = null;
         if (o["mode"] is { } m) { if (m is not JsonValue mv || !mv.TryGetValue<string>(out mode) || mode is not ("static" or "physical")) return "Physics 'mode' must be static or physical."; }
-        var shape = "box"; if (o["shape"] is { } s) { if (s is not JsonValue sv || !sv.TryGetValue<string>(out shape) || shape is not ("none" or "box" or "convex" or "triangle")) return "Physics 'shape' must be none, box, convex or triangle."; }
+        var shape = "box"; if (o["shape"] is { } s) { if (s is not JsonValue sv || !sv.TryGetValue<string>(out shape) || shape is not ("none" or "box" or "convex" or "triangle" or "sphere" or "cylinder")) return "Physics 'shape' must be none, box, convex, triangle, sphere or cylinder."; }
         if (o["material"] is { } material && !(material is JsonValue mv2 && mv2.TryGetValue<string>(out var materialName) && Materials.ContainsKey(materialName))) return "Physics 'material' is not a known material.";
         if (Number(o, "mass", MinMass, MaxMass) is { } massError) return massError;
         if (Number(o, "friction", 0f, 1f) is { } frictionError) return frictionError;
@@ -56,7 +56,7 @@ public static class PhysicsRules
         {
             if (JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json) is not JsonObject o) return new PhysicsSettings();
             float F(string key, float fallback, float min, float max) => o[key] is JsonValue v && v.TryGetValue<double>(out var n) && double.IsFinite(n) ? Math.Clamp((float)n, min, max) : fallback;
-            var shape = o["shape"] is JsonValue sh && sh.TryGetValue<string>(out var value) && value is "none" or "box" or "convex" or "triangle" ? value : "box";
+            var shape = o["shape"] is JsonValue sh && sh.TryGetValue<string>(out var value) && value is "none" or "box" or "convex" or "triangle" or "sphere" or "cylinder" ? value : "box";
             return new PhysicsSettings(Flag(o, "collision", true), Flag(o, "trigger", false), o["mode"] is JsonValue m && m.TryGetValue<string>(out var s) && s == "physical", F("mass", 1f, MinMass, MaxMass), F("friction", .5f, 0f, 1f), F("bounce", 0f, 0f, 1f), shape, o["material"] is JsonValue mat && mat.TryGetValue<string>(out var materialName) && Materials.ContainsKey(materialName) ? materialName : "", Flag(o, "temporary", false));
         }
         catch (JsonException) { return new PhysicsSettings(); }
@@ -68,7 +68,7 @@ public static class PhysicsRules
         JsonObject o;
         try { o = JsonNode.Parse(string.IsNullOrWhiteSpace(existing) ? "{}" : existing) as JsonObject ?? []; } catch (JsonException) { o = []; }
         o["collision"] = settings.Collision;
-        if (!settings.Collision || settings.CollisionShape == "none") o["shape"] = "none"; else o["shape"] = settings.CollisionShape is "box" or "convex" or "triangle" ? settings.CollisionShape : "box";
+        if (!settings.Collision || settings.CollisionShape == "none") o["shape"] = "none"; else o["shape"] = settings.CollisionShape is "box" or "convex" or "triangle" or "sphere" or "cylinder" ? settings.CollisionShape : "box";
         if (settings.Trigger) o["trigger"] = true; else o.Remove("trigger");
         if (Materials.ContainsKey(settings.Material)) o["material"] = settings.Material; else o.Remove("material");
         if (settings.Temporary) o["temporary"] = true; else o.Remove("temporary");

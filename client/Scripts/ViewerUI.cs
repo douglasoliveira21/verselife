@@ -116,6 +116,8 @@ public partial class ViewerUI : CanvasLayer
         BuildRadial();
         if (_world.GetNodeOrNull<LandManager>("LandManager") is null) { var land = new LandManager { Name = "LandManager" }; _world.AddChild(land); land.Said += text => Toast(text); land.WalletChanged += RequestWallet; }
         if (_world.GetNodeOrNull<AssetLoadingService>("AssetLoadingService") is null) _world.AddChild(new AssetLoadingService { Name = "AssetLoadingService" });
+        if (_world.GetNodeOrNull<PhysicsSync>("PhysicsSync") is null) _world.AddChild(new PhysicsSync { Name = "PhysicsSync" });
+        if (_world.GetNodeOrNull<ObjectEffects>("ObjectEffects") is null) _world.AddChild(new ObjectEffects { Name = "ObjectEffects" });
         if (_world.GetNodeOrNull<WorldEntryCoordinator>("WorldEntryCoordinator") is null) _world.AddChild(new WorldEntryCoordinator { Name = "WorldEntryCoordinator" });
         if (_world.GetNodeOrNull<TeleportCoordinator>("TeleportCoordinator") is null) { var trip = new TeleportCoordinator { Name = "TeleportCoordinator" }; _world.AddChild(trip); trip.Initialize(_world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator")); }
         _teleport = _world.GetNode<TeleportCoordinator>("TeleportCoordinator");

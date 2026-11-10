@@ -191,6 +191,7 @@ public partial class BuildEditor
         if (view is null) { _status.Text = _selection.Count > 1 ? "Selecione um só objeto para aplicar texturas." : "Selecione um objeto primeiro."; return false; }
         var after = FromView(view); var material = ParseObject(after.MaterialJson);
         if (onFaces) foreach (var face in _faceSet.ToArray()) change(TargetLayer(material, face)); else change(material);
+        if (view.State.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase)) material["override"] = true; // an imported model keeps its own materials until the person textures it
         after.MaterialJson = material.ToJsonString();
         var kept = _selectedFace;
         CommitUpdates([after]);

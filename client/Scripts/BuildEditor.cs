@@ -531,6 +531,7 @@ public partial class BuildEditor : Node3D
         {
             using var doc = JsonDocument.Parse(json);
             var operation = doc.RootElement.GetProperty("operation").GetString();
+            if (operation is "sound" or "sound_stop" or "text" or "physics") return; // effects of scripts and the simulation, handled by their own nodes (they carry an objectId but never remove anything)
             if (operation is "lock" or "unlock") { HandleLockMessage(doc.RootElement, operation); return; }
             if (operation == "rez") { OnRezzed(doc.RootElement); return; }
             if (operation is "structure" or "protect" or "properties") { if (doc.RootElement.TryGetProperty("objects", out var changed)) ApplyObjects(changed); return; }

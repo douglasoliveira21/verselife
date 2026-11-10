@@ -27,16 +27,18 @@ public sealed class ObstacleField
     public int Count => _items.Count;
 
     /// <summary>True for objects that stop people: solid, not a trigger zone.</summary>
-    public static bool Blocks(string? physicsJson)
+    public static bool Blocks(string? physicsJson, string? primitiveType = null)
     {
-        if (string.IsNullOrWhiteSpace(physicsJson)) return true;
+        var mesh = string.Equals(primitiveType, "mesh", StringComparison.OrdinalIgnoreCase); // an imported model collides exactly on the client; only a box the person chose is a wall here
+        if (string.IsNullOrWhiteSpace(physicsJson)) return !mesh;
         try
         {
             using var document = JsonDocument.Parse(physicsJson);
-            if (document.RootElement.ValueKind != JsonValueKind.Object) return true;
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return !mesh;
             if (document.RootElement.TryGetProperty("collision", out var collision) && collision.ValueKind == JsonValueKind.False) return false;
             if (document.RootElement.TryGetProperty("trigger", out var trigger) && trigger.ValueKind == JsonValueKind.True) return false;
             if (document.RootElement.TryGetProperty("shape", out var shape) && shape.ValueKind == JsonValueKind.String && shape.GetString() is "none" or "triangle") return false;
+            if (mesh && !(document.RootElement.TryGetProperty("shape", out var chosen) && chosen.ValueKind == JsonValueKind.String && chosen.GetString() is "box" or "convex")) return false;
         }
         catch (JsonException) { }
         return true;

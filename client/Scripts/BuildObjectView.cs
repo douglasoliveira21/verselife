@@ -49,7 +49,7 @@ public partial class BuildObjectView : Node3D
     public const uint SelectionPhysicsLayer = 1u << 18;
     /// Import assets may render up to 300k triangles, but creating an exact runtime physics
     /// shape for that many faces freezes the Godot main thread. This is deliberately lower.
-    private const int MaxRuntimeMeshCollisionTriangles = 50_000;
+    private const int MaxRuntimeMeshCollisionTriangles = 300_000;
     public BuildObjectState State { get; private set; } = new();
     private int _applyId;
     private Guid? _modelAsset;
@@ -164,7 +164,7 @@ public partial class BuildObjectView : Node3D
         var proxy = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = new BoxMesh { Size = Vector3.One }, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off, MaterialOverride = new StandardMaterial3D { Transparency = BaseMaterial3D.TransparencyEnum.Alpha, AlbedoColor = new Color(.6f, .7f, .8f, .35f) } };
         AddChild(proxy);
         AddMeshCollision(state, null, Vector3.One); // a safe box is kept until the imported model arrives
-        if (!TryGetBool(state.PhysicsJson, "collision", true) || CollisionMode(state.PhysicsJson) == "none" || TryGetBool(state.PhysicsJson, "trigger", false)) AddSelectionBody(new BoxShape3D { Size = Vector3.One });
+        if (!TryGetBool(state.PhysicsJson, "collision", true) || CollisionMode(state.PhysicsJson, true) == "none" || TryGetBool(state.PhysicsJson, "trigger", false)) AddSelectionBody(new BoxShape3D { Size = Vector3.One });
         _modelAsset = AssetIdOf(state.GeometryJson);
         RequestModel();
     }
@@ -185,7 +185,7 @@ public partial class BuildObjectView : Node3D
             if (proxy?.MaterialOverride is StandardMaterial3D missing) missing.AlbedoColor = new Color(.9f, .3f, .3f, .4f);
             return;
         }
-        AddChild(model.Node);
+        AddChild(model.Node); ApplyModelMaterial(model.Node);
         if (proxy is not null)
         {
             proxy.Mesh = new BoxMesh { Size = model.Size };
@@ -195,22 +195,44 @@ public partial class BuildObjectView : Node3D
         AddMeshCollision(State, model.Node, model.Size);
     }
 
-    private static string CollisionMode(string json)
+    /// An imported model arrives with the materials of its file. Once the person textures it in the Textura tab ("override"), those are replaced by the object's
+    /// material, so a mesh uploaded without textures can get base colour, normal, metallic-roughness and emissive maps afterwards, as in Second Life.
+    public void ApplyModelMaterialForTesting(Node root, string materialJson) { State = new BuildObjectState { Id = State.Id, PrimitiveType = "mesh", MaterialJson = materialJson }; ApplyModelMaterial(root); }
+
+    private void ApplyModelMaterial(Node root)
+    {
+        var material = ParseMaterial(State.MaterialJson);
+        if (material["override"] is not JsonValue flag || !flag.TryGetValue<bool>(out var on) || !on) return;
+        var faces = FaceEntries(material); var surfaceIndex = 0;
+        void Visit(Node node)
+        {
+            if (node is MeshInstance3D { Mesh: not null } instance)
+                for (var s = 0; s < instance.Mesh.GetSurfaceCount(); s++, surfaceIndex++)
+                    instance.SetSurfaceOverrideMaterial(s, MaterialBuilder.Build(material, faces.GetValueOrDefault(surfaceIndex), Textures));
+            foreach (var child in node.GetChildren()) Visit(child);
+        }
+        Visit(root);
+    }
+
+    /// An imported model with no shape chosen collides exactly (triangle mesh), so people can walk into houses; a box would be an invisible wall around them.
+    private static ConcavePolygonShape3D TrimeshOf(Mesh mesh) { var shape = mesh.CreateTrimeshShape(); shape.BackfaceCollision = true; return shape; }
+
+    private static string CollisionMode(string json, bool mesh = false)
     {
         try
         {
             using var document = JsonDocument.Parse(json);
             var mode = document.RootElement.TryGetProperty("shape", out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-            return mode is "none" or "box" or "convex" or "triangle" ? mode : "box";
+            return mode is "none" or "box" or "convex" or "triangle" ? mode : mesh ? "triangle" : "box";
         }
-        catch (JsonException) { return "box"; }
+        catch (JsonException) { return mesh ? "triangle" : "box"; }
     }
 
     /// <summary>Creates real Godot collision shapes for an imported model. Triangle mesh is intentionally static;
     /// the API rejects it for physical bodies and this client never turns it into a rigid body.</summary>
     private void AddMeshCollision(BuildObjectState state, Node3D? model, Vector3 fallbackSize)
     {
-        var mode = CollisionMode(state.PhysicsJson);
+        var mode = CollisionMode(state.PhysicsJson, true);
         if (!TryGetBool(state.PhysicsJson, "collision", true) || mode == "none") return;
         var trigger = TryGetBool(state.PhysicsJson, "trigger", false);
         var body = new StaticBody3D { Name = trigger ? "Trigger" : "CollisionBody", CollisionLayer = trigger ? 0u : 1u, CollisionMask = trigger ? 0u : 1u };
@@ -236,7 +258,7 @@ public partial class BuildObjectView : Node3D
             {
                 if (TriangleCount(node.Mesh!) == 0) continue;
                 var faces = node.Mesh!.GetFaces();
-                Shape3D shape = mode == "triangle" ? node.Mesh.CreateTrimeshShape() : new ConvexPolygonShape3D { Points = faces };
+                Shape3D shape = mode == "triangle" ? TrimeshOf(node.Mesh) : new ConvexPolygonShape3D { Points = faces };
                 var collision = new CollisionShape3D { Shape = shape };
                 // The body is a direct child of this view. Preserve each imported node's
                 // transform relative to the view rather than its world transform, so moving
@@ -296,9 +318,22 @@ public partial class BuildObjectView : Node3D
         catch (JsonException) { return null; }
     }
 
+    /// <summary>The island simulates physical objects and sends their poses; while one is driven the stored position (where the builder left it) is not put back by an update.</summary>
+    private Vector3? _drivenFrom;
+    public bool Selected { get; private set; }
+    public bool IsDriven => _drivenFrom is not null;
+
+    public void DriveTo(Vector3 position, Quaternion rotation)
+    {
+        _drivenFrom ??= new Vector3(State.PositionX, State.PositionY, State.PositionZ);
+        Position = position; Quaternion = rotation;
+    }
+
     public void Apply(BuildObjectState state)
     {
-        State = state; Position = new Vector3(state.PositionX, state.PositionY, state.PositionZ); Rotation = new Vector3(Mathf.DegToRad(state.RotationX), Mathf.DegToRad(state.RotationY), Mathf.DegToRad(state.RotationZ)); Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ);
+        State = state; var stored = new Vector3(state.PositionX, state.PositionY, state.PositionZ);
+        if (_drivenFrom is { } driven && driven.DistanceSquaredTo(stored) < 1e-6f) { Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ); }
+        else { _drivenFrom = null; Position = stored; Rotation = new Vector3(Mathf.DegToRad(state.RotationX), Mathf.DegToRad(state.RotationY), Mathf.DegToRad(state.RotationZ)); Scale = new Vector3(state.ScaleX, state.ScaleY, state.ScaleZ); }
         // Moving, turning or resizing an object changes only its transform: the mesh, materials and collision stay as they are.
         var shapeKey = string.Join('\u001f', state.PrimitiveType, state.GeometryJson, state.MaterialJson, state.PhysicsJson, state.Name);
         if (shapeKey == _shapeKey && GetChildCount() > 0) { RefreshRange(); return; }
@@ -324,7 +359,7 @@ public partial class BuildObjectView : Node3D
     private void RefreshRange() { if (GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is { } visual) ApplyRange(visual); }
 
     public float VisibilityRangeForTesting => GetNodeOrNull<MeshInstance3D>("PrimitiveMesh")?.VisibilityRangeEnd ?? 0f;
-    public void SetSelected(bool selected) { var mesh = GetNodeOrNull<MeshInstance3D>("PrimitiveMesh"); if (mesh is null) return; mesh.MaterialOverlay = selected ? new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(1, .8f, .15f, .35f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha } : null; }
+    public void SetSelected(bool selected) { Selected = selected; var mesh = GetNodeOrNull<MeshInstance3D>("PrimitiveMesh"); if (mesh is null) return; mesh.MaterialOverlay = selected ? new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(1, .8f, .15f, .35f), Transparency = BaseMaterial3D.TransparencyEnum.Alpha } : null; }
     private static PrimitiveMesh CreateMesh(string type, string geometryJson)
     {
         var taperX = JsonNumber(geometryJson, "taperX", 0); var taperY = JsonNumber(geometryJson, "taperY", 0); var hollow = JsonNumber(geometryJson, "hollow", 0);

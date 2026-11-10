@@ -40,6 +40,9 @@ public partial class ServerMain : Node
     private string _environmentJson = "{}";
     private double _worldSaveAccumulator;
     private IslandScripting? _scripting;
+    private ServerPhysics? _physics;
+    private int _physicsObjectsVersion = -1;
+    private double _physicsCheck;
     // When set (by the supervisor), an island nobody is on for this long saves itself and exits to free its port.
     private readonly int _idleShutdownMinutes = int.TryParse(System.Environment.GetEnvironmentVariable("LIFEVERSE_IDLE_SHUTDOWN_MINUTES"), out var idle) ? Math.Clamp(idle, 0, 24 * 60) : 0;
     private DateTimeOffset? _emptySince;
@@ -76,10 +79,27 @@ public partial class ServerMain : Node
         }
     }
 
+
+    /// The simulation of physical objects: reads the objects again when they changed, keeps the ground in step with the terrain and lets walkers push what they touch.
+    private void TickPhysics(double delta)
+    {
+        if (_physics is null || _scripting is null) return;
+        _physicsCheck += delta;
+        if (_physicsCheck >= .5)
+        {
+            _physicsCheck = 0;
+            _physics.SetTerrain(_terrain);
+            if (_scripting.ObjectsVersion != _physicsObjectsVersion) { _physicsObjectsVersion = _scripting.ObjectsVersion; _physics.Sync(_scripting.Bodies()); }
+        }
+        if (_physics.BodyCount == 0) return;
+        foreach (var player in _players.Values.Where(x => x.Authenticated && !x.State.Seated))
+            _physics.Push(new Godot.Vector3(player.State.X, player.State.Y, player.State.Z), new Godot.Vector3(player.State.VelocityX, player.State.VelocityY, player.State.VelocityZ));
+    }
     public override void _PhysicsProcess(double delta)
     {
         _serverTick++;
         _scripting?.Update(_players.Values.Where(x => x.Authenticated).Select(PresenceOf).ToList());
+        TickPhysics(delta);
         CheckIdle();
         SweepLocks();
         var dt = Math.Min((float)delta, 1f / 20f);
@@ -174,6 +194,8 @@ public partial class ServerMain : Node
             SendTerrain(player);
             SendAllVehicles(peerId);
             SendLocks(peerId);
+            if (_scripting is not null) foreach (var text in _scripting.TextOps()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, text); // the floating texts that scripts put on objects
+            if (_physics is not null) foreach (var pose in _physics.PoseMessages()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, pose); // where the bodies of the simulation are now
             Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
             if (admission.TransferId is { } trip) _ = ConfirmArrivalAsync(peerId, trip, _shutdown.Token); // a person who travelled: the API completes the trip only when this island says they are here
         }
@@ -218,6 +240,8 @@ public partial class ServerMain : Node
                     _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, 0, "Script", text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             },
             Log);
+        _physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(_physics);
+        _physics.Initialize(message => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message); });
         try { await _scripting.RefreshAsync(ct); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { Log("scripts_load_failed", new { error = exception.Message }); }
         _ = ScriptSyncLoopAsync(ct);

@@ -16,7 +16,7 @@ public static partial class ScriptingEndpoints
     public static IEndpointRouteBuilder MapScriptingEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/v1/worlds/{islandId:guid}/objects/{objectId:guid}/scripts").WithTags("Scripting").RequireAuthorization(); group.MapGet("", ListAsync); group.MapGet("/{scriptId:guid}", GetOneAsync); group.MapDelete("/{scriptId:guid}", DeleteOneAsync); group.MapGet("/{scriptId:guid}/executions", ExecutionsAsync); group.MapPost("", CreateAsync); group.MapPut("/{scriptId:guid}", UpdateAsync); group.MapPost("/{scriptId:guid}/run", () => RunMoved()); group.MapPost("/run", () => RunMoved()); group.MapPost("/{scriptId:guid}/stop", StopAsync); group.MapGet("/{scriptId:guid}/state", StateAsync); group.MapPut("/{scriptId:guid}/state/{key}", SetStateAsync); group.MapPost("/{scriptId:guid}/messages", SendMessageAsync); group.MapGet("/{scriptId:guid}/messages/{channel}", DrainMessagesAsync);
-        endpoints.MapGet("/api/v1/scripting/templates", () => Results.Ok(Templates)).WithTags("Scripting");
+        endpoints.MapGet("/api/v1/scripting/templates", () => Results.Ok(Templates.Concat(SoundTemplates))).WithTags("Scripting");
         var huds = endpoints.MapGroup("/api/v1/huds").WithTags("HUDs").RequireAuthorization(); huds.MapGet("", ListHudsAsync); huds.MapPost("", CreateHudAsync); huds.MapPut("/{hudId:guid}", UpdateHudAsync); huds.MapDelete("/{hudId:guid}", DeleteHudAsync); huds.MapPost("/{hudId:guid}/equip", EquipHudAsync); huds.MapDelete("/{hudId:guid}/equip", UnequipHudAsync);
         return endpoints;
     }

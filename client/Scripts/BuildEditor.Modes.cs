@@ -60,7 +60,9 @@ public partial class BuildEditor
                 ("move", "Deslocar (pan)", "botão do meio + arrastar", null), ("camera", "Câmera de edição", "End", ToggleEditCamera)
             })
             {
-                var row = Row(10); var button = ModeAction(icon, text, keys, action ?? (() => _status.Text = $"{text}: {keys}.")); button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; row.AddChild(button);
+                var row = Row(10);
+                if (action is null) { row.AddChild(UiStyle.IconRect(icon, UiStyle.TextMuted, 24)); var name = Txt(text, 19); name.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; row.AddChild(name); } // mouse gestures: information only, there is nothing to click
+                else { var button = ModeAction(icon, text, keys, action); button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; row.AddChild(button); }
                 var shortcut = Txt(keys, 17, false, UiStyle.TextMuted); shortcut.HorizontalAlignment = HorizontalAlignment.Right; shortcut.CustomMinimumSize = new Vector2(230, 0); row.AddChild(shortcut); panel.AddChild(row);
             }
         });
@@ -87,7 +89,7 @@ public partial class BuildEditor
             foreach (var (text, action) in new (string, Action)[]
             {
                 ("Selecionar", () => { _partMode = false; SelectTool(); }), ("Esticar (Ctrl)", () => { _partMode = false; SetMode(GizmoMode.Scale); }), ("Girar (Ctrl+Shift)", () => { _partMode = false; SetMode(GizmoMode.Rotate); }),
-                ("Selecionar face", () => { _partMode = false; FaceTool(); }), ("Alinhar", () => { _showEditPages(true); _advancedTabs.Select(0); }), ("Editar partes vinculadas", () => { _partMode = true; if (_partCheck is not null) _partCheck.SetPressedNoSignal(true); SelectTool(); })
+                ("Selecionar face", () => { _partMode = false; FaceTool(); }), ("Editar partes vinculadas", () => { _partMode = true; if (_partCheck is not null) _partCheck.SetPressedNoSignal(true); SelectTool(); })
             })
             {
                 var radio = new CheckBox { Text = " " + text, ButtonGroup = group, FocusMode = Control.FocusModeEnum.None, ButtonPressed = text == "Selecionar" }; radio.AddThemeFontSizeOverride("font_size", 18); var run = action; radio.Pressed += () => run(); left.AddChild(radio);
@@ -169,6 +171,7 @@ public partial class BuildEditor
         foreach (var (mode, panel) in _modePanels) panel.Visible = mode == _buildMode;
         var edit = _buildMode == BuildMode.Edit;
         _stack.Visible = edit; _tabs.Visible = edit; if (!edit) _advancedTabs.Visible = false;
+        _applyBarRefresh();
         RefreshModeStatus();
     }
 

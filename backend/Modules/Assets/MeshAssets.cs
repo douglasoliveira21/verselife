@@ -57,6 +57,16 @@ public static class MeshAssets
             : await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.MaterialJson.ToLower().Contains(needle), ct);
     }
 
+    private static async Task<bool> UsedAsSoundAsync(LifeVerseDbContext db, Guid islandId, string needle, CancellationToken ct)
+    {
+        if (db.Database.IsNpgsql())
+        {
+            var pattern = "%" + needle + "%";
+            return await db.Database.SqlQuery<Guid>($"SELECT id AS \"Value\" FROM world.objects WHERE island_id = {islandId} AND deleted_at IS NULL AND content_json::text ILIKE {pattern} LIMIT 1").AnyAsync(ct);
+        }
+        return await db.BuildObjects.AsNoTracking().AnyAsync(o => o.IslandId == islandId && o.DeletedAt == null && o.ContentJson.ToLower().Contains(needle), ct);
+    }
+
     public static IEndpointRouteBuilder MapMeshAssetEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/v1/worlds/islands/{islandId:guid}/assets/{assetId:guid}/file", IslandAssetAsync).WithTags("Assets").RequireAuthorization();
@@ -74,11 +84,12 @@ public static class MeshAssets
         var needle = assetId.ToString().ToLowerInvariant();
         var usedAsMesh = await UsedAsync(db, islandId, needle, geometry: true, ct);
         var usedAsTexture = !usedAsMesh && await UsedAsync(db, islandId, needle, geometry: false, ct);
-        if (!usedAsMesh && !usedAsTexture) return Results.NotFound();
+        var usedAsSound = !usedAsMesh && !usedAsTexture && await UsedAsSoundAsync(db, islandId, needle, ct); // a sound that an object carries can be heard by whoever is on the island
+        if (!usedAsMesh && !usedAsTexture && !usedAsSound) return Results.NotFound();
         var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == assetId && x.DeletedAt == null, ct);
         if (asset is null) return Results.NotFound();
         var version = await db.AssetVersions.AsNoTracking().SingleAsync(x => x.AssetId == assetId && x.Version == asset.CurrentVersion, ct);
-        if (usedAsMesh ? !version.MimeType.StartsWith("model/", StringComparison.Ordinal) : !MaterialAssets.IsImage(version.MimeType)) return Results.NotFound();
+        if (usedAsMesh ? !version.MimeType.StartsWith("model/", StringComparison.Ordinal) : usedAsSound ? !version.MimeType.StartsWith("audio/", StringComparison.Ordinal) : !MaterialAssets.IsImage(version.MimeType)) return Results.NotFound();
         var stream = await storage.OpenReadAsync(version.StorageKey, ct);
         // the hash is the entity tag: a client that already has these bytes asks again with it and gets "not modified" instead of the file
         return stream is null ? Results.NotFound() : Results.File(stream, version.MimeType, entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue("\"" + version.ContentHash + "\""));

@@ -7,7 +7,6 @@ namespace LifeVerse.Client.Scripts;
 /// Recursos, Textura and Conteúdo tabs in the compact layout of the reference image (see BuildEditor.CompactPages.cs).
 public partial class BuildEditor
 {
-    private CheckBox _physical = null!, _staticRadio = null!, _dynamicRadio = null!;
     private TextureRect _appliedThumb = null!;
     private AcceptDialog _libraryDialog = null!;
 
@@ -17,15 +16,11 @@ public partial class BuildEditor
     {
         var page = Column(8);
         page.AddChild(Heading("Estados do objeto"));
-        _physMode = Pick("Estático", "Físico"); // the state itself; the check boxes and radios below drive it
-        _physical = Check("Físico", "O objeto deve se mover por física (cair, ser empurrado); o mundo ainda não simula esses corpos"); _physTemporary = Check("Temporário", "Objeto passageiro: quase não pesa no orçamento da ilha");
+        _physMode = Pick("Estático", "Físico"); // shown under Física below
+        _physTemporary = Check("Temporário", "Objeto passageiro: quase não pesa no orçamento da ilha");
         _ghost = Check("Fantasma (Phantom)", "Desativa a colisão sólida; o objeto continua visível");
-        var group = new ButtonGroup(); _staticRadio = new CheckBox { Text = " Estático", ButtonGroup = group, ButtonPressed = true, FocusMode = Control.FocusModeEnum.None }; _dynamicRadio = new CheckBox { Text = " Dinâmico", ButtonGroup = group, FocusMode = Control.FocusModeEnum.None };
-        foreach (var radio in new[] { _staticRadio, _dynamicRadio }) radio.AddThemeFontSizeOverride("font_size", 19);
-        _physical.Toggled += on => { _physMode.Select(on ? 1 : 0); SyncPhysicsUi(); };
-        _staticRadio.Pressed += () => { _physMode.Select(0); SyncPhysicsUi(); }; _dynamicRadio.Pressed += () => { _physMode.Select(1); SyncPhysicsUi(); };
-        var states = Row(20); var left = Column(4); left.AddChild(_physical); left.AddChild(_physTemporary); left.AddChild(_ghost); states.AddChild(left);
-        var right = Column(4); right.AddChild(_staticRadio); right.AddChild(_dynamicRadio); states.AddChild(right); page.AddChild(states);
+        var states = Row(20); var left = Column(4); left.AddChild(_physTemporary); left.AddChild(_ghost); states.AddChild(left);
+        page.AddChild(states);
         page.AddChild(Rule());
 
         page.AddChild(Heading("Luz"));
@@ -39,27 +34,33 @@ public partial class BuildEditor
         page.AddChild(BuildFlexCard());
         page.AddChild(Rule());
 
-        page.AddChild(Heading("Física"));
+        page.AddChild(Heading("Colisão"));
         _collisionShape = new OptionButton { CustomMinimumSize = new Vector2(0, 40), FocusMode = Control.FocusModeEnum.None, TooltipText = "Padrão = caixa; o casco convexo e a malha seguem a forma" };
-        _collisionShape.AddItem("Nenhuma"); _collisionShape.AddItem("Padrão (caixa)"); _collisionShape.AddItem("Casco convexo"); _collisionShape.AddItem("Malha triangular (estática)"); _collisionShape.Select(1);
+        _collisionShape.AddItem("Nenhuma"); _collisionShape.AddItem("Padrão (caixa)"); _collisionShape.AddItem("Casco convexo"); _collisionShape.AddItem("Malha triangular (estática)"); _collisionShape.AddItem("Esfera (bola)"); _collisionShape.AddItem("Cilindro"); _collisionShape.Select(1);
         _collisionShape.ItemSelected += index => { if (index == 3 && _physMode.Selected == 1) { _physMode.Select(0); SyncPhysicsUi(); _status.Text = "Malha triangular é estática; o modo foi alterado para Estático."; } };
+        page.AddChild(Heading("Física"));
+        _physMode.TooltipText = "Estático: fica onde foi posto. Físico: o servidor da ilha o faz cair, rolar, quicar e ser empurrado por quem anda"; page.AddChild(FormRow("Comportamento:", _physMode, 200));
         page.AddChild(FormRow("Forma de colisão:", _collisionShape, 200));
+        _physMode.ItemSelected += _ => SyncPhysicsUi();
         _physMass = Field("1", 8); _physMass.Text = "1"; _physFriction = Field("0,5", 6); _physFriction.Text = "0,5"; _physBounce = Field("0", 6); _physBounce.Text = "0";
-        page.AddChild(FormRow("Massa:", _physMass, 200)); page.AddChild(FormRow("Atrito:", _physFriction, 200)); page.AddChild(FormRow("Restituição:", _physBounce, 200));
+
+        page.AddChild(FormRow("Massa (kg):", _physMass, 200)); page.AddChild(FormRow("Atrito (0 a 1):", _physFriction, 200)); page.AddChild(FormRow("Quique (0 a 1):", _physBounce, 200));
         _physMaterial = new OptionButton { CustomMinimumSize = new Vector2(0, 40), FocusMode = Control.FocusModeEnum.None, TooltipText = "Define o atrito e o quique de uma vez" }; _physMaterial.AddItem("Nenhum");
         foreach (var (key, (label, _, _)) in PhysicsRules.Materials) { _physMaterial.AddItem(label); _physMaterial.SetItemMetadata(_physMaterial.ItemCount - 1, key); }
         _physMaterial.ItemSelected += index => { if (index > 0 && PhysicsRules.Materials.TryGetValue(_physMaterial.GetItemMetadata((int)index).AsString(), out var m)) { _physFriction.Text = Disp(m.Friction, 2); _physBounce.Text = Disp(m.Bounce, 2); } };
+
         page.AddChild(FormRow("Material:", _physMaterial, 200));
         _showCollision = Check("Visualizar colisão", "Mostra em ciano a geometria que gera a colisão"); _showCollision.Toggled += SetCollisionPreview; page.AddChild(_showCollision);
-        var apply = IconButton("check", "Aplicar", "Envia estados, luz, projetor, flexibilidade e física ao servidor", () => { ApplyLight(); ApplySelected(); }, UiStyle.ButtonKind.Primary, 44); page.AddChild(apply);
         return page;
     }
 
     /// Keeps the check box and the two radios in step with the physical mode.
     private void SyncPhysicsUi()
     {
-        if (_physical is null) return;
-        var on = _physMode.Selected == 1; _physical.SetPressedNoSignal(on); _staticRadio.SetPressedNoSignal(!on); _dynamicRadio.SetPressedNoSignal(on);
+        if (_physMass is null || _physMode is null) return;
+        var on = _physMode.Selected == 1; // mass, friction, bounce and material only matter for a body that moves
+        foreach (var field in new[] { _physMass, _physFriction, _physBounce }) field.Editable = on && !_readOnly;
+        if (_physMaterial is not null) _physMaterial.Disabled = !on || _readOnly;
     }
 
     private VBoxContainer BuildProjectorCard()
@@ -129,7 +130,7 @@ public partial class BuildEditor
         _glowStrength = NewSlider(0, 1, .01, .125);
         var glowRow = Row(12); glowRow.AddChild(_glow); glowRow.AddChild(Filler()); glowRow.AddChild(_emissionPicker); page.AddChild(glowRow);
         page.AddChild(PairRow("Intensidade", ("", SpinFor(_glowStrength, ScheduleMaterialApply))));
-        page.AddChild(PairRow("Rugosidade", ("", SpinFor(_roughness, ScheduleMaterialApply)))); page.AddChild(PairRow("Metalicidade", ("", SpinFor(_metallic, ScheduleMaterialApply))));
+        _pbrRows.Add(PairRow("Rugosidade", ("", SpinFor(_roughness, ScheduleMaterialApply)))); _pbrRows.Add(PairRow("Metalicidade", ("", SpinFor(_metallic, ScheduleMaterialApply)))); foreach (var row in _pbrRows) page.AddChild(row);
         page.AddChild(BuildAdvancedMaterialCard());
         var props = Row(8); props.AddChild(IconButton("copy", "Copiar propriedades", "Copia material e forma do objeto selecionado", CopyProperties, UiStyle.ButtonKind.Secondary, 40)); props.AddChild(IconButton("paste", "Colar propriedades", "Aplica material e forma copiados à seleção", PasteProperties, UiStyle.ButtonKind.Secondary, 40)); page.AddChild(props);
         BuildLibraryDialog();

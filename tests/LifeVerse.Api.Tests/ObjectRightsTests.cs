@@ -348,4 +348,18 @@ public sealed class ObjectRightsTests : IDisposable
         var closed = new Island { Id = Guid.NewGuid(), OwnerUserId = _owner, Name = "Fechada", Slug = "fechada", IsPublic = false, Size = 100 }; _db.Islands.Add(closed); await _db.SaveChangesAsync();
         Assert.IsType<ForbidHttpResult>(await MeshAssets.IslandAssetAsync(closed.Id, asset.Id, As(Guid.NewGuid()), _db, _storage, default));
     }
+
+    [Fact]
+    public async Task ASoundAnObjectCarriesIsServedToThoseOnTheIslandAndNothingElseIs()
+    {
+        var (sound, _) = Model(ItemRights.Standard, ItemRights.Standard); _store.Files["s" + sound.Id] = [9, 9, 9]; var version = _db.AssetVersions.Local.First(v => v.AssetId == sound.Id); version.StorageKey = "s" + sound.Id; version.MimeType = "audio/wav"; await _db.SaveChangesAsync();
+        Assert.Equal(404, (await MeshAssets.IslandAssetAsync(_island.Id, sound.Id, As(_builder), _db, _storage, default) as IStatusCodeHttpResult)?.StatusCode); // in nobody's content: not served
+        var id = await Create(_builder, Cube(0, 0)); var carrier = await _db.BuildObjects.SingleAsync(o => o.Id == id);
+        carrier.ContentJson = $"[{{\"assetId\":\"{sound.Id}\",\"name\":\"Campainha\",\"category\":\"sounds\"}}]"; await _db.SaveChangesAsync();
+        var served = await MeshAssets.IslandAssetAsync(_island.Id, sound.Id, As(_builder), _db, _storage, default);
+        Assert.True(served is not IStatusCodeHttpResult { StatusCode: 404 } and not ForbidHttpResult, served.GetType().Name);
+        var (model, _) = Model(ItemRights.Standard, ItemRights.Standard); _store.Files["m" + model.Id] = [1]; _db.AssetVersions.Local.First(v => v.AssetId == model.Id).StorageKey = "m" + model.Id; await _db.SaveChangesAsync();
+        carrier.ContentJson = $"[{{\"assetId\":\"{model.Id}\",\"name\":\"Modelo\",\"category\":\"sounds\"}}]"; await _db.SaveChangesAsync();
+        Assert.Equal(404, (await MeshAssets.IslandAssetAsync(_island.Id, model.Id, As(_builder), _db, _storage, default) as IStatusCodeHttpResult)?.StatusCode); // only audio is served this way
+    }
 }

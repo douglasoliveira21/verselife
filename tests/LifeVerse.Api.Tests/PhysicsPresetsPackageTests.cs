@@ -234,3 +234,26 @@ public sealed class PhysicsAndHierarchyServerTests : IDisposable
         var costs = await _db.BuildObjects.AsNoTracking().ToDictionaryAsync(o => o.Id, o => o.Cost); Assert.Equal(costs[still] + 2, costs[moving]);
     }
 }
+
+public sealed class BallShapePhysicsTests
+{
+    [Theory]
+    [InlineData("{\"mode\":\"physical\",\"shape\":\"sphere\",\"mass\":1,\"bounce\":0.9}", true)]
+    [InlineData("{\"mode\":\"physical\",\"shape\":\"cylinder\"}", true)]
+    [InlineData("{\"shape\":\"sphere\"}", true)]
+    [InlineData("{\"shape\":\"ellipsoid\"}", false)]
+    [InlineData("{\"mode\":\"physical\",\"shape\":\"triangle\"}", false)]
+    public void TheBallAndCylinderShapesAreAcceptedByBothValidators(string json, bool valid)
+    {
+        Assert.Equal(valid, LifeVerse.Shared.Building.PhysicsRules.Validate(json) is null);
+        Assert.Equal(valid, LifeVerse.Api.Modules.Worlds.ObjectPhysics.Validate(json) is null);
+    }
+
+    [Fact]
+    public void ABallRoundTripsThroughWriteAndRead()
+    {
+        var json = LifeVerse.Shared.Building.PhysicsRules.Write("{}", new LifeVerse.Shared.Building.PhysicsSettings(Physical: true, Mass: 2, Bounce: .8f, CollisionShape: "sphere"));
+        var read = LifeVerse.Shared.Building.PhysicsRules.Read(json);
+        Assert.True(read.Physical); Assert.Equal("sphere", read.CollisionShape); Assert.Equal(.8f, read.Bounce); Assert.Equal(2f, read.Mass);
+    }
+}

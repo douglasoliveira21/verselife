@@ -180,3 +180,19 @@ public sealed class ObstacleFieldTests
         Assert.Equal((a.X, a.Y, a.Z), (b.X, b.Y, b.Z));
     }
 }
+
+public sealed class MeshObstacleTests
+{
+    [Theory]
+    [InlineData("", false)]
+    [InlineData("{}", false)]
+    [InlineData("{\"shape\":\"triangle\"}", false)]
+    [InlineData("{\"shape\":\"box\"}", true)]
+    [InlineData("{\"shape\":\"convex\"}", true)]
+    [InlineData("{\"shape\":\"box\",\"trigger\":true}", false)]
+    public void AnImportedModelIsOnlyAWallForTheServerWhenAnApproximateShapeWasChosen(string physics, bool blocks) =>
+        Assert.Equal(blocks, ObstacleField.Blocks(physics, "mesh"));
+
+    [Fact]
+    public void PrimitivesKeepBlockingByDefault() => Assert.True(ObstacleField.Blocks("{}", "cube") && ObstacleField.Blocks("", "sphere"));
+}

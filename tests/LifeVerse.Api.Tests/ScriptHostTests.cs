@@ -14,6 +14,13 @@ public sealed class ScriptHostTests
         public ScriptObjectState? GetObject(Guid id) => Objects.GetValueOrDefault(id);
         public void ApplyChange(ScriptDefinition script, ObjectChange change) => Changes.Add((script, change));
         public void Say(ScriptDefinition script, string text) => Said.Add((script, text));
+        public List<(string Name, float Volume, bool Loop)> Sounds { get; } = [];
+        public int Stops { get; private set; }
+        public List<(string Text, string Color)> Texts { get; } = [];
+        public bool HasSound { get; set; } = true;
+        public bool PlaySound(ScriptDefinition script, string soundName, float volume, bool loop) { if (!HasSound) return false; Sounds.Add((soundName, volume, loop)); return true; }
+        public void StopSound(ScriptDefinition script) => Stops++;
+        public void SetText(ScriptDefinition script, string text, string color) => Texts.Add((text, color));
     }
 
     private static readonly Guid Owner = Guid.NewGuid();
@@ -236,5 +243,84 @@ public sealed class ScriptHostTests
         host.Process(500);
         Assert.Equal(0, host.QueuedEvents);
         Assert.Equal(50, world.Changes.Count);
+    }
+}
+
+public sealed class ScriptSoundAndTextTests
+{
+    private sealed class World : IScriptWorld
+    {
+        public Dictionary<Guid, ScriptObjectState> Objects { get; } = [];
+        public List<(string Name, float Volume, bool Loop)> Sounds { get; } = [];
+        public List<(string Text, string Color)> Texts { get; } = [];
+        public int Stops { get; private set; }
+        public bool HasSound { get; set; } = true;
+        public double Now { get; set; } = 100;
+        public ScriptObjectState? GetObject(Guid id) => Objects.GetValueOrDefault(id);
+        public void ApplyChange(ScriptDefinition script, ObjectChange change) { }
+        public void Say(ScriptDefinition script, string text) { }
+        public bool PlaySound(ScriptDefinition script, string soundName, float volume, bool loop) { if (!HasSound) return false; Sounds.Add((soundName, volume, loop)); return true; }
+        public void StopSound(ScriptDefinition script) => Stops++;
+        public void SetText(ScriptDefinition script, string text, string color) => Texts.Add((text, color));
+    }
+
+    private static (ScriptHost Host, World World, List<ScriptReport> Reports, Guid Id) Setup(string source)
+    {
+        var owner = Guid.NewGuid(); var id = Guid.NewGuid(); var world = new World();
+        world.Objects[id] = new ScriptObjectState(id, owner, "Sino", new Vec3(0, 0, 0), new Vec3(0, 0, 0), new Vec3(1, 1, 1));
+        var host = new ScriptHost(world, new ScriptHostOptions(MillisecondsPerEvent: 2000)); var reports = new List<ScriptReport>(); host.Report += reports.Add;
+        host.Sync([new ScriptDefinition(Guid.NewGuid(), id, owner, "script", source, 1)]); host.Process(200);
+        return (host, world, reports, id);
+    }
+
+    private static void Fire(ScriptHost host, Guid id) { host.Enqueue(new ScriptEvent(id, "touch", null)); host.Process(200); }
+
+    [Fact]
+    public void PlaySoundAsksTheWorldToPlayTheNamedSoundWithAClampedVolume()
+    {
+        var (host, world, reports, id) = Setup("function on_touch() ok = object.play_sound('Campainha', 3) object.play_sound('Outro', -1, true) end");
+        Fire(host, id);
+        Assert.Empty(reports);
+        Assert.Equal([("Campainha", 1f, false), ("Outro", 0f, true)], world.Sounds);
+    }
+
+    [Fact]
+    public void PlaySoundTellsTheScriptWhenThereIsNoSuchSound()
+    {
+        var (host, world, reports, id) = Setup("function on_touch() if not object.play_sound('Nada') then object.set_text('sem som') end end");
+        world.HasSound = false; Fire(host, id);
+        Assert.Empty(reports);
+        Assert.Equal("sem som", Assert.Single(world.Texts).Text);
+    }
+
+    [Fact]
+    public void StopSoundAndSetTextReachTheWorld()
+    {
+        var (host, world, reports, id) = Setup("function on_touch() object.stop_sound() object.set_text('Olá', '#12F2E0') object.set_text('') end");
+        Fire(host, id);
+        Assert.True(reports.Count == 0, string.Join(";", reports.Select(r => r.Message)));
+        Assert.Equal(1, world.Stops);
+        Assert.Equal([("Olá", "#12F2E0"), ("", "#FFFFFF")], world.Texts);
+    }
+
+    [Fact]
+    public void SoundsAndTextsAreRateLimitedPerScript()
+    {
+        var (host, world, reports, id) = Setup("function on_touch() for i = 1, 20 do object.play_sound('A') end end");
+        Fire(host, id);
+        Assert.NotEmpty(reports);
+        Assert.True(world.Sounds.Count <= 5);
+        var (host2, world2, reports2, id2) = Setup("function on_touch() for i = 1, 20 do object.set_text('t' .. i) end end");
+        Fire(host2, id2);
+        Assert.NotEmpty(reports2); Assert.True(world2.Texts.Count <= 5);
+    }
+
+    [Theory]
+    [InlineData("object.set_text('x', 'vermelho')")]
+    public void BadArgumentsBecomeReportedErrors(string call)
+    {
+        var (host, world, reports, id) = Setup("function on_touch() " + call + " end");
+        Fire(host, id);
+        Assert.NotEmpty(reports); Assert.Empty(world.Texts); Assert.Empty(world.Sounds);
     }
 }
