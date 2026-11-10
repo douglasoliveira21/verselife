@@ -23,6 +23,8 @@ public partial class ViewerUI : CanvasLayer
     private FloatingWindow _miniMapWindow = null!;
     private FloatingWindow _moveWindow = null!;
     private FloatingWindow _joinWindow = null!;
+    private WorldEntryCoordinator _entry = null!;
+    private TeleportCoordinator _teleport = null!;
     private PeoplePanel? _people;
     private FloatingWindow? _helpWindow;
     private Control? _gestures;
@@ -114,6 +116,11 @@ public partial class ViewerUI : CanvasLayer
         BuildRadial();
         EnterFirstIsland();
         if (_world.GetNodeOrNull<LandManager>("LandManager") is null) { var land = new LandManager { Name = "LandManager" }; _world.AddChild(land); land.Said += text => Toast(text); land.WalletChanged += RequestWallet; }
+        if (_world.GetNodeOrNull<AssetLoadingService>("AssetLoadingService") is null) _world.AddChild(new AssetLoadingService { Name = "AssetLoadingService" });
+        if (_world.GetNodeOrNull<WorldEntryCoordinator>("WorldEntryCoordinator") is null) _world.AddChild(new WorldEntryCoordinator { Name = "WorldEntryCoordinator" });
+        if (_world.GetNodeOrNull<TeleportCoordinator>("TeleportCoordinator") is null) { var trip = new TeleportCoordinator { Name = "TeleportCoordinator" }; _world.AddChild(trip); trip.Initialize(_world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator")); }
+        _teleport = _world.GetNode<TeleportCoordinator>("TeleportCoordinator");
+        _entry = _world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator"); _entry.RetryLocate = () => { _entering = false; EnterFirstIsland(); }; _entry.LeaveToMenu = () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); RefreshIslands(); };
         if (_world.GetNodeOrNull<LandMapWindow>("LandMapWindow") is null) _world.AddChild(new LandMapWindow { Name = "LandMapWindow", JoinIsland = JoinIslandById });
         if (_world.GetNodeOrNull<ItemRightsWindow>("ItemRightsWindow") is null) _world.AddChild(new ItemRightsWindow { Name = "ItemRightsWindow" });
         if (_world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow") is null) _world.AddChild(new ItemOffersWindow { Name = "ItemOffersWindow" });
@@ -389,6 +396,7 @@ public partial class ViewerUI : CanvasLayer
         if (_entering || _network.IsAuthenticated || _network.CurrentIslandId != Guid.Empty) return;
         var session = GetNode<SessionManager>("/root/SessionManager"); if (!session.IsAuthenticated) return;
         _entering = true; _joinStatus.Text = "Procurando a sua ilha…"; _joinWindow.Visible = false; // no list of islands while the server is taking the person to theirs
+        _entry.BeginLocating(); // the loading screen covers the world from this moment on
         _start.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/me/start", [$"Authorization: Bearer {session.AccessToken}"]);
     }
 
@@ -403,6 +411,7 @@ public partial class ViewerUI : CanvasLayer
     private void NoWelcome(bool fromStart)
     {
         Toast("Não foi possível achar a Ilha de Boas-vindas.");
+        if (_entry.Manager.Active) { _entry.LocateFailed("Não foi possível achar a Ilha de Boas-vindas. O servidor pode estar desatualizado."); return; }
         if (!fromStart) return;
         _joinStatus.Text = "Não achei a sua ilha de início. Escolha uma ilha da lista (o servidor pode estar desatualizado)."; _joinWindow.Visible = true; _joinWindow.MoveToFront(); RefreshIslands();
     }
@@ -448,6 +457,8 @@ public partial class ViewerUI : CanvasLayer
     private void Join()
     {
         if (!Guid.TryParse(_islandId.Text.Trim(), out var islandId)) { _joinStatus.Text = "UUID de ilha inválido."; return; }
+        // already on an island: going to another one is a controlled trip (reserve, ticket, arrival), not a plain entry
+        if (_network.IsAuthenticated) { if (islandId == _network.CurrentIslandId) { Toast("Você já está nessa ilha."); return; } if (!_teleport.Begin(islandId)) Toast("Você já está viajando para outra ilha."); return; }
         var error = _network.JoinIsland(islandId);
         if (error != Error.Ok) _joinStatus.Text = $"Não foi possível entrar: {error}";
     }

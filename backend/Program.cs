@@ -147,6 +147,8 @@ app.MapParcelEndpoints();
 app.MapLandEndpoints();
 app.MapVehicleEndpoints();
 app.MapBuildEndpoints();
+app.MapAssetManifestEndpoints();
+app.MapTeleportEndpoints();
 app.MapAssetEndpoints();
 app.MapBuildPackageEndpoints();
 app.MapBuildLimitEndpoints();

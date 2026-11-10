@@ -14,6 +14,8 @@ namespace LifeVerse.Client.Autoloads;
 public partial class NetworkManager : Node
 {
     [Signal] public delegate void ConnectionStateChangedEventHandler(string state, string detail);
+    /// <summary>Real progress of what the world needs to be ready after connecting: key is snapshot, terrain, spawn or objects; done and total are units (total -1 when unknown).</summary>
+    [Signal] public delegate void WorldProgressEventHandler(string key, long done, long total);
     [Signal] public delegate void ChatReceivedEventHandler(string line);
     [Signal] public delegate void BuildOperationReceivedEventHandler(string operationJson);
     [Signal] public delegate void BuildOperationRejectedEventHandler(string code);
@@ -44,6 +46,16 @@ public partial class NetworkManager : Node
     private bool _intentionalDisconnect;
     public bool IsAuthenticated { get; private set; }
     public Guid CurrentIslandId => _islandId;
+    /// <summary>The island being entered (the same as CurrentIslandId; the name says what it is while the entry is still going on) and the one the person was on before it.</summary>
+    public Guid TargetIslandId => _islandId;
+    public Guid PreviousIslandId { get; private set; }
+    /// <summary>Where the person asked to arrive on the next island, when they chose a spot (so the nearest assets load first); null for the usual arrival point.</summary>
+    public (float X, float Z)? ArrivalHint { get; set; }
+    /// <summary>A trip between islands is going on: a lost connection must not start the automatic reconnection to the island being entered.</summary>
+    public bool TransferInProgress { get; set; }
+    private Guid _previousIslandId { get => PreviousIslandId; set => PreviousIslandId = value; }
+    /// <summary>The entry did not go on and the connection to the previous island is still there: the person stays on it.</summary>
+    public void RestorePreviousIsland() { if (PreviousIslandId != Guid.Empty) { _islandId = PreviousIslandId; PreviousIslandId = Guid.Empty; } }
     public bool IsConnectedToIsland => Multiplayer.HasMultiplayerPeer() && Multiplayer.MultiplayerPeer.GetConnectionStatus() == MultiplayerPeer.ConnectionStatus.Connected;
 
     public override void _Ready()
@@ -102,6 +114,7 @@ public partial class NetworkManager : Node
         if (islandId == Guid.Empty) return Error.InvalidParameter;
         var session = GetNode<SessionManager>("/root/SessionManager");
         if (!session.IsAuthenticated || _http.GetHttpClientStatus() != Godot.HttpClient.Status.Disconnected) return Error.Unauthorized;
+        if (!retry) { _previousIslandId = IsAuthenticated && _islandId != islandId ? _islandId : Guid.Empty; }
         _islandId = islandId; _intentionalDisconnect = false; if (!retry) _startAttempts = 0;
         EmitSignal(SignalName.ConnectionStateChanged, "requesting_ticket", "Solicitando entrada na ilha…");
         return _http.Request($"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}/api/v1/worlds/islands/{islandId}/entry-token",
@@ -152,6 +165,9 @@ public partial class NetworkManager : Node
         _ => $"Entrada recusada pela API ({code})."
     };
 
+    public void ReportWorldProgress(string key, long done, long total) => EmitSignal(SignalName.WorldProgress, key, done, total);
+    private bool _spawnReported;
+
     private void RequestIslandSnapshot()
     {
         var session = GetNode<SessionManager>("/root/SessionManager");
@@ -160,18 +176,44 @@ public partial class NetworkManager : Node
 
     private void OnSnapshotResponse(long result, long responseCode, string[] headers, byte[] body)
     {
-        if (responseCode is < 200 or >= 300) return;
+        if (responseCode is < 200 or >= 300) { ReportWorldProgress("snapshot", 0, -2); return; } // -2: the island snapshot is not available; the terrain still arrives from the server
         try
         {
             using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); var environment = doc.RootElement.GetProperty("environmentJson").GetString() ?? "{}";
             var terrain = GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain"); terrain?.ApplySnapshot(doc.RootElement.GetProperty("terrainJson").GetString() ?? "{}", environment);
+            ReportWorldProgress("snapshot", 1, 1);
         }
         catch (Exception exception) { GD.PushWarning($"event=island_snapshot_invalid error={exception.GetType().Name}"); }
     }
 
+    /// <summary>Connects to an island with the single-use ticket of a trip (already issued by the API for this destination), instead of asking for an entry ticket.</summary>
+    public Error JoinWithTicket(Guid islandId, string token, string host, int port, int protocolVersion)
+    {
+        if (islandId == Guid.Empty || string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(host) || port is < 1 or > 65535) return Error.InvalidParameter;
+        if (protocolVersion != NetworkProtocol.Version) { EmitSignal(SignalName.ConnectionStateChanged, "incompatible", "Versão do protocolo incompatível."); return Error.InvalidParameter; }
+        if (islandId != _islandId && _previousIslandId == Guid.Empty && IsAuthenticated) _previousIslandId = _islandId;
+        _islandId = islandId; _intentionalDisconnect = false; _startAttempts = 0; _entryToken = token; _host = host; _port = port;
+        RequestIslandSnapshot(); ConnectPeer();
+        return Error.Ok;
+    }
+
+    /// <summary>Leaving the island we are on for another: its other avatars, vehicles and permissions go away at once, and the rest of the game is told so it can clear what belongs to it.</summary>
+    public void LeaveCurrentIslandForTesting() => LeaveCurrentIsland();
+    public int RemoteAvatarCountForTesting => _remote.Count;
+    public void SetAuthenticatedForTesting(bool on) => IsAuthenticated = on;
+    public void SetCurrentIslandForTesting(Guid island, bool authenticated) { _islandId = island; IsAuthenticated = authenticated; }
+
+    private void LeaveCurrentIsland()
+    {
+        IsAuthenticated = false; CanEditTerrain = false; foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); Vehicles.Clear();
+        EmitSignal(SignalName.ConnectionStateChanged, "switching", "Mudando de ilha");
+    }
+
     private void ConnectPeer()
     {
+        if (Multiplayer.HasMultiplayerPeer() && IsAuthenticated) LeaveCurrentIsland();
         ClosePeer();
+        _spawnReported = false;
         var peer = new ENetMultiplayerPeer(); var error = peer.CreateClient(_host, _port, 3);
         if (error != Error.Ok) { EmitSignal(SignalName.ConnectionStateChanged, "failed", error.ToString()); return; }
         Multiplayer.MultiplayerPeer = peer;
@@ -208,6 +250,7 @@ public partial class NetworkManager : Node
     {
         if (GetTree().CurrentScene?.GetNodeOrNull<IslandTerrain>("IslandTerrain") is { } terrain && !terrain.ApplyFull(data)) GD.PushWarning("event=terrain_full_invalid");
         CanEditTerrain = canEdit; EmitSignal(SignalName.TerrainPermissionChanged, canEdit);
+        ReportWorldProgress("terrain", 1, 1);
     }
     public void OnTerrainEdited(int tool, float x, float z, float radius, float strength, int layer, long revision)
     {
@@ -247,6 +290,7 @@ public partial class NetworkManager : Node
         foreach (var state in snapshot.Players)
         {
             var position = new Vector3(state.X, state.Y, state.Z);
+            if (state.PeerId == ownPeer && !_spawnReported) { _spawnReported = true; ReportWorldProgress("spawn", 1, 1); } // the first position the server confirms for us
             if (state.PeerId == ownPeer) { _localPlayer?.Reconcile(position, new Vector3(state.VelocityX, state.VelocityY, state.VelocityZ), state.LastProcessedInput, state.Motion); continue; }
             if (_remote.TryGetValue(state.PeerId, out var remote))
             {
@@ -291,6 +335,7 @@ public partial class NetworkManager : Node
         IsAuthenticated = false; CanEditTerrain = false; EmitSignal(SignalName.TerrainPermissionChanged, false); foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); Vehicles.Clear(); Voice.Reset();
         EmitSignal(SignalName.ConnectionStateChanged, "offline", reason);
         if (_intentionalDisconnect || _islandId == Guid.Empty || _reconnectAttempt >= 3) return;
+        if (TransferInProgress) return;
         _reconnectAttempt++; await ToSignal(GetTree().CreateTimer(Math.Pow(2, _reconnectAttempt - 1)), SceneTreeTimer.SignalName.Timeout); JoinIsland(_islandId);
     }
 

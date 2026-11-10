@@ -138,7 +138,7 @@ public partial class ServerMain : Node
         {
             _ = SaveLocationsAsync([player], CancellationToken.None); // so signing in again brings them back to this spot
             BroadcastUnlock(_locks.ReleaseAll(player.UserId), player.UserId);
-            _suspended[player.AvatarId] = new SuspendedPlayer(player, DateTimeOffset.UtcNow.AddSeconds(10));
+            if (!player.Released) _suspended[player.AvatarId] = new SuspendedPlayer(player, DateTimeOffset.UtcNow.AddSeconds(10)); // someone released by a trip does not come back on their own
             foreach (var other in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(other.PeerId, NetworkBridge.MethodName.DespawnPlayer, player.PeerId, true);
         }
         Log("peer_disconnected", new { peerId, player.AvatarId });
@@ -175,6 +175,7 @@ public partial class ServerMain : Node
             SendAllVehicles(peerId);
             SendLocks(peerId);
             Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
+            if (admission.TransferId is { } trip) _ = ConfirmArrivalAsync(peerId, trip, _shutdown.Token); // a person who travelled: the API completes the trip only when this island says they are here
         }
         catch (Exception exception) { Log("admission_failed", new { peerId, error = exception.Message }); Reject(peerId, "admission_unavailable"); }
     }
@@ -581,7 +582,7 @@ public partial class ServerMain : Node
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                using var response = await _api.PutAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/heartbeat", new { status = "healthy" }, ct);
+                using var response = await _api.PutAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/heartbeat", new { status = "healthy", players = _players.Values.Count(x => x.Authenticated) }, ct);
                 if (!response.IsSuccessStatusCode) Log("heartbeat_failed", new { status = (int)response.StatusCode });
             }
         }
@@ -636,6 +637,7 @@ public partial class ServerMain : Node
         public int PeerId { get; } = peerId;
         public DateTimeOffset ConnectedAt { get; } = DateTimeOffset.UtcNow;
         public bool Authenticated { get; set; }
+        public bool Released { get; set; }
         public Guid UserId { get; set; }
         public Guid AvatarId { get; set; }
         public Guid SessionId { get; set; }
@@ -658,7 +660,7 @@ public partial class ServerMain : Node
     private sealed record SuspendedPlayer(ConnectedPlayer Player, DateTimeOffset ExpiresAt);
     private sealed record AdmissionResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
         int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false,
-        float SpawnX = 0, float SpawnZ = 0, int IslandSize = 256, float? ResumeX = null, float? ResumeY = null, float? ResumeZ = null);
+        float SpawnX = 0, float SpawnZ = 0, int IslandSize = 256, float? ResumeX = null, float? ResumeY = null, float? ResumeZ = null, Guid? TransferId = null);
     private sealed record WorldSnapshotResponse(Guid IslandId, long Version, string TerrainJson, string EnvironmentJson, string IntegrityHash);
     private sealed record SnapshotWriteResponse(long Version);
     private sealed record StructureLink(Guid ObjectId, Guid? GroupId, Guid? ParentId, int ExpectedRevision);

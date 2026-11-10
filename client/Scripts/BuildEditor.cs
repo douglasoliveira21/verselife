@@ -72,7 +72,7 @@ public partial class BuildEditor : Node3D
     private void OnConnectionState(string state, string detail)
     {
         if (state == "online") { _islandId = _network.CurrentIslandId; LoadObjects(); }
-        else if (state is "offline" or "failed") { _lockedBy.Clear(); _myLocks.Clear(); SettleAll(); _loadQueue.Clear(); _cameraRig?.Exit(); CancelDrag(); ClearSelection(); foreach (var view in _objects.Values) if (IsInstanceValid(view)) view.QueueFree(); _objects.Clear(); }
+        else if (state is "offline" or "failed" or "switching") { _lockedBy.Clear(); _myLocks.Clear(); SettleAll(); _loadQueue.Clear(); _cameraRig?.Exit(); CancelDrag(); ClearSelection(); foreach (var view in _objects.Values) if (IsInstanceValid(view)) view.QueueFree(); _objects.Clear(); }
     }
 
     // ---- activation and input --------------------------------------------------------------------------------
@@ -518,8 +518,8 @@ public partial class BuildEditor : Node3D
 
     private void OnObjectsLoaded(long result, long responseCode, string[] headers, byte[] body)
     {
-        if (responseCode is < 200 or >= 300) return;
-        try { using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); foreach (var element in doc.RootElement.EnumerateArray()) _loadQueue.Enqueue(JsonSerializer.Deserialize<BuildObjectState>(element.GetRawText(), Web)!); }
+        if (responseCode is < 200 or >= 300) { _network.ReportWorldProgress("objects", 0, -2); return; } // -2: the list of objects could not be loaded
+        try { using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(body)); var count = 0; foreach (var element in doc.RootElement.EnumerateArray()) { count++; _loadQueue.Enqueue(JsonSerializer.Deserialize<BuildObjectState>(element.GetRawText(), Web)!); } _loadDone = 0; _loadTotal = count; _network.ReportWorldProgress("objects", 0, count); }
         catch (Exception exception) { GD.PushWarning($"event=build_objects_invalid error={exception.GetType().Name}"); }
     }
 

@@ -625,5 +625,38 @@ public sealed class ServerInstance
     public required string Status { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset LastHeartbeatAt { get; set; }
+    /// <summary>How many people the island server says are connected (sent with its heartbeat); used to keep a full island from taking more.</summary>
+    public int PlayerCount { get; set; }
     public DateTimeOffset? StoppedAt { get; set; }
+}
+
+/// <summary>
+/// A person travelling from one island to another. The destination reserves a place (counted against its capacity), a short-lived single-use token lets the
+/// person connect there, the destination server confirms the arrival, and only then is the previous island released. Until the arrival is confirmed the
+/// person stays where they were. Status: prepared, connecting, arrived, cancelled, expired, failed.
+/// </summary>
+public sealed class TeleportTransfer
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid SessionId { get; set; }
+    public Guid? SourceIslandId { get; set; }
+    public Guid DestinationIslandId { get; set; }
+    public required string Status { get; set; }
+    /// <summary>Chosen by the client for one trip: asking again with the same key gives the same transfer instead of a second one.</summary>
+    public required string IdempotencyKey { get; set; }
+    public float? TargetX { get; set; }
+    public float? TargetZ { get; set; }
+    /// <summary>The token issued for this transfer; it opens the destination once (<see cref="TokenUsedAt"/>) and only until <see cref="TokenExpiresAt"/>.</summary>
+    public Guid? TokenId { get; set; }
+    public DateTimeOffset? TokenExpiresAt { get; set; }
+    public DateTimeOffset? TokenUsedAt { get; set; }
+    public string? FailureCode { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>The reservation of the place at the destination ends here.</summary>
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? ArrivedAt { get; set; }
+    /// <summary>The island server of the source has been told to let go of the person.</summary>
+    public DateTimeOffset? SourceReleasedAt { get; set; }
+    public DateTimeOffset? CancelledAt { get; set; }
 }

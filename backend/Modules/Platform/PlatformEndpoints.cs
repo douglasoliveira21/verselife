@@ -11,11 +11,11 @@ using LifeVerse.Api.Modules.Users;
 namespace LifeVerse.Api.Modules.Platform;
 
 public sealed record RegisterServerRequest(Guid InstanceId, Guid IslandId, string Hostname, int Port);
-public sealed record HeartbeatRequest(string Status);
+public sealed record HeartbeatRequest(string Status, int Players = 0);
 public sealed record ValidateEntryTokenRequest(string Token, Guid IslandId);
 public sealed record ValidateEntryTokenResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
     int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false,
-    float SpawnX = 0, float SpawnZ = 0, int IslandSize = 256, float? ResumeX = null, float? ResumeY = null, float? ResumeZ = null);
+    float SpawnX = 0, float SpawnZ = 0, int IslandSize = 256, float? ResumeX = null, float? ResumeY = null, float? ResumeZ = null, Guid? TransferId = null);
 public sealed record ServerSnapshotRequest(long ExpectedVersion, string TerrainJson, string EnvironmentJson, string IntegrityHash);
 public sealed record ServerBuildOperationRequest(Guid UserId, string Operation, Guid? ObjectId, BuildObjectRequest? Object, int ExpectedRevision, Guid[]? ObjectIds = null, Guid? PackageItemId = null, float OriginX = 0, float OriginY = 0, float OriginZ = 0, StructureEntry[]? Links = null, bool? Locked = null, System.Text.Json.JsonElement? Properties = null);
 
@@ -28,13 +28,22 @@ public static class PlatformEndpoints
         group.MapPut("/{instanceId:guid}/heartbeat", HeartbeatAsync);
         group.MapDelete("/{instanceId:guid}", StopAsync);
         endpoints.MapPost("/api/v1/platform/entry-tokens/validate", ValidateEntryAsync).WithTags("Platform");
+        // the destination island server confirms that a person who travelled is there: only then is the trip complete
+        endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/transfers/{transferId:guid}/arrived", async (Guid instanceId, Guid transferId, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) =>
+        {
+            if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
+            var server = await db.ServerInstances.AsNoTracking().SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct); if (server is null) return Results.NotFound();
+            var outcome = await TeleportService.ArrivedAsync(db, server.IslandId, transferId, clock.GetUtcNow(), ct);
+            return Results.Json(new { code = outcome.Code }, statusCode: outcome.Status);
+        }).WithTags("Platform");
         // the island server tells where its players stand (every so often, and when somebody leaves), so they can be brought back to the same place
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/player-locations", async (Guid instanceId, LocationBatch batch, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) =>
         {
             if (!HasValidServiceKey(context, config)) return Results.Unauthorized();
             var server = await db.ServerInstances.AsNoTracking().SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct); if (server is null) return Results.NotFound();
             if (batch.Players is null || batch.Players.Count > PlayerLocations.MaxPerBatch) return Results.BadRequest();
-            return Results.Ok(new { kept = await PlayerLocations.SaveAsync(db, server.IslandId, batch.Players, clock.GetUtcNow(), ct) });
+            var kept = await PlayerLocations.SaveAsync(db, server.IslandId, batch.Players, clock.GetUtcNow(), ct);
+            return Results.Ok(new { kept, release = await TeleportService.ReleaseForSourceAsync(db, server.IslandId, clock.GetUtcNow(), ct) });
         }).WithTags("Platform");
         // the operator chooses the island new avatars arrive on
         endpoints.MapPut("/api/v1/platform/welcome-island/{islandId:guid}", async (Guid islandId, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) =>
@@ -100,6 +109,8 @@ public static class PlatformEndpoints
         var now = timeProvider.GetUtcNow();
         var validSession = await db.Sessions.AsNoTracking().AnyAsync(x => x.Id == identity.SessionId && x.UserId == identity.UserId && x.RevokedAt == null && x.ExpiresAt > now, ct);
         if (!validSession) return Results.Unauthorized();
+        TeleportTransfer? trip = null;
+        if (identity.TransferId is { } transferId) { trip = await TeleportService.ConsumeTokenAsync(db, transferId, identity.UserId, identity.IslandId, identity.TokenId, now, ct); if (trip is null) return Results.Unauthorized(); } // a trip ticket opens the destination once
         await AvatarWearables.ReconcileAsync(db, identity.AvatarId, ct);
         var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.Id == identity.AvatarId && x.UserId == identity.UserId, ct);
@@ -110,7 +121,8 @@ public static class PlatformEndpoints
         var island = await db.Islands.AsNoTracking().SingleAsync(x => x.Id == identity.IslandId, ct);
         var resume = await PlayerLocations.ResumeAsync(db, identity.UserId, identity.IslandId, island.Size, ct); // the spot they stood on here last time, if they were here
         return Results.Ok(new ValidateEntryTokenResponse(identity.UserId, identity.AvatarId, identity.IslandId, identity.SessionId,
-            identity.TokenId, identity.ProtocolVersion, identity.ExpiresAt, avatar.DisplayName, appearance, canEditTerrain, island.SpawnX, island.SpawnZ, island.Size, resume?.X, resume?.Y, resume?.Z));
+            identity.TokenId, identity.ProtocolVersion, identity.ExpiresAt, avatar.DisplayName, appearance, canEditTerrain, island.SpawnX, island.SpawnZ, island.Size,
+            trip?.TargetX ?? resume?.X, trip?.TargetX is null ? resume?.Y : null, trip?.TargetZ ?? resume?.Z, trip?.Id));
     }
 
     internal static bool HasValidServiceKey(HttpContext context, IConfiguration config)
@@ -149,7 +161,7 @@ public static class PlatformEndpoints
         if (string.IsNullOrWhiteSpace(request.Status)) return Results.BadRequest();
         var status = request.Status.Trim()[..Math.Min(request.Status.Trim().Length, 24)];
         var changed = await db.ServerInstances.Where(x => x.Id == instanceId && x.StoppedAt == null)
-            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, status)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.Status, status).SetProperty(x => x.PlayerCount, Math.Clamp(request.Players, 0, 10000))
                 .SetProperty(x => x.LastHeartbeatAt, timeProvider.GetUtcNow()), ct);
         if (changed == 0) return Results.NotFound();
         var islandId = await db.ServerInstances.AsNoTracking().Where(x => x.Id == instanceId).Select(x => (Guid?)x.IslandId).SingleOrDefaultAsync(ct);

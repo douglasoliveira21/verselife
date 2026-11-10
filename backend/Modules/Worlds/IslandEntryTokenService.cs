@@ -25,7 +25,7 @@ public sealed class IslandEntryOptions
 }
 
 public sealed record IslandEntryIdentity(
-    Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId, int ProtocolVersion, DateTimeOffset ExpiresAt);
+    Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId, int ProtocolVersion, DateTimeOffset ExpiresAt, Guid? TransferId = null);
 
 public sealed class IslandEntryTokenService(IslandEntryOptions options, TimeProvider timeProvider)
 {
@@ -41,24 +41,26 @@ public sealed class IslandEntryTokenService(IslandEntryOptions options, TimeProv
         ClockSkew = TimeSpan.FromSeconds(3)
     };
 
-    public (string Token, IslandEntryIdentity Identity) Create(User user, Avatar avatar, Island island, Guid sessionId)
+    /// <summary>A token to enter an island. With a transfer id it is the ticket of a trip: the API accepts it once, for that trip only.</summary>
+    public (string Token, IslandEntryIdentity Identity) Create(User user, Avatar avatar, Island island, Guid sessionId, Guid? transferId = null, Guid? tokenId = null)
     {
         var now = timeProvider.GetUtcNow();
         var expires = now.AddSeconds(options.LifetimeSeconds);
-        var tokenId = Guid.NewGuid();
-        var claims = new[]
+        var jti = tokenId ?? Guid.NewGuid();
+        var claims = new List<Claim>
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
             new Claim("avatar_id", avatar.Id.ToString()),
             new Claim("island_id", island.Id.ToString()),
             new Claim("sid", sessionId.ToString()),
-            new Claim(JwtRegisteredClaimNames.Jti, tokenId.ToString()),
+            new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()),
             new Claim("protocol_version", options.ProtocolVersion.ToString())
         };
+        if (transferId is { } transfer) claims.Add(new Claim("transfer_id", transfer.ToString()));
         var descriptor = new JwtSecurityToken(options.Issuer, options.Audience, claims, now.UtcDateTime, expires.UtcDateTime,
             new SigningCredentials(new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.SigningKey)), SecurityAlgorithms.HmacSha256));
         return (new JwtSecurityTokenHandler { MapInboundClaims = false }.WriteToken(descriptor),
-            new IslandEntryIdentity(user.Id, avatar.Id, island.Id, sessionId, tokenId, options.ProtocolVersion, expires));
+            new IslandEntryIdentity(user.Id, avatar.Id, island.Id, sessionId, jti, options.ProtocolVersion, expires, transferId));
     }
 
     public IslandEntryIdentity? Validate(string token)
@@ -70,7 +72,8 @@ public sealed class IslandEntryTokenService(IslandEntryOptions options, TimeProv
                 !Guid.TryParse(principal.FindFirst("avatar_id")?.Value, out var avatarId) || !Guid.TryParse(principal.FindFirst("island_id")?.Value, out var islandId) ||
                 !Guid.TryParse(principal.FindFirst("sid")?.Value, out var sessionId) || !Guid.TryParse(principal.FindFirst(JwtRegisteredClaimNames.Jti)?.Value, out var tokenId) ||
                 !int.TryParse(principal.FindFirst("protocol_version")?.Value, out var protocol)) return null;
-            return new IslandEntryIdentity(userId, avatarId, islandId, sessionId, tokenId, protocol, new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero));
+            Guid? transfer = Guid.TryParse(principal.FindFirst("transfer_id")?.Value, out var transferId) ? transferId : null;
+            return new IslandEntryIdentity(userId, avatarId, islandId, sessionId, tokenId, protocol, new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero), transfer);
         }
         catch (SecurityTokenException) { return null; }
         catch (ArgumentException) { return null; }

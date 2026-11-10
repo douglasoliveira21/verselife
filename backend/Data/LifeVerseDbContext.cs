@@ -15,6 +15,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<EquippedItem> EquippedItems => Set<EquippedItem>();
     public DbSet<Island> Islands => Set<Island>();
     public DbSet<ServerInstance> ServerInstances => Set<ServerInstance>();
+    public DbSet<TeleportTransfer> TeleportTransfers => Set<TeleportTransfer>();
     public DbSet<IslandPermission> IslandPermissions => Set<IslandPermission>();
     public DbSet<IslandSnapshot> IslandSnapshots => Set<IslandSnapshot>();
     public DbSet<IslandChange> IslandChanges => Set<IslandChange>();
@@ -262,6 +263,16 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<IslandRental>(b => { b.ToTable("rentals", "economy"); b.HasKey(x => x.Id); b.Property(x => x.Status).HasMaxLength(24); b.HasIndex(x => new { x.IslandId, x.Status }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict); b.HasOne<IslandRentalPlan>().WithMany().HasForeignKey(x => x.PlanId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<AdminAudit>(b => { b.ToTable("admin_audits", "platform"); b.HasKey(x => x.Id); b.Property(x => x.Action).HasMaxLength(64); b.Property(x => x.TargetType).HasMaxLength(32); b.Property(x => x.MetadataJson).HasColumnType("jsonb"); b.HasIndex(x => x.CreatedAt); b.HasOne<User>().WithMany().HasForeignKey(x => x.AdminUserId).OnDelete(DeleteBehavior.Restrict); });
         modelBuilder.Entity<ModerationCase>(b => { b.ToTable("moderation_cases", "platform"); b.HasKey(x => x.Id); b.Property(x => x.Decision).HasMaxLength(32); b.Property(x => x.EvidenceJson).HasColumnType("jsonb"); b.Property(x => x.Notes).HasMaxLength(4000); b.HasIndex(x => x.CreatedAt); b.HasOne<User>().WithMany().HasForeignKey(x => x.ReviewerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<TeleportTransfer>(b =>
+        {
+            b.ToTable("teleport_transfers", "world"); b.HasKey(x => x.Id);
+            b.Property(x => x.Status).HasMaxLength(16).IsRequired(); b.Property(x => x.IdempotencyKey).HasMaxLength(64).IsRequired(); b.Property(x => x.FailureCode).HasMaxLength(48);
+            b.HasIndex(x => new { x.UserId, x.IdempotencyKey }).IsUnique();
+            b.HasIndex(x => new { x.DestinationIslandId, x.Status });
+            b.HasIndex(x => x.SourceIslandId);
+            // a person has at most one trip going on: the database refuses a second active one even if two requests race
+            b.HasIndex(x => x.UserId).IsUnique().HasFilter("status IN ('prepared', 'connecting')").HasDatabaseName("ux_teleport_transfers_one_active");
+        });
         modelBuilder.Entity<ServerInstance>(b =>
         {
             b.ToTable("server_instances", "platform");

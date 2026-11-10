@@ -80,6 +80,7 @@ public static class MeshAssets
         var version = await db.AssetVersions.AsNoTracking().SingleAsync(x => x.AssetId == assetId && x.Version == asset.CurrentVersion, ct);
         if (usedAsMesh ? !version.MimeType.StartsWith("model/", StringComparison.Ordinal) : !MaterialAssets.IsImage(version.MimeType)) return Results.NotFound();
         var stream = await storage.OpenReadAsync(version.StorageKey, ct);
-        return stream is null ? Results.NotFound() : Results.File(stream, version.MimeType);
+        // the hash is the entity tag: a client that already has these bytes asks again with it and gets "not modified" instead of the file
+        return stream is null ? Results.NotFound() : Results.File(stream, version.MimeType, entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue("\"" + version.ContentHash + "\""));
     }
 }

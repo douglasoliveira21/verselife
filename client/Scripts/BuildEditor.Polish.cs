@@ -16,11 +16,14 @@ public partial class BuildEditor
 
     private readonly Queue<BuildObjectState> _loadQueue = new();
     public int LoadBacklogForTesting => _loadQueue.Count;
+    private long _loadTotal, _loadDone;
 
     /// An island with thousands of objects is loaded a few dozen per frame, so joining it does not freeze the game for a second.
     private void PumpLoad()
     {
+        var before = _loadQueue.Count;
         for (var i = 0; i < LoadPerFrame && _loadQueue.Count > 0; i++) AddOrUpdate(_loadQueue.Dequeue());
+        if (before > 0 && _loadTotal > 0) { _loadDone += before - _loadQueue.Count; _network.ReportWorldProgress("objects", Math.Min(_loadDone, _loadTotal), _loadTotal); }
     }
 
     public void QueueStatesForTesting(IEnumerable<BuildObjectState> states) { foreach (var state in states) _loadQueue.Enqueue(state); }

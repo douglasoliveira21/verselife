@@ -3743,6 +3743,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_heartbeat_at");
 
+                    b.Property<int>("PlayerCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("player_count");
+
                     b.Property<int>("Port")
                         .HasColumnType("integer")
                         .HasColumnName("port");
@@ -4080,6 +4084,103 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("UserId", "ExpiresAt");
 
                     b.ToTable("teleport_reservations", "discovery");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.TeleportTransfer", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ArrivedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("arrived_at");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DestinationIslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("destination_island_id");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(48)
+                        .HasColumnType("character varying(48)")
+                        .HasColumnName("failure_code");
+
+                    b.Property<string>("IdempotencyKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("session_id");
+
+                    b.Property<Guid?>("SourceIslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_island_id");
+
+                    b.Property<DateTimeOffset?>("SourceReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("source_released_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<float?>("TargetX")
+                        .HasColumnType("real")
+                        .HasColumnName("target_x");
+
+                    b.Property<float?>("TargetZ")
+                        .HasColumnType("real")
+                        .HasColumnName("target_z");
+
+                    b.Property<DateTimeOffset?>("TokenExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("token_expires_at");
+
+                    b.Property<Guid?>("TokenId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("token_id");
+
+                    b.Property<DateTimeOffset?>("TokenUsedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("token_used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SourceIslandId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_teleport_transfers_one_active")
+                        .HasFilter("status IN ('prepared', 'connecting')");
+
+                    b.HasIndex("DestinationIslandId", "Status");
+
+                    b.HasIndex("UserId", "IdempotencyKey")
+                        .IsUnique();
+
+                    b.ToTable("teleport_transfers", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.User", b =>

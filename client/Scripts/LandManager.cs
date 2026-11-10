@@ -135,7 +135,7 @@ public partial class LandManager : Node3D
 
     public override void _ExitTree() { if (_network is not null) { _network.ConnectionStateChanged -= OnConnectionState; _network.TeleportResult -= OnTeleportResult; } }
 
-    private void OnConnectionState(string state, string detail) { if (state == "online") Load(); else if (state is "offline" or "failed") { Apply("{\"parcels\":[]}"); ClearSelection(); } }
+    private void OnConnectionState(string state, string detail) { if (state == "online") Load(); else if (state is "offline" or "failed" or "switching") { Apply("{\"parcels\":[]}"); ClearSelection(); } }
 
     private void Say(string text) => Said?.Invoke(text);
 

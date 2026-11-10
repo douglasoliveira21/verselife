@@ -541,7 +541,9 @@ public partial class PlayerController : CharacterBody3D
     /// Hides the avatar while the build camera is in use (and shows it again afterwards).
     public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
     private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, _mirror ? .7f : 1.5f, _mirror ? 5f : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
-    private bool IsTyping() => GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
+    /// <summary>True while a loading screen covers the world: the avatar ignores the keyboard and the mouse until the world is ready.</summary>
+    public bool ControlsLocked { get; set; }
+    private bool IsTyping() => ControlsLocked || GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
     public void SetTextInputActive(bool active)
     {
         if (active) Input.MouseMode = Input.MouseModeEnum.Visible;

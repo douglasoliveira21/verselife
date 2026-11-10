@@ -42,12 +42,15 @@ public partial class ModelCache : Node
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
         var app = GetNodeOrNull<AppManager>("/root/AppManager");
         if (network is null || session is null || app is null || !session.IsAuthenticated || network.CurrentIslandId == Guid.Empty) { Fail(assetId); return; }
+        var loader = GetParent()?.GetNodeOrNull<AssetLoadingService>("AssetLoadingService");
+        if (loader?.TryReadCached(assetId) is { } onDisk) { var cached = Prepare(onDisk); _ready[assetId] = cached; Resolve(assetId, cached); return; }
         var http = new HttpRequest { Timeout = 60, BodySizeLimit = 120 * 1024 * 1024 };
         AddChild(http);
         http.RequestCompleted += (_, code, _, body) =>
         {
             http.QueueFree();
             if (code is < 200 or >= 300) { Fail(assetId); return; }
+            loader?.StoreIfKnown(assetId, body);
             var entry = Prepare(body);
             _ready[assetId] = entry;
             Resolve(assetId, entry);

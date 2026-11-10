@@ -37,11 +37,14 @@ public partial class TextureCache : Node
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
         var app = GetNodeOrNull<AppManager>("/root/AppManager");
         if (network is null || session is null || app is null || !session.IsAuthenticated || network.CurrentIslandId == Guid.Empty) { Finish(assetId, null); return; }
+        var loader = GetParent()?.GetNodeOrNull<AssetLoadingService>("AssetLoadingService");
+        if (loader?.TryReadCached(assetId) is { } onDisk) { Finish(assetId, Decode(onDisk)); return; } // already on this computer and still right
         var http = new HttpRequest { Timeout = 30, BodySizeLimit = 32 * 1024 * 1024 };
         AddChild(http);
         http.RequestCompleted += (_, code, _, body) =>
         {
             http.QueueFree();
+            if (code is >= 200 and < 300) loader?.StoreIfKnown(assetId, body);
             Finish(assetId, code is >= 200 and < 300 ? Decode(body) : null);
         };
         if (http.Request($"{app.ApiBaseUrl}/api/v1/worlds/islands/{network.CurrentIslandId}/assets/{assetId}/file", [$"Authorization: Bearer {session.AccessToken}"]) != Error.Ok) { http.QueueFree(); Finish(assetId, null); }
