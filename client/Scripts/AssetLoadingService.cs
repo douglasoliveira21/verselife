@@ -127,7 +127,8 @@ public partial class AssetLoadingService : Node
         List<AssetEntry> entries;
         try { entries = ParseManifest(Encoding.UTF8.GetString(body)); }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or FormatException or InvalidOperationException) { status = 0; entries = []; }
-        if (status is < 200 or >= 300) { LastError = "Não foi possível obter a lista de recursos da ilha."; _network.ReportWorldProgress("assets", 0, -2); return; }
+        // without the list the island can still be entered: the assets load when an object needs them, as before
+        if (status is < 200 or >= 300) { LastError = "Não foi possível obter a lista de recursos da ilha."; GD.PushWarning($"event=asset_manifest_failed status={status}"); _network.ReportWorldProgress("assets", 0, 0); return; }
         foreach (var entry in entries) _known[entry.AssetId] = entry;
         Plan = AssetPlanner.Plan(entries); _totalBytes = Plan.EssentialBytes;
         _reporting = true; _network.ReportWorldProgress("assets", 0, _totalBytes);

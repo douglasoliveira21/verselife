@@ -31,18 +31,6 @@ public partial class BuildEditor
 
     private readonly Dictionary<string, HSlider> _shapeSliders = [];
 
-    private PanelContainer BuildAdvancedShapeCard()
-    {
-        var card = Card("Forma avançada", "layers", out var body, out _, 10);
-        body.AddChild(Txt("Cada controle muda a malha de verdade. Os que a forma escolhida não usa ficam desabilitados.", 17, false, UiStyle.TextMuted));
-        foreach (var setting in ShapeSettings)
-        {
-            var slider = NewSlider(setting.Min, setting.Max, setting.Step, setting.Default); slider.TooltipText = setting.Tip; _shapeSliders[setting.Key] = slider;
-            body.AddChild(SliderLine(null, setting.Label, slider, 2, false, 190));
-        }
-        return card;
-    }
-
     private static string PrimitiveOf(IReadOnlyList<BuildObjectView> selection) => selection.Count > 0 && selection.All(v => v.State.PrimitiveType == selection[0].State.PrimitiveType) ? selection[0].State.PrimitiveType.ToLowerInvariant() : "";
 
     private double ShapeDefault(ShapeSetting setting, string type)
@@ -59,7 +47,7 @@ public partial class BuildEditor
         foreach (var setting in ShapeSettings)
         {
             var slider = _shapeSliders[setting.Key];
-            slider.Editable = type.Length > 0 && setting.Applies(type) && !_readOnly;
+            slider.Editable = type.Length > 0 && setting.Applies(type) && !_readOnly; SyncSpins(slider);
             slider.MinValue = Loop(type) && setting.Key is "holeX" or "holeY" ? .05 : setting.Min;
             slider.SetValueNoSignal(Read(geometry, setting.Key, (float)ShapeDefault(setting, type)));
         }
@@ -81,4 +69,14 @@ public partial class BuildEditor
     public void SetShapeForTesting(string key, double value) { _shapeSliders[key].Value = value; }
     public bool ShapeEnabledForTesting(string key) => _shapeSliders[key].Editable;
     public void ApplyForTesting() => ApplySelected();
+}
+
+public partial class BuildEditor
+{
+    /// Makes the sliders of the advanced shape settings (once); the Objeto tab shows them as number boxes.
+    private void EnsureShapeSliders()
+    {
+        foreach (var setting in ShapeSettings)
+            if (!_shapeSliders.ContainsKey(setting.Key)) { var slider = NewSlider(setting.Min, setting.Max, setting.Step, setting.Default); slider.TooltipText = setting.Tip; _shapeSliders[setting.Key] = slider; }
+    }
 }

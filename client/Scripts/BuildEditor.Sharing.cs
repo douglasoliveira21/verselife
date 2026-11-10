@@ -20,26 +20,6 @@ public partial class BuildEditor
     private static readonly (int Bit, string Label)[] RightChoices = [(ItemRights.Modify, "Modificar"), (ItemRights.Copy, "Copiar"), (ItemRights.Transfer, "Transferir")];
     private static readonly string[] SaleTypes = ["none", "original", "copy", "contents"];
 
-    private void BuildSharingSection(VBoxContainer box)
-    {
-        var card = Card("Permissões e venda", "lock", out var body, out _, 10); box.AddChild(card);
-        _sharingNote = Muted("Selecione um objeto seu para mudar permissões.", 17); body.AddChild(_sharingNote);
-        body.AddChild(Txt("Próximo proprietário", 19, true)); body.AddChild(RightsRow(_nextRightBoxes, "next"));
-        body.AddChild(Txt("Proprietário (você)", 19, true)); body.AddChild(RightsRow(_ownerRightBoxes, "owner"));
-        body.AddChild(Rule());
-        var groupRow = Row(8); body.AddChild(groupRow);
-        groupRow.AddChild(RowLabel("Grupo:")); _groupPick = Pick("(nenhum)"); _groupPick.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; _groupPick.ItemSelected += _ => _touched.Add("group"); groupRow.AddChild(_groupPick);
-        _groupShareBox = Flag("Compartilhar com o grupo", "Membros do grupo podem editar o objeto", "groupShare"); body.AddChild(_groupShareBox);
-        _anyoneMoveBox = Flag("Qualquer um pode mover", "Qualquer pessoa pode mover e girar (sem alterar a forma)", "anyoneMove"); body.AddChild(_anyoneMoveBox);
-        _anyoneCopyBox = Flag("Qualquer um pode copiar", "Qualquer pessoa pode copiar o objeto, se ele permitir cópia", "anyoneCopy"); body.AddChild(_anyoneCopyBox);
-        body.AddChild(Rule());
-        var saleRow = Row(8); body.AddChild(saleRow);
-        saleRow.AddChild(RowLabel("À venda:")); _salePick = Pick("Não está à venda", "Original", "Cópia", "Conteúdo"); _salePick.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; _salePick.ItemSelected += _ => { _touched.Add("saleType"); UpdateSaleEnabled(); }; saleRow.AddChild(_salePick);
-        saleRow.AddChild(RowLabel("Preço:")); _salePrice = Field("0", 8); _salePrice.CustomMinimumSize = new Vector2(110, 44); _salePrice.TextChanged += _ => _touched.Add("salePrice"); saleRow.AddChild(_salePrice);
-        _sharingApply = IconButton("check", "Aplicar permissões", "Envia as permissões, o grupo e a venda ao servidor", ApplySharing, UiStyle.ButtonKind.Primary, 44); body.AddChild(_sharingApply);
-        UpdateSaleEnabled();
-    }
-
     private CheckBox Flag(string text, string tip, string key)
     {
         var box = new CheckBox { Text = " " + text, TooltipText = tip }; box.AddThemeFontSizeOverride("font_size", 19); box.Toggled += _ => { if (!_filling) _touched.Add(key); };
@@ -141,4 +121,33 @@ public partial class BuildEditor
     public void ApplySharingForTesting() => ApplySharing();
     public bool SharingEnabledForTesting => !_groupShareBox.Disabled;
     public bool OwnerBitEnabledForTesting(int bit) => !_ownerRightBoxes[bit].Disabled;
+}
+
+public partial class BuildEditor
+{
+    /// The permissions block of the Geral tab as in the reference: what you can do and what the next owner will be able to do, the group, what anyone may do, and the sale.
+    private void BuildSharingSection(VBoxContainer box)
+    {
+        box.AddChild(Heading("Permissões"));
+        _sharingNote = Muted("Selecione um objeto seu para mudar permissões.", 16); _sharingNote.AutowrapMode = TextServer.AutowrapMode.WordSmart; box.AddChild(_sharingNote);
+        var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; grid.AddThemeConstantOverride("h_separation", 24); grid.AddThemeConstantOverride("v_separation", 4);
+        grid.AddChild(Txt("Você pode:", 18, true, UiStyle.TextMuted)); grid.AddChild(Txt("Próximo proprietário:", 18, true, UiStyle.TextMuted));
+        foreach (var (bit, label) in RightChoices)
+        {
+            foreach (var (boxes, who) in new[] { (_ownerRightBoxes, "owner"), (_nextRightBoxes, "next") })
+            {
+                var check = Check(label); var captured = bit; check.Toggled += _ => { if (!_filling) _touched.Add(who + ":" + captured); }; boxes[bit] = check; grid.AddChild(check);
+            }
+        }
+        box.AddChild(grid);
+        _groupPick = Pick("(nenhum)"); _groupPick.ItemSelected += _ => _touched.Add("group"); box.AddChild(FormRow("Grupo:", _groupPick, 150));
+        _groupShareBox = Flag("Compartilhar com o grupo", "Membros do grupo podem editar o objeto", "groupShare"); box.AddChild(_groupShareBox);
+        _anyoneMoveBox = Flag("Qualquer um pode mover", "Qualquer pessoa pode mover e girar (sem alterar a forma)", "anyoneMove"); box.AddChild(_anyoneMoveBox);
+        _anyoneCopyBox = Flag("Qualquer um pode copiar", "Qualquer pessoa pode copiar o objeto, se ele permitir cópia", "anyoneCopy"); box.AddChild(_anyoneCopyBox);
+        _salePick = Pick("Não está à venda", "Original", "Cópia", "Conteúdo"); _salePick.ItemSelected += _ => { _touched.Add("saleType"); UpdateSaleEnabled(); };
+        _salePrice = Field("0", 8); _salePrice.CustomMinimumSize = new Vector2(110, 40); _salePrice.TextChanged += _ => _touched.Add("salePrice");
+        var sale = Row(8); sale.AddChild(Txt("À venda:", 19)); _salePick.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; sale.AddChild(_salePick); sale.AddChild(Txt("moedas", 18, false, UiStyle.TextMuted)); sale.AddChild(_salePrice); box.AddChild(sale);
+        _sharingApply = IconButton("check", "Aplicar permissões", "Envia as permissões, o grupo e a venda ao servidor", ApplySharing, UiStyle.ButtonKind.Primary, 42); box.AddChild(_sharingApply);
+        UpdateSaleEnabled();
+    }
 }

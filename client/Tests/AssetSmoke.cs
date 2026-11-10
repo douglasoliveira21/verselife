@@ -74,7 +74,7 @@ public partial class AssetSmoke : Node
 
             // an older server without a manifest: nothing to do; a broken one: failure
             _manifestStatus = 404; _progress.Clear(); await service.StartAsync(Guid.NewGuid()); Require(_progress[^1] == (0, 0), "no manifest, nothing to wait for");
-            _manifestStatus = 500; _progress.Clear(); await service.StartAsync(Guid.NewGuid()); Require(_progress[^1].Total == -2 && service.LastError is not null, "a manifest that fails fails the loading");
+            _manifestStatus = 500; _progress.Clear(); await service.StartAsync(Guid.NewGuid()); Require(_progress[^1] == (0, 0) && service.LastError is not null, "a manifest that fails does not stop the entry: the assets load on demand");
 
             // nothing essential near the arrival: complete at once
             _manifestStatus = 200; _manifest = $"{{\"assets\":[{Entry(far, 900)}]}}"; _progress.Clear(); await service.StartAsync(Guid.NewGuid());

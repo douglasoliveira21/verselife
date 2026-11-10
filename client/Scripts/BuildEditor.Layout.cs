@@ -37,68 +37,6 @@ public partial class BuildEditor
 
     // ---- the Geral tab ---------------------------------------------------------------------------------------
 
-    private Control BuildGeneral()
-    {
-        var box = Section(); box.AddThemeConstantOverride("separation", 12);
-
-        var nameRow = Row(); box.AddChild(nameRow);
-        var nameLabel = RowLabel("Nome:"); nameLabel.CustomMinimumSize = new Vector2(104, 0); nameRow.AddChild(nameLabel);
-        _name = Field("Nome do objeto", 160); _name.TextSubmitted += _ => ApplySelected(); nameRow.AddChild(_name);
-
-        var descriptionRow = Row(); box.AddChild(descriptionRow);
-        var descriptionLabel = RowLabel("Descrição:"); descriptionLabel.CustomMinimumSize = new Vector2(104, 0); descriptionLabel.SizeFlagsVertical = Control.SizeFlags.ShrinkBegin; descriptionLabel.CustomMinimumSize = new Vector2(104, 40);
-        descriptionRow.AddChild(descriptionLabel);
-        _description = new TextEdit { PlaceholderText = "Descrição (opcional)", WrapMode = TextEdit.LineWrappingMode.Boundary, CustomMinimumSize = new Vector2(0, 68), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        _description.AddThemeFontSizeOverride("font_size", 20);
-        _description.TextChanged += () => { if (_description.Text.Length > 4000) _description.Text = _description.Text[..4000]; };
-        descriptionRow.AddChild(_description);
-
-        var apply = Row(); box.AddChild(apply);
-        apply.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
-        var applyButton = IconButton("check", "Aplicar nome e descrição", "Envia as alterações ao servidor", ApplySelected, height: 42); applyButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd; applyButton.CustomMinimumSize = new Vector2(280, 42);
-        apply.AddChild(applyButton);
-
-        // who made it and what it is, in two columns
-        var info = Row(14); box.AddChild(info);
-        var left = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; left.AddThemeConstantOverride("separation", 2);
-        _infoLeft = Muted("Selecione um objeto para ver criador, proprietário e identificador.", 18); _infoLeft.AddThemeColorOverride("font_color", new Color("#C3CCD3")); left.AddChild(_infoLeft);
-        var right = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; right.AddThemeConstantOverride("separation", 2);
-        _infoRight = Muted(string.Empty, 17); _infoRight.AddThemeColorOverride("font_color", new Color("#C3CCD3")); _infoRight.AutowrapMode = TextServer.AutowrapMode.Arbitrary; right.AddChild(_infoRight);
-        info.AddChild(left); info.AddChild(new VSeparator()); info.AddChild(right);
-        box.AddChild(new HSeparator());
-
-        // This remains the source of truth for the placement code, but it is no longer
-        // displayed: the palette below replaces the duplicate drop-down.
-        _primitive = new OptionButton { Visible = false };
-        foreach (var (id, label) in Primitives) { _primitive.AddItem(label); _primitive.SetItemMetadata(_primitive.ItemCount - 1, id); }
-
-        // This is the same primitive selector used by the placement code above, presented as
-        // a direct tool palette so creating does not depend on a hidden drop-down.
-        var palette = Card("Criar primitiva", "cube", out var paletteBody, out _, 10);
-        box.AddChild(palette);
-        paletteBody.AddChild(Muted("Escolha a forma e clique no mundo para posicioná-la. Esc cancela a colocação.", 17));
-        var shapes = new GridContainer { Columns = 3, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        shapes.AddThemeConstantOverride("h_separation", 8); shapes.AddThemeConstantOverride("v_separation", 8); paletteBody.AddChild(shapes);
-        for (var index = 0; index < Primitives.Length; index++)
-        {
-            var primitiveIndex = index;
-            var (id, label) = Primitives[index];
-            var button = IconButton("cube", label, $"Criar {label.ToLowerInvariant()}", () =>
-            {
-                _primitive.Select(primitiveIndex);
-                CreateObject();
-            }, UiStyle.ButtonKind.Tool, 52);
-            button.Icon = PrimitivePaletteIcon(id, UiStyle.Text, 30);
-            button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            shapes.AddChild(button);
-        }
-
-        BuildSharingSection(box);
-        BuildPackageSection(box);
-        BuildCollabSection(box);
-        return box;
-    }
-
     /// Generated miniature drawings keep the palette recognisable without loading an
     /// external asset per primitive.
     private static Texture2D PrimitivePaletteIcon(string primitive, Color color, int size)

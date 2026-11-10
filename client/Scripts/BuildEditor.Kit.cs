@@ -18,6 +18,7 @@ public partial class BuildEditor
     private static Label Txt(string text, int size = 19, bool bold = false, Color? color = null)
     {
         var label = new Label { Text = text, VerticalAlignment = VerticalAlignment.Center };
+        if (text.Length > 40) { label.AutowrapMode = TextServer.AutowrapMode.WordSmart; label.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; } // a long sentence wraps instead of making the whole window wider
         label.AddThemeFontOverride("font", bold ? UiStyle.Bold : UiStyle.Medium); label.AddThemeFontSizeOverride("font_size", size);
         if (color is { } c) label.AddThemeColorOverride("font_color", c);
         return label;

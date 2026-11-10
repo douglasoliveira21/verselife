@@ -11,14 +11,14 @@ namespace LifeVerse.Api.Modules.Assets;
 /// </summary>
 public static class MaterialAssets
 {
-    public static readonly string[] BuiltInTextures = ["checker", "bricks", "planks", "stripes", "noise", "tiles"];
-    private static readonly string[] ImageKeys = ["texture", "normalMap", "projectorTexture"];
+    public static readonly string[] BuiltInTextures = ["plywood", "checker", "bricks", "planks", "stripes", "noise", "tiles"];
+    private static readonly string[] ImageKeys = ["texture", "normalMap", "specularMap", "ormMap", "emissiveMap", "projectorTexture"];
     public const int MaxTexturesPerObject = 8;
 
     private static readonly (string Key, float Min, float Max)[] Ranges =
     [
         ("uvRepeatX", .01f, 100f), ("uvRepeatY", .01f, 100f), ("uvOffsetX", -100f, 100f), ("uvOffsetY", -100f, 100f), ("uvRotation", -360f, 360f),
-        ("emissionStrength", 0f, 16f), ("roughness", 0f, 1f), ("metallic", 0f, 1f), ("transparency", 0f, 1f), ("alphaCutoff", 0f, 1f)
+        ("emissionStrength", 0f, 16f), ("roughness", 0f, 1f), ("metallic", 0f, 1f), ("transparency", 0f, 1f), ("alphaCutoff", 0f, 1f), ("glossiness", 0f, 1f), ("environment", 0f, 1f)
     ];
 
     /// <summary>Every image asset the material refers to, across the object and its faces.</summary>
@@ -94,7 +94,10 @@ public static class MaterialAssets
     {
         if (layer.TryGetProperty("alphaMode", out var alphaMode) && (alphaMode.ValueKind != JsonValueKind.String || alphaMode.GetString() is not ("none" or "blend" or "mask"))) return "Alpha mode must be none, blend or mask.";
         if (layer.TryGetProperty("mapping", out var mapping) && (mapping.ValueKind != JsonValueKind.String || mapping.GetString() is not ("default" or "planar"))) return "Mapping must be default or planar.";
-        foreach (var flag in new[] { "fullBright", "doubleSided", "flipU", "flipV" }) if (layer.TryGetProperty(flag, out var on) && on.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return $"Material setting '{flag}' must be true or false.";
+        if (layer.TryGetProperty("shading", out var shading) && (shading.ValueKind != JsonValueKind.String || shading.GetString() is not ("pbr" or "blinnphong"))) return "Shading must be pbr or blinnphong.";
+        if (layer.TryGetProperty("specularColor", out var specular) && (specular.ValueKind != JsonValueKind.String || specular.GetString() is not { Length: 7 } hex || hex[0] != '#' || !hex.Skip(1).All(Uri.IsHexDigit))) return "Specular color must be like #RRGGBB.";
+        if (layer.TryGetProperty("mapUv", out var mapUv)) { if (mapUv.ValueKind != JsonValueKind.Object) return "Map transforms must be an object."; foreach (var map in mapUv.EnumerateObject()) { if (map.Name is not ("texture" or "normalMap" or "specularMap" or "ormMap" or "emissiveMap") || map.Value.ValueKind != JsonValueKind.Object) return "Unknown map transform."; foreach (var (key, min, max) in new[] { ("repeatX", .01f, 100f), ("repeatY", .01f, 100f), ("offsetX", -100f, 100f), ("offsetY", -100f, 100f), ("rotation", -360f, 360f) }) if (!InRange(map.Value, key, min, max)) return $"Map transform '{key}' must be between {min} and {max}."; } }
+        foreach (var flag in new[] { "fullBright", "doubleSided", "flipU", "flipV", "noTexture" }) if (layer.TryGetProperty(flag, out var on) && on.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return $"Material setting '{flag}' must be true or false.";
         foreach (var (key, min, max) in Ranges) if (!InRange(layer, key, min, max)) return $"Material setting '{key}' must be between {min} and {max}.";
         if (layer.TryGetProperty("builtin", out var builtin) && (builtin.ValueKind != JsonValueKind.String || !BuiltInTextures.Contains(builtin.GetString(), StringComparer.Ordinal))) return "Unknown built-in texture.";
         foreach (var key in ImageKeys)

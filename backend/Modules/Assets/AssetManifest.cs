@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LifeVerse.Api.Modules.Assets;
 
 public sealed record ManifestAsset(Guid AssetId, string Kind, string Hash, long Size, string Mime, double Distance);
+public sealed class ManifestRow { public string PrimitiveType { get; set; } = ""; public string GeometryJson { get; set; } = "{}"; public string MaterialJson { get; set; } = "{}"; public float PositionX { get; set; } public float PositionZ { get; set; } }
 public sealed record AssetManifest(Guid IslandId, int Count, long TotalBytes, IReadOnlyList<ManifestAsset> Assets);
 
 /// <summary>
@@ -31,8 +32,13 @@ public static class AssetManifestEndpoints
         if (!canEnter) return Results.Forbid();
         var originX = x is { } px && float.IsFinite(px) ? px : island.SpawnX; var originZ = z is { } pz && float.IsFinite(pz) ? pz : island.SpawnZ;
 
-        var objects = await db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.DeletedAt == null && (o.PrimitiveType == MeshAssets.PrimitiveType || o.MaterialJson.Contains("\"texture\"") || o.MaterialJson.Contains("\"normalMap\"") || o.MaterialJson.Contains("\"projectorTexture\"")))
-            .Select(o => new { o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.PositionX, o.PositionZ, o.Id }).Take(MaxObjects).ToListAsync(ct);
+        // the JSON columns are jsonb on PostgreSQL, where string functions need a cast to text: filter there with SQL; the in-memory provider (tests) uses the same rule
+        List<ManifestRow> objects;
+        if (db.Database.IsNpgsql())
+            objects = await db.Database.SqlQuery<ManifestRow>($"SELECT primitive_type AS \"PrimitiveType\", geometry_json::text AS \"GeometryJson\", material_json::text AS \"MaterialJson\", position_x AS \"PositionX\", position_z AS \"PositionZ\" FROM world.objects WHERE island_id = {islandId} AND deleted_at IS NULL AND (primitive_type = 'mesh' OR material_json::text LIKE '%\"texture\"%' OR material_json::text LIKE '%\"normalMap\"%' OR material_json::text LIKE '%\"projectorTexture\"%') LIMIT {MaxObjects}").ToListAsync(ct);
+        else
+            objects = await db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.DeletedAt == null && (o.PrimitiveType == MeshAssets.PrimitiveType || o.MaterialJson.Contains("\"texture\"") || o.MaterialJson.Contains("\"normalMap\"") || o.MaterialJson.Contains("\"projectorTexture\"")))
+                .Select(o => new ManifestRow { PrimitiveType = o.PrimitiveType, GeometryJson = o.GeometryJson, MaterialJson = o.MaterialJson, PositionX = o.PositionX, PositionZ = o.PositionZ }).Take(MaxObjects).ToListAsync(ct);
         var nearest = new Dictionary<Guid, (bool Model, double Distance)>();
         void Note(Guid asset, bool model, double distance) { if (!nearest.TryGetValue(asset, out var known) || distance < known.Distance) nearest[asset] = (model, distance); }
         foreach (var item in objects)

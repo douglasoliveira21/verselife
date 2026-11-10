@@ -23,6 +23,7 @@ run client res://Tests/LoadingSmoke.tscn loading_smoke
 run client res://Tests/TeleportSmoke.tscn teleport_smoke
 run client res://Tests/AssetSmoke.tscn asset_smoke
 run client res://Tests/ScenarioSmoke.tscn scenario_smoke
+run client res://Tests/ShaderSmoke.tscn shader_smoke
 run client res://Tests/LandSmoke.tscn land_smoke
 run client res://Tests/LandPresenceSmoke.tscn land_presence_smoke
 run client res://Tests/TerrainEditorSmoke.tscn terrain_editor_smoke

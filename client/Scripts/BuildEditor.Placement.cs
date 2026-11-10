@@ -84,7 +84,7 @@ public partial class BuildEditor
         var template = new BuildObjectState
         {
             PrimitiveType = type, Name = PrimitiveLabel(type),
-            MaterialJson = MaterialFromFields("{}"), GeometryJson = "{}", PhysicsJson = "{\"collision\":true}"
+            MaterialJson = DefaultMaterialJson, GeometryJson = "{}", PhysicsJson = "{\"collision\":true}"
         };
         var entry = new HistoryEntry("create", []);
         CreateFrom(template, position, null, created => { var item = new HistoryItem(created.Id, null, Clone(created)); entry.Items.Add(item); SelectIds([created.Id]); Teach(TutorialStep.Create); });

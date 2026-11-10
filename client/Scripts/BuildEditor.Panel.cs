@@ -129,9 +129,11 @@ public partial class BuildEditor
             _ghost.ButtonPressed = physics["collision"] is JsonValue flag && flag.TryGetValue<bool>(out var solid) && !solid; FillPhysics(s.PhysicsJson);
             var parts = s.GroupId is { } group ? _objects.Values.Count(o => o.State.GroupId == group) : 1;
             _infoLeft.Text = $"Criador: {Who(s.CreatorUserId)}\nProprietário: {Who(s.OwnerUserId)}";
+            _creatorValue.Text = Who(s.CreatorUserId); _ownerValue.Text = Who(s.OwnerUserId);
+            for (var i = 0; i < _primitive.ItemCount; i++) if (_primitive.GetItemMetadata(i).AsString() == s.PrimitiveType.ToLowerInvariant()) { _primitive.Select(i); break; }
             _infoRight.Text = $"Identificador: {s.Id}\nPrimitiva: {s.Name}{(parts > 1 ? $" (composta por {parts} primitivas)" : $" ({PrimitiveLabel(s.PrimitiveType)})")}";
         }
-        else { _infoLeft.Text = _selection.Count == 0 ? "Selecione um objeto para ver criador, proprietário e identificador." : $"{_selection.Count} objetos: posição, rotação e tamanho próprios não são editados em conjunto; forma, material e física valem para todos."; _infoRight.Text = string.Empty; }
+        else { _creatorValue.Text = "—"; _ownerValue.Text = "—"; _infoLeft.Text = _selection.Count == 0 ? "Selecione um objeto para ver criador, proprietário e identificador." : $"{_selection.Count} objetos: posição, rotação e tamanho próprios não são editados em conjunto; forma, material e física valem para todos."; _infoRight.Text = string.Empty; }
         FillTextureFields();
         FillContent();
         _filling = false;
@@ -208,7 +210,7 @@ public partial class BuildEditor
     private void FillPhysics(string physicsJson)
     {
         var p = PhysicsRules.Read(physicsJson);
-        _physMode.Select(p.Physical ? 1 : 0); _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, p.CollisionShape) is var index && index >= 0 ? index : 1); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2); _physMaterial.Select(Math.Max(0, Array.IndexOf(PhysicsRules.Materials.Keys.ToArray(), p.Material) + 1)); _physTemporary.SetPressedNoSignal(p.Temporary);
+        _physMode.Select(p.Physical ? 1 : 0); SyncPhysicsUi(); _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, p.CollisionShape) is var index && index >= 0 ? index : 1); _physMass.Text = Disp(p.Mass, 2); _physFriction.Text = Disp(p.Friction, 2); _physBounce.Text = Disp(p.Bounce, 2); _physMaterial.Select(Math.Max(0, Array.IndexOf(PhysicsRules.Materials.Keys.ToArray(), p.Material) + 1)); _physTemporary.SetPressedNoSignal(p.Temporary);
     }
 
     public void SetPhysicsForTesting(bool physical, float mass = 1f, float friction = .5f, float bounce = 0f) { _physMode.Select(physical ? 1 : 0); _physMass.Text = Disp(mass, 2); _physFriction.Text = Disp(friction, 2); _physBounce.Text = Disp(bounce, 2); ApplySelected(); }

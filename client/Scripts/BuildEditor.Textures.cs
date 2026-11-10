@@ -199,36 +199,6 @@ public partial class BuildEditor
         return true;
     }
 
-    private void ApplyTexture(bool normal)
-    {
-        if (Chosen() is not { } entry) { _status.Text = "Escolha uma textura na biblioteca."; return; }
-        if (normal && entry.Builtin is not null) { _status.Text = "Texturas do sistema não servem de mapa normal; use uma imagem sua."; return; }
-        var ok = EditTarget(layer =>
-        {
-            if (normal) layer["normalMap"] = entry.Asset!.Value.ToString();
-            else
-            {
-                layer.Remove("texture"); layer.Remove("builtin");
-                if (entry.Builtin is { } builtin) layer["builtin"] = builtin; else layer["texture"] = entry.Asset!.Value.ToString();
-            }
-        }, normal ? "Mapa normal aplicado." : "Textura aplicada.");
-        if (ok && !normal) RememberRecent(entry);
-    }
-
-    private void RemoveTexture() => EditTarget(layer => { layer.Remove("texture"); layer.Remove("builtin"); layer.Remove("normalMap"); }, "Textura removida.");
-
-    private void ApplyUv()
-    {
-        EditTarget(layer =>
-        {
-            layer["uvRepeatX"] = Mathf.Clamp(NumOr(_repeatX, 1), .01f, 100f); layer["uvRepeatY"] = Mathf.Clamp(NumOr(_repeatY, 1), .01f, 100f);
-            layer["uvOffsetX"] = Mathf.Clamp(NumOr(_offsetX, 0), -100f, 100f); layer["uvOffsetY"] = Mathf.Clamp(NumOr(_offsetY, 0), -100f, 100f);
-            layer["uvRotation"] = Mathf.Clamp(NumOr(_uvRotation, 0), -360f, 360f);
-            if (_flipU.ButtonPressed) layer["flipU"] = true; else layer.Remove("flipU");
-            if (_flipV.ButtonPressed) layer["flipV"] = true; else layer.Remove("flipV");
-        }, "UV aplicado.");
-    }
-
     /// Shows the target's UV and the light of the selected object in the fields.
     private void FillTextureFields()
     {
@@ -243,6 +213,7 @@ public partial class BuildEditor
         _offsetX.Text = Disp(Read(layer, "uvOffsetX", 0), 2); _offsetY.Text = Disp(Read(layer, "uvOffsetY", 0), 2); _uvRotation.Text = Disp(Read(layer, "uvRotation", 0), 2);
         _flipU.ButtonPressed = layer["flipU"] is JsonValue u && u.TryGetValue<bool>(out var fu) && fu; _flipV.ButtonPressed = layer["flipV"] is JsonValue v && v.TryGetValue<bool>(out var fv) && fv;
         _glowStrength.Value = Mathf.Clamp(Read(material, "emissionStrength", 1f) / 8f, 0, 1);
+        ShowAppliedThumb(layer); RefreshTargetCard(); FillMapControls(layer, material);
         FillAdvancedMaterial(layer, material);
         var light = material["light"] as JsonObject;
         _lightOn.ButtonPressed = light is not null;

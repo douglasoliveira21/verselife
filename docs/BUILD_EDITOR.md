@@ -266,3 +266,33 @@ Tudo fica no `MaterialJson` do objeto, é validado no servidor (`MaterialAssets.
 Dentro da janela é possível criar uma primitiva (modo Criar), mudar a geometria (aba Objeto, “Forma avançada”), posicionar/redimensionar/girar (Mover/Editar e campos numéricos), aplicar textura e material por face (aba Textura), mudar nome, permissões e venda (aba Geral), luz, projetor e movimento flexível (aba Recursos), guardar e gerir conteúdo, vincular e continuar editando. Controles que a forma ou o direito do objeto não permitem ficam desabilitados; objetos bloqueados ou de outra pessoa ficam só para leitura.
 
 **Ainda não é igual ao Second Life**: compra de objetos à venda e cópia por terceiros (“Qualquer um pode copiar”), remoção automática de objetos temporários, simulação de corpos físicos, terreno embutido na própria janela e redimensionar a janela por arraste.
+
+## Janela Construir no layout da imagem de referência e materiais completos (refeito)
+
+A janela foi refeita de acordo com a imagem de referência (janela estreita “Construir”, barra de modos com ícones, painel de opções do modo, linha “Selecionado: N objeto / Prims: N”, abas **Geral, Objeto, Recursos, Textura e Conteúdo**, campos numéricos em vez de sliders). Conferida por capturas reais (`client/Tests/BuildSmoke.cs` com `LIFEVERSE_CAPTURE_PATH`).
+
+- **Modos**: Foco (controles de câmera), Mover (Mover / Levantar / Rotacionar, grade, precisão, snap de giro), Editar (Selecionar, Esticar, Girar, Selecionar face, Alinhar, Editar partes vinculadas; Alongar ambos os lados, Alongar texturas, Usar eixos locais, Grade; “Opções…” abre Alinhar/Conjuntos/Transformar), Criar (grade de primitivas) e Terreno (abre a janela de terreno; os controles do pincel ainda não estão dentro desta janela).
+- **Geral**: nome, descrição, criador, proprietário, grupo, permissões (você pode / próximo proprietário), qualquer um pode mover/copiar, à venda.
+- **Objeto**: posição, rotação, tamanho, grade, **Primitiva** (muda o tipo do objeto selecionado), parâmetros da forma (corte do caminho, oco, furo, torção, afinar, cisalhamento, dimple, corte do perfil, raio, revoluções).
+- **Recursos**: estados (**Físico, Temporário, Fantasma**, Estático/Dinâmico), luz (cor, intensidade, alcance, atenuação), projetor, **flexibilidade (Flexi)** e **física** (forma de colisão, massa, atrito, restituição, material, visualizar colisão): tudo na mesma aba, como na referência.
+- **Textura**: “Selecionar faces” (Todas as faces ou uma face da malha, com os nomes Frente/Esquerda/Trás/Direita/Topo/Base; Shift + clique no mundo com a ferramenta Face soma mais), miniatura da textura aplicada, **Escolher…** (biblioteca: texturas do seu inventário, favoritas, recentes, do sistema e importar imagem), **Limpar**, **Aplicar a todas**, cor, transparência %, repetição (U/V), offset, rotação, inverter, brilho/emissão e o material avançado.
+- **Conteúdo**: inserir do inventário, lista com tipo e direitos, abrir, propriedades, transferir, remover, copiar para o inventário, renomear.
+
+### Materiais: PBR completo e Blinn-Phong
+
+- **Modelo** (`shading`): **Blinn-Phong** (mapa difuso/cor, normal, **especular** + cor do brilho, brilho/glossiness e ambiente; a luz é calculada no shader com um termo difuso e um destaque especular) ou **PBR** (cor base, normal, **metal-rugosidade-oclusão**, **emissivo**, números de rugosidade e metal). Sem a chave o objeto se comporta como antes.
+- **Cinco mapas** (`texture`/`builtin`, `normalMap`, `specularMap`, `ormMap`, `emissiveMap`): “Mapa” escolhe qual recebe a imagem de “Escolher…”; cada mapa tem a própria repetição, deslocamento e rotação (`mapUv`) ou todos compartilham os do objeto (“Mesmo mapeamento em todos os mapas”).
+- **Textura padrão**: todo objeto novo nasce em Blinn-Phong com a textura procedural **Compensado** (`plywood`), cor branca.
+- **Retirar textura** (“Limpar”): tira todos os mapas e a cor do alvo (`noTexture` + branco); no objeto inteiro limpa também as faces. Uma face pode ficar limpa com o objeto texturizado, e uma face com textura própria aparece mesmo num objeto limpo.
+- Servidor: valida `shading`, `specularColor`, `glossiness`, `environment`, `mapUv` (faixas por campo), `noTexture` e os novos mapas como imagens do inventário (contam como partes do objeto).
+- Testes: `ObjectResourcesTests`, `ShaderSmoke` (compila e desenha cada combinação em renderizador real; em headless só valida a lógica) e `BuildSmoke`.
+
+Ainda não: o terreno embutido na janela, o botão “Novo script…” e arrastar itens do inventário para dentro do objeto (Fase de scripts), e simulação de corpos físicos.
+
+## Conteúdo e scripts dentro do objeto
+
+- **Novo script…** (aba Conteúdo): cria um script Lua **dentro do objeto** (modelo “porta ao toque” ou o primeiro modelo do servidor) e abre o **editor**: caixa de código com números de linha e cores de Lua, modelos, **Salvar (Ctrl+S)** e um **console** com as últimas execuções (evento, resultado, instruções e o erro quando houver). O script roda no **servidor da ilha, neste objeto**: eventos `on_start`, `on_touch`, `on_enter`, `on_timer`, `on_chat`, `on_message`; funções `object.say`, `get_position/rotation/scale`, `set_position/rotation/scale`, `move`, `rotate`, `set_color`, `set_material`, `create_timer`, `cancel_timers`, `state_get/state_set`, `send_message`, `get_id`, `get_name` e `lv.time`. A ilha lê os scripts a cada 15 s, então um script salvo passa a valer em até 15 segundos. Salvar também reativa um script parado.
+- A lista do Conteúdo mostra **juntos** os scripts do objeto e as outras coisas que ele carrega (objeto, som, textura, animação, modelo, anotação…). Abrir (ou clique duplo), Renomear e Remover (com confirmação) valem para scripts; Remover apaga o script do objeto.
+- **Inserir do inventário…** agora oferece também scripts e anotações; e **dá para arrastar qualquer item do inventário para a lista** do Conteúdo.
+- Servidor: `GET .../scripts/{id}` (com o código), `GET .../scripts/{id}/executions` (últimas 20) e `DELETE .../scripts/{id}` (só em objeto que pode ser modificado); testes em `ScriptEditorApiTests` e no `BuildSmoke`.
+- **Limites**: `play_sound` ainda não toca (não há áudio de assets no motor de scripts), então sons do conteúdo não tocam por script; scripts do inventário inseridos como item ficam guardados como referência e **não rodam** (rodam os criados com “Novo script…”); a lista de funções é a do motor atual.

@@ -8,7 +8,7 @@ public static class BuiltInTextures
 {
     public static readonly (string Id, string Label)[] All =
     [
-        ("checker", "Xadrez"), ("bricks", "Tijolos"), ("planks", "Tábuas"), ("stripes", "Listras"), ("noise", "Ruído"), ("tiles", "Ladrilhos")
+        ("plywood", "Compensado (padrão)"), ("checker", "Xadrez"), ("bricks", "Tijolos"), ("planks", "Tábuas"), ("stripes", "Listras"), ("noise", "Ruído"), ("tiles", "Ladrilhos")
     ];
 
     private const int Size = 256;
@@ -30,6 +30,11 @@ public static class BuiltInTextures
     {
         switch (id)
         {
+            case "plywood": // the default texture of every new object: pale plywood with a soft grain
+            {
+                var grain = .5f + .09f * MathF.Sin(y * .11f + MathF.Sin(x * .035f) * 2.4f) + .05f * MathF.Sin(y * .43f + x * .02f) + Hash(x / 3, y / 24) * .06f;
+                return new Color(.74f * grain + .30f, .56f * grain + .22f, .34f * grain + .12f);
+            }
             case "checker": return ((x / 32 + y / 32) % 2 == 0) ? Shade(.92f) : Shade(.25f);
             case "stripes": return (x / 32) % 2 == 0 ? Shade(.9f) : Shade(.35f);
             case "bricks":

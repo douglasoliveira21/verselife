@@ -38,6 +38,7 @@ public partial class BuildEditor
             _contentTexts.Add($"{name}  ·  {CategoryLabel(category)}"); AddContentRow(i, name, category, asset, rights);
         }
         _contentCount.Text = entries.Count == 1 ? "1 item" : $"{entries.Count} itens";
+        _ = LoadScriptsAsync();
         _contentInfo.Text = entries.Count == 0 ? "Este objeto está vazio." : $"{entries.Count} item(ns) de até 64.";
     }
 
@@ -104,7 +105,7 @@ public partial class BuildEditor
     public void FillPicker(string json)
     {
         _picker.Clear(); _pickerItems.Clear();
-        var allowed = new[] { "objects", "textures", "sounds", "animations", "clothing", "accessories", "models", "packages" };
+        var allowed = new[] { "objects", "textures", "sounds", "animations", "clothing", "accessories", "models", "packages", "scripts", "notecards" };
         try
         {
             using var document = JsonDocument.Parse(json);

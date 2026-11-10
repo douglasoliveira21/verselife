@@ -95,3 +95,43 @@ public sealed class AssetManifestTests : IDisposable
         Assert.Equal(404, (await AssetManifestEndpoints.ManifestAsync(Guid.NewGuid(), null, null, new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", _owner.ToString())])) }, _db, default) as IStatusCodeHttpResult)?.StatusCode);
     }
 }
+
+/// <summary>The manifest on a real PostgreSQL, where the JSON columns are jsonb: the query that works in memory must work there too.</summary>
+public sealed class AssetManifestPostgresTests
+{
+    private static string Admin => Environment.GetEnvironmentVariable("LIFEVERSE_TEST_PG")!;
+
+    [PostgresFact]
+    public async Task TheManifestQueryRunsOnJsonbColumnsAndFindsModelsAndTextures()
+    {
+        var name = "lifeverse_m_" + Guid.NewGuid().ToString("N")[..12];
+        await using (var connection = new Npgsql.NpgsqlConnection(Admin)) { await connection.OpenAsync(); await using var command = new Npgsql.NpgsqlCommand($"CREATE DATABASE \"{name}\"", connection); await command.ExecuteNonQueryAsync(); }
+        try
+        {
+            var cs = new Npgsql.NpgsqlConnectionStringBuilder(Admin) { Database = name }.ConnectionString; var options = new DbContextOptionsBuilder<LifeVerseDbContext>().UseNpgsql(cs).Options;
+            await using (var migrate = new LifeVerseDbContext(options)) await migrate.Database.MigrateAsync();
+            var now = DateTimeOffset.UtcNow; var owner = Guid.NewGuid(); var island = Guid.NewGuid(); var model = Guid.NewGuid(); var texture = Guid.NewGuid();
+            await using var db = new LifeVerseDbContext(options);
+            db.Users.Add(new User { Id = owner, Username = "dono", NormalizedUsername = "DONO", Email = "d@t.local", NormalizedEmail = "D@T.LOCAL", PasswordHash = "x", CreatedAt = now, UpdatedAt = now });
+            db.Islands.Add(new Island { Id = island, OwnerUserId = owner, Name = "Ilha", Slug = "ilha", IsPublic = true, Size = 400 });
+            foreach (var (id, mime, hash) in new[] { (model, "model/gltf-binary", "aaa"), (texture, "image/png", "bbb") })
+            {
+                db.Assets.Add(new Asset { Id = id, OwnerUserId = owner, CreatorUserId = owner, Name = "a", Category = "x", CurrentVersion = 1 });
+                db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = id, Version = 1, ContentHash = hash, StorageKey = "k" + hash, MimeType = mime, ByteSize = 100 });
+            }
+            db.BuildObjects.Add(new BuildObject { Id = Guid.NewGuid(), IslandId = island, CreatorUserId = owner, OwnerUserId = owner, Name = "m", PrimitiveType = "mesh", PositionX = 30, PositionZ = 40, GeometryJson = $"{{\"assetId\":\"{model}\"}}" });
+            db.BuildObjects.Add(new BuildObject { Id = Guid.NewGuid(), IslandId = island, CreatorUserId = owner, OwnerUserId = owner, Name = "c", PrimitiveType = "cube", PositionX = 3, PositionZ = 4, MaterialJson = $"{{\"texture\":\"{texture}\"}}" });
+            db.BuildObjects.Add(new BuildObject { Id = Guid.NewGuid(), IslandId = island, CreatorUserId = owner, OwnerUserId = owner, Name = "plain", PrimitiveType = "cube", PositionX = 1, PositionZ = 1 });
+            await db.SaveChangesAsync();
+            var context = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", Guid.NewGuid().ToString())])) };
+            var result = await AssetManifestEndpoints.ManifestAsync(island, null, null, context, db, default);
+            var ok = Assert.IsType<Ok<AssetManifest>>(result);
+            Assert.Equal([texture, model], ok.Value!.Assets.Select(a => a.AssetId)); Assert.Equal(2, ok.Value.Count);
+        }
+        finally
+        {
+            Npgsql.NpgsqlConnection.ClearAllPools();
+            await using var connection = new Npgsql.NpgsqlConnection(Admin); await connection.OpenAsync(); await using var drop = new Npgsql.NpgsqlCommand($"DROP DATABASE IF EXISTS \"{name}\" WITH (FORCE)", connection); await drop.ExecuteNonQueryAsync();
+        }
+    }
+}

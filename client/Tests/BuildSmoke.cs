@@ -182,12 +182,12 @@ public partial class BuildSmoke : Node
             Require(_editor.LibraryCountForTesting == 2, $"only the two raster images belong in the texture library: {_editor.LibraryCountForTesting}");
             _editor.SelectLibraryForTesting(0, 1);
             Require(_editor.LibraryCountForTesting == 1, "favourites must show only the favourite image");
-            _editor.SelectLibraryForTesting(0, 3);
-            Require(_editor.LibraryCountForTesting == 6, "the system library has six patterns");
+            _editor.SelectLibraryForTesting(1, 3);
+            Require(_editor.LibraryCountForTesting == 7, "the system library has seven patterns (plywood is the default)");
 
             var painted = Add(new Vector3(70, .5f, -6), "cube");
             _editor.SelectIds([painted]);
-            _editor.SelectLibraryForTesting(0, 3); // checker
+            _editor.SelectLibraryForTesting(1, 3); // checker
             _editor.ApplyTextureForTesting(false);
             Require(_server[painted].MaterialJson.Contains("\"builtin\":\"checker\""), $"built-in texture not saved: {_server[painted].MaterialJson}");
             await Frames(2);
@@ -196,14 +196,14 @@ public partial class BuildSmoke : Node
             Require(_server[painted].MaterialJson.Contains("\"uvRepeatX\":2") && _server[painted].MaterialJson.Contains("\"uvRotation\":90") && _server[painted].MaterialJson.Contains("\"flipU\":true"), $"uv not saved: {_server[painted].MaterialJson}");
             await Frames(2);
             var shader = (ShaderMaterial)_editor.ViewForTesting(painted)!.GetNode<MeshInstance3D>("PrimitiveMesh").GetSurfaceOverrideMaterial(0);
-            Require(shader.GetShaderParameter("uv_scale").AsVector2().IsEqualApprox(new Vector2(-2, 3)), $"flip and repeat must reach the shader: {shader.GetShaderParameter("uv_scale")}");
-            Require(Mathf.Abs(shader.GetShaderParameter("uv_rotation").AsSingle() - Mathf.DegToRad(90)) < .001f, "rotation must reach the shader");
+            Require(new Vector2(shader.GetShaderParameter("st_albedo").AsVector4().X, shader.GetShaderParameter("st_albedo").AsVector4().Y).IsEqualApprox(new Vector2(-2, 3)), $"flip and repeat must reach the shader: {shader.GetShaderParameter("st_albedo")}");
+            Require(Mathf.Abs(shader.GetShaderParameter("rot_a").AsVector4().X - Mathf.DegToRad(90)) < .001f, "rotation must reach the shader");
             _editor.RemoveTextureForTesting();
             Require(!_server[painted].MaterialJson.Contains("builtin"), "removing the texture must clear it");
 
             var faced = Add(new Vector3(74, .5f, -6), "cube");
             _editor.SelectFaceForTesting(faced, 0);
-            _editor.SelectLibraryForTesting(1, 3); // bricks
+            _editor.SelectLibraryForTesting(2, 3); // bricks
             _editor.ApplyTextureForTesting(false);
             Require(_server[faced].MaterialJson.Contains("\"faces\"") && _server[faced].MaterialJson.Contains("\"builtin\":\"bricks\""), $"face texture not saved: {_server[faced].MaterialJson}");
             await Frames(2);
@@ -670,6 +670,61 @@ public partial class BuildSmoke : Node
             Require(Mathf.Abs(Mathf.RadToDeg(_editor.AxesEulerForTesting.Y) - 40) < .5f, "the reference frame stays the chosen object while another is selected");
             _editor.SetAxesForTesting(2); Require(Mathf.Abs(Mathf.RadToDeg(_editor.GridRotationForTesting.Y) - 40) < .5f, "the grid follows the reference");
             _editor.SetAxesForTesting(0); Require(Mathf.IsZeroApprox(_editor.GridRotationForTesting.Y), "world axes keep the grid straight");
+            _editor.SelectIds([]);
+
+            // Textura: default material of new objects, models, per-map mapping, clearing, faces
+            var knownIds = _server.Keys.ToHashSet(); _editor.CreateObjectAt(new Vector3(400, .5f, -6), "cube"); await Frames(3);
+            var madeNow = _server.Keys.Except(knownIds).Single(); _editor.SelectIds([madeNow]);
+            Require(_server[madeNow].MaterialJson.Contains("\"shading\":\"blinnphong\"") && _server[madeNow].MaterialJson.Contains("\"builtin\":\"plywood\""), $"a new object starts with Blinn-Phong and the plywood texture: {_server[madeNow].MaterialJson}");
+            _editor.SetShadingForTesting(false, .9, .2, Colors.Red); await Frames(2);
+            Require(_server[madeNow].MaterialJson.Contains("\"shading\":\"pbr\"") && _server[madeNow].MaterialJson.Contains("\"specularColor\":\"#ff0000\"") && _server[madeNow].MaterialJson.Contains("\"glossiness\":0.9"), $"the model is saved: {_server[madeNow].MaterialJson}");
+            _editor.SetUvSyncForTesting(false); _editor.SelectMapForTesting(1); _editor.ApplyUvForTesting(5, 1, 0, 45, false); await Frames(2);
+            Require(_server[madeNow].MaterialJson.Contains("\"mapUv\":{\"normalMap\":{\"repeatX\":5") && _server[madeNow].MaterialJson.Contains("\"rotation\":45") && !_server[madeNow].MaterialJson.Contains("\"uvRepeatX\":5"), $"one map has its own mapping: {_server[madeNow].MaterialJson}");
+            _editor.SetUvSyncForTesting(true); _editor.SelectMapForTesting(0);
+            _editor.RemoveTextureForTesting(); await Frames(2);
+            Require(!_server[madeNow].MaterialJson.Contains("plywood") && _server[madeNow].MaterialJson.Contains("\"noTexture\":true") && _server[madeNow].MaterialJson.Contains("\"color\":\"#FFFFFF\"") && !_server[madeNow].MaterialJson.Contains("mapUv"), $"clearing leaves no texture and no colour: {_server[madeNow].MaterialJson}");
+            _editor.SelectFaceForTesting(madeNow, 2); _editor.SelectLibraryForTesting(1, 3); _editor.ApplyTextureForTesting(false); await Frames(2);
+            Require(_server[madeNow].MaterialJson.Contains("\"index\":2") && _server[madeNow].MaterialJson.Contains("\"builtin\":\"checker\"") && _server[madeNow].MaterialJson.Contains("\"noTexture\":true"), $"one face gets its own texture while the object stays clear: {_server[madeNow].MaterialJson}");
+            var beforeMap = _server[madeNow].MaterialJson; _editor.SelectMapForTesting(1); _editor.ApplyTextureForTesting(false);
+            Require(_server[madeNow].MaterialJson == beforeMap, "a system texture is refused as a normal map");
+            _editor.SelectMapForTesting(0); _editor.SelectIds([]);
+
+            // Conteúdo: scripts inside the object, the editor, and anything from the inventory
+            var scriptStore = new Dictionary<Guid, (string Name, string Source, int Version)>(); var rejectScripts = false; var scriptCalls = new List<string>();
+            Task<(long, string)> FakeScripts(string method, string path, string? body)
+            {
+                scriptCalls.Add($"{method} {path}");
+                if (path.EndsWith("/scripting/templates")) return Task.FromResult((200L, "[{\"name\":\"porta_automatica\",\"eventName\":\"on_touch\",\"source\":\"function on_touch(event)\n  object.say('oi')\nend\"}]"));
+                var parts = path.Split("/scripts"); var tail = parts.Length > 1 ? parts[1] : "";
+                if (tail.EndsWith("/executions")) return Task.FromResult((200L, "[{\"eventName\":\"on_touch\",\"status\":\"Error\",\"instructionCount\":12,\"error\":\"attempt to index nil\",\"createdAt\":\"2026-11-10T12:00:05Z\"},{\"eventName\":\"on_touch\",\"status\":\"Completed\",\"instructionCount\":8,\"error\":\"\",\"createdAt\":\"2026-11-10T12:00:00Z\"}]"));
+                System.Text.Json.JsonElement? json = body is null ? null : System.Text.Json.JsonDocument.Parse(body).RootElement;
+                if (method == "GET" && tail.Length == 0) return Task.FromResult((200L, "[" + string.Join(",", scriptStore.Select(s => $"{{\"id\":\"{s.Key}\",\"name\":\"{s.Value.Name}\",\"version\":{s.Value.Version},\"status\":\"active\"}}")) + "]"));
+                if (method == "POST") { if (rejectScripts) return Task.FromResult((400L, "{\"errors\":{\"source\":[\"Chamada proibida: os.execute\"]}}")); var id = Guid.NewGuid(); scriptStore[id] = (json!.Value.GetProperty("name").GetString()!, json.Value.GetProperty("source").GetString()!, 1); return Task.FromResult((201L, $"{{\"id\":\"{id}\"}}")); }
+                var scriptId = Guid.Parse(tail.TrimStart('/')); if (!scriptStore.TryGetValue(scriptId, out var current)) return Task.FromResult((404L, "{}"));
+                if (method == "GET") return Task.FromResult((200L, System.Text.Json.JsonSerializer.Serialize(new { id = scriptId, name = current.Name, source = current.Source, version = current.Version, status = "active" })));
+                if (method == "PUT") { scriptStore[scriptId] = (json!.Value.GetProperty("name").GetString()!, json.Value.GetProperty("source").GetString()!, current.Version + 1); return Task.FromResult((200L, $"{{\"id\":\"{scriptId}\",\"version\":{current.Version + 1}}}")); }
+                scriptStore.Remove(scriptId); return Task.FromResult((204L, ""));
+            }
+            _editor.SelectIds([openOne]); _editor.UseScriptTransportForTesting(FakeScripts);
+            await _editor.NewScriptForTesting(); await Frames(2);
+            Require(_editor.ScriptsForTesting.Count == 1 && _editor.ScriptEditorForTesting.IsOpen && _editor.ScriptEditorForTesting.SourceForTesting.Contains("function on_touch") && _editor.ScriptEditorForTesting.NameForTesting == "Novo script 1", "a new script is made inside the object and opens in the editor");
+            var scriptId0 = _editor.ScriptsForTesting[0].Id; Require(_editor.ContentCountTextForTesting == $"{_editor.ContentCountForTesting + 1} itens", $"the script counts as content: {_editor.ContentCountTextForTesting}");
+            _editor.ScriptEditorForTesting.SourceForTesting = "function on_touch(event)\n  object.set_position({x=1,y=0,z=0})\nend"; _editor.ScriptEditorForTesting.NameForTesting = "Porta";
+            await _editor.ScriptEditorForTesting.SaveAsync();
+            Require(scriptStore[scriptId0].Source.Contains("set_position") && scriptStore[scriptId0].Name == "Porta" && scriptStore[scriptId0].Version == 2 && !_editor.ScriptEditorForTesting.DirtyForTesting && _editor.ScriptEditorForTesting.InfoForTesting.Contains("Script salvo"), $"saving writes the source to the server: {_editor.ScriptEditorForTesting.InfoForTesting}");
+            await _editor.ScriptEditorForTesting.RefreshConsoleAsync();
+            Require(_editor.ScriptEditorForTesting.ConsoleForTesting.Contains("ERRO: attempt to index nil") && _editor.ScriptEditorForTesting.ConsoleForTesting.Contains("Completed"), $"the console shows how the runs went: {_editor.ScriptEditorForTesting.ConsoleForTesting}");
+            rejectScripts = true; await _editor.NewScriptForTesting();
+            Require(_editor.StatusForTesting.Contains("Chamada proibida") && _editor.ScriptsForTesting.Count == 1, $"a script the server refuses says why: {_editor.StatusForTesting}"); rejectScripts = false;
+            _editor.SelectScriptForTesting(scriptId0); await _editor.RenameSelectedScriptForTesting("Porta da frente"); await Frames(1);
+            Require(_editor.ScriptsForTesting[0].Name == "Porta da frente" && scriptStore[scriptId0].Source.Contains("set_position"), "renaming keeps the source");
+            await _editor.OpenSelectedScriptForTesting(); Require(_editor.ScriptEditorForTesting.NameForTesting == "Porta da frente" && _editor.ScriptEditorForTesting.SourceForTesting.Contains("set_position"), "opening shows the saved source");
+            await _editor.DeleteSelectedScriptForTesting(); await Frames(1);
+            Require(scriptStore.Count == 0 && _editor.ScriptsForTesting.Count == 0 && !_editor.ScriptEditorForTesting.IsOpen, "deleting removes the script and closes its editor");
+            var carried = _editor.ContentCountForTesting; _editor.DropInventoryItemForTesting(Guid.NewGuid(), "Campainha", "sounds"); await Frames(2);
+            Require(_editor.ContentCountForTesting == carried + 1, "an item dropped from the inventory goes into the object");
+            _editor.FillPicker("{\"items\":[{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Roteiro\",\"category\":\"scripts\"},{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Nota\",\"category\":\"notecards\"},{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Foto\",\"category\":\"snapshots\"}]}");
+            Require(_editor.PickerCountForTesting == 2, "the picker offers scripts and notecards too, and still hides what an object cannot carry");
             _editor.SelectIds([]);
 
             GD.Print("event=build_smoke result=passed");

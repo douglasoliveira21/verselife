@@ -133,3 +133,5 @@ Legenda: **A** = teste automático (xUnit / smoke Godot headless, com a rede sim
 - Banimento por terreno ainda não é consultado ao preparar a viagem.
 - Avatares, animações e roupas ainda não entram na etapa de recursos.
 - Imagem panorâmica padrão (sem capa) não existe; fica o logotipo.
+
+Correção: se a lista de recursos falhar (erro 5xx ou rede), a entrada **não** é bloqueada; os recursos carregam quando um objeto precisa, como antes (o aviso fica no log). Só um download de recurso essencial que falha ou chega corrompido derruba a etapa. A consulta da lista agora usa SQL com conversão para texto nas colunas jsonb do PostgreSQL (a versão anterior funcionava em memória, não no PostgreSQL), com teste em PostgreSQL real (`AssetManifestPostgresTests`).

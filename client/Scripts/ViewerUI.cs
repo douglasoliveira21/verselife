@@ -119,8 +119,8 @@ public partial class ViewerUI : CanvasLayer
         if (_world.GetNodeOrNull<WorldEntryCoordinator>("WorldEntryCoordinator") is null) _world.AddChild(new WorldEntryCoordinator { Name = "WorldEntryCoordinator" });
         if (_world.GetNodeOrNull<TeleportCoordinator>("TeleportCoordinator") is null) { var trip = new TeleportCoordinator { Name = "TeleportCoordinator" }; _world.AddChild(trip); trip.Initialize(_world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator")); }
         _teleport = _world.GetNode<TeleportCoordinator>("TeleportCoordinator");
-        EnterFirstIsland(); // after the loading screen exists: it covers the world from the first moment
         _entry = _world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator"); _entry.RetryLocate = () => { _entering = false; EnterFirstIsland(); }; _entry.LeaveToMenu = () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); RefreshIslands(); };
+        EnterFirstIsland(); // after the loading screen exists: it covers the world from the first moment
         if (_world.GetNodeOrNull<LandMapWindow>("LandMapWindow") is null) _world.AddChild(new LandMapWindow { Name = "LandMapWindow", JoinIsland = JoinIslandById });
         if (_world.GetNodeOrNull<ItemRightsWindow>("ItemRightsWindow") is null) _world.AddChild(new ItemRightsWindow { Name = "ItemRightsWindow" });
         if (_world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow") is null) _world.AddChild(new ItemOffersWindow { Name = "ItemOffersWindow" });

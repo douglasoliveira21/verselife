@@ -1038,3 +1038,9 @@ public partial class InventoryPanel
         }
     }
 }
+
+public partial class InventoryPanel
+{
+    /// <summary>What an inventory item is, for whoever receives it when it is dropped somewhere (the Conteúdo tab of an object): the asset, the name and the kind.</summary>
+    public (Guid Asset, string Name, string Category)? DescribeItem(Guid itemId) => _items.TryGetValue(itemId, out var info) && !info.Deleted ? (info.AssetId, info.Name, info.Category) : null;
+}

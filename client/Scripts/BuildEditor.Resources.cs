@@ -17,23 +17,6 @@ public partial class BuildEditor
 
     private HSlider LightFalloffSlider() => _lightFalloff = NewSlider(.1, 4, .05, 1);
 
-    private PanelContainer BuildProjectorCard()
-    {
-        var card = Card("Projetor de luz", "image", out var body, out _, 12); card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        body.AddChild(Txt("Projeta uma imagem com a luz do objeto, para a frente dele. Só age com a luz ligada.", 17, false, UiStyle.TextMuted));
-        var row = Row(8); body.AddChild(row);
-        row.AddChild(RowLabel("Imagem:")); _projTexture = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 44), FocusMode = Control.FocusModeEnum.None };
-        _projTexture.AddItem("Nenhuma"); foreach (var (id, label) in BuiltInTextures.All) { _projTexture.AddItem(label); _projTexture.SetItemMetadata(_projTexture.ItemCount - 1, id); }
-        _projTexture.ItemSelected += _ => { _projAsset = null; _projAssetLabel.Text = string.Empty; };
-        row.AddChild(_projTexture);
-        var libraryRow = Row(8); body.AddChild(libraryRow);
-        libraryRow.AddChild(IconButton("image", "Usar a da biblioteca", "Usa a imagem escolhida na biblioteca da aba Textura", UseLibraryForProjector, UiStyle.ButtonKind.Tool, 44));
-        _projAssetLabel = Muted(string.Empty, 17); libraryRow.AddChild(_projAssetLabel);
-        _projFov = NewSlider(10, 120, 1, 45); _projFocus = NewSlider(0, 30, .5, 10); _projAmbiance = NewSlider(0, 1, .01, .1);
-        body.AddChild(SliderLine(null, "Campo de visão", _projFov, 0, false, 190)); body.AddChild(SliderLine(null, "Foco (alcance)", _projFocus, 1, false, 190)); body.AddChild(SliderLine(null, "Ambiência", _projAmbiance, 2, false, 190));
-        return card;
-    }
-
     private void UseLibraryForProjector()
     {
         if (Chosen() is not { } entry) { _status.Text = "Escolha uma imagem na biblioteca da aba Textura."; return; }
@@ -43,23 +26,6 @@ public partial class BuildEditor
             _projAsset = null; _projAssetLabel.Text = string.Empty;
         }
         else if (entry.Asset is { } asset) { _projTexture.Select(0); _projAsset = asset; _projAssetLabel.Text = entry.Name; }
-    }
-
-    private PanelContainer BuildFlexCard()
-    {
-        var card = Card("Caminho flexível", "waves", out var body, out _, 12); card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        _flexOn = new CheckBox { Text = " Ativado", TooltipText = "O objeto balança como uma bandeira ou uma planta: a base fica parada e o topo se inclina" }; _flexOn.AddThemeFontSizeOverride("font_size", 20); body.AddChild(_flexOn);
-        foreach (var (key, label, tip, min, max, step, value) in new (string, string, string, double, double, double, double)[]
-        {
-            ("softness", "Maciez", "Quanto o objeto cede à força e ao vento (0 = rígido)", 0, 3, .1, 1), ("gravity", "Gravidade", "Puxa o topo para baixo (negativo, para cima)", -10, 10, .1, 0),
-            ("drag", "Arrasto", "Quanto o ar segura o balanço", 0, 10, .1, 2), ("wind", "Vento", "Quanto o vento empurra", 0, 10, .1, 0), ("tension", "Tensão", "Rigidez que traz o objeto de volta ao lugar", 0, 10, .1, 1),
-            ("forceX", "Força X", "Empurrão constante no eixo X do objeto", -10, 10, .1, 0), ("forceY", "Força Y", "Empurrão constante em Y", -10, 10, .1, 0), ("forceZ", "Força Z", "Empurrão constante em Z", -10, 10, .1, 0)
-        })
-        {
-            var slider = NewSlider(min, max, step, value); slider.TooltipText = tip; _flexSliders[key] = slider;
-            body.AddChild(SliderLine(null, label, slider, 1, false, 190));
-        }
-        return card;
     }
 
     /// Shows the resources of the selected object in the controls.

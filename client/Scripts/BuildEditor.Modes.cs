@@ -53,48 +53,68 @@ public partial class BuildEditor
         var host = new VBoxContainer(); host.AddThemeConstantOverride("separation", 8);
         _modePanels[BuildMode.Focus] = ModePanel(host, panel =>
         {
-            panel.AddChild(Txt("Botão direito orbita, botão do meio desloca e a roda dá zoom. Home foca na seleção.", 18, false, UiStyle.TextMuted));
-            var line = Row(8); panel.AddChild(line);
-            line.AddChild(ModeAction("focus", "Focar na seleção", "Foca a câmera na seleção (Home)", FocusSelection));
-            line.AddChild(ModeAction("camera", "Câmera de edição", "Liga ou desliga a câmera que gira em volta da seleção (End)", ToggleEditCamera));
+            panel.AddChild(Txt("Controles de câmera (Foco):", 19, true));
+            foreach (var (icon, text, keys, action) in new (string, string, string, Action?)[]
+            {
+                ("focus", "Focar na seleção", "Home", FocusSelection), ("rotate", "Orbitar", "botão direito + arrastar", null), ("expand", "Aproximar / Afastar", "roda do mouse", null),
+                ("move", "Deslocar (pan)", "botão do meio + arrastar", null), ("camera", "Câmera de edição", "End", ToggleEditCamera)
+            })
+            {
+                var row = Row(10); var button = ModeAction(icon, text, keys, action ?? (() => _status.Text = $"{text}: {keys}.")); button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; row.AddChild(button);
+                var shortcut = Txt(keys, 17, false, UiStyle.TextMuted); shortcut.HorizontalAlignment = HorizontalAlignment.Right; shortcut.CustomMinimumSize = new Vector2(230, 0); row.AddChild(shortcut); panel.AddChild(row);
+            }
         });
         _modePanels[BuildMode.Move] = ModePanel(host, panel =>
         {
-            var line = Row(8); panel.AddChild(line);
-            line.AddChild(ModeAction("move", "Mover", "Arrasta pelos eixos (2)", () => SetMode(GizmoMode.Move)));
-            line.AddChild(ModeAction("rotate", "Girar", "Gira em torno do pivô (3)", () => SetMode(GizmoMode.Rotate)));
-            line.AddChild(ModeAction("scale", "Esticar", "Estica o objeto (4)", () => SetMode(GizmoMode.Scale)));
-            var options = Row(14); panel.AddChild(options);
-            options.AddChild(Mirror(_gridSnap, " Encaixar na grade")); options.AddChild(Mirror(_showGrid, " Mostrar grade"));
+            panel.AddChild(Txt("Mover objetos selecionados.", 19));
+            var group = new ButtonGroup();
+            foreach (var (text, action) in new (string, Action)[] { ("Mover", () => SetMode(GizmoMode.Move)), ("Levantar / Abaixar (Ctrl)", () => { SetMode(GizmoMode.Move); _status.Text = "Levantar e abaixar: arraste a seta verde."; }), ("Rotacionar (Ctrl+Shift)", () => SetMode(GizmoMode.Rotate)) })
+            {
+                var radio = new CheckBox { Text = " " + text, ButtonGroup = group, FocusMode = Control.FocusModeEnum.None }; radio.AddThemeFontSizeOverride("font_size", 19); var run = action; radio.Pressed += () => run(); panel.AddChild(radio);
+            }
+            panel.AddChild(Mirror(_showGrid, " Usar grade")); panel.AddChild(Mirror(_gridSnap, " Snap na grade"));
+            var precision = new LineEdit { Text = _snap.Text, CustomMinimumSize = new Vector2(120, 38) }; precision.AddThemeFontSizeOverride("font_size", 19);
+            precision.TextSubmitted += value => { _snap.Text = value; _snap.EmitSignal(LineEdit.SignalName.TextChanged, value); }; _snap.TextChanged += value => { if (precision.Text != value) precision.Text = value; };
+            var precisionRow = Row(10); precisionRow.AddChild(Txt("Precisão da grade:", 19)); precisionRow.AddChild(Filler()); precisionRow.AddChild(precision); precisionRow.AddChild(Txt("m", 18, false, UiStyle.TextMuted)); panel.AddChild(precisionRow);
+            var turn = new OptionButton { CustomMinimumSize = new Vector2(120, 38), FocusMode = Control.FocusModeEnum.None }; foreach (var step in RotationSteps) turn.AddItem($"{step}°"); turn.Select(_rotSnap.Selected);
+            turn.ItemSelected += index => _rotSnap.Select((int)index); var turnRow = Row(10); turnRow.AddChild(Txt("Snap rotação:", 19)); turnRow.AddChild(Filler()); turnRow.AddChild(turn); panel.AddChild(turnRow);
         });
         _modePanels[BuildMode.Edit] = ModePanel(host, panel =>
         {
-            var line = Row(6); panel.AddChild(line);
-            line.AddChild(ModeAction("select", "Selecionar", "Só seleciona, sem mostrar gizmos (1)", SelectTool));
-            line.AddChild(ModeAction("move", "Mover", "Gizmo de mover (2)", () => SetMode(GizmoMode.Move)));
-            line.AddChild(ModeAction("rotate", "Girar", "Gizmo de girar (3)", () => SetMode(GizmoMode.Rotate)));
-            line.AddChild(ModeAction("scale", "Esticar", "Gizmo de esticar (4)", () => SetMode(GizmoMode.Scale)));
-            var options = Row(14); panel.AddChild(options);
-            options.AddChild(Mirror(_partCheck, " Editar partes vinculadas"));
-            var stretch = Row(14); panel.AddChild(stretch); stretch.AddChild(Mirror(_stretchBoth, " Esticar dos dois lados")); stretch.AddChild(Mirror(_stretchTextures, " Esticar texturas"));
-            options.AddChild(Mirror(_gridSnap, " Encaixar na grade")); options.AddChild(Mirror(_showGrid, " Mostrar grade"));
+            panel.AddChild(Txt("Arrastar para mover, Shift + arrastar para copiar", 18, false, UiStyle.TextMuted));
+            var columns = Row(10); panel.AddChild(columns); var left = Column(2); var right = Column(2); columns.AddChild(left); columns.AddChild(right);
+            var group = new ButtonGroup();
+            foreach (var (text, action) in new (string, Action)[]
+            {
+                ("Selecionar", () => { _partMode = false; SelectTool(); }), ("Esticar (Ctrl)", () => { _partMode = false; SetMode(GizmoMode.Scale); }), ("Girar (Ctrl+Shift)", () => { _partMode = false; SetMode(GizmoMode.Rotate); }),
+                ("Selecionar face", () => { _partMode = false; FaceTool(); }), ("Alinhar", () => { _showEditPages(true); _advancedTabs.Select(0); }), ("Editar partes vinculadas", () => { _partMode = true; if (_partCheck is not null) _partCheck.SetPressedNoSignal(true); SelectTool(); })
+            })
+            {
+                var radio = new CheckBox { Text = " " + text, ButtonGroup = group, FocusMode = Control.FocusModeEnum.None, ButtonPressed = text == "Selecionar" }; radio.AddThemeFontSizeOverride("font_size", 18); var run = action; radio.Pressed += () => run(); left.AddChild(radio);
+            }
+            right.AddChild(Mirror(_stretchBoth, " Alongar ambos os lados")); right.AddChild(Mirror(_stretchTextures, " Alongar texturas"));
+            var local = Check("Usar eixos locais", "Os eixos do gizmo seguem o objeto"); local.Toggled += on => { _axesSpace.Select(on ? 1 : 0); RefreshGizmo(); }; right.AddChild(local);
+            right.AddChild(Mirror(_showGrid, " Grade"));
+            var options = TextButton("Opções…", "Alinhar, conjuntos vinculados, pivôs e duplicação múltipla", () => _showEditPages(!_advancedTabs.Visible)); options.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd; right.AddChild(options);
         });
         _modePanels[BuildMode.Create] = ModePanel(host, panel =>
         {
-            panel.AddChild(Txt("Escolha uma forma e clique no terreno ou em um objeto. Shift + clique cria várias; Esc cancela.", 18, false, UiStyle.TextMuted));
-            var grid = new GridContainer { Columns = 4 }; grid.AddThemeConstantOverride("h_separation", 6); grid.AddThemeConstantOverride("v_separation", 6); panel.AddChild(grid);
+            panel.AddChild(Txt("Selecionar uma primitiva para criar:", 19, true));
+            panel.AddChild(Txt("Clique no terreno ou em um objeto. Shift + clique cria várias; Esc cancela.", 16, false, UiStyle.TextMuted));
+            var grid = new GridContainer { Columns = 3 }; grid.AddThemeConstantOverride("h_separation", 6); grid.AddThemeConstantOverride("v_separation", 6); panel.AddChild(grid);
             for (var i = 0; i < _primitive.ItemCount; i++)
             {
                 var index = i; var type = _primitive.GetItemMetadata(i).AsString();
                 var button = ModeAction("cube", PrimitiveLabel(type), "Arma a criação de " + PrimitiveLabel(type), () => { DisarmPlacement(null); _primitive.Select(index); CreateObject(); });
-                button.Icon = PrimitivePaletteIcon(type, UiStyle.Text, 26);
+                button.Icon = PrimitivePaletteIcon(type, UiStyle.Text, 34); button.VerticalIconAlignment = VerticalAlignment.Top; button.IconAlignment = HorizontalAlignment.Center; button.CustomMinimumSize = new Vector2(0, 86); button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; button.Alignment = HorizontalAlignment.Center;
                 grid.AddChild(button);
             }
             panel.AddChild(Mirror(_gridSnap, " Encaixar na grade"));
         });
         _modePanels[BuildMode.Land] = ModePanel(host, panel =>
         {
-            panel.AddChild(Txt("As ferramentas de terreno abrem na própria janela de terreno, com histórico próprio. Voltar aqui devolve o controle ao editor de objetos.", 18, false, UiStyle.TextMuted));
+            panel.AddChild(Txt("Ferramentas de terreno:", 19, true));
+            panel.AddChild(Txt("Elevar, abaixar, suavizar, nivelar, reverter e ruído, com tamanho, força e suavidade do pincel, abrem na janela de terreno (histórico próprio).", 16, false, UiStyle.TextMuted));
             panel.AddChild(ModeAction("terrain", "Abrir ferramentas de terreno", "Eleva, abaixa, suaviza, nivela e pinta o terreno", OpenTerrainTools));
         });
         _modeStatus = new Label { Text = "Selecionado: 0 objetos / Prims: 0", VerticalAlignment = VerticalAlignment.Center };

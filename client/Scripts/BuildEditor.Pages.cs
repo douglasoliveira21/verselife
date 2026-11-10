@@ -19,7 +19,7 @@ public partial class BuildEditor
     private void BuildPanel()
     {
         _window = new FloatingWindow("Construir", icon: "hammer", minimizable: true, expandable: true) { Name = "BuildTools", Visible = false };
-        _window.Place(0, 0, 18, 56, 1418, 1280);
+        _window.Place(0, 0, 18, 56, 740, 1500);
         _window.Scale = SmallBuildScale; // compact by default so it does not cover the world
         _window.CloseRequested += () => SetActive(false);
         _window.ExpandToggled += SetBuildWindowExpanded;
@@ -152,107 +152,6 @@ public partial class BuildEditor
     // ---- the Objeto tab ----------------------------------------------------------------------------------------
 
     private float RotationStep() => RotationSteps[Mathf.Clamp(_rotSnap.Selected, 0, RotationSteps.Length - 1)];
-
-    private Control BuildObjectTab()
-    {
-        var page = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill }; page.AddThemeConstantOverride("separation", 12);
-        var main = Row(12); main.SizeFlagsVertical = Control.SizeFlags.ExpandFill; page.AddChild(main);
-
-        // the tools column
-        var tools = Card("Ferramentas", null, out var toolsBody, out _, 8); tools.CustomMinimumSize = new Vector2(270, 0); tools.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
-        _toolSelect = ListTool("pointer", "Selecionar", "Selecionar objetos (1)", () => SelectTool());
-        _toolMove = ListTool("move", "Mover", "Mover nos três eixos (2)", () => SetMode(GizmoMode.Move));
-        _toolRotate = ListTool("rotate", "Rotacionar", "Girar com os anéis (3)", () => SetMode(GizmoMode.Rotate));
-        _toolScale = ListTool("expand", "Redimensionar", "Redimensionar (4)", () => SetMode(GizmoMode.Scale));
-        foreach (var button in new[] { _toolSelect, _toolMove, _toolRotate, _toolScale }) toolsBody.AddChild(button);
-        toolsBody.AddChild(ListAction("copy-plus", "Duplicar", "Duplicar (Ctrl+D)", Duplicate));
-        toolsBody.AddChild(ListAction("copy", "Copiar", "Copiar (Ctrl+C)", CopySelection));
-        toolsBody.AddChild(ListAction("paste", "Colar", "Colar (Ctrl+V)", Paste));
-        toolsBody.AddChild(ListAction("link", "Agrupar", "Junta os objetos selecionados em um conjunto (Ctrl+G)", GroupSelection));
-        toolsBody.AddChild(ListAction("unlink", "Desagrupar", "Separa o conjunto (Ctrl+Shift+G)", Ungroup));
-        toolsBody.AddChild(ListAction("trash", "Excluir", "Excluir (Delete)", DeleteSelection));
-        main.AddChild(tools);
-
-        var rest = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; rest.AddThemeConstantOverride("separation", 12); main.AddChild(rest);
-
-        // preview and the three transform cards
-        var top = Row(12); top.SizeFlagsVertical = Control.SizeFlags.ExpandFill; rest.AddChild(top);
-        var preview = NewPreview(300); preview.SizeFlagsStretchRatio = .8f; top.AddChild(preview);
-        var right = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = 1.2f }; right.AddThemeConstantOverride("separation", 10); top.AddChild(right);
-
-        _snap = Field("0,5", 8); _snap.Text = Disp(.5); _snap.TooltipText = "Passo do movimento com as setas e da posição aplicada"; _snap.CustomMinimumSize = new Vector2(110, 44);
-        right.AddChild(TransformCard("Posição", "pin", _position, () => GridStep(), _ => ApplySelected(), SquareIcon("copy", "Copia a posição do primeiro objeto (cole na aba Alinhar)", () => CopyTransform(0))));
-        right.AddChild(TransformCard("Rotação", "rotate", _rotationFields, RotationStep, _ => ApplySelected(), SquareIcon("reset", "Zera a rotação", () => { foreach (var field in _rotationFields) field.Text = Disp(0); ApplySelected(); })));
-        _sizeLock = SquareIcon("link", "Mantém as proporções ao mudar um lado", () => { }, toggle: true);
-        right.AddChild(TransformCard("Tamanho", "cube", _size, () => GridStep(), SizeCommitted, _sizeLock));
-
-        var stepCard = Card(null, null, out var stepBody, out _, 0, false, 16, 8);
-        var stepRow = Row(12); stepBody.AddChild(stepRow);
-        stepRow.AddChild(UiStyle.IconRect("move-all", UiStyle.Text, 26)); stepRow.AddChild(Txt("Passo de movimento", 20, true));
-        stepRow.AddChild(_snap); stepRow.AddChild(Stepper(_snap, () => .05f, () => { }));
-        var stepSlider = NewSlider(.05, 5, .05, .5); stepRow.AddChild(stepSlider);
-        stepSlider.ValueChanged += value => { if (!_filling) _snap.Text = Disp(value); };
-        _snap.TextChanged += _ => { var value = Mathf.Clamp(NumOr(_snap, .5f), .05f, 5f); if (!Mathf.IsEqualApprox((float)stepSlider.Value, value)) stepSlider.SetValueNoSignal(value); UpdateGrid(); };
-        right.AddChild(stepCard);
-
-        // grid and snapping, the ghost option and the shape
-        var bottom = Row(12); rest.AddChild(bottom);
-        var left = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsStretchRatio = .8f }; left.AddThemeConstantOverride("separation", 10); bottom.AddChild(left);
-        var grid = Card("Grade e encaixe", "grid-dots", out var gridBody, out _, 10);
-        var gridRow = Row(14); gridBody.AddChild(gridRow);
-        var checks = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; checks.AddThemeConstantOverride("separation", 14); gridRow.AddChild(checks);
-        _showGrid = new CheckBox { Text = " Exibir grade", ButtonPressed = false }; _showGrid.Toggled += _ => UpdateGrid(); _showGrid.AddThemeFontSizeOverride("font_size", 20); checks.AddChild(_showGrid);
-        _gridSnap = new CheckBox { Text = " Encaixar na grade", TooltipText = "A posição final cai em múltiplos do passo de movimento" }; _gridSnap.AddThemeFontSizeOverride("font_size", 20); checks.AddChild(_gridSnap);
-        gridRow.AddChild(new VSeparator());
-        var turn = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; turn.AddThemeConstantOverride("separation", 8); gridRow.AddChild(turn);
-        var turnTitle = Row(8); turnTitle.AddChild(UiStyle.IconRect("rotate", UiStyle.Text, 24)); turnTitle.AddChild(Txt("Passo de giro", 20)); turn.AddChild(turnTitle);
-        _rotSnap = new OptionButton { CustomMinimumSize = new Vector2(0, 44), FocusMode = Control.FocusModeEnum.None, TooltipText = "Quanto gira a cada passo ao segurar Ctrl" };
-        foreach (var step in RotationSteps) _rotSnap.AddItem($"{step}°");
-        _rotSnap.Select(1); turn.AddChild(_rotSnap);
-        left.AddChild(grid);
-        var ghostCard = Card(null, null, out var ghostBody, out _, 0, false, 16, 10);
-        _ghost = new CheckBox { Text = " Fantasma (pode ser atravessado)", TooltipText = "Desativa a colisão sólida; o objeto continua visível" }; _ghost.AddThemeFontSizeOverride("font_size", 20);
-        ghostBody.AddChild(_ghost);
-        var physRow = Row(8); ghostBody.AddChild(physRow);
-        physRow.AddChild(Txt("Física", 19, true)); _physMode = Pick("Estático", "Físico"); _physMode.TooltipText = "Físico marca um corpo que deve se mover por física (cair, ser empurrado). Ainda não é simulado no mundo: fica onde foi posto."; physRow.AddChild(_physMode);
-        var shapeRow = Row(8); ghostBody.AddChild(shapeRow); shapeRow.AddChild(Txt("Colisão", 19, true)); _collisionShape = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "Caixa é leve; casco segue a forma; malha triangular preserva portas e aberturas, mas é apenas estática." };
-        _collisionShape.AddItem("Nenhuma"); _collisionShape.AddItem("Caixa"); _collisionShape.AddItem("Casco convexo"); _collisionShape.AddItem("Malha triangular (estática)"); _collisionShape.Select(1);
-        _collisionShape.ItemSelected += index => { if (index == 3 && _physMode.Selected == 1) { _physMode.Select(0); _status.Text = "Malha triangular é estática; o modo foi alterado para Estático."; } };
-        shapeRow.AddChild(_collisionShape);
-        _showCollision = new CheckBox { Text = " Visualizar colisão", TooltipText = "Mostra em ciano a geometria que gera a colisão. A malha triangular acompanha as partes importadas." }; _showCollision.AddThemeFontSizeOverride("font_size", 18); _showCollision.Toggled += SetCollisionPreview; ghostBody.AddChild(_showCollision);
-        var physNumbers = Row(8); ghostBody.AddChild(physNumbers);
-        physNumbers.AddChild(Txt("Massa", 18)); _physMass = Field("1", 8); _physMass.Text = "1"; physNumbers.AddChild(_physMass);
-        physNumbers.AddChild(Txt("Atrito", 18)); _physFriction = Field("0,5", 6); _physFriction.Text = "0,5"; physNumbers.AddChild(_physFriction);
-        physNumbers.AddChild(Txt("Quique", 18)); _physBounce = Field("0", 6); _physBounce.Text = "0"; physNumbers.AddChild(_physBounce);
-        var matRow = Row(8); ghostBody.AddChild(matRow);
-        matRow.AddChild(Txt("Material", 19, true)); _physMaterial = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 44), FocusMode = Control.FocusModeEnum.None, TooltipText = "Define o atrito e o quique do objeto de uma vez" }; _physMaterial.AddItem("Nenhum");
-        foreach (var (key, (label, _, _)) in PhysicsRules.Materials) { _physMaterial.AddItem(label); _physMaterial.SetItemMetadata(_physMaterial.ItemCount - 1, key); }
-        _physMaterial.ItemSelected += index => { if (index > 0 && PhysicsRules.Materials.TryGetValue(_physMaterial.GetItemMetadata((int)index).AsString(), out var m)) { _physFriction.Text = Disp(m.Friction, 2); _physBounce.Text = Disp(m.Bounce, 2); } };
-        matRow.AddChild(_physMaterial);
-        _physTemporary = new CheckBox { Text = " Temporário", TooltipText = "Objeto passageiro: quase não pesa no orçamento da ilha" }; _physTemporary.AddThemeFontSizeOverride("font_size", 19); matRow.AddChild(_physTemporary);
-        left.AddChild(ghostCard);
-
-        var shape = Card("Forma", "layers", out var shapeBody, out _, 12); shape.SizeFlagsStretchRatio = 1.2f;
-        _hollow = NewSlider(0, .95, .01, 0); _taperX = NewSlider(-1, 1, .01, 0); _taperY = NewSlider(-1, 1, .01, 0); _twist = NewSlider(-180, 180, 1, 0);
-        shapeBody.AddChild(SliderLine(null, "Oco", _hollow, 3, false, 130)); shapeBody.AddChild(SliderLine(null, "Afunilar X", _taperX, 3, false, 130));
-        shapeBody.AddChild(SliderLine(null, "Afunilar Y", _taperY, 3, false, 130)); shapeBody.AddChild(SliderLine(null, "Torção", _twist, 3, false, 130));
-        shapeBody.AddChild(Txt("Vale para caixa, prisma, cilindro, tubo, cone e pirâmide.", 17, false, UiStyle.TextMuted));
-        bottom.AddChild(shape);
-
-        page.AddChild(BuildAdvancedShapeCard());
-
-        // footer of the tab
-        var footer = Card(null, null, out var footerBody, out _, 0, false, 16, 8); page.AddChild(footer);
-        var footerRow = Row(14); footerBody.AddChild(footerRow);
-        footerRow.AddChild(UiStyle.IconRect("info", UiStyle.Text, 26));
-        footerRow.AddChild(Txt("Selecionado:", 20)); _selectedCount = Txt("nenhum", 20, true, UiStyle.AccentText); footerRow.AddChild(_selectedCount);
-        footerRow.AddChild(new VSeparator()); footerRow.AddChild(UiStyle.IconRect("cube", UiStyle.Text, 26));
-        _primsLabel = Txt("Prims: —", 20); footerRow.AddChild(_primsLabel);
-        footerRow.AddChild(Filler());
-        var restore = OrangeButton("undo", "Restaurar", "Volta os campos ao que o servidor confirmou", () => { FillFields(); _status.Text = "Valores restaurados."; }); restore.CustomMinimumSize = new Vector2(190, 48); restore.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd; footerRow.AddChild(restore);
-        var apply = IconButton("check", "Aplicar à seleção", "Envia posição, rotação, tamanho, forma e física ao servidor", ApplySelected, UiStyle.ButtonKind.Primary, 48); apply.CustomMinimumSize = new Vector2(280, 48); apply.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd; footerRow.AddChild(apply);
-        return page;
-    }
 
     /// "Posição", "Rotação" or "Tamanho": title and three axis fields, with a square button on the right.
     private PanelContainer TransformCard(string title, string icon, LineEdit[] fields, Func<float> step, Action<int> committed, Button trailing)

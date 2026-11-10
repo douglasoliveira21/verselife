@@ -64,4 +64,16 @@ public sealed class ObjectResourcesTests
         Assert.NotNull(MaterialAssets.ValidateSettings("{\"fullBright\":\"sim\"}"));
         Assert.NotNull(MaterialAssets.ValidateSettings("{\"faces\":[{\"index\":1,\"doubleSided\":1}]}"));
     }
+
+    [Fact]
+    public void TheServerChecksTheMaterialModelsMapsAndPerMapTransforms()
+    {
+        var map = Guid.NewGuid();
+        Assert.Null(MaterialAssets.ValidateSettings("{\"shading\":\"blinnphong\",\"builtin\":\"plywood\",\"specularColor\":\"#A0B0C0\",\"glossiness\":0.7,\"environment\":0.3,\"mapUv\":{\"normalMap\":{\"repeatX\":4,\"rotation\":45}}}"));
+        Assert.Null(MaterialAssets.ValidateSettings("{\"shading\":\"pbr\",\"ormMap\":\"" + map + "\",\"emissiveMap\":\"" + map + "\",\"specularMap\":\"" + map + "\",\"noTexture\":false,\"faces\":[{\"index\":2,\"noTexture\":true,\"color\":\"#FFFFFF\"}]}"));
+        foreach (var bad in new[] { "{\"shading\":\"toon\"}", "{\"specularColor\":\"azul\"}", "{\"glossiness\":2}", "{\"environment\":-1}", "{\"mapUv\":{\"bumpMap\":{}}}", "{\"mapUv\":{\"normalMap\":{\"repeatX\":500}}}", "{\"mapUv\":[]}", "{\"ormMap\":\"nao-e-guid\"}", "{\"noTexture\":\"sim\"}" })
+            Assert.NotNull(MaterialAssets.ValidateSettings(bad));
+        Assert.Contains(map, MaterialAssets.TextureIds("{\"ormMap\":\"" + map + "\"}")); Assert.Contains(map, MaterialAssets.TextureIds("{\"emissiveMap\":\"" + map + "\"}")); // the maps are parts of the object like any texture
+        Assert.Contains("plywood", MaterialAssets.BuiltInTextures);
+    }
 }
