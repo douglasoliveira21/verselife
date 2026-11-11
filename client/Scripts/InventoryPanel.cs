@@ -175,7 +175,7 @@ public partial class InventoryPanel : Node3D
         _folderName = new LineEdit { PlaceholderText = "Nome da pasta", CustomMinimumSize = new Vector2(280, 0) };
         _newFolderDialog.AddChild(_folderName); _newFolderDialog.Confirmed += CreateFolder; _folderName.TextSubmitted += _ => { _newFolderDialog.Hide(); CreateFolder(); };
         AddChild(_newFolderDialog);
-        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Importar para o inventário", Filters = ["*.glb,*.gltf ; Meshes e animações 3D", "*.png,*.jpg,*.jpeg,*.webp ; Imagens e texturas", "*.ogg,*.wav ; Sons e áudios"] };
+        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Importar para o inventário", Filters = ["*.glb,*.gltf ; Meshes e animações 3D", "*.png,*.jpg,*.jpeg,*.webp ; Imagens e texturas", "*.ogg,*.wav,*.mp3 ; Sons e áudios (OGG Vorbis, WAV, MP3)"] };
         AddChild(_fileDialog);
         _zipDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.zip"], Title = "Importar pacote de arquivos" }; AddChild(_zipDialog); _zipDialog.FileSelected += UploadZip;
         _fileDialog.FileSelected += Upload;
@@ -659,7 +659,7 @@ public partial class InventoryPanel : Node3D
     private void Favorite() { if (_selectedItem != Guid.Empty) Send(Godot.HttpClient.Method.Post, $"/api/v1/inventory/items/{_selectedItem}/favorite", null, Pending.Action); }
     private void Restore() { if (_selectedItem != Guid.Empty) Send(Godot.HttpClient.Method.Post, $"/api/v1/inventory/items/{_selectedItem}/restore", null, Pending.Action); }
 
-    private static string CategoryFor(string filename) => System.IO.Path.GetExtension(filename).ToLowerInvariant() switch { ".glb" or ".gltf" => "models", ".png" or ".jpg" or ".jpeg" or ".webp" => "textures", ".ogg" or ".wav" => "sounds", _ => "objects" };
+    private static string CategoryFor(string filename) => System.IO.Path.GetExtension(filename).ToLowerInvariant() switch { ".glb" or ".gltf" => "models", ".png" or ".jpg" or ".jpeg" or ".webp" => "textures", ".ogg" or ".wav" or ".mp3" => "sounds", _ => "objects" };
 
     private void Upload(string path)
     {
@@ -958,7 +958,7 @@ public partial class InventoryPanel
 
     private static string ProblemText(string code) => code switch
     {
-        "unsafe_path" => "caminho perigoso", "unsupported_type" => "tipo não aceito (só modelos .glb/.gltf, imagens .png/.jpg/.webp e sons .ogg/.wav)", "nested_zip" => "zip dentro de zip", "file_too_large" => "arquivo grande demais",
+        "unsafe_path" => "caminho perigoso", "unsupported_type" => "tipo não aceito (só modelos .glb/.gltf, imagens .png/.jpg/.webp e sons .ogg/.wav/.mp3)", "nested_zip" => "zip dentro de zip", "file_too_large" => "arquivo grande demais",
         "suspicious_compression" => "compactação suspeita", "unreadable" => "não deu para ler", _ => code
     };
 

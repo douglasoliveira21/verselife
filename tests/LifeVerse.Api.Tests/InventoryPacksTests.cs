@@ -141,7 +141,7 @@ public sealed class InventoryPacksTests : IDisposable
     // ---- unzipping --------------------------------------------------------------------------------------------------------------------
 
     private static readonly byte[] Png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==");
-    private static byte[] Wav() { var b = new byte[60]; Encoding.ASCII.GetBytes("RIFF").CopyTo(b, 0); BitConverter.GetBytes(52).CopyTo(b, 4); Encoding.ASCII.GetBytes("WAVE").CopyTo(b, 8); Encoding.ASCII.GetBytes("fmt ").CopyTo(b, 12); return b; }
+    private static byte[] Wav() => TestFiles.Wav();
 
     private static byte[] Zip(params (string Name, byte[] Bytes)[] files)
     {

@@ -143,11 +143,12 @@ public partial class ObjectEffects : Node
         if (http.Request($"{app.ApiBaseUrl}/api/v1/worlds/islands/{network.CurrentIslandId}/assets/{assetId}/file", [$"Authorization: Bearer {session.AccessToken}"]) != Error.Ok) { http.QueueFree(); done(null); }
     }
 
-    /// <summary>OGG Vorbis or PCM WAV; anything else is not a sound this client plays.</summary>
+    /// <summary>OGG Vorbis, PCM / float WAV or MP3; anything else is not a sound this client plays.</summary>
     public static AudioStream? Decode(byte[] bytes)
     {
         if (bytes.Length < 12) return null;
         if (bytes[0] == 'O' && bytes[1] == 'g' && bytes[2] == 'g' && bytes[3] == 'S') return AudioStreamOggVorbis.LoadFromBuffer(bytes);
+        if (bytes[0] == 'I' && bytes[1] == 'D' && bytes[2] == '3' || bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0) return new AudioStreamMP3 { Data = bytes };
         return WavDecoder.TryParse(bytes);
     }
 
@@ -179,12 +180,28 @@ public static class WavDecoder
         {
             var id = System.Text.Encoding.ASCII.GetString(b, position, 4); var size = BitConverter.ToInt32(b, position + 4); var body = position + 8;
             if (size < 0 || body + (long)size > b.Length) size = Math.Max(0, b.Length - body);
-            if (id == "fmt " && size >= 16) { format = BitConverter.ToInt16(b, body); channels = BitConverter.ToInt16(b, body + 2); rate = BitConverter.ToInt32(b, body + 4); bits = BitConverter.ToInt16(b, body + 14); }
+            if (id == "fmt " && size >= 16) { format = BitConverter.ToInt16(b, body); channels = BitConverter.ToInt16(b, body + 2); rate = BitConverter.ToInt32(b, body + 4); bits = BitConverter.ToInt16(b, body + 14); if (format == unchecked((short)0xFFFE) && size >= 26) format = BitConverter.ToInt16(b, body + 24); /* extensible: the real format is in the sub-format */ }
             else if (id == "data") { data = new byte[size]; Array.Copy(b, body, data, 0, size); }
             position = body + size + (size & 1);
         }
-        if (data is null || format != 1 || channels is < 1 or > 2 || bits is not (8 or 16) || rate is < 4000 or > 192000) return null;
-        if (bits == 8) for (var i = 0; i < data.Length; i++) data[i] = (byte)(data[i] - 128); // WAV 8-bit is unsigned, Godot's is signed
-        return new AudioStreamWav { Data = data, Format = bits == 16 ? AudioStreamWav.FormatEnum.Format16Bits : AudioStreamWav.FormatEnum.Format8Bits, MixRate = rate, Stereo = channels == 2 };
+        if (data is null || data.Length == 0 || format is not (1 or 3) || channels is < 1 or > 2 || bits is not (8 or 16 or 24 or 32) || (format == 3 && bits != 32) || rate is < 4000 or > 192000) return null;
+        if (bits == 8) { for (var i = 0; i < data.Length; i++) data[i] = (byte)(data[i] - 128); } // WAV 8-bit is unsigned, Godot's is signed
+        else if (bits != 16) data = ToPcm16(data, bits, format == 3); // 24 and 32 bit integer and 32 bit float sound is brought down to 16 bits, which is what the player mixes
+        return new AudioStreamWav { Data = data, Format = bits == 8 ? AudioStreamWav.FormatEnum.Format8Bits : AudioStreamWav.FormatEnum.Format16Bits, MixRate = rate, Stereo = channels == 2 };
+    }
+
+    /// <summary>24 or 32 bit integer samples, or 32 bit float samples, as 16 bit little-endian samples.</summary>
+    public static byte[] ToPcm16(byte[] data, int bits, bool isFloat)
+    {
+        var bytesPerSample = bits / 8; var count = data.Length / bytesPerSample; var result = new byte[count * 2];
+        for (var i = 0; i < count; i++)
+        {
+            var at = i * bytesPerSample; short sample;
+            if (isFloat) sample = (short)Math.Clamp(BitConverter.ToSingle(data, at) * short.MaxValue, short.MinValue, short.MaxValue);
+            else if (bits == 24) sample = BitConverter.ToInt16(data, at + 1); // the two most significant bytes
+            else sample = BitConverter.ToInt16(data, at + 2);
+            BitConverter.TryWriteBytes(result.AsSpan(i * 2), sample);
+        }
+        return result;
     }
 }

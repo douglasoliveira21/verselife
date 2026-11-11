@@ -120,7 +120,7 @@ public static class PackUnzip
 {
     public const int MaxEntries = 100; public const long MaxZipBytes = 100L * 1024 * 1024, MaxEntryBytes = 50L * 1024 * 1024, MaxTotalBytes = 300L * 1024 * 1024; public const int MaxRatio = 200;
 
-    private static string? CategoryOf(string extension) => extension switch { ".glb" or ".gltf" => "models", ".png" or ".jpg" or ".jpeg" or ".webp" => "textures", ".ogg" or ".wav" => "sounds", _ => null };
+    private static string? CategoryOf(string extension) => extension switch { ".glb" or ".gltf" => "models", ".png" or ".jpg" or ".jpeg" or ".webp" => "textures", ".ogg" or ".wav" or ".mp3" => "sounds", _ => null };
 
     private static string CleanName(string file)
     {
@@ -156,9 +156,9 @@ public static class PackUnzip
                 }
                 catch (Exception exception) when (exception is InvalidDataException or NotSupportedException or IOException) { problems.Add(new UnpackFile(path, "unreadable")); continue; }
                 total += bytes.Length;
-                var inspection = await AssetValidator.InspectAsync(entry.Name, string.Empty, bytes, ct);
+                var inspection = await AssetValidator.InspectAsync(entry.Name, string.Empty, bytes, ct, category);
                 if (!inspection.Valid) { problems.Add(new UnpackFile(path, inspection.Error ?? "invalid_file")); continue; }
-                files.Add((path, bytes, category, inspection.MimeType, inspection.Width, inspection.Height, inspection.MetadataJson));
+                files.Add((path, bytes, inspection.Category ?? category, inspection.MimeType, inspection.Width, inspection.Height, inspection.MetadataJson));
             }
         }
         catch (InvalidDataException) { return (false, "invalid_zip", null); }

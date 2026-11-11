@@ -60,7 +60,7 @@ public partial class AssetVersionsWindow : Node
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 8); content.AddChild(row);
         _publish = Action("Publicar nova versão…", UiStyle.ButtonKind.Primary, () => _files.PopupCentered(new Vector2I(800, 500))); _use = Action("Usar a versão escolhida", UiStyle.ButtonKind.Secondary, UseChosen); row.AddChild(_publish); row.AddChild(_use);
         _note = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(300, 0) }; _note.AddThemeFontSizeOverride("font_size", 14); _note.AddThemeColorOverride("font_color", UiStyle.TextMuted); content.AddChild(_note);
-        _files = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.glb,*.gltf,*.png,*.jpg,*.jpeg,*.webp,*.ogg,*.wav"], Title = "Escolher o arquivo da nova versão" }; AddChild(_files); _files.FileSelected += Publish;
+        _files = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.glb,*.gltf,*.png,*.jpg,*.jpeg,*.webp,*.ogg,*.wav,*.mp3"], Title = "Escolher o arquivo da nova versão" }; AddChild(_files); _files.FileSelected += Publish;
         AddChild(_window); UpdateButtons();
     }
 

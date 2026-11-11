@@ -29,11 +29,11 @@ public sealed class AssetStorageService(IObjectStore store, ILogger<AssetStorage
     public Task<Stream?> OpenReadAsync(string key, CancellationToken ct) => store.OpenReadAsync(key, ct);
 }
 
-public sealed record AssetInspection(bool Valid, string? Error, string MimeType, int? Width, int? Height, double? DurationSeconds, string MetadataJson = "{}");
+public sealed record AssetInspection(bool Valid, string? Error, string MimeType, int? Width, int? Height, double? DurationSeconds, string MetadataJson = "{}", string? Category = null);
 
 public static class AssetValidator
 {
-    public static async Task<AssetInspection> InspectAsync(string fileName, string contentType, byte[] bytes, CancellationToken ct)
+    public static async Task<AssetInspection> InspectAsync(string fileName, string contentType, byte[] bytes, CancellationToken ct, string? category = null)
     {
         await Task.Yield(); var extension = Path.GetExtension(fileName).ToLowerInvariant(); if (bytes.Length == 0) return new(false, "Empty files are not accepted.", contentType, null, null, null);
         if (extension is ".glb" or ".gltf")
@@ -45,22 +45,26 @@ public static class AssetValidator
             // URI fields instead of scanning every byte of a GLB (including texture bytes).
             if (GltfExternalReferenceProblem(bytes, extension == ".glb") is { } referenceProblem) return new(false, referenceProblem, contentType, null, null, null);
             var primitives = CountAscii(bytes, "primitives"); if (primitives > 10000) return new(false, "Mesh complexity exceeds the primitive limit.", contentType, null, null, null);
-            var stats = GltfLimits.Inspect(bytes, extension == ".glb", out var statsError); if (stats is null) return new(false, statsError ?? "The model could not be read.", contentType, null, null, null); if (GltfLimits.Check(stats) is { } limitError) return new(false, limitError, contentType, null, null, null);
-            return new(true, null, extension == ".glb" ? "model/gltf-binary" : "model/gltf+json", null, null, null, $"{{\"format\":\"{extension[1..]}\",\"primitiveTokens\":{primitives},\"previewAvailable\":false,\"thumbnailGenerated\":false}}");
+            var stats = GltfLimits.Inspect(bytes, extension == ".glb", out var statsError); if (stats is null) return new(false, statsError ?? "The model could not be read.", contentType, null, null, null);
+            if (GltfStructure.Check(bytes, extension == ".glb") is { } structureProblem) return new(false, structureProblem, contentType, null, null, null);
+            var animationOnly = stats.Meshes == 0 && stats.Animations > 0 && category is "models" or "animations"; /* a file with only movement in it is an animation, whichever way it was sent */
+            if (GltfLimits.Check(stats, animationClip: animationOnly || category == "animations") is { } limitError) return new(false, limitError, contentType, null, null, null);
+            return new(true, null, extension == ".glb" ? "model/gltf-binary" : "model/gltf+json", null, null, null, $"{{\"format\":\"{extension[1..]}\",\"primitiveTokens\":{primitives},\"previewAvailable\":false,\"thumbnailGenerated\":false,\"rigged\":{(stats.Rigged ? "true" : "false")},\"joints\":{stats.Joints},\"animations\":{stats.Animations},\"animationOnly\":{(animationOnly ? "true" : "false")}}}", animationOnly ? "animations" : null);
         }
         if (extension is ".png" or ".jpg" or ".jpeg" or ".webp")
         {
             if (bytes.Length > 20 * 1024 * 1024) return new(false, "Image exceeds the 20 MB limit.", contentType, null, null, null);
-            var dimensions = ImageDimensions(extension, bytes); if (dimensions is null) return new(false, "Invalid or unsupported image header.", contentType, null, null, null); if (dimensions.Value.Width > 8192 || dimensions.Value.Height > 8192) return new(false, "Image resolution exceeds 8192x8192.", contentType, dimensions.Value.Width, dimensions.Value.Height, null);
+            var dimensions = AssetFormats.Image(extension, bytes, out var imageError); if (dimensions is null) return new(false, imageError, contentType, null, null, null);
+            if (dimensions.Value.Width > AssetFormats.MaxImageSide || dimensions.Value.Height > AssetFormats.MaxImageSide) return new(false, "Image resolution exceeds 8192x8192.", contentType, dimensions.Value.Width, dimensions.Value.Height, null);
             return new(true, null, extension == ".jpg" || extension == ".jpeg" ? "image/jpeg" : extension == ".webp" ? "image/webp" : "image/png", dimensions.Value.Width, dimensions.Value.Height, null, $"{{\"format\":\"{extension[1..]}\",\"mipmapsGenerated\":false,\"thumbnailGenerated\":false}}");
         }
-        if (extension is ".ogg" or ".wav")
+        if (extension is ".ogg" or ".wav" or ".mp3")
         {
-            if (bytes.Length > 50 * 1024 * 1024) return new(false, "Audio exceeds the 50 MB limit.", contentType, null, null, null);
-            if (extension == ".ogg" && !Has(bytes, "OggS")) return new(false, "Invalid OGG header.", contentType, null, null, null); if (extension == ".wav" && (!Has(bytes, "RIFF") || !Has(bytes, "WAVE"))) return new(false, "Invalid WAV header.", contentType, null, null, null);
-            return new(true, null, extension == ".ogg" ? "audio/ogg" : "audio/wav", null, null, null, $"{{\"format\":\"{extension[1..]}\",\"previewAvailable\":true,\"loop\":false,\"spatial\":false}}");
+            if (bytes.Length > 25 * 1024 * 1024) return new(false, "Audio exceeds the 25 MB limit (the game plays sounds up to that size). Shorten it or use OGG / MP3.", contentType, null, null, null);
+            var sound = AssetFormats.Sound(extension, bytes, out var soundError); if (sound is null) return new(false, soundError, contentType, null, null, null);
+            return new(true, null, sound.Mime, null, null, null, $"{{\"format\":\"{sound.Format}\",\"previewAvailable\":true,\"loop\":false,\"spatial\":false}}");
         }
-        return new(false, "Only GLB/glTF, PNG/JPEG/WebP, OGG and WAV are accepted.", contentType, null, null, null);
+        return new(false, "Only GLB/glTF, PNG/JPEG/WebP, OGG (Vorbis), WAV and MP3 are accepted.", contentType, null, null, null);
     }
     private static bool LooksLikeJson(byte[] bytes) { var text = System.Text.Encoding.UTF8.GetString(bytes.AsSpan(0, Math.Min(bytes.Length, 4096))); return text.TrimStart('\uFEFF', ' ', '\t', '\r', '\n').StartsWith('{') && text.Contains("\"asset\"", StringComparison.Ordinal); }
     private static string? GltfExternalReferenceProblem(byte[] bytes, bool binary)
@@ -98,7 +102,7 @@ public static class AssetValidator
     }
     private static bool Has(byte[] bytes, string value) => bytes.Length >= value.Length && System.Text.Encoding.ASCII.GetString(bytes.AsSpan(0, Math.Min(bytes.Length, 64))).Contains(value, StringComparison.Ordinal);
     private static int CountAscii(byte[] bytes, string value) { var text = System.Text.Encoding.ASCII.GetString(bytes); var count = 0; for (var index = 0; (index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0; index += value.Length) count++; return count; }
-    private static (int Width, int Height)? ImageDimensions(string extension, byte[] bytes)
+    private static (int Width, int Height)? ImageDimensionsOld(string extension, byte[] bytes)
     {
         if (extension == ".png" && bytes.Length >= 24 && bytes[0] == 137 && bytes[1] == 80) return ((int)Read32(bytes, 16), (int)Read32(bytes, 20));
         if (extension is ".jpg" or ".jpeg" && bytes.Length > 4 && bytes[0] == 0xff && bytes[1] == 0xd8)

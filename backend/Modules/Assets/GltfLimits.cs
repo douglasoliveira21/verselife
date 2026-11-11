@@ -4,7 +4,11 @@ using System.Text.Json;
 namespace LifeVerse.Api.Modules.Assets;
 
 /// <summary>What a 3D model contains, read from the JSON part of a GLB or glTF file without loading any geometry.</summary>
-public sealed record GltfStats(int Meshes, int Triangles, int Materials, int Textures, int Images, int Nodes, int Animations);
+public sealed record GltfStats(int Meshes, int Triangles, int Materials, int Textures, int Images, int Nodes, int Animations, int Skins = 0, int Joints = 0)
+{
+    /// <summary>The model has a skeleton its meshes are bound to.</summary>
+    public bool Rigged => Skins > 0 && Joints > 0;
+}
 
 /// <summary>
 /// Limits for imported models, so one file cannot make every player's computer crawl. The numbers come from the file's own
@@ -59,7 +63,8 @@ public static class GltfLimits
                     }
                 }
             int Count(string name) => root.TryGetProperty(name, out var e) && e.ValueKind == JsonValueKind.Array ? e.GetArrayLength() : 0;
-            return new GltfStats(meshes, (int)Math.Min(triangles, int.MaxValue), Count("materials"), Count("textures"), Count("images"), Count("nodes"), Count("animations"));
+            var joints = 0; if (root.TryGetProperty("skins", out var skinArray) && skinArray.ValueKind == JsonValueKind.Array) foreach (var skin in skinArray.EnumerateArray()) if (skin.TryGetProperty("joints", out var j) && j.ValueKind == JsonValueKind.Array) joints += j.GetArrayLength();
+            return new GltfStats(meshes, (int)Math.Min(triangles, int.MaxValue), Count("materials"), Count("textures"), Count("images"), Count("nodes"), Count("animations"), Count("skins"), joints);
         }
         catch (JsonException) { error = "The model's JSON is not valid."; return null; }
     }
@@ -71,9 +76,10 @@ public static class GltfLimits
     }
 
     /// <summary>Null when the model is within the limits, otherwise a message the person can act on.</summary>
-    public static string? Check(GltfStats stats)
+    public static string? Check(GltfStats stats, bool animationClip = false)
     {
-        if (stats.Meshes == 0 || stats.Triangles == 0) return "The model has no triangles to show.";
+        if (animationClip) { if (stats.Animations == 0) return "The file has no animations."; }
+        else if (stats.Meshes == 0 || stats.Triangles == 0) return "The model has no triangles to show.";
         if (stats.Triangles > MaxTriangles) return $"The model has {stats.Triangles:N0} triangles; the limit is {MaxTriangles:N0}. Simplify it before importing.";
         if (stats.Materials > MaxMaterials) return $"The model has {stats.Materials} materials; the limit is {MaxMaterials}.";
         if (stats.Textures > MaxTextures || stats.Images > MaxTextures) return $"The model uses more than {MaxTextures} textures.";

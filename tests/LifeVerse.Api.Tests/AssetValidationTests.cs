@@ -27,10 +27,10 @@ public sealed class AssetValidationTests
     {
         var invalid = await AssetValidator.InspectAsync("texture.bmp", "image/bmp", [1, 2, 3], CancellationToken.None);
         Assert.False(invalid.Valid);
-        var png = new byte[24]; png[0] = 137; png[1] = 80; png[19] = 0x20; png[23] = 0x20; // big-endian 32 x 32
+        var png = TestFiles.Png(32, 32);
         var accepted = await AssetValidator.InspectAsync("texture.png", "image/png", png, CancellationToken.None);
         Assert.True(accepted.Valid);
-        Assert.Equal(32, accepted.Width);
+        Assert.Equal(32, accepted.Width); Assert.Equal(32, accepted.Height);
     }
 
     [Fact]
