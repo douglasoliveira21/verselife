@@ -22,7 +22,7 @@ public static class ServerChannel
         if (report is null) return;
         var clean = new ServerReport(
             [.. (report.Players ?? []).Where(p => p.UserId != Guid.Empty).Take(MaxPlayers).Select(p => p with { Name = (p.Name ?? "")[..Math.Min((p.Name ?? "").Length, 80)] })],
-            Finite(report.Fps), Finite(report.ProcessMs), Finite(report.MemoryMb), Math.Max(0, report.UptimeSeconds), Finite(report.TickRate));
+            Finite(report.Fps), Finite(report.ProcessMs), Finite(report.MemoryMb), Math.Max(0, report.UptimeSeconds), Finite(report.TickRate), Math.Clamp(report.PhysicsBodies, 0, 100000), Math.Clamp(report.PhysicsFixed, 0, 100000), Math.Clamp(report.PhysicsMaxBodies, 0, 100000), Finite(report.PhysicsMs));
         var json = JsonSerializer.Serialize(clean, ServerChannelJson.Options);
         var instance = await db.ServerInstances.SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct); if (instance is null) return;
         instance.ReportJson = json; instance.ReportedAt = now;

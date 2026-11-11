@@ -47,7 +47,7 @@ public static class LandSync
         if (sinceTicks > 0)
         {
             var since = new DateTimeOffset(Math.Min(sinceTicks, now.UtcTicks), TimeSpan.Zero);
-            var operations = await db.BuildOperations.AsNoTracking().Where(o => o.IslandId == island.Id && o.CreatedAt > since && o.ObjectId != null && (o.Operation == "return" || o.Operation == "land_transfer")).OrderBy(o => o.CreatedAt).Take(500).ToListAsync(ct);
+            var operations = await db.BuildOperations.AsNoTracking().Where(o => o.IslandId == island.Id && o.CreatedAt > since && o.ObjectId != null && (o.Operation == "return" || o.Operation == "land_transfer" || o.Operation == "physics_admin")).OrderBy(o => o.CreatedAt).Take(500).ToListAsync(ct);
             foreach (var operation in operations)
             {
                 if (operation.Operation == "return") { events.Add(Element(new { operation = "delete", objectId = operation.ObjectId, returned = true })); continue; }

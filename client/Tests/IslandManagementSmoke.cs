@@ -30,6 +30,9 @@ public partial class IslandManagementSmoke : Node3D
         public sealed record Obj(string Name, Guid Owner, string OwnerName, string Type, int Cost, int Scripts, string Physics, int Order) { public Guid Id { get; } = Guid.NewGuid(); public DateTimeOffset Created => new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero).AddMinutes(Order); }
         public readonly List<Obj> Objs = [];
         public int Returned;
+        public sealed record PhysObj(Guid Id, string Name, string Owner, int Cost, bool Frozen);
+        public readonly List<PhysObj> Phys = [];
+        public bool PhysReport = true; public int PhysKept;
         public string MediaUrl = "", MediaName = ""; public double MediaVolume = .6; public bool MediaAutoplay = true, MediaStale;
         public readonly List<string> MediaSent = [];
         public string EnvLook = "{}"; public bool EnvStale;
@@ -319,6 +322,29 @@ public partial class IslandManagementSmoke : Node3D
                     if (MediaStale) return Task.FromResult<(long, string)>((409, "{\"error\":\"stale\",\"message\":\"Outra pessoa alterou a ilha antes de você.\"}"));
                     MediaUrl = sent["musicUrl"]!.GetValue<string>(); MediaVolume = sent["volume"]!.GetValue<double>(); MediaAutoplay = sent["autoplay"]!.GetValue<bool>(); MediaName = sent["name"]!.GetValue<string>(); Updated = Updated.AddMinutes(1);
                     return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(Doc())));
+                }
+            }
+            var physPath = $"/api/v1/worlds/islands/{Island}/management/physics";
+            if (path.StartsWith(physPath, StringComparison.Ordinal))
+            {
+                var rest = path[physPath.Length..]; var query = ""; var qi = rest.IndexOf('?'); if (qi >= 0) { query = rest[(qi + 1)..]; rest = rest[..qi]; }
+                string Arg(string key) => Uri.UnescapeDataString(query.Split('&').FirstOrDefault(x => x.StartsWith(key + "=", StringComparison.Ordinal))?[(key.Length + 1)..] ?? "");
+                if (method == "GET" && rest == "")
+                {
+                    var q = Arg("q").ToLowerInvariant(); var state = Arg("state"); var page = int.Parse(Arg("page"));
+                    var shown = Phys.Where(o => (state == "" || (state == "frozen") == o.Frozen) && (q.Length == 0 || o.Name.ToLowerInvariant().Contains(q) || o.Owner.ToLowerInvariant().Contains(q))).OrderByDescending(o => o.Cost).ToList();
+                    return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new
+                    {
+                        fresh = PhysReport, server = PhysReport ? new { bodies = Phys.Count(o => !o.Frozen), fixedBodies = 40, maxBodies = 200, physicsMs = 1.7, tickRate = 60.0 } : null,
+                        summary = new { simulated = Phys.Count, active = Phys.Count(o => !o.Frozen), frozen = Phys.Count(o => o.Frozen) }, total = shown.Count, page, pageSize = 10,
+                        items = shown.Skip((page - 1) * 10).Take(10).Select(o => new { id = o.Id, name = o.Name, ownerUserId = Guid.NewGuid(), ownerName = o.Owner, cost = o.Cost, state = o.Frozen ? "frozen" : "active", x = 1.0, y = 2.0, z = 3.0, locked = false }),
+                    })));
+                }
+                if (method == "POST" && (rest == "/freeze" || rest == "/release"))
+                {
+                    var sent = JsonNode.Parse(body!)!.AsObject(); var all = sent["all"]!.GetValue<bool>(); var ids = sent["objectIds"]!.AsArray().Select(x => Guid.Parse(x!.GetValue<string>())).ToList(); var freeze = rest == "/freeze"; var changed = 0;
+                    for (var i = 0; i < Phys.Count; i++) if (Phys[i].Frozen != freeze && (all || ids.Contains(Phys[i].Id))) { Phys[i] = Phys[i] with { Frozen = freeze }; changed++; }
+                    return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { changed, restored = changed - PhysKept, kept = freeze ? 0 : Math.Min(PhysKept, changed) })));
                 }
             }
             return Task.FromResult<(long, string)>((404, "{}"));
@@ -679,6 +705,28 @@ public partial class IslandManagementSmoke : Node3D
             await media.RemoveForTesting(); await Frames(3);
             Require(server.MediaUrl == "" && media.LoadedUrlForTesting == "" && !media.RemoveEnabledForTesting && media.StatusForTesting.Contains("removida"), "removing the music clears it");
             window.SelectSectionForTesting("geral");
+
+            // --- Física ----------------------------------------------------------------------------------------------------
+            server.Phys.AddRange([new(Guid.NewGuid(), "Bola", "Carla", 30, false), new(Guid.NewGuid(), "Caixa", "Duda", 20, false), new(Guid.NewGuid(), "Pêndulo", "Carla", 12, false), new(Guid.NewGuid(), "Pedra", "Duda", 8, true)]);
+            window.SelectSectionForTesting("fisica"); await Frames(4);
+            var physics = window.Physics;
+            Require(window.PageVisibleForTesting("fisica") && physics.IndicatorsForTesting == "4|3 / 200|1|1,7 ms" && Math.Abs(physics.BodiesBarForTesting - 1.5) < .01 && physics.TotalForTesting == 4, $"the indicators are the server's ({physics.IndicatorsForTesting})");
+            Require(physics.RowTextsForTesting[0].Contains("Bola") && physics.RowTextsForTesting[0].Contains("Ativo") && physics.RowTextsForTesting.Any(t => t.Contains("Pedra") && t.Contains("Congelado")), "each object shows its owner, its state and its weight");
+            physics.SelectFilterForTesting(2); await physics.LoadAsync(); await Frames(2); Require(physics.TotalForTesting == 1, "the filter shows only the frozen"); physics.SelectFilterForTesting(1); await physics.LoadAsync(); await Frames(2); Require(physics.TotalForTesting == 3, "or only the active"); physics.SelectFilterForTesting(0);
+            physics.SearchForTesting = "duda"; await physics.LoadAsync(); await Frames(2); Require(physics.TotalForTesting == 2, "search finds by owner"); physics.SearchForTesting = ""; await physics.LoadAsync(); await Frames(2);
+            await physics.ToggleFirstForTesting(); await Frames(3);
+            Require(server.Phys.Single(o => o.Name == "Bola").Frozen && physics.IndicatorsForTesting.StartsWith("4|2 / 200|2") && physics.StatusForTesting.Contains("congelado"), "freezing one object updates the counters and says so");
+            await physics.ToggleFirstForTesting(); await Frames(3);
+            Require(!server.Phys.Single(o => o.Name == "Bola").Frozen && physics.StatusForTesting.Contains("liberado"), "the same object is released again");
+            await physics.FreezeAllForTesting(); await Frames(3);
+            Require(server.Phys.All(o => o.Frozen) && !physics.FreezeAllEnabledForTesting && physics.ReleaseAllEnabledForTesting, "freezing all leaves nothing to freeze");
+            server.PhysKept = 1; await physics.ReleaseAllForTesting(); await Frames(3);
+            Require(server.Phys.All(o => !o.Frozen) && physics.StatusForTesting.Contains("a mudança dele foi mantida") && physics.ReleaseAllEnabledForTesting == false, "releasing says when an owner's own change was kept"); server.PhysKept = 0;
+            for (var i = 0; i < 12; i++) server.Phys.Add(new(Guid.NewGuid(), $"Extra{i}", "Duda", 1, false)); await physics.LoadAsync(); await Frames(2);
+            Require(physics.TotalForTesting == 16 && physics.RowsForTesting == 10 && physics.PageTextForTesting == "Página 1 de 2", "the list is paged");
+            server.PhysReport = false; await physics.LoadAsync(); await Frames(2);
+            Require(physics.IndicatorsForTesting.Split('|')[1] == "—" && physics.IndicatorsForTesting.Split('|')[3] == "—", "without a report from the island server its figures are blank");
+            server.PhysReport = true; window.SelectSectionForTesting("geral");
 
             // --- other sections --------------------------------------------------------------------------------------------
             window.SelectSectionForTesting("terreno"); await Frames(2);

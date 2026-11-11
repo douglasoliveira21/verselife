@@ -11,7 +11,7 @@ public partial class ServerMain
 
     private ServerReport BuildReport() => new(
         [.. _players.Values.Where(p => p.Authenticated && p.UserId != Guid.Empty).Select(p => new PlayerReport(p.UserId, p.DisplayName, p.ConnectedAt.ToUnixTimeMilliseconds(), p.State.X, p.State.Y, p.State.Z))],
-        Engine.GetFramesPerSecond(), Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000.0, Performance.GetMonitor(Performance.Monitor.MemoryStatic) / (1024.0 * 1024.0), (long)((Time.GetTicksMsec() - _startedAtMs) / 1000), Engine.PhysicsTicksPerSecond);
+        Engine.GetFramesPerSecond(), Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000.0, Performance.GetMonitor(Performance.Monitor.MemoryStatic) / (1024.0 * 1024.0), (long)((Time.GetTicksMsec() - _startedAtMs) / 1000), Engine.PhysicsTicksPerSecond, _physics?.BodyCount ?? 0, _physics?.FixedCount ?? 0, ServerPhysics.MaxBodies, Performance.GetMonitor(Performance.Monitor.TimePhysicsProcess) * 1000.0);
 
     private async Task SendHeartbeatAsync(CancellationToken ct)
     {

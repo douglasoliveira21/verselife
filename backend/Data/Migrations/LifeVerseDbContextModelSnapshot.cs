@@ -704,6 +704,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
 
+                    b.Property<string>("FrozenPhysicsJson")
+                        .HasColumnType("text")
+                        .HasColumnName("frozen_physics_json");
+
                     b.Property<string>("GeometryJson")
                         .IsRequired()
                         .HasColumnType("jsonb")

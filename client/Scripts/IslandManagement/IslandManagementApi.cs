@@ -157,4 +157,9 @@ public sealed class IslandManagementApi(Func<string, string, string?, Task<(long
     // ---- media ----
     public Task<IslandReply> MediaGet(Guid island) => Send("GET", $"/api/v1/worlds/islands/{island}/management/media");
     public Task<IslandReply> MediaSave(Guid island, string url, double volume, bool autoplay, string name, DateTimeOffset expectedUpdatedAt) => Send("PUT", $"/api/v1/worlds/islands/{island}/management/media", new { musicUrl = url, volume, autoplay, name, expectedUpdatedAt });
+
+    // ---- physics ----
+    public Task<IslandReply> PhysicsGet(Guid island, string query, string state, int page) => Send("GET", $"/api/v1/worlds/islands/{island}/management/physics?page={page}&state={Uri.EscapeDataString(state)}&q={Uri.EscapeDataString(query)}");
+    public Task<IslandReply> PhysicsFreeze(Guid island, IEnumerable<Guid>? ids, bool all) => Send("POST", $"/api/v1/worlds/islands/{island}/management/physics/freeze", new { objectIds = ids ?? [], all });
+    public Task<IslandReply> PhysicsRelease(Guid island, IEnumerable<Guid>? ids, bool all) => Send("POST", $"/api/v1/worlds/islands/{island}/management/physics/release", new { objectIds = ids ?? [], all });
 }

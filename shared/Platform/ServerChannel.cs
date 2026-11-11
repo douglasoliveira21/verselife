@@ -6,7 +6,7 @@ namespace LifeVerse.Shared.Platform;
 public sealed record PlayerReport(Guid UserId, string Name, long ConnectedAtUnixMs, double X, double Y, double Z);
 
 /// <summary>What an island server tells the API with every heartbeat: who is connected and how the server is doing.</summary>
-public sealed record ServerReport(PlayerReport[] Players, double Fps = 0, double ProcessMs = 0, double MemoryMb = 0, long UptimeSeconds = 0, double TickRate = 0);
+public sealed record ServerReport(PlayerReport[] Players, double Fps = 0, double ProcessMs = 0, double MemoryMb = 0, long UptimeSeconds = 0, double TickRate = 0, int PhysicsBodies = 0, int PhysicsFixed = 0, int PhysicsMaxBodies = 0, double PhysicsMs = 0);
 
 /// <summary>Something the API asks an island server to do. Kinds: <see cref="ServerCommandKinds.Kick"/>, <see cref="ServerCommandKinds.Notice"/> and <see cref="ServerCommandKinds.Shutdown"/> (save and stop cleanly; the island is started again by the API).</summary>
 public sealed record ServerCommand(Guid Id, string Kind, Guid? UserId, string Text);

@@ -21,7 +21,8 @@ Abre em **Mundo → Gerenciar esta ilha…**. É a janela onde o proprietário (
 | **Reinicialização**: estado, reiniciar agora ou em 1, 5 ou 10 minutos ou em um horário, contagem regressiva, cancelar e histórico | pronto (depende do servidor da ilha novo) |
 | **Ambiente**: horário, luz, clima, neblina e cor do céu da ilha toda, com predefinições do jogo e suas, aplicar, desfazer e voltar ao padrão | pronto |
 | **Mídia**: música da ilha (endereço verificado na hora, nome, volume, tocar sozinha, testar), vídeo explicado como não disponível | pronto |
-| Terreno, Física | **ainda não**: cada uma mostra "Ainda não disponível nesta versão" e o que vai reunir. Nenhuma tem dado inventado |
+| **Física**: objetos físicos, corpos simulados pelo servidor e tempo de física; lista com estado; congelar e liberar um objeto ou todos | pronto (os números dependem do servidor da ilha novo) |
+| Terreno | **ainda não**: cada uma mostra "Ainda não disponível nesta versão" e o que vai reunir. Nenhuma tem dado inventado |
 
 ## Como a aba Geral decide as coisas
 
@@ -44,7 +45,7 @@ Abre em **Mundo → Gerenciar esta ilha…**. É a janela onde o proprietário (
 
 ## Limites conhecidos desta entrega
 
-- 2 das 13 seções não existem ainda (acima).
+- 1 das 13 seções não existe ainda (acima).
 - **Definir no Mundo** (clicar no cenário para escolher o ponto) está desligado, com dica. Falta a ferramenta de seleção no mundo.
 - **Gerenciar** administradores está desligado até existir a aba Permissões.
 - Não há botão de enquadrar a imagem.
@@ -223,3 +224,19 @@ A API não alcança os jogadores; só o servidor da ilha alcança. O canal usa o
 - Só **música por arquivo** (mp3/ogg), não rádio por transmissão contínua (stream): o jogo baixa o arquivo inteiro e repete.
 - Não há playlist, agenda nem volume por região; só uma música para a ilha toda.
 - Exige o jogo novo (cliente); o antigo não toca a música da ilha.
+
+## Aba Física
+
+- **Indicadores**: objetos físicos (os que se movem ou estão congelados, do banco), corpos ativos (o que o servidor da ilha simula agora, com o limite de 200 e os corpos fixos), congelados e tempo de física por quadro. Os dois do servidor vêm do relatório do batimento (só valem se tiverem menos de 60 s); sem relatório aparecem em branco.
+- **Lista**: só os objetos simulados (física "physical"), do mais pesado para o mais leve, com dono, estado (Ativo ou Congelado) e peso em prims (a posição está na dica). Pesquisa por objeto ou dono, filtro por estado, 10 por página.
+- **Congelar** (um objeto ou todos os ativos, com confirmação): o objeto vira estático (para de se mover e de cair) e a coluna `build_objects.frozen_physics_json` guarda como ele era. **Liberar** devolve exatamente a física anterior. Se o dono mudou a física enquanto estava congelado, a mudança dele é **mantida** e a tela avisa ("em N o dono tinha mudado a física").
+- **Chega ao servidor da ilha** pelo mesmo caminho de sincronização que devolve objetos: cada mudança grava uma operação `physics_admin` e a revisão do objeto sobe, o servidor recebe como atualização do objeto e refaz a física (conferido por teste que chama a sincronização de verdade). Leva poucos segundos.
+- Nada é apagado nem movido; o objeto continua do dono. Congelar e liberar entram no Histórico e Auditoria (categoria Física). Só o proprietário e os administradores.
+- Migração nova: `Phase74PhysicsFreeze`.
+
+### Limites
+- **Não há** ajuste de gravidade nem de limites de simulação da ilha: o servidor tem um limite fixo (200 corpos) e a tela só o mostra.
+- **"Reiniciar a simulação do objeto"** e **"Inspecionar"** não existem; a posição de cada objeto aparece só como dica.
+- Um objeto congelado que o dono **devolve ao inventário** volta estático (a devolução guarda o estado atual).
+- O estado "físico" é reconhecido pelo ajuste `mode: physical`; objetos de veículo ou física própria de script não aparecem aqui.
+- Os números do servidor exigem o servidor da ilha novo.
