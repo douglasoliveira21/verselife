@@ -21,7 +21,10 @@ public partial class PeoplePanel : Node
     private LineEdit _query = null!, _groupName = null!;
     private RowList _results = null!, _requests = null!, _friends = null!, _invites = null!, _groups = null!;
     private Label _friendsTitle = null!, _requestsTitle = null!;
-    private Button _searchAction = null!, _friendRemove = null!, _groupLeave = null!;
+    private Button _searchAction = null!, _friendRemove = null!, _friendProfile = null!, _groupLeave = null!;
+    /// <summary>"Ver perfil" on a friend.</summary>
+    public event Action<Guid>? ProfileRequested;
+    public void PressFriendProfileForTesting() => _friendProfile.EmitSignal(BaseButton.SignalName.Pressed);
     private readonly List<Control> _pages = [];
     private readonly List<(Guid Id, string Relation)> _resultRows = [];
     private readonly List<(Guid Id, string Direction)> _requestRows = [];
@@ -107,7 +110,9 @@ public partial class PeoplePanel : Node
         _friends.SelectionChanged += _ => UpdateButtons();
         _friendRemove = new Button { Text = "Remover amigo", Disabled = true, CustomMinimumSize = new Vector2(0, 40) };
         UiStyle.StyleButton(_friendRemove, UiStyle.ButtonKind.Secondary); _friendRemove.Pressed += RemoveFriend;
-        friends.AddChild(_friendRemove);
+        _friendProfile = new Button { Text = "Ver perfil", Disabled = true, CustomMinimumSize = new Vector2(0, 40) }; UiStyle.StyleButton(_friendProfile, UiStyle.ButtonKind.Secondary);
+        _friendProfile.Pressed += () => { if (Selected(_friends) is { } i && i < _friendRows.Count) ProfileRequested?.Invoke(_friendRows[i]); };
+        friends.AddChild(_friendProfile); friends.AddChild(_friendRemove);
         var requests = Section(box, "Solicitações de amizade", out _requestsTitle);
         _requests = new RowList { Gap = 8 }; requests.AddChild(_requests);
         return box;
@@ -323,6 +328,7 @@ public partial class PeoplePanel : Node
         _searchAction.Disabled = result is null || result.Value >= _resultRows.Count || _resultRows[result.Value].Relation is not ("none" or "pending_in");
         _searchAction.Text = result is not null && result.Value < _resultRows.Count && _resultRows[result.Value].Relation == "pending_in" ? "Aceitar pedido" : "Adicionar amigo";
         _friendRemove.Disabled = Selected(_friends) is null;
+        _friendProfile.Disabled = Selected(_friends) is null;
         _groupLeave.Disabled = Selected(_groups) is null;
     }
 

@@ -22,7 +22,11 @@ public partial class SearchWindow : Node
     private OptionButton _kind = null!, _sort = null!, _category = null!;
     private ItemList _list = null!;
     private Label _note = null!, _pageLabel = null!, _pTitle = null!, _pMeta = null!, _pDescription = null!, _pWhere = null!;
-    private Button _prev = null!, _next = null!, _go = null!, _favorite = null!, _report = null!;
+    private Button _prev = null!, _next = null!, _go = null!, _favorite = null!, _report = null!, _profile = null!;
+    /// <summary>"Ver perfil" on a person: opens the profile window for that user.</summary>
+    public Action<Guid>? OpenProfile { get; set; }
+    public bool ProfileVisibleForTesting => _profile.Visible;
+    public void PressProfileForTesting() => _profile.EmitSignal(BaseButton.SignalName.Pressed);
     private TextureRect _thumb = null!;
     private Godot.Timer _typing = null!;
 
@@ -114,6 +118,7 @@ public partial class SearchWindow : Node
         _pTitle = Text("Escolha um resultado", size: 19); _pTitle.AddThemeFontOverride("font", UiStyle.Bold); side.AddChild(_pTitle);
         _pMeta = Text("", true); side.AddChild(_pMeta); _pDescription = Text(); side.AddChild(_pDescription); _pWhere = Text("", true); side.AddChild(_pWhere);
         _go = Action("Ir até lá", UiStyle.ButtonKind.Primary, GoToResult); side.AddChild(_go);
+        _profile = Action("Ver perfil", UiStyle.ButtonKind.Secondary, () => { if (Selected is { Kind: SearchKinds.Person } person) OpenProfile?.Invoke(person.Id); }); side.AddChild(_profile);
         _favorite = Action("Favoritar", UiStyle.ButtonKind.Secondary, ToggleFavorite); side.AddChild(_favorite);
         _report = Action("Denunciar resultado", UiStyle.ButtonKind.Secondary, () => { _reportRow.Visible = !_reportRow.Visible; if (_reportRow.Visible) _reason.GrabFocus(); }); side.AddChild(_report);
         _reportRow = new VBoxContainer { Visible = false }; side.AddChild(_reportRow);
@@ -315,6 +320,7 @@ public partial class SearchWindow : Node
     {
         _reportRow.Visible = false; _reason.Text = string.Empty;
         _go.Visible = _favorite.Visible = _report.Visible = hit is not null;
+        _profile.Visible = hit is { Kind: SearchKinds.Person };
         if (hit is null) { _pTitle.Text = "Escolha um resultado"; _pMeta.Text = _pDescription.Text = _pWhere.Text = string.Empty; _thumb.Texture = null; _opened = Guid.Empty; return; }
         _pTitle.Text = hit.Title; _pMeta.Text = hit.KindLabel + (hit.Subtitle.Length > 0 ? " · " + hit.Subtitle : "") + (hit.Category.Length > 0 && !hit.Subtitle.Contains(hit.Category) ? " · " + hit.Category : "");
         _pDescription.Text = hit.Description.Length > 0 ? hit.Description : "Sem descrição."; _pWhere.Text = WhereText(hit); _thumb.Texture = IconOrThumb(hit);

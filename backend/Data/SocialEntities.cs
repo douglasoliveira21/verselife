@@ -68,6 +68,8 @@ public sealed class GroupMember
     public DateTimeOffset? MutedUntil { get; set; }
     /// <summary>The member asked not to be told about announcements, events and chat of this group.</summary>
     public bool NotificationsMuted { get; set; }
+    /// <summary>The member lets this group be listed on their profile (only matters for groups others may see).</summary>
+    public bool ShowInProfile { get; set; } = true;
     public DateTimeOffset JoinedAt { get; set; }
 }
 
@@ -104,4 +106,20 @@ public sealed class RadioStation
     public float Volume { get; set; } = 1f;
     public float Range { get; set; } = 30f;
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+/// <summary>A marriage inside the game: asked by one person, accepted by the other, ended by either. Only one marriage at a time per person.</summary>
+public sealed class Marriage
+{
+    public Guid Id { get; set; }
+    public Guid ProposerUserId { get; set; }
+    public Guid TargetUserId { get; set; }
+    /// <summary>proposed, married, declined, cancelled, expired or ended.</summary>
+    public required string Status { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RespondedAt { get; set; }
+    public DateTimeOffset? MarriedAt { get; set; }
+    public DateTimeOffset? EndedAt { get; set; }
+    public Guid? EndedByUserId { get; set; }
 }

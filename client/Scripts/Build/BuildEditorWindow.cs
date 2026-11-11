@@ -83,7 +83,7 @@ public partial class BuildEditorWindow : Node
     public override void _Ready()
     {
         _window = new FloatingWindow("Construir", icon: "hammer") { Name = "BuildWindow", Visible = false, Theme = ViewerTheme.Create() };
-        _window.Place(0, 0, 24, 90, 524, 780); AddChild(_window);
+        _window.Place(0, 0, 24, 90, 484, 740); AddChild(_window);
         _window.CloseRequested += () => CloseRequested?.Invoke();
         var content = _window.Content; content.AddThemeConstantOverride("separation", 10);
 
@@ -134,7 +134,7 @@ public partial class BuildEditorWindow : Node
         // the tabs of the selected object: GERAL now; the others arrive with their phases and are added only when they work
         _tabArea = new VBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, Visible = false }; _tabArea.AddThemeConstantOverride("separation", 8); content.AddChild(_tabArea);
         _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 18 }; _tabs.AddTab("GERAL", "list"); _tabs.AddTab("OBJETO", "cube"); _tabs.AddTab("RECURSOS", "bulb"); _tabs.AddTab("TEXTURA", "image"); _tabs.AddTab("CONTEÚDO", "folder"); _tabArea.AddChild(_tabs);
-        ScrollContainer Page() => new() { SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 470) };
+        ScrollContainer Page() => new() { SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, CustomMinimumSize = new Vector2(0, 360) };
         var generalPage = Page(); General = new BuildGeneralTab { Name = "General" }; generalPage.AddChild(General); _tabArea.AddChild(generalPage);
         var objectPage = Page(); Object = new BuildObjectTab { Name = "Object" }; objectPage.AddChild(Object); objectPage.Visible = false; _tabArea.AddChild(objectPage);
         var resourcesPage = Page(); Resources = new BuildResourcesTab { Name = "Resources" }; resourcesPage.AddChild(Resources); resourcesPage.Visible = false; _tabArea.AddChild(resourcesPage);
@@ -145,6 +145,11 @@ public partial class BuildEditorWindow : Node
 
         _status = new Label { Text = "Escolha uma forma em Criar ou clique em um objeto para selecioná-lo.", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 44) };
         _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); _status.AddThemeFontSizeOverride("font_size", 16); content.AddChild(_status);
+        // everything scrolls inside the window, so the window keeps a sensible size instead of growing to fit its longest page
+        var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 260) };
+        var inner = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; inner.AddThemeConstantOverride("separation", 10);
+        foreach (var child in content.GetChildren().ToList()) { content.RemoveChild(child); inner.AddChild(child); }
+        scroll.AddChild(inner); content.AddChild(scroll);
         SetSelection(0, 0, string.Empty);
     }
 

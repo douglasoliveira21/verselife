@@ -136,6 +136,7 @@ app.MapGet("/api/v1/version", () => Results.Ok(new
 app.MapOpenApi("/openapi/{documentName}.json");
 app.MapIdentityEndpoints();
 app.MapUserEndpoints();
+app.MapProfileEndpoints();
 app.MapPlatformEndpoints();
 app.MapWorldEndpoints();
 app.MapWelcomeEndpoints();

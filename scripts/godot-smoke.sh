@@ -39,6 +39,7 @@ run client res://Tests/BuildTextureSmoke.tscn build_texture_smoke
 run client res://Tests/BuildContentSmoke.tscn build_content_smoke
 run client res://Tests/BuildCollabSmoke.tscn build_collab_smoke
 run client res://Tests/BuildPackageSmoke.tscn build_package_smoke
+run client res://Tests/ProfileSmoke.tscn profile_smoke
 run client res://Tests/BuildClickActionSmoke.tscn build_click_action_smoke
 run client res://Tests/BuildLoadSmoke.tscn build_load_smoke
 run client res://Tests/AvatarGroundingSmoke.tscn avatar_grounding

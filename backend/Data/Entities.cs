@@ -17,6 +17,14 @@ public sealed class User
     public string VoiceSettingsJson { get; set; } = "{\"pushToTalk\":true,\"voiceActivation\":false,\"sensitivity\":0.5,\"outputVolume\":1}";
     public string Bio { get; set; } = string.Empty;
     public string? ProfilePhotoUrl { get; set; }
+    /// <summary>The picture shown on the profile: an image the person owns (shown to others through the profile, never by the asset itself).</summary>
+    public Guid? ProfilePhotoAssetId { get; set; }
+    /// <summary>"Vida real": what the person wants to say about themselves outside the game (optional).</summary>
+    public string FirstLifeBio { get; set; } = string.Empty;
+    public string Interests { get; set; } = string.Empty;
+    /// <summary>standard or donor. Only the administration changes it; it never comes from the client.</summary>
+    public string AccountType { get; set; } = "standard";
+    public DateTimeOffset? DonorSince { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
     public Avatar? Avatar { get; set; }
     public ICollection<Session> Sessions { get; set; } = [];

@@ -92,7 +92,7 @@ public partial class ViewerUI : CanvasLayer
         BuildToasts();
         var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text); notifications.Raw += json => { _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OnLiveEvent(json); };
         AnnounceUpdate();
-        _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += text => Toast(text); _people.ChatRequested += (_, name) => Toast($"Mensagem privada para {name}: abra a aba Conversas.");
+        _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += text => Toast(text); _people.ProfileRequested += id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id); _people.ChatRequested += (_, name) => Toast($"Mensagem privada para {name}: abra a aba Conversas.");
         BuildTopBar();
         BuildBottomBar();
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
@@ -134,14 +134,15 @@ public partial class ViewerUI : CanvasLayer
             var land = _world.GetNodeOrNull<LandManager>("LandManager");
             _world.AddChild(new SearchWindow
             {
-                Name = "SearchWindow", JoinIsland = JoinIslandById, CurrentIsland = () => _network.CurrentIslandId,
+                Name = "SearchWindow", OpenProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), JoinIsland = JoinIslandById, CurrentIsland = () => _network.CurrentIslandId,
                 TeleportToPoint = (x, z) => land?.TeleportToPoint(x, z),
                 TeleportToParcel = id => { if (land?.Parcels.FirstOrDefault(p => p.Id == id) is { } parcel) { land.TeleportTo(parcel); return true; } return false; },
             });
         }
         if (_world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow") is null) _world.AddChild(new AppearanceWindow { Name = "AppearanceWindow", Player = _player });
         if (_world.GetNodeOrNull<GroupsWindow>("GroupsWindow") is null) _world.AddChild(new GroupsWindow { Name = "GroupsWindow" });
-        foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditorController", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "AppearanceWindow", "SearchWindow", "ItemRightsWindow", "ItemOffersWindow" })
+        if (_world.GetNodeOrNull<ProfileWindow>("ProfileWindow") is null) _world.AddChild(new ProfileWindow { Name = "ProfileWindow" });
+        foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditorController", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "ProfileWindow", "AppearanceWindow", "SearchWindow", "ItemRightsWindow", "ItemOffersWindow" })
             foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; if (child is not FloatingWindow) FloatingWindow.MakeDraggable(child); }
     }
 

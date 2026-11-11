@@ -21,6 +21,8 @@ public sealed class ContextServices
     public Action TogglePeople { get; init; } = () => { };
     public Action OpenSettings { get; init; } = () => { };
     public Action<string> SearchPerson { get; init; } = _ => { };
+    public Action<string> OpenProfile { get; init; } = _ => { };
+    public Action OpenMyProfile { get; init; } = () => { };
     public Action<string> AddFriend { get; init; } = _ => { };
     public Action<string> Message { get; init; } = _ => { };
     public Action<string> Block { get; init; } = _ => { };
@@ -72,6 +74,7 @@ public static class InteractionRegistry
 
     private static List<RadialItem> ForSelf(ContextServices s) =>
     [
+        new() { Label = "Meu perfil", Icon = "user", Run = s.OpenMyProfile, Tooltip = "Foto, biografia, aniversário, grupos e casamento" },
         new() { Label = "Inventário", Icon = "bag", Run = s.ToggleInventory, Tooltip = "Abre o seu inventário" },
         new() { Label = "Animações", Icon = "hand", Children = Gestures(s), Tooltip = "Acenar, dançar e outros gestos" },
         new() { Label = "Pessoas e grupos", Icon = "people", Run = s.TogglePeople, Tooltip = "Amigos, grupos e busca de pessoas" },
@@ -83,6 +86,7 @@ public static class InteractionRegistry
     private static List<RadialItem> ForAvatar(AvatarTarget avatar, ContextServices s) =>
     [
         new() { Label = "Adicionar amigo", Icon = "user-add", Run = () => s.AddFriend(avatar.Name), Tooltip = "Envia um pedido de amizade" },
+        new() { Label = "Perfil", Icon = "user", Run = () => s.OpenProfile(avatar.Name), Tooltip = "Vê o perfil desta pessoa" },
         new() { Label = "Mensagem", Icon = "chat", Run = () => s.Message(avatar.Name), Tooltip = "Escreve uma mensagem privada" },
         new() { Label = "Interagir", Icon = "hand", Children = Gestures(s), Tooltip = "Gestos para quem está por perto" },
         new() { Label = "Ir até lá", Icon = "run", Run = () => s.WalkTo(avatar.Position), Tooltip = "Caminha até esta pessoa" },
