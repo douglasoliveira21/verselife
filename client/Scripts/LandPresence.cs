@@ -7,6 +7,9 @@ namespace LifeVerse.Client.Scripts;
 /// What the parcel under the avatar does to the surroundings: its own sky and weather (faded in and out over a few seconds) and its music.
 /// The music is a file the owner points to; this computer downloads it, so the address is checked again here (HTTPS, no machine inside a
 /// network, mp3 or ogg, a size limit, no redirects) and the person can turn all parcel music off. There is no video.
+/// <summary>The music of the whole island: the address, the volume (0 to 1), whether it starts by itself and its name.</summary>
+public sealed record IslandMusic(string Url, float Volume, bool Autoplay, string Name);
+
 public partial class LandPresence : Node
 {
     public const int MaxMusicBytes = 12 * 1024 * 1024;
@@ -25,6 +28,14 @@ public partial class LandPresence : Node
 
     /// Tests: answers a download without a network (null: failed).
     public Func<string, byte[]?>? FetcherForTesting { get; set; }
+    /// <summary>The look of the whole island, where no parcel sets its own (null: none set, the game keeps its own sky).</summary>
+    public Func<ParcelEnvironment?>? BaseLook { get; set; }
+    /// <summary>The music of the whole island, where no parcel plays its own (null: none).</summary>
+    public Func<IslandMusic?>? BaseMedia { get; set; }
+
+    /// <summary>Plays an address for the person who is testing it in the management window; <see cref="EndPreview"/> goes back to what the place plays.</summary>
+    public void Preview(string url, float volume) => PlayMusic(url, volume);
+    public void EndPreview() { StopMusic(); Evaluate(true); }
     /// What the player was told about the music, for the info window.
     public string Status { get; private set; } = string.Empty;
     public event Action? Changed;
@@ -73,8 +84,12 @@ public partial class LandPresence : Node
         Evaluate(force: false);
     }
 
+    /// <summary>Tests: where the avatar stands, when there is no player in the scene.</summary>
+    public Func<Vector3?>? PositionForTesting { get; set; }
+
     private Vector3? Position()
     {
+        if (PositionForTesting is not null) return PositionForTesting();
         _player ??= _land.GetParent()?.GetNodeOrNull<PlayerController>("Player");
         return _player?.GlobalPosition;
     }
@@ -93,12 +108,17 @@ public partial class LandPresence : Node
         if (id == _current && !force) return;
         var sameParcel = id == _current; _current = id;
         _environment ??= _land.GetParent()?.GetNodeOrNull<IslandEnvironmentController>("EnvironmentController");
-        _environment?.SetParcelLook(parcel is { EnvironmentAllowed: true } p ? p.Environment : null);
+        // What a person sees: the island's look (set in the management window) with the parcel's own settings on top; open ground gets the island's look alone.
+        var islandLook = BaseLook?.Invoke();
+        var own = parcel is { EnvironmentAllowed: true } p && !p.Environment.IsEmpty ? p.Environment : null;
+        _environment?.SetParcelLook(own is not null ? own.Over(islandLook ?? new ParcelEnvironment()) : islandLook);
 
-        if (parcel is null || string.IsNullOrEmpty(parcel.MusicUrl) || !_enabled) { if (!sameParcel || parcel is null || string.IsNullOrEmpty(parcel.MusicUrl)) StopMusic(); return; }
-        if (!parcel.MusicAutoplay && !sameParcel) { StopMusic(); Status = "A música deste terreno não toca sozinha."; Changed?.Invoke(); return; }
-        if (sameParcel && _audio.Playing && _loadedUrl == parcel.MusicUrl) { _audio.VolumeDb = Volume(parcel.MusicVolume); return; }
-        PlayMusic(parcel.MusicUrl, parcel.MusicVolume);
+        // The music a person hears: the parcel's own, otherwise the island's (open ground, or a parcel that plays nothing).
+        var (musicUrl, musicVolume, musicAutoplay, whose) = parcel is { MusicUrl.Length: > 0 } own2 ? (own2.MusicUrl, own2.MusicVolume, own2.MusicAutoplay, "deste terreno") : BaseMedia?.Invoke() is { Url.Length: > 0 } island ? (island.Url, island.Volume, island.Autoplay, "da ilha") : (string.Empty, 0f, true, "");
+        if (musicUrl.Length == 0 || !_enabled) { if (!sameParcel || musicUrl.Length == 0) StopMusic(); return; }
+        if (!musicAutoplay && !sameParcel) { StopMusic(); Status = $"A música {whose} não toca sozinha."; Changed?.Invoke(); return; }
+        if (_audio.Playing && _loadedUrl == musicUrl) { _audio.VolumeDb = Volume(musicVolume); return; }
+        PlayMusic(musicUrl, musicVolume);
     }
 
     private static float Volume(float linear) => linear <= .001f ? -80f : Mathf.LinearToDb(linear);
@@ -106,7 +126,9 @@ public partial class LandPresence : Node
     /// Plays the music of the current parcel on request (also when it does not start by itself).
     public void PlayCurrent()
     {
-        if (_land.Parcels.FirstOrDefault(p => p.Id == _current) is { MusicUrl.Length: > 0 } parcel && _enabled) PlayMusic(parcel.MusicUrl, parcel.MusicVolume);
+        if (!_enabled) return;
+        if (_land.Parcels.FirstOrDefault(p => p.Id == _current) is { MusicUrl.Length: > 0 } parcel) PlayMusic(parcel.MusicUrl, parcel.MusicVolume);
+        else if (BaseMedia?.Invoke() is { Url.Length: > 0 } island) PlayMusic(island.Url, island.Volume);
     }
 
     public void StopMusic()

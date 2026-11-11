@@ -1795,9 +1795,30 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasDefaultValue("pt-BR")
                         .HasColumnName("language");
 
+                    b.Property<string>("LookJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("{}")
+                        .HasColumnName("look_json");
+
+                    b.Property<string>("LookPresetsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("look_presets_json");
+
                     b.Property<int>("MaxPlayers")
                         .HasColumnType("integer")
                         .HasColumnName("max_players");
+
+                    b.Property<string>("MediaJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("{}")
+                        .HasColumnName("media_json");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -2072,6 +2093,48 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("island_favorites", "discovery");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandMetric", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at");
+
+                    b.Property<double>("Fps")
+                        .HasColumnType("double precision")
+                        .HasColumnName("fps");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<double>("MemoryMb")
+                        .HasColumnType("double precision")
+                        .HasColumnName("memory_mb");
+
+                    b.Property<int>("Players")
+                        .HasColumnType("integer")
+                        .HasColumnName("players");
+
+                    b.Property<double>("ProcessMs")
+                        .HasColumnType("double precision")
+                        .HasColumnName("process_ms");
+
+                    b.Property<double>("TickRate")
+                        .HasColumnType("double precision")
+                        .HasColumnName("tick_rate");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId", "At");
+
+                    b.ToTable("island_metrics", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.IslandParcel", b =>
@@ -2407,6 +2470,69 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("IsActive");
 
                     b.ToTable("rental_plans", "economy");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandRestart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("RequestedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("requested_by_user_id");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("result");
+
+                    b.Property<DateTimeOffset>("ScheduledFor")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("scheduled_for");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("WarnedJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("warned_json");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId", "CreatedAt");
+
+                    b.HasIndex("IslandId", "Status");
+
+                    b.ToTable("island_restarts", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.IslandServerCommand", b =>
@@ -5302,6 +5428,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandMetric", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.IslandParcel", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.Island", null)
@@ -5349,6 +5484,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandRestart", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

@@ -22,13 +22,27 @@ public static class ServerChannel
         if (report is null) return;
         var clean = new ServerReport(
             [.. (report.Players ?? []).Where(p => p.UserId != Guid.Empty).Take(MaxPlayers).Select(p => p with { Name = (p.Name ?? "")[..Math.Min((p.Name ?? "").Length, 80)] })],
-            Finite(report.Fps), Finite(report.ProcessMs), Finite(report.MemoryMb), Math.Max(0, report.UptimeSeconds));
+            Finite(report.Fps), Finite(report.ProcessMs), Finite(report.MemoryMb), Math.Max(0, report.UptimeSeconds), Finite(report.TickRate));
         var json = JsonSerializer.Serialize(clean, ServerChannelJson.Options);
         var instance = await db.ServerInstances.SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct); if (instance is null) return;
-        instance.ReportJson = json; instance.ReportedAt = now; await db.SaveChangesAsync(ct);
+        instance.ReportJson = json; instance.ReportedAt = now;
+        await RecordMetricAsync(db, instance.IslandId, clean, now, ct);
+        await db.SaveChangesAsync(ct);
     }
 
     private static double Finite(double value) => double.IsFinite(value) ? Math.Clamp(value, 0, 1e9) : 0;
+
+    public static readonly TimeSpan MetricEvery = TimeSpan.FromSeconds(55), MetricKeep = TimeSpan.FromHours(24);
+
+    /// <summary>Adds a sample to the history (at most one a minute) and drops the ones older than a day.</summary>
+    private static async Task RecordMetricAsync(LifeVerseDbContext db, Guid islandId, ServerReport report, DateTimeOffset now, CancellationToken ct)
+    {
+        var last = await db.IslandMetrics.AsNoTracking().Where(m => m.IslandId == islandId).OrderByDescending(m => m.At).Select(m => (DateTimeOffset?)m.At).FirstOrDefaultAsync(ct);
+        if (last is not null && now - last.Value < MetricEvery) return;
+        db.IslandMetrics.Add(new IslandMetric { Id = Guid.NewGuid(), IslandId = islandId, At = now, Fps = report.Fps, ProcessMs = report.ProcessMs, MemoryMb = report.MemoryMb, TickRate = report.TickRate, Players = report.Players.Length });
+        var cutoff = now - MetricKeep;
+        db.IslandMetrics.RemoveRange(await db.IslandMetrics.Where(m => m.IslandId == islandId && m.At < cutoff).Take(500).ToListAsync(ct));
+    }
 
     /// <summary>The commands waiting for this island, marked as handed over so the next heartbeat does not repeat them.</summary>
     public static async Task<List<ServerCommand>> TakeCommandsAsync(LifeVerseDbContext db, Guid islandId, DateTimeOffset now, CancellationToken ct)

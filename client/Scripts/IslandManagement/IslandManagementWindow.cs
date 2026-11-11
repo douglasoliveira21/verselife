@@ -48,6 +48,10 @@ public partial class IslandManagementWindow : Node
     private IslandObjectsPage _objects = null!;
     private IslandAuditPage _audit = null!;
     private IslandAdminPage _admin = null!;
+    private IslandPerformancePage _performance = null!;
+    private IslandRestartPage _restart = null!;
+    private IslandEnvironmentPage _environment = null!;
+    private IslandMediaPage _media = null!;
     private ConfirmationDialog _confirm = null!;
     private AcceptDialog _help = null!;
     private Action? _confirmed;
@@ -76,6 +80,10 @@ public partial class IslandManagementWindow : Node
     public IslandObjectsPage Objects => _objects;
     public IslandAuditPage Audit => _audit;
     public IslandAdminPage Administration => _admin;
+    public IslandPerformancePage Performance => _performance;
+    public IslandRestartPage Restart => _restart;
+    public IslandEnvironmentPage Environment => _environment;
+    public IslandMediaPage Media => _media;
     /// <summary>Asked to open the profile of a person.</summary>
     public Action<Guid>? ViewProfile { get; set; }
     public bool Loading => _loadingNow;
@@ -98,7 +106,7 @@ public partial class IslandManagementWindow : Node
     public Vector2 PanelMinForTesting => _panel.GetCombinedMinimumSize();
     public bool PageVisibleForTesting(string id) => _pages.TryGetValue(id, out var page) && page.Visible;
     public string PagePlaceholderTextForTesting(string id) => _pages.TryGetValue(id, out var page) ? string.Join("|", page.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)) : "";
-    public void UseTransportForTesting(Func<string, string, string?, Task<(long, string)>> transport) { _transport = transport; _api = new IslandManagementApi(transport); _access?.Bind(_api); _bans?.Bind(_api); _perms?.Bind(_api); _objects?.Bind(_api); _audit?.Bind(_api); _admin?.Bind(_api); }
+    public void UseTransportForTesting(Func<string, string, string?, Task<(long, string)>> transport) { _transport = transport; _api = new IslandManagementApi(transport); _access?.Bind(_api); _bans?.Bind(_api); _perms?.Bind(_api); _objects?.Bind(_api); _audit?.Bind(_api); _admin?.Bind(_api); _performance?.Bind(_api); _restart?.Bind(_api); _environment?.Bind(_api); _media?.Bind(_api); }
     public void PressSaveForTesting() => _save.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressRestoreForTesting() => _restore.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressCloseForTesting() => RequestClose();
@@ -227,7 +235,16 @@ public partial class IslandManagementWindow : Node
         _pageHost.AddChild(_audit); _pages["auditoria"] = _audit;
         _admin = new IslandAdminPage { Name = "Admin", Visible = false }; _admin.SetAnchorsPreset(Control.LayoutPreset.FullRect); _admin.Bind(_api!); _admin.Notify += text => Notify(text); _admin.ViewProfile += id => ViewProfile?.Invoke(id); _admin.Ask = (text, ok, action) => Ask(text, ok, action); _admin.SetClosed = SetClosedAsync;
         _pageHost.AddChild(_admin); _pages["administracao"] = _admin;
-        foreach (var section in Sections.Skip(1).Where(s => s.Id is not ("acesso" or "banimentos" or "permissoes" or "objetos" or "auditoria" or "administracao"))) { var page = Placeholder(section); page.Visible = false; _pageHost.AddChild(page); _pages[section.Id] = page; }
+        _performance = new IslandPerformancePage { Name = "Performance", Visible = false }; _performance.SetAnchorsPreset(Control.LayoutPreset.FullRect); _performance.Bind(_api!);
+        _pageHost.AddChild(_performance); _pages["desempenho"] = _performance;
+        _restart = new IslandRestartPage { Name = "Restart", Visible = false }; _restart.SetAnchorsPreset(Control.LayoutPreset.FullRect); _restart.Bind(_api!); _restart.Notify += text => Notify(text); _restart.Ask = (text, ok, action) => Ask(text, ok, action);
+        _pageHost.AddChild(_restart); _pages["reinicializacao"] = _restart;
+        _environment = new IslandEnvironmentPage { Name = "Environment", Visible = false }; _environment.SetAnchorsPreset(Control.LayoutPreset.FullRect); _environment.Bind(_api!); _environment.Notify += text => Notify(text); _environment.Ask = (text, ok, action) => Ask(text, ok, action);
+        _pageHost.AddChild(_environment); _pages["ambiente"] = _environment;
+        _media = new IslandMediaPage { Name = "Media", Visible = false }; _media.SetAnchorsPreset(Control.LayoutPreset.FullRect); _media.Bind(_api!); _media.Notify += text => Notify(text); _media.Ask = (text, ok, action) => Ask(text, ok, action);
+        _media.PreviewStart = (url, volume) => Presence()?.Preview(url, volume); _media.PreviewStop = () => Presence()?.EndPreview();
+        _pageHost.AddChild(_media); _pages["midia"] = _media;
+        foreach (var section in Sections.Skip(1).Where(s => s.Id is not ("acesso" or "banimentos" or "permissoes" or "objetos" or "auditoria" or "administracao" or "desempenho" or "reinicializacao" or "ambiente" or "midia"))) { var page = Placeholder(section); page.Visible = false; _pageHost.AddChild(page); _pages[section.Id] = page; }
 
         _loading = new PanelContainer { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop }; _loading.SetAnchorsPreset(Control.LayoutPreset.FullRect); ((PanelContainer)_loading).AddThemeStyleboxOverride("panel", IslandUi.Box(new Color(IslandUi.MainPanel, .72f), null, 10, 0));
         _loadingText = IslandUi.Text("Carregando dados da ilha…", 17, IslandUi.TextSecondary, true); _loadingText.HorizontalAlignment = HorizontalAlignment.Center; _loadingText.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; _loading.AddChild(_loadingText); _pageHost.AddChild(_loading);
@@ -288,7 +305,7 @@ public partial class IslandManagementWindow : Node
 
     public void RequestClose()
     {
-        if (!Dirty) { _root.Visible = false; return; }
+        if (!Dirty) { _media.EndTest(); _root.Visible = false; return; }
         Ask("Há alterações que ainda não foram salvas. Fechar a janela descarta essas alterações.", "Descartar e fechar", () => { _general.Revert(); _access.Revert(); _root.Visible = false; });
     }
 
@@ -339,6 +356,7 @@ public partial class IslandManagementWindow : Node
     private void Select(string id)
     {
         if (!_pages.ContainsKey(id)) return;
+        if (_current == "midia" && id != "midia") _media.EndTest();
         _current = id;
         foreach (var (key, page) in _pages) page.Visible = key == id;
         if (id == "acesso" && _info is not null) _ = _access.LoadAsync();
@@ -347,6 +365,10 @@ public partial class IslandManagementWindow : Node
         if (id == "objetos" && _info is not null) _ = _objects.ReloadAllAsync();
         if (id == "auditoria" && _info is not null) _ = _audit.LoadAsync();
         if (id == "administracao" && _info is not null) _ = _admin.LoadAsync();
+        if (id == "desempenho" && _info is not null) _ = _performance.LoadAsync();
+        if (id == "reinicializacao" && _info is not null) _ = _restart.LoadAsync();
+        if (id == "ambiente" && _info is not null) _ = _environment.LoadAsync();
+        if (id == "midia" && _info is not null) _ = _media.LoadAsync();
         foreach (var section in Sections) PaintItem(section);
         RefreshFooter();
     }
@@ -362,6 +384,8 @@ public partial class IslandManagementWindow : Node
     }
 
     // ---- data -------------------------------------------------------------------------------------------------------------
+
+    private LandPresence? Presence() => GetParent()?.GetNodeOrNull<LandManager>("LandManager")?.Presence;
 
     private void RequestTexture(Guid asset, Action<Texture2D?> done)
     {
@@ -384,7 +408,7 @@ public partial class IslandManagementWindow : Node
     {
         _info = info; _island = info.Id; _lastSyncAt = Time.GetTicksMsec() / 1000.0; _failure.Visible = false;
         var keepMode = preserveAccessDraft && _access.IsDirty ? _access.DraftMode : null;
-        _bans.SetIsland(info.Id); _perms.SetIsland(info.Id); _objects.SetIsland(info.Id); _audit.SetIsland(info.Id); _admin.SetIsland(info.Id); _admin.SetClosedState(info.AccessMode == "closed"); _general.Fill(info); _access.Fill(info); if (keepMode is not null) _access.SetDraft(keepMode);
+        _bans.SetIsland(info.Id); _perms.SetIsland(info.Id); _objects.SetIsland(info.Id); _audit.SetIsland(info.Id); _admin.SetIsland(info.Id); _performance.SetIsland(info.Id); _restart.SetIsland(info.Id); _environment.SetIsland(info.Id); _media.SetIsland(info.Id); _admin.SetClosedState(info.AccessMode == "closed"); _general.Fill(info); _access.Fill(info); if (keepMode is not null) _access.SetDraft(keepMode);
         _name.Text = Fit(info.Name, 23, 380); _name.TooltipText = info.Name; _name.MouseFilter = Control.MouseFilterEnum.Pass; _id.Text = Fit($"ID da Ilha: {info.Id}", 13, 340, UiStyle.Medium); _id.TooltipText = info.Id.ToString(); _visitors.Text = $"{info.Visitors} / {info.MaxPlayers}";
         var color = IslandUi.StateColor(info.State); _stateText.Text = IslandUi.StateText(info.State); _stateText.AddThemeColorOverride("font_color", color);
         ((PanelContainer)_statePill).AddThemeStyleboxOverride("panel", IslandUi.Box(new Color(color, .15f), color, 7, 1, 11, 3)); ((ColorRect)_stateDot).Color = color;

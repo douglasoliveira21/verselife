@@ -6,15 +6,15 @@ namespace LifeVerse.Shared.Platform;
 public sealed record PlayerReport(Guid UserId, string Name, long ConnectedAtUnixMs, double X, double Y, double Z);
 
 /// <summary>What an island server tells the API with every heartbeat: who is connected and how the server is doing.</summary>
-public sealed record ServerReport(PlayerReport[] Players, double Fps = 0, double ProcessMs = 0, double MemoryMb = 0, long UptimeSeconds = 0);
+public sealed record ServerReport(PlayerReport[] Players, double Fps = 0, double ProcessMs = 0, double MemoryMb = 0, long UptimeSeconds = 0, double TickRate = 0);
 
-/// <summary>Something the API asks an island server to do. Kinds: <see cref="ServerCommandKinds.Kick"/> and <see cref="ServerCommandKinds.Notice"/>.</summary>
+/// <summary>Something the API asks an island server to do. Kinds: <see cref="ServerCommandKinds.Kick"/>, <see cref="ServerCommandKinds.Notice"/> and <see cref="ServerCommandKinds.Shutdown"/> (save and stop cleanly; the island is started again by the API).</summary>
 public sealed record ServerCommand(Guid Id, string Kind, Guid? UserId, string Text);
 
 public static class ServerCommandKinds
 {
-    public const string Kick = "kick", Notice = "notice";
-    public static bool Known(string kind) => kind is Kick or Notice;
+    public const string Kick = "kick", Notice = "notice", Shutdown = "shutdown";
+    public static bool Known(string kind) => kind is Kick or Notice or Shutdown;
 }
 
 /// <summary>The JSON of the channel, written in one place so both ends agree.</summary>

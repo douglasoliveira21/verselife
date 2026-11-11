@@ -142,6 +142,7 @@ public partial class ViewerUI : CanvasLayer
         if (_world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow") is null) _world.AddChild(new AppearanceWindow { Name = "AppearanceWindow", Player = _player });
         if (_world.GetNodeOrNull<GroupsWindow>("GroupsWindow") is null) _world.AddChild(new GroupsWindow { Name = "GroupsWindow" });
         if (_world.GetNodeOrNull<ProfileWindow>("ProfileWindow") is null) _world.AddChild(new ProfileWindow { Name = "ProfileWindow" });
+        if (_world.GetNodeOrNull<IslandLookService>("IslandLookService") is null) _world.AddChild(new IslandLookService { Name = "IslandLookService" });
         if (_world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow") is null)
             _world.AddChild(new IslandManagement.IslandManagementWindow { Name = "IslandManagementWindow", ViewInSearch = (_, name) => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.OpenWithQuery(name), ViewProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), CurrentPosition = () => _player is null ? null : (_player.GlobalPosition.X, _player.GlobalPosition.Z) });
         foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditorController", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "ProfileWindow", "AppearanceWindow", "SearchWindow", "ItemRightsWindow", "ItemOffersWindow" })

@@ -183,6 +183,12 @@ public sealed class Island
     public bool ShowOnMap { get; set; } = true;
     /// <summary>Temporarily closed: only the owner and administrators can come in. Whether the island is public is kept, so opening it again brings it back as it was.</summary>
     public bool AccessClosed { get; set; }
+    /// <summary>The look of the whole island (hour, weather, fog, light, sky) where no parcel sets its own, as clean ParcelEnvironment JSON. Kept apart from EnvironmentJson, which the island server rewrites when it saves.</summary>
+    public string LookJson { get; set; } = "{}";
+    /// <summary>Looks the owner saved by name, as a JSON array of {name, look}.</summary>
+    public string LookPresetsJson { get; set; } = "[]";
+    /// <summary>The music of the whole island where no parcel plays its own: {"musicUrl","volume","autoplay","name"}, or {} for none.</summary>
+    public string MediaJson { get; set; } = "{}";
     public string EnvironmentJson { get; set; } = "{}";
     public string ResourceLimitsJson { get; set; } = "{}";
     public string RuntimeState { get; set; } = "suspended";
@@ -732,4 +738,34 @@ public sealed class IslandServerCommand
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? DeliveredAt { get; set; }
+}
+
+/// <summary>One sample of how an island server was doing (taken from its heartbeat, at most one a minute, kept for a day) for the charts of the Desempenho tab.</summary>
+public sealed class IslandMetric
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public DateTimeOffset At { get; set; }
+    public double Fps { get; set; }
+    public double ProcessMs { get; set; }
+    public double MemoryMb { get; set; }
+    public double TickRate { get; set; }
+    public int Players { get; set; }
+}
+
+/// <summary>A restart of an island that somebody asked for. Status: scheduled (waiting for its time), running (the server was told to stop and the island is being started again), completed, failed or cancelled.</summary>
+public sealed class IslandRestart
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid RequestedByUserId { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset ScheduledFor { get; set; }
+    public required string Status { get; set; }
+    /// <summary>Seconds-before warnings already sent (JSON array of numbers), so each is sent once.</summary>
+    public string WarnedJson { get; set; } = "[]";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public string Result { get; set; } = string.Empty;
 }

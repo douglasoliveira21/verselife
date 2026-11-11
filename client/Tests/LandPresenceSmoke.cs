@@ -53,6 +53,49 @@ public partial class LandPresenceSmoke : Node
             Require(!environment.ParcelLookActive, "an island that forbids parcel environments is not overridden");
             land.Presence.Apply(null);
 
+            // ---- the look of the whole island (set by the owner) shows on open ground, under the parcel's own settings
+            var islandId = Guid.NewGuid(); var served = "{\"look\":{\"hour\":3,\"weather\":\"fog\",\"light\":0.5,\"sky\":\"#112244\"}}"; var asked = new List<string>(); var fail = false;
+            var islandLook = new IslandLookService { Name = "IslandLookService", IslandProvider = () => islandId };
+            islandLook.UseTransportForTesting((method, path, body) => { asked.Add($"{method} {path}"); return Task.FromResult<(long, string)>(fail ? (0, "{}") : (200, served)); });
+            world.AddChild(islandLook); await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); await islandLook.RefreshAsync();
+            Require(asked.Count >= 1 && asked[0] == $"GET /api/v1/worlds/islands/{islandId}/environment" && islandLook.Look is { Hour: 3f, Weather: "fog" }, "the look of the island is asked for when the person is on it");
+            land.Presence.Apply(null, force: true); environment.FinishBlendForTesting();
+            Require(environment.ParcelLookActive && Mathf.IsEqualApprox(environment.HourShown, 3f) && environment.WeatherShown == "fog" && Mathf.IsEqualApprox(environment.LightShown, .5f), "on open ground the island look shows");
+            land.Presence.Apply(praca, force: true); environment.FinishBlendForTesting();
+            Require(Mathf.IsEqualApprox(environment.HourShown, 22f) && environment.WeatherShown == "rain" && Mathf.IsEqualApprox(environment.LightShown, .6f), "inside a parcel its own settings win over the island look");
+            land.Presence.Apply(land.Parcels.First(p => p.Name == "Loja"), force: true); environment.FinishBlendForTesting();
+            Require(Mathf.IsEqualApprox(environment.HourShown, 3f) && environment.WeatherShown == "fog", "a parcel that sets nothing shows the island look");
+            land.Presence.Apply(land.Parcels.First(p => p.Name == "Colina"), force: true); environment.FinishBlendForTesting();
+            Require(Mathf.IsEqualApprox(environment.HourShown, 3f), "a parcel that is not allowed its own look shows the island look");
+            land.Presence.PositionForTesting = () => new Vector3(-50, 0, -50); // open ground, so the service itself re-applies the look when it changes
+            land.Presence.Apply(null, force: true);
+            served = "{\"look\":{\"hour\":15}}"; await islandLook.RefreshAsync(); environment.FinishBlendForTesting();
+            Require(Mathf.IsEqualApprox(environment.HourShown, 15f), "a change of the look reaches the person on the next ask");
+            fail = true; await islandLook.RefreshAsync(); Require(islandLook.Look is { Hour: 15f }, "if the server cannot be reached the last look stays");
+            fail = false; served = "{\"look\":{}}"; await islandLook.RefreshAsync(); environment.FinishBlendForTesting();
+            Require(islandLook.Look is null && !environment.ParcelLookActive && Mathf.IsEqualApprox(environment.HourShown, 10f), "an island without a look goes back to the game's own sky");
+
+            // ---- the music of the whole island plays where no parcel plays its own
+            var songs = new List<string>(); land.Presence.ClearCacheForTesting(); land.Presence.FetcherForTesting = url => { songs.Add(url); return [1, 2, 3, 4]; };
+            land.Presence.PositionForTesting = () => new Vector3(-50, 0, -50);
+            served = "{\"look\":{},\"media\":{\"musicUrl\":\"https://cdn.example.com/ilha.mp3\",\"volume\":0.5,\"autoplay\":true,\"name\":\"Rádio\"}}"; await islandLook.RefreshAsync();
+            Require(islandLook.Music is { Url: "https://cdn.example.com/ilha.mp3", Autoplay: true, Name: "Rádio" } && Mathf.IsEqualApprox(islandLook.Music.Volume, .5f), "the music of the island is read with the look");
+            Require(songs.Count == 1 && songs[0] == "https://cdn.example.com/ilha.mp3", "on open ground the music of the island is fetched");
+            land.Presence.ClearCacheForTesting(); songs.Clear(); land.Presence.Apply(praca, force: true);
+            Require(songs.Count == 1 && songs[0] == "https://cdn.example.com/a.mp3", "inside a parcel with its own music the parcel's plays, not the island's");
+            land.Presence.ClearCacheForTesting(); songs.Clear(); land.Presence.Apply(land.Parcels.First(p => p.Name == "Loja"), force: true);
+            Require(songs.Count == 1 && songs[0] == "https://cdn.example.com/ilha.mp3", "a parcel that plays nothing has the island's music");
+            land.Presence.MusicEnabled = false; songs.Clear(); land.Presence.ClearCacheForTesting(); land.Presence.Apply(null, force: true);
+            Require(songs.Count == 0 && !land.Presence.Playing, "with music switched off in the preferences nothing is fetched"); land.Presence.MusicEnabled = true;
+            served = "{\"look\":{},\"media\":{\"musicUrl\":\"https://cdn.example.com/ilha.mp3\",\"volume\":0.5,\"autoplay\":false}}"; await islandLook.RefreshAsync(); land.Presence.Apply(land.Parcels.First(p => p.Name == "Loja"), force: true); land.Presence.Apply(null);
+            Require(land.Presence.Status.Contains("da ilha não toca sozinha"), "a music that does not start by itself says so");
+            served = "{\"look\":{},\"media\":{\"musicUrl\":\"http://cdn.example.com/ilha.mp3\"}}"; await islandLook.RefreshAsync();
+            Require(islandLook.Music is null, "an address the game would not play is not used");
+            served = "{\"look\":{},\"media\":{}}"; await islandLook.RefreshAsync();
+            Require(islandLook.Music is null && !land.Presence.Playing, "an island without music plays none");
+            land.Presence.PositionForTesting = null;
+            islandLook.QueueFree();
+
             // ---- music
             var fetched = new List<string>();
             land.Presence.FetcherForTesting = url => { fetched.Add(url); return [1, 2, 3, 4]; };

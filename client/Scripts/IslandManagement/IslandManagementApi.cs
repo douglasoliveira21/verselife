@@ -139,4 +139,22 @@ public sealed class IslandManagementApi(Func<string, string, string?, Task<(long
     public Task<IslandReply> ServerGet(Guid island) => Send("GET", $"/api/v1/worlds/islands/{island}/management/server");
     public Task<IslandReply> ServerKick(Guid island, Guid user, string reason) => Send("POST", $"/api/v1/worlds/islands/{island}/management/server/kick", new { userId = user, reason });
     public Task<IslandReply> ServerNotice(Guid island, string text, Guid? user) => Send("POST", $"/api/v1/worlds/islands/{island}/management/server/notice", new { text, userId = user });
+
+    // ---- performance ----
+    public Task<IslandReply> PerformanceGet(Guid island, int hours) => Send("GET", $"/api/v1/worlds/islands/{island}/management/performance?hours={hours}");
+
+    // ---- restart ----
+    public Task<IslandReply> RestartGet(Guid island) => Send("GET", $"/api/v1/worlds/islands/{island}/management/restart");
+    public Task<IslandReply> RestartRequest(Guid island, string mode, int? minutes, DateTimeOffset? at, string reason) => Send("POST", $"/api/v1/worlds/islands/{island}/management/restart", new { mode, minutes, at, reason });
+    public Task<IslandReply> RestartCancel(Guid island, Guid id) => Send("DELETE", $"/api/v1/worlds/islands/{island}/management/restart/{id}");
+
+    // ---- environment ----
+    public Task<IslandReply> EnvironmentGet(Guid island) => Send("GET", $"/api/v1/worlds/islands/{island}/management/environment");
+    public Task<IslandReply> EnvironmentSave(Guid island, string lookJson, DateTimeOffset expectedUpdatedAt) => Send("PUT", $"/api/v1/worlds/islands/{island}/management/environment", new { look = JsonDocument.Parse(lookJson).RootElement, expectedUpdatedAt });
+    public Task<IslandReply> EnvironmentPresetSave(Guid island, string name, string lookJson) => Send("POST", $"/api/v1/worlds/islands/{island}/management/environment/presets", new { name, look = JsonDocument.Parse(lookJson).RootElement });
+    public Task<IslandReply> EnvironmentPresetDelete(Guid island, string name) => Send("DELETE", $"/api/v1/worlds/islands/{island}/management/environment/presets/{Uri.EscapeDataString(name)}");
+
+    // ---- media ----
+    public Task<IslandReply> MediaGet(Guid island) => Send("GET", $"/api/v1/worlds/islands/{island}/management/media");
+    public Task<IslandReply> MediaSave(Guid island, string url, double volume, bool autoplay, string name, DateTimeOffset expectedUpdatedAt) => Send("PUT", $"/api/v1/worlds/islands/{island}/management/media", new { musicUrl = url, volume, autoplay, name, expectedUpdatedAt });
 }

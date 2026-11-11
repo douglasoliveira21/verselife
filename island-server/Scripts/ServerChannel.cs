@@ -11,7 +11,7 @@ public partial class ServerMain
 
     private ServerReport BuildReport() => new(
         [.. _players.Values.Where(p => p.Authenticated && p.UserId != Guid.Empty).Select(p => new PlayerReport(p.UserId, p.DisplayName, p.ConnectedAt.ToUnixTimeMilliseconds(), p.State.X, p.State.Y, p.State.Z))],
-        Engine.GetFramesPerSecond(), Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000.0, Performance.GetMonitor(Performance.Monitor.MemoryStatic) / (1024.0 * 1024.0), (long)((Time.GetTicksMsec() - _startedAtMs) / 1000));
+        Engine.GetFramesPerSecond(), Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000.0, Performance.GetMonitor(Performance.Monitor.MemoryStatic) / (1024.0 * 1024.0), (long)((Time.GetTicksMsec() - _startedAtMs) / 1000), Engine.PhysicsTicksPerSecond);
 
     private async Task SendHeartbeatAsync(CancellationToken ct)
     {
@@ -36,6 +36,13 @@ public partial class ServerMain
                     SendNotice(peer, string.IsNullOrWhiteSpace(command.Text) ? "Você foi removido da ilha por um administrador." : $"Você foi removido da ilha: {command.Text}");
                     GetTree().CreateTimer(.6).Timeout += () => { if (_players.ContainsKey(peer)) Multiplayer.MultiplayerPeer.DisconnectPeer(peer); }; // after the notice has had time to arrive
                     Log("player_kicked", new { peer, command.UserId });
+                }
+                else if (command.Kind == ServerCommandKinds.Shutdown)
+                {
+                    if (_stopping) continue;
+                    foreach (var target in _players.Values.Where(x => x.Authenticated)) SendNotice(target.PeerId, "A ilha está reiniciando agora. Entre de novo em um instante.");
+                    Log("restart_requested", new { command.Text });
+                    GetTree().CreateTimer(1.5).Timeout += () => _ = StopAsync(); // after the notice has had time to arrive; StopAsync saves the island and its people, then the API starts it again
                 }
                 else if (command.Kind == ServerCommandKinds.Notice)
                 {

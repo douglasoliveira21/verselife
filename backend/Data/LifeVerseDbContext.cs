@@ -20,6 +20,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<IslandBan> IslandBans => Set<IslandBan>();
     public DbSet<IslandAuditEntry> IslandAudit => Set<IslandAuditEntry>();
     public DbSet<IslandServerCommand> IslandServerCommands => Set<IslandServerCommand>();
+    public DbSet<IslandMetric> IslandMetrics => Set<IslandMetric>();
+    public DbSet<IslandRestart> IslandRestarts => Set<IslandRestart>();
     public DbSet<IslandSnapshot> IslandSnapshots => Set<IslandSnapshot>();
     public DbSet<IslandChange> IslandChanges => Set<IslandChange>();
     public DbSet<IslandParcel> IslandParcels => Set<IslandParcel>();
@@ -164,7 +166,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.Description).HasMaxLength(4000);
             b.Property(x => x.CoverImageUrl).HasMaxLength(1024);
             b.Property(x => x.Category).HasMaxLength(32);
-            b.Property(x => x.ContentRating).HasMaxLength(12).HasDefaultValue("livre"); b.Property(x => x.Language).HasMaxLength(12).HasDefaultValue("pt-BR"); b.Property(x => x.ShowInSearch).HasDefaultValue(true); b.Property(x => x.ShowOnMap).HasDefaultValue(true); b.Property(x => x.AccessClosed).HasDefaultValue(false);
+            b.Property(x => x.ContentRating).HasMaxLength(12).HasDefaultValue("livre"); b.Property(x => x.Language).HasMaxLength(12).HasDefaultValue("pt-BR"); b.Property(x => x.ShowInSearch).HasDefaultValue(true); b.Property(x => x.ShowOnMap).HasDefaultValue(true); b.Property(x => x.AccessClosed).HasDefaultValue(false); b.Property(x => x.LookJson).HasColumnType("jsonb").HasDefaultValue("{}"); b.Property(x => x.LookPresetsJson).HasColumnType("jsonb").HasDefaultValue("[]"); b.Property(x => x.MediaJson).HasColumnType("jsonb").HasDefaultValue("{}");
             b.Property(x => x.EnvironmentJson).HasColumnType("jsonb");
             b.Property(x => x.ResourceLimitsJson).HasColumnType("jsonb");
             b.Property(x => x.RuntimeState).HasMaxLength(24);
@@ -175,6 +177,17 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<PlayerLocation>(b => { b.ToTable("player_locations", "world"); b.HasKey(x => x.UserId); b.HasIndex(x => x.IslandId); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<IslandRestart>(b =>
+        {
+            b.ToTable("island_restarts", "world"); b.HasKey(x => x.Id); b.Property(x => x.Reason).HasMaxLength(200); b.Property(x => x.Status).HasMaxLength(16); b.Property(x => x.Result).HasMaxLength(200); b.Property(x => x.WarnedJson).HasColumnType("jsonb");
+            b.HasIndex(x => new { x.IslandId, x.Status }); b.HasIndex(x => new { x.IslandId, x.CreatedAt });
+            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<IslandMetric>(b =>
+        {
+            b.ToTable("island_metrics", "world"); b.HasKey(x => x.Id); b.HasIndex(x => new { x.IslandId, x.At });
+            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<IslandServerCommand>(b =>
         {
             b.ToTable("island_commands", "world"); b.HasKey(x => x.Id); b.Property(x => x.Kind).HasMaxLength(16); b.Property(x => x.Text).HasMaxLength(400); b.HasIndex(x => new { x.IslandId, x.DeliveredAt });

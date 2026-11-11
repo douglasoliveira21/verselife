@@ -30,6 +30,15 @@ public partial class IslandManagementSmoke : Node3D
         public sealed record Obj(string Name, Guid Owner, string OwnerName, string Type, int Cost, int Scripts, string Physics, int Order) { public Guid Id { get; } = Guid.NewGuid(); public DateTimeOffset Created => new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero).AddMinutes(Order); }
         public readonly List<Obj> Objs = [];
         public int Returned;
+        public string MediaUrl = "", MediaName = ""; public double MediaVolume = .6; public bool MediaAutoplay = true, MediaStale;
+        public readonly List<string> MediaSent = [];
+        public string EnvLook = "{}"; public bool EnvStale;
+        public readonly Dictionary<string, string> EnvCustom = [];
+        public readonly List<string> EnvSent = [];
+        public sealed record Rs(Guid Id, string Status, int Remaining, string Reason, DateTimeOffset Created, long? Duration, string Result);
+        public Rs? RestartActive;
+        public readonly List<Rs> RestartHistory = [];
+        public readonly List<string> RestartSent = [];
         public sealed record Player(Guid Id, string Name, bool Staff, long Seconds);
         public readonly List<Player> Online = [];
         public readonly List<(string Name, string Reason)> Kicked = [];
@@ -232,6 +241,84 @@ public partial class IslandManagementSmoke : Node3D
                 {
                     var sent = JsonNode.Parse(body!)!.AsObject(); Notices.Add((sent["text"]!.GetValue<string>(), sent["userId"]?.GetValue<string>()));
                     return Task.FromResult<(long, string)>((202, "{\"queued\":true}"));
+                }
+            }
+            var perfPath = $"/api/v1/worlds/islands/{Island}/management/performance";
+            if (method == "GET" && path.StartsWith(perfPath, StringComparison.Ordinal))
+            {
+                var hours = int.Parse(path[(path.IndexOf("hours=", StringComparison.Ordinal) + 6)..]); var count = hours == 1 ? 60 : hours == 6 ? 90 : 120;
+                var t0 = DateTimeOffset.UtcNow.AddHours(-hours);
+                var series = Enumerable.Range(0, ServerOnline || count > 0 ? count : 0).Select(i => new { at = t0.AddMinutes(i * hours * 60.0 / count), fps = 40.0 + i % 21, processMs = 4.0 + i % 5, memoryMb = 100.0 + i, tickRate = 60.0, players = i % 6 });
+                return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new
+                {
+                    window = hours, running = ServerOnline, fresh = ServerOnline,
+                    current = ServerOnline ? new { fps = 58.4, processMs = 4.2, memoryMb = 212.5, tickRate = 60.0, players = 3, maxPlayers = 60, uptimeSeconds = 7200, reportedAt = DateTimeOffset.UtcNow } : null,
+                    scripts = new { active = 7, total = 9 }, series,
+                    summary = new { fps = new { min = 40.0, avg = 50.0, max = 60.0 }, processMs = new { min = 4.0, avg = 6.0, max = 8.0 }, memoryMb = new { min = 100.0, avg = 150.0, max = 220.0 }, players = new { min = 0.0, avg = 2.5, max = 5.0 } },
+                    diagnostics = new
+                    {
+                        scripts = new[] { new { scriptId = Guid.NewGuid(), objectId = Guid.NewGuid(), name = "Porta", script = "abrir", runs = 40, instructions = 120000L, errors = 2, lastRunAt = DateTimeOffset.UtcNow, status = "active" }, new { scriptId = Guid.NewGuid(), objectId = Guid.NewGuid(), name = "Luz", script = "piscar", runs = 10, instructions = 500L, errors = 0, lastRunAt = DateTimeOffset.UtcNow, status = "active" } },
+                        objects = new[] { new { objectId = Guid.NewGuid(), name = "Casa", ownerName = "AliceVerse", cost = 300, physical = false }, new { objectId = Guid.NewGuid(), name = "Bola", ownerName = "Duda", cost = 25, physical = true } },
+                    },
+                })));
+            }
+            var restartPath = $"/api/v1/worlds/islands/{Island}/management/restart";
+            if (path.StartsWith(restartPath, StringComparison.Ordinal))
+            {
+                var rest = path[restartPath.Length..];
+                object View(Rs r) => new { id = r.Id, status = r.Status, scheduledFor = DateTimeOffset.UtcNow.AddSeconds(r.Remaining), remainingSeconds = r.Remaining, requestedBy = "AliceVerse", reason = r.Reason, createdAt = r.Created, durationSeconds = r.Duration, result = r.Result };
+                if (method == "GET" && rest == "")
+                    return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { state = !ServerOnline ? "offline" : RestartActive?.Status == "running" ? "restarting" : "online", running = ServerOnline, uptimeSeconds = ServerOnline ? 7200 : 0, active = RestartActive is null ? null : View(RestartActive), history = RestartHistory.AsEnumerable().Reverse().Select(View) })));
+                if (method == "POST" && rest == "")
+                {
+                    var sent = JsonNode.Parse(body!)!.AsObject(); RestartSent.Add(body!);
+                    if (!ServerOnline) return Task.FromResult<(long, string)>((409, "{\"message\":\"A ilha está desligada: não há o que reiniciar. Ela liga quando alguém entra.\"}"));
+                    if (RestartActive is not null) return Task.FromResult<(long, string)>((409, "{\"message\":\"Já existe uma reinicialização agendada ou em andamento. Cancele ou espere terminar.\"}"));
+                    var mode = sent["mode"]!.GetValue<string>(); var minutes = sent["minutes"]?.GetValue<int>();
+                    var remaining = mode == "now" ? 0 : mode == "in" ? minutes!.Value * 60 : (int)(sent["at"]!.GetValue<DateTimeOffset>() - DateTimeOffset.UtcNow).TotalSeconds;
+                    RestartActive = new Rs(Guid.NewGuid(), mode == "now" ? "running" : "scheduled", remaining, sent["reason"]?.GetValue<string>() ?? "", DateTimeOffset.UtcNow, null, "");
+                    return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(View(RestartActive))));
+                }
+                if (method == "DELETE" && rest.StartsWith("/", StringComparison.Ordinal))
+                {
+                    if (RestartActive is null || RestartActive.Status == "running") return Task.FromResult<(long, string)>((409, "{\"message\":\"A reinicialização já começou e não dá mais para cancelar.\"}"));
+                    RestartHistory.Add(RestartActive with { Status = "cancelled", Result = "Cancelada." }); RestartActive = null; return Task.FromResult<(long, string)>((204, ""));
+                }
+            }
+            var envPath = $"/api/v1/worlds/islands/{Island}/management/environment";
+            if (path.StartsWith(envPath, StringComparison.Ordinal))
+            {
+                var rest = path[envPath.Length..];
+                string[] BuiltIn = ["day|Dia claro|{\"hour\":12,\"weather\":\"clear\",\"light\":1}", "sunset|Pôr do sol|{\"hour\":18.5,\"weather\":\"clear\",\"light\":0.85,\"sky\":\"#FF9A5A\"}", "night|Noite|{\"hour\":0,\"light\":0.4}", "fog|Neblina|{\"hour\":7,\"weather\":\"fog\",\"fog\":0.6}", "storm|Tempestade|{\"hour\":15,\"weather\":\"storm\"}", "default|Padrão do jogo|{}"];
+                string Full() => JsonSerializer.Serialize(new
+                {
+                    look = JsonDocument.Parse(EnvLook).RootElement, updatedAt = Updated,
+                    builtIn = BuiltIn.Select(p => p.Split('|', 3)).Select(p => new { id = p[0], title = p[1], look = JsonDocument.Parse(p[2]).RootElement }),
+                    custom = EnvCustom.Select(c => new { name = c.Key, look = JsonDocument.Parse(c.Value).RootElement }),
+                });
+                if (method == "GET" && rest == "") return Task.FromResult<(long, string)>((200, Full()));
+                if (method == "PUT" && rest == "")
+                {
+                    EnvSent.Add(body!); if (EnvStale) return Task.FromResult<(long, string)>((409, "{\"error\":\"stale\",\"message\":\"Outra pessoa alterou a ilha antes de você.\"}"));
+                    EnvLook = JsonNode.Parse(body!)!["look"]!.ToJsonString(); Updated = Updated.AddMinutes(1); return Task.FromResult<(long, string)>((200, Full()));
+                }
+                if (method == "POST" && rest == "/presets")
+                {
+                    var sent = JsonNode.Parse(body!)!; EnvCustom[sent["name"]!.GetValue<string>()] = sent["look"]!.ToJsonString(); return Task.FromResult<(long, string)>((200, Full()));
+                }
+                if (method == "DELETE" && rest.StartsWith("/presets/", StringComparison.Ordinal)) { EnvCustom.Remove(Uri.UnescapeDataString(rest[9..])); return Task.FromResult<(long, string)>((204, "")); }
+            }
+            var mediaPath = $"/api/v1/worlds/islands/{Island}/management/media";
+            if (path == mediaPath)
+            {
+                object Doc() => new { music = MediaUrl.Length == 0 ? null : new { url = MediaUrl, volume = MediaVolume, autoplay = MediaAutoplay, name = MediaName }, updatedAt = Updated, video = new { supported = false } };
+                if (method == "GET") return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(Doc())));
+                if (method == "PUT")
+                {
+                    var sent = JsonNode.Parse(body!)!.AsObject(); MediaSent.Add(body!);
+                    if (MediaStale) return Task.FromResult<(long, string)>((409, "{\"error\":\"stale\",\"message\":\"Outra pessoa alterou a ilha antes de você.\"}"));
+                    MediaUrl = sent["musicUrl"]!.GetValue<string>(); MediaVolume = sent["volume"]!.GetValue<double>(); MediaAutoplay = sent["autoplay"]!.GetValue<bool>(); MediaName = sent["name"]!.GetValue<string>(); Updated = Updated.AddMinutes(1);
+                    return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(Doc())));
                 }
             }
             return Task.FromResult<(long, string)>((404, "{}"));
@@ -493,6 +580,106 @@ public partial class IslandManagementSmoke : Node3D
             server.ServerOnline = true; await admin.LoadAsync(); await Frames(2);
             window.SelectSectionForTesting("geral");
 
+            // --- Desempenho ------------------------------------------------------------------------------------------------
+            window.SelectSectionForTesting("desempenho"); await Frames(4);
+            var perf = window.Performance;
+            Require(window.PageVisibleForTesting("desempenho") && perf.IndicatorsForTesting == "58,4|60|4,2 ms|212,5 MB|3 / 60|7", $"the indicators are what the server reported ({perf.IndicatorsForTesting})");
+            Require(perf.ChartPointsForTesting.All(p => p == 60), "each chart gets the points of the last hour");
+            Require(perf.ChartNotesForTesting[0] == "mín 40 · média 50 · máx 60" && perf.ChartNotesForTesting[1].EndsWith("MB"), "each chart says its lowest, average and highest value");
+            perf.SelectPeriodForTesting(2); await perf.LoadAsync(); await Frames(3);
+            Require(perf.ChartPointsForTesting.All(p => p == 120), "the period changes the points");
+            Require(perf.RowsForTesting == 8 && perf.RowTextsForTesting[0].Contains("Porta") && perf.RowTextsForTesting[0].Contains("120.000 instruções") && perf.RowTextsForTesting[0].Contains("2 com erro"), "the diagnosis lists scripts first, with runs and errors");
+            Require(perf.RowTextsForTesting.Any(t => t.Contains("Bola") && t.Contains("Física ativa")) && perf.RowTextsForTesting.Any(t => t.Contains("Casa") && t.Contains("300 prims")), "and the heaviest objects");
+            perf.SelectFilterForTesting(1); await Frames(2); Require(perf.RowsForTesting == 4 && perf.RowTextsForTesting.Where(t => t.Length > 0).All(t => t.Contains("Script")), "the filter shows only scripts");
+            perf.SelectFilterForTesting(2); await Frames(2); Require(perf.RowsForTesting == 4 && perf.RowTextsForTesting.Where(t => t.Length > 0).All(t => t.Contains("Objeto")), "or only objects"); perf.SelectFilterForTesting(0);
+            server.ServerOnline = false; await perf.LoadAsync(); await Frames(3);
+            Require(perf.IndicatorsForTesting.StartsWith("—|—|—|—|—|") && perf.StatusForTesting.Contains("desligado"), "with the server off the figures are blank and it says so");
+            server.ServerOnline = true; perf.SelectPeriodForTesting(0); await perf.LoadAsync(); await Frames(2);
+            window.SelectSectionForTesting("geral");
+
+            // --- Reinicialização -------------------------------------------------------------------------------------------
+            window.SelectSectionForTesting("reinicializacao"); await Frames(4);
+            var restart = window.Restart;
+            Require(window.PageVisibleForTesting("reinicializacao") && restart.StateForTesting == "Online" && restart.UptimeForTesting == "2 h 00 min" && !restart.ActiveVisibleForTesting && restart.HistoryForTesting == 0 && restart.RequestEnabledForTesting, "the Reinicialização tab shows the state and nothing scheduled");
+            restart.SelectOptionForTesting(0); restart.PressRequestForTesting(); await Frames(2);
+            Require(window.ConfirmOpenForTesting && server.RestartSent.Count == 0, "asking to restart asks first and sends nothing yet");
+            window.CancelConfirmForTesting(); Require(server.RestartSent.Count == 0, "cancelling the question restarts nothing");
+            restart.PressRequestForTesting(); window.ConfirmForTesting(); await Frames(4);
+            Require(server.RestartSent.Count == 1 && server.RestartSent[0].Contains("\"mode\":\"now\"") && restart.ActiveVisibleForTesting && restart.CountdownForTesting == "Em curso" && !restart.CancelVisibleForTesting && !restart.RequestEnabledForTesting && restart.StateForTesting == "Reiniciando", "an immediate restart is shown as running, cannot be cancelled and blocks another request");
+            server.RestartHistory.Add(server.RestartActive! with { Status = "completed", Duration = 45, Result = "A ilha reiniciou e voltou ao ar." }); server.RestartActive = null; await restart.LoadAsync(); await Frames(3);
+            Require(!restart.ActiveVisibleForTesting && restart.StateForTesting == "Online" && restart.HistoryForTesting == 1 && restart.HistoryTextsForTesting[0].Contains("Concluída") && restart.HistoryTextsForTesting[0].Contains("45 s") && restart.RequestEnabledForTesting, "when it finishes the history shows the result and the duration");
+            restart.SelectOptionForTesting(2); restart.ReasonForTesting = "Atualização"; await restart.RequestForTesting(); await Frames(4);
+            Require(server.RestartSent[1].Contains("\"minutes\":5") && server.RestartActive!.Reason == "Atualização" && restart.ActiveVisibleForTesting && restart.CountdownForTesting == "05:00" && restart.CancelVisibleForTesting, "a restart in 5 minutes shows a countdown and a cancel button");
+            Require(restart.ActiveTextForTesting.Contains("Atualização") && restart.ActiveTextForTesting.Contains("AliceVerse"), "it says who asked and why");
+            await restart.RequestForTesting(); await Frames(2);
+            Require(restart.StatusForTesting.Contains("Já existe") && server.RestartSent.Count == 3, "a second request is refused with the reason of the server");
+            await restart.CancelForTesting(); await Frames(3);
+            Require(!restart.ActiveVisibleForTesting && restart.HistoryForTesting == 2 && restart.HistoryTextsForTesting[0].Contains("Cancelada"), "cancelling a scheduled restart puts it in the history");
+            restart.SelectOptionForTesting(4); await Frames(1); Require(restart.AtVisibleForTesting && restart.AtForTesting.Length > 0, "scheduling a time shows the time field with a suggestion");
+            restart.AtForTesting = "amanhã de manhã"; await restart.RequestForTesting(); Require(restart.StatusForTesting.Contains("25/12/2026 03:30") && server.RestartSent.Count == 3, "a time that is not understood is not sent");
+            restart.AtForTesting = DateTime.Now.AddHours(2).ToString("dd/MM/yyyy HH:mm"); await restart.RequestForTesting(); await Frames(3);
+            Require(server.RestartSent.Count == 4 && server.RestartSent[3].Contains("\"mode\":\"at\"") && restart.ActiveVisibleForTesting && restart.ActiveTextForTesting.Contains("Agendada para"), "a time is sent and the restart is scheduled");
+            await restart.CancelForTesting(); await Frames(3);
+            server.RestartHistory.Add(new Server.Rs(Guid.NewGuid(), "failed", 0, "", DateTimeOffset.UtcNow, null, "O servidor da ilha não obedeceu ao pedido (versão antiga?).")); await restart.LoadAsync(); await Frames(3);
+            Require(restart.HistoryTextsForTesting[0].Contains("Falhou") && restart.HistoryTextsForTesting[0].Contains("não obedeceu"), "a failure shows why");
+            server.ServerOnline = false; await restart.LoadAsync(); await Frames(3);
+            Require(restart.StateForTesting == "Desligada" && !restart.RequestEnabledForTesting, "an island that is off cannot be restarted");
+            server.ServerOnline = true; restart.SelectOptionForTesting(2); await restart.LoadAsync(); await Frames(2);
+            window.SelectSectionForTesting("geral");
+
+            // --- Ambiente --------------------------------------------------------------------------------------------------
+            window.SelectSectionForTesting("ambiente"); await Frames(4);
+            var env = window.Environment;
+            Require(window.PageVisibleForTesting("ambiente") && env.LoadedForTesting == "{}" && !env.IsDirty && !env.ApplyEnabledForTesting && env.EffectForTesting.Contains("sem nenhum ajuste"), "the Ambiente tab starts with no look and nothing to apply");
+            Require(env.PresetNamesForTesting.Count == 6 && env.PresetNamesForTesting[0] == "Dia claro" && env.PresetNamesForTesting[5] == "Padrão do jogo", "the looks of the game are offered");
+            env.SetHourForTesting(true, 18.5); await Frames(2);
+            Require(env.IsDirty && env.ApplyEnabledForTesting && env.DraftJson == "{\"hour\":18.5}" && env.EffectForTesting.Contains("1 ajuste"), "turning a setting on makes a draft that can be applied");
+            env.SetWeatherForTesting(true, 2); env.SetSkyForTesting(true, new Color("#FF9A5A")); await Frames(2);
+            Require(env.DraftJson == "{\"hour\":18.5,\"weather\":\"rain\",\"sky\":\"#FF9A5A\"}", $"the draft has only the settings that are on ({env.DraftJson})");
+            env.RevertForTesting(); await Frames(2); Require(!env.IsDirty && env.DraftJson == "{}", "undoing goes back to what the island has");
+            env.SetHourForTesting(true, 20); env.SetFogForTesting(true, .4); env.SetLightForTesting(true, 1.2); await Frames(2);
+            await env.ApplyForTesting(); await Frames(3);
+            Require(server.EnvSent.Count == 1 && server.EnvLook == "{\"hour\":20,\"fog\":0.4,\"light\":1.2}" && !env.IsDirty && env.StatusForTesting.Contains("Ambiente aplicado") && env.StatusForTesting.Contains("30 segundos"), $"applying sends the look and says how long it takes to reach people ({server.EnvLook})");
+            env.ChoosePresetForTesting("Pôr do sol"); env.LoadPresetForTesting(); await Frames(2);
+            Require(env.IsDirty && env.DraftJson == "{\"hour\":18.5,\"weather\":\"clear\",\"light\":0.85,\"sky\":\"#FF9A5A\"}" && server.EnvLook.Contains("20"), "a saved look goes into the form without touching the island until it is applied");
+            env.PresetNameForTesting = ""; await env.SavePresetForTesting(); Require(env.StatusForTesting.Contains("nome") , "a look needs a name");
+            env.PresetNameForTesting = "Meu entardecer"; await env.SavePresetForTesting(); await Frames(2);
+            Require(server.EnvCustom.ContainsKey("Meu entardecer") && env.PresetNamesForTesting.Contains("Meu entardecer") && env.IsDirty, "a look is saved by name and the form is kept");
+            env.ChoosePresetForTesting("Meu entardecer  (minha)"); await env.DeletePresetForTesting(); await Frames(2);
+            Require(!server.EnvCustom.ContainsKey("Meu entardecer") && env.PresetNamesForTesting.Count == 6, "a look of the owner can be deleted (not the game's)");
+            server.EnvStale = true; await env.ApplyForTesting(); await Frames(2);
+            Require(env.StatusForTesting.Contains("Outra pessoa") && server.EnvLook.Contains("20"), "a conflict is told and nothing is overwritten"); server.EnvStale = false;
+            await env.ResetForTesting(); await Frames(3);
+            Require(server.EnvLook == "{}" && !env.IsDirty && env.DraftJson == "{}" && env.StatusForTesting.Contains("padrão"), "going back to the game's sky clears the look");
+            window.SelectSectionForTesting("geral");
+
+            // --- Mídia -----------------------------------------------------------------------------------------------------
+            var played = new List<string>(); var stopped = 0;
+            window.Media.PreviewStart = (url, volume) => played.Add($"{url}|{volume:0.##}"); window.Media.PreviewStop = () => stopped++;
+            window.SelectSectionForTesting("midia"); await Frames(4);
+            var media = window.Media;
+            Require(window.PageVisibleForTesting("midia") && media.LoadedUrlForTesting == "" && !media.SaveEnabledForTesting && !media.TestEnabledForTesting && !media.RemoveEnabledForTesting && media.CheckForTesting.Contains("silêncio"), "the Mídia tab starts with no music and nothing to save");
+            Require(window.PagePlaceholderTextForTesting("midia").Contains("Ainda não disponível"), "the video says plainly that it is not available");
+            media.UrlForTesting = "http://cdn.example.com/a.mp3"; await Frames(1);
+            Require(media.CheckForTesting.Contains("https://") && !media.SaveEnabledForTesting && !media.TestEnabledForTesting, "an address that is not https is refused as it is typed, and cannot be saved or tested");
+            media.UrlForTesting = "https://localhost/a.mp3"; Require(media.CheckForTesting.Contains("não é permitido"), "an address into a network is refused");
+            media.UrlForTesting = "https://cdn.example.com/a.wav"; Require(media.CheckForTesting.Contains(".mp3 ou .ogg"), "the wrong kind of file is refused");
+            media.UrlForTesting = "https://cdn.example.com/radio.ogg"; media.NameForTesting = "Rádio da Praia"; media.VolumeForTesting = 40; media.AutoplayForTesting = false; await Frames(1);
+            Require(media.CheckForTesting.Contains("OGG") && media.SaveEnabledForTesting && media.TestEnabledForTesting, "a good address is accepted and can be saved and tested");
+            media.TestForTesting(); await Frames(1);
+            Require(played.Count == 1 && played[0] == "https://cdn.example.com/radio.ogg|0,4" && media.PreviewingForTesting, "testing plays the address for the person at the chosen volume");
+            media.StopTestForTesting(); Require(stopped == 1 && !media.PreviewingForTesting, "the test can be stopped");
+            media.TestForTesting(); window.SelectSectionForTesting("geral"); window.SelectSectionForTesting("midia"); await Frames(2);
+            Require(stopped == 2, "leaving the tab ends a test that is playing");
+            await media.SaveForTesting(); await Frames(3);
+            Require(server.MediaSent.Count == 1 && server.MediaUrl == "https://cdn.example.com/radio.ogg" && Math.Abs(server.MediaVolume - .4) < .001 && !server.MediaAutoplay && server.MediaName == "Rádio da Praia" && !media.SaveEnabledForTesting && media.RemoveEnabledForTesting, "saving sends the address, volume, automatic play and name");
+            Require(media.StatusForTesting.Contains("30 segundos"), "it says how long it takes to reach the people on the island");
+            media.UrlForTesting = "https://cdn.example.com/outra.mp3"; server.MediaStale = true; await media.SaveForTesting(); await Frames(2);
+            Require(media.StatusForTesting.Contains("Outra pessoa") && server.MediaUrl.EndsWith("radio.ogg"), "a conflict is told and nothing is overwritten"); server.MediaStale = false;
+            await media.RemoveForTesting(); await Frames(3);
+            Require(server.MediaUrl == "" && media.LoadedUrlForTesting == "" && !media.RemoveEnabledForTesting && media.StatusForTesting.Contains("removida"), "removing the music clears it");
+            window.SelectSectionForTesting("geral");
+
             // --- other sections --------------------------------------------------------------------------------------------
             window.SelectSectionForTesting("terreno"); await Frames(2);
             Require(window.CurrentSection == "terreno" && window.PageVisibleForTesting("terreno") && !window.PageVisibleForTesting("geral"), "a click changes the page");
@@ -523,6 +710,9 @@ public partial class IslandManagementSmoke : Node3D
             if (OS.GetEnvironment("LIFEVERSE_SHOT") is { Length: > 0 } shot)
             {
                 GetWindow().Size = new Vector2I(1536, 1024); window.SetViewportForTesting(new Vector2(1536, 1024)); await Frames(6);
+                server.MediaUrl = "https://cdn.example.com/radio/praia.mp3"; server.MediaName = "Rádio da Praia"; server.MediaVolume = .45;
+                server.EnvLook = "{\"hour\":18.5,\"weather\":\"clear\",\"light\":0.85,\"sky\":\"#FF9A5A\"}"; server.EnvCustom["Meu entardecer"] = "{\"hour\":19}";
+                server.RestartActive = new Server.Rs(Guid.NewGuid(), "scheduled", 272, "Atualização do servidor", DateTimeOffset.UtcNow, null, ""); server.RestartHistory.Add(new Server.Rs(Guid.NewGuid(), "completed", 0, "Manutenção", DateTimeOffset.UtcNow.AddDays(-2), 52, "ok"));
                 server.Online.AddRange([new(Guid.NewGuid(), "Carla", false, 125), new(Guid.NewGuid(), "Duda", false, 4000)]); server.Name = "Ilha Tropical"; server.MaxPlayers = 60; server.InSearch = true; server.OnMap = true; server.Cover = ""; await window.LoadAsync(); await Frames(6);
                 if (OS.GetEnvironment("LIFEVERSE_SECTION") is { Length: > 0 } section) { window.SelectSectionForTesting(section); await Frames(8); }
                 GetViewport().GetTexture().GetImage().SavePng(shot);
