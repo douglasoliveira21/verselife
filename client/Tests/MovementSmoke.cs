@@ -36,12 +36,12 @@ public partial class MovementSmoke : Node
             var typing = new LineEdit { Text = "teste" }; AddChild(typing); typing.GrabFocus(); await Frames(2);
             player.GlobalPosition = new Vector3(0, .05f, 1); player.Velocity = Vector3.Zero; await Frames(10);
             var typingY = player.GlobalPosition.Y;
-            world.GetNode<BuildEditor>("BuildEditor")._UnhandledInput(Action("build_mode"));
+            world.GetNode<LifeVerse.Client.Build.BuildEditorController>("BuildEditorController")._UnhandledInput(Action("build_mode"));
             world.GetNode<TerrainEditor>("TerrainEditor")._UnhandledInput(Action("terrain_mode"));
             player._UnhandledInput(Action("fly_toggle"));
             Input.ActionPress("jump"); await Frames(35); Input.ActionRelease("jump");
             Require(!player.IsFlying && player.GlobalPosition.Y < typingY + .2f, "Space triggered movement while a text field had focus");
-            Require(!world.GetNode<BuildEditor>("BuildEditor").Active && !world.GetNode<TerrainEditor>("TerrainEditor").Active, "a tool shortcut opened while typing");
+            Require(!world.GetNode<LifeVerse.Client.Build.BuildEditorController>("BuildEditorController").Active && !world.GetNode<TerrainEditor>("TerrainEditor").Active, "a tool shortcut opened while typing");
             typing.ReleaseFocus(); typing.QueueFree(); await Frames(2);
 
             player.GlobalPosition = new Vector3(-5.35f, .8f, -5);

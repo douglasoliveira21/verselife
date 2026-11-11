@@ -82,6 +82,8 @@ public sealed class IslandScripting : IScriptWorld
             foreach (var element in root.GetProperty("objects").EnumerateArray()) { var cached = Parse(element); fresh[cached.Id] = cached; }
             // Objects with a change in flight keep their newer local view until the server answers.
             foreach (var id in _inFlight) if (_objects.TryGetValue(id, out var local)) fresh[id] = local;
+            // objects the server removed by itself (a temporary one whose time is up, a return by the land) vanish for everybody on the island
+            foreach (var gone in _objects.Keys.Where(id => !fresh.ContainsKey(id)).ToList()) { _texts.Remove(gone); _broadcastApplied(JsonSerializer.Serialize(new { operation = "delete", objectId = gone })); }
             _objects.Clear(); Obstacles.Clear(); ObjectsVersion++; foreach (var (id, cached) in fresh) { _objects[id] = cached; UpdateObstacle(cached); }
             var definitions = root.GetProperty("scripts").EnumerateArray().Select(s => new ScriptDefinition(s.GetProperty("id").GetGuid(), s.GetProperty("objectId").GetGuid(), s.GetProperty("ownerUserId").GetGuid(), s.GetProperty("name").GetString() ?? "script", s.GetProperty("source").GetString() ?? "", s.GetProperty("version").GetInt32(), s.GetProperty("instructionBudget").GetInt32())).ToList();
             var state = new Dictionary<Guid, Dictionary<string, string>>();

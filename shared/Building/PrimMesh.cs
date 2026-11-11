@@ -18,9 +18,10 @@ namespace LifeVerse.Shared.Building;
 /// <param name="HoleY">-1 or 0 to 0.95: size of the hole along the depth (Z), or the height of a torus profile.</param>
 /// <param name="RadiusOffset">-0.9 to 0.9: how much the radius of a torus grows (positive) or shrinks along its path.</param>
 /// <param name="Revolutions">1 to 3: turns of a torus path.</param>
+/// <param name="TwistBegin">-180 to 180 degrees of rotation at the start of the path (the base); <c>Twist</c> is the rotation at its end, and the turn is spread evenly between them.</param>
 /// <param name="Skew">-0.95 to 0.95: how far the end of a torus path is lifted above its start (a spiral when there is more than one turn).</param>
 public readonly record struct PrimParams(float Hollow = 0, float TaperX = 0, float TaperY = 0, float Twist = 0, float CutStart = 0, float CutEnd = 1,
-    float PathBegin = 0, float PathEnd = 1, float ShearX = 0, float ShearZ = 0, float HoleX = -1, float HoleY = -1, float RadiusOffset = 0, float Revolutions = 1, float Skew = 0)
+    float PathBegin = 0, float PathEnd = 1, float ShearX = 0, float ShearZ = 0, float HoleX = -1, float HoleY = -1, float RadiusOffset = 0, float Revolutions = 1, float Skew = 0, float TwistBegin = 0)
 {
     /// <summary>A struct's own default would leave the cut end at 0, which means nothing is left; the shape starts whole.</summary>
     public PrimParams() : this(0, 0, 0, 0, 0, 1, 0, 1, 0, 0, -1, -1, 0, 1, 0) { }
@@ -33,7 +34,7 @@ public readonly record struct PrimParams(float Hollow = 0, float TaperX = 0, flo
             using var document = JsonDocument.Parse(json);
             float Read(string key, float fallback) => document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty(key, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetSingle(out var number) && float.IsFinite(number) ? number : fallback;
             return new PrimParams(Read("hollow", 0), Read("taperX", 0), Read("taperY", 0), Read("twist", 0), Read("cutStart", 0), Read("cutEnd", 1),
-                Read("pathBegin", 0), Read("pathEnd", 1), Read("shearX", 0), Read("shearZ", 0), Read("holeX", -1), Read("holeY", -1), Read("radiusOffset", 0), Read("revolutions", 1), Read("skew", 0)).Clamped();
+                Read("pathBegin", 0), Read("pathEnd", 1), Read("shearX", 0), Read("shearZ", 0), Read("holeX", -1), Read("holeY", -1), Read("radiusOffset", 0), Read("revolutions", 1), Read("skew", 0), Read("twistBegin", 0)).Clamped();
         }
         catch (JsonException) { return new PrimParams(); }
     }
@@ -45,7 +46,7 @@ public readonly record struct PrimParams(float Hollow = 0, float TaperX = 0, flo
         var (start, end) = Range(CutStart, CutEnd); var (pathBegin, pathEnd) = Range(PathBegin, PathEnd);
         float Hole(float v) => v < 0 ? -1f : Math.Clamp(v, 0f, .95f);
         return new PrimParams(Math.Clamp(Hollow, 0f, .95f), Math.Clamp(TaperX, -1f, 1f), Math.Clamp(TaperY, -1f, 1f), Math.Clamp(Twist, -180f, 180f), start, end,
-            pathBegin, pathEnd, Math.Clamp(ShearX, -.5f, .5f), Math.Clamp(ShearZ, -.5f, .5f), Hole(HoleX), Hole(HoleY), Math.Clamp(RadiusOffset, -.9f, .9f), Math.Clamp(Revolutions, 1f, 3f), Math.Clamp(Skew, -.95f, .95f));
+            pathBegin, pathEnd, Math.Clamp(ShearX, -.5f, .5f), Math.Clamp(ShearZ, -.5f, .5f), Hole(HoleX), Hole(HoleY), Math.Clamp(RadiusOffset, -.9f, .9f), Math.Clamp(Revolutions, 1f, 3f), Math.Clamp(Skew, -.95f, .95f), Math.Clamp(TwistBegin, -180f, 180f));
     }
 }
 
@@ -108,7 +109,7 @@ public static partial class PrimMesh
         var cut = p.CutStart > 0 || p.CutEnd < 1;
         var holeX = p.HoleX >= 0 ? p.HoleX : p.Hollow; var holeZ = p.HoleY >= 0 ? p.HoleY : p.Hollow;
         var hollow = holeX > 0 || holeZ > 0; holeX = MathF.Max(holeX, .02f); holeZ = MathF.Max(holeZ, .02f);
-        var levels = p.Twist == 0 ? 1 : Math.Clamp((int)MathF.Ceiling(MathF.Abs(p.Twist) / 10f), 2, 18);
+        var levels = p.Twist == p.TwistBegin ? 1 : Math.Clamp((int)MathF.Ceiling(MathF.Abs(p.Twist - p.TwistBegin) / 10f), 2, 18);
         var walls = WallCount(type);
         var builders = new Dictionary<int, FaceBuilder>();
         FaceBuilder Face(int id, string name) { if (!builders.TryGetValue(id, out var face)) builders[id] = face = new FaceBuilder(id, name); return face; }
@@ -118,13 +119,13 @@ public static partial class PrimMesh
             var tp = p.PathBegin + t * (p.PathEnd - p.PathBegin); // a path cut keeps only this part of the height
             var sx = MathF.Max(0f, 1f - p.TaperX * tp); var sz = MathF.Max(0f, 1f - p.TaperY * tp);
             var x = point.X * (inner ? holeX : 1f) * sx; var z = point.Y * (inner ? holeZ : 1f) * sz;
-            var angle = MathF.PI / 180f * p.Twist * tp;
+            var angle = MathF.PI / 180f * (p.TwistBegin + (p.Twist - p.TwistBegin) * tp);
             var cos = MathF.Cos(angle); var sin = MathF.Sin(angle);
             return new Vector3(x * cos + z * sin + p.ShearX * tp, tp - .5f, -x * sin + z * cos + p.ShearZ * tp);
         }
         Vector3 Spin(Vector3 direction, float t)
         {
-            var angle = MathF.PI / 180f * p.Twist * (p.PathBegin + t * (p.PathEnd - p.PathBegin)); var cos = MathF.Cos(angle); var sin = MathF.Sin(angle);
+            var angle = MathF.PI / 180f * (p.TwistBegin + (p.Twist - p.TwistBegin) * (p.PathBegin + t * (p.PathEnd - p.PathBegin))); var cos = MathF.Cos(angle); var sin = MathF.Sin(angle);
             return new Vector3(direction.X * cos + direction.Z * sin, direction.Y, -direction.X * sin + direction.Z * cos);
         }
 

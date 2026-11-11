@@ -57,6 +57,7 @@ builder.Services.AddSingleton(builder.Configuration.GetSection("LuaRuntime").Get
 builder.Services.AddSingleton<LuaSandboxService>();
 builder.Services.AddSingleton<ScriptMessagingService>();
 builder.Services.AddHostedService<WorldManagerHostedService>();
+builder.Services.AddHostedService<LifeVerse.Api.Modules.Worlds.TemporaryObjectWorker>();
 builder.Services.AddHostedService<LandRentalWorker>();
 builder.Services.AddSingleton<LifeVerse.Api.Modules.Discovery.SearchMetrics>();
 builder.Services.AddHostedService<LifeVerse.Api.Modules.Discovery.SearchIndexWorker>();

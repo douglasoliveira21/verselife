@@ -18,7 +18,7 @@ public partial class BuildLoadSmoke : Node
         {
             var world = GD.Load<PackedScene>("res://Scenes/World.tscn").Instantiate<Node3D>();
             AddChild(world);
-            var editor = world.GetNode<BuildEditor>("BuildEditor");
+            var editor = world.GetNode<LifeVerse.Client.Build.BuildEditorController>("BuildEditorController");
             if (world.FindChild("Entrar_em_uma_ilha", true, false) is Control joinWindow) joinWindow.Visible = false;
             for (var i = 0; i < 20; i++) await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
             BuildObjectView.ClearCachesForTesting();
@@ -40,21 +40,21 @@ public partial class BuildLoadSmoke : Node
             }).ToList();
 
             var clock = System.Diagnostics.Stopwatch.StartNew();
-            editor.LoadStatesForTesting(states);
+            editor.Synchronizer.ApplyStatesForTesting(states);
             var buildMs = clock.ElapsedMilliseconds;
             var meshes = BuildObjectView.CachedMeshesForTesting; var materials = BuildObjectView.CachedMaterialsForTesting;
             var nodes = Performance.GetMonitor(Performance.Monitor.ObjectNodeCount);
-            Require(editor.ObjectCountForTesting == Objects, $"all objects must exist: {editor.ObjectCountForTesting}");
+            Require(editor.Synchronizer.Views.Count == Objects, $"all objects must exist: {editor.Synchronizer.Views.Count}");
 
             clock.Restart();
             foreach (var state in states) { state.PositionX += 1.5f; state.Revision++; }
-            editor.LoadStatesForTesting(states);
+            editor.Synchronizer.ApplyStatesForTesting(states);
             var moveMs = clock.ElapsedMilliseconds;
 
             clock.Restart();
             foreach (var state in states) { state.Name += "*"; state.Revision++; }
             BuildObjectView.ClearCachesForTesting();
-            editor.LoadStatesForTesting(states);
+            editor.Synchronizer.ApplyStatesForTesting(states);
             var rebuildMs = clock.ElapsedMilliseconds;
 
             GD.Print($"event=build_load_metrics objects={Objects} build_ms={buildMs} move_ms={moveMs} rebuild_ms={rebuildMs} shared_meshes={meshes} shared_materials={materials} nodes={nodes:F0} nodes_per_object={nodes / Objects:F1}");

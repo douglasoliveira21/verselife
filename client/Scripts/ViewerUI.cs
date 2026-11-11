@@ -1,3 +1,4 @@
+using LifeVerse.Client.Build;
 using System.Text;
 using System.Text.Json;
 using Godot;
@@ -115,8 +116,10 @@ public partial class ViewerUI : CanvasLayer
         UpdateStatus();
         BuildRadial();
         if (_world.GetNodeOrNull<LandManager>("LandManager") is null) { var land = new LandManager { Name = "LandManager" }; _world.AddChild(land); land.Said += text => Toast(text); land.WalletChanged += RequestWallet; }
+        BuildHost.Ensure(_world);
         if (_world.GetNodeOrNull<AssetLoadingService>("AssetLoadingService") is null) _world.AddChild(new AssetLoadingService { Name = "AssetLoadingService" });
         if (_world.GetNodeOrNull<PhysicsSync>("PhysicsSync") is null) _world.AddChild(new PhysicsSync { Name = "PhysicsSync" });
+        if (_world.GetNodeOrNull<BuildClickActions>("BuildClickActions") is null) _world.AddChild(new BuildClickActions { Name = "BuildClickActions" });
         if (_world.GetNodeOrNull<ObjectEffects>("ObjectEffects") is null) _world.AddChild(new ObjectEffects { Name = "ObjectEffects" });
         if (_world.GetNodeOrNull<WorldEntryCoordinator>("WorldEntryCoordinator") is null) _world.AddChild(new WorldEntryCoordinator { Name = "WorldEntryCoordinator" });
         if (_world.GetNodeOrNull<TeleportCoordinator>("TeleportCoordinator") is null) { var trip = new TeleportCoordinator { Name = "TeleportCoordinator" }; _world.AddChild(trip); trip.Initialize(_world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator")); }
@@ -138,7 +141,7 @@ public partial class ViewerUI : CanvasLayer
         }
         if (_world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow") is null) _world.AddChild(new AppearanceWindow { Name = "AppearanceWindow", Player = _player });
         if (_world.GetNodeOrNull<GroupsWindow>("GroupsWindow") is null) _world.AddChild(new GroupsWindow { Name = "GroupsWindow" });
-        foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditor", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "AppearanceWindow", "SearchWindow", "ItemRightsWindow", "ItemOffersWindow" })
+        foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditorController", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "AppearanceWindow", "SearchWindow", "ItemRightsWindow", "ItemOffersWindow" })
             foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; if (child is not FloatingWindow) FloatingWindow.MakeDraggable(child); }
     }
 

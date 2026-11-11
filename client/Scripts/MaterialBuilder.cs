@@ -46,6 +46,9 @@ public static class MaterialBuilder
         uniform vec3 spec_color : source_color = vec3(1.0);
         uniform float glossiness = 0.5;
         uniform float environment = 0.0;
+        uniform float normal_strength = 1.0;
+        uniform float spec_strength = 1.0;
+        uniform float ao_strength = 1.0;
         varying vec3 local_pos;
         varying vec3 local_normal;
         varying vec3 model_scale;
@@ -71,7 +74,7 @@ public static class MaterialBuilder
             vec4 t = has_albedo ? texture(albedo_tex, tuv(base_uv, st_albedo, rot_a.x)) : vec4(1.0);
             ALBEDO = albedo.rgb * t.rgb;
             //ALPHA_LINE
-            if (has_normal) NORMAL_MAP = texture(normal_tex, tuv(base_uv, st_normal, rot_a.y)).rgb;
+            if (has_normal) { NORMAL_MAP = texture(normal_tex, tuv(base_uv, st_normal, rot_a.y)).rgb; NORMAL_MAP_DEPTH = normal_strength; }
             //SURFACE
             vec3 glow = emission_color * emission_strength;
             if (has_emissive) glow *= texture(emissive_tex, tuv(base_uv, st_emissive, rot_e)).rgb;
@@ -86,7 +89,7 @@ public static class MaterialBuilder
             vec4 orm = has_orm ? texture(orm_tex, tuv(base_uv, st_orm, rot_a.w)) : vec4(1.0);
             ROUGHNESS = has_orm ? orm.g : roughness_value;
             METALLIC = has_orm ? orm.b : metallic_value;
-            AO = has_orm ? orm.r : 1.0; AO_LIGHT_AFFECT = 1.0;
+            AO = has_orm ? mix(1.0, orm.r, ao_strength) : 1.0; AO_LIGHT_AFFECT = 1.0;
         """;
 
     // Blinn-Phong: the lamps light the surface with a diffuse term and a specular highlight shaped by the glossiness; the built-in physically based light is replaced.
@@ -105,7 +108,7 @@ public static class MaterialBuilder
             float ndl = clamp(dot(n, l), 0.0, 1.0);
             vec3 h = normalize(l + v);
             float shininess = mix(6.0, 220.0, glossiness);
-            vec3 sc = spec_color * (has_spec ? texture(spec_tex, tuv(map_uv, st_spec, rot_a.z)).rgb : vec3(1.0));
+            vec3 sc = spec_color * spec_strength * (has_spec ? texture(spec_tex, tuv(map_uv, st_spec, rot_a.z)).rgb : vec3(1.0));
             float highlight = pow(clamp(dot(n, h), 0.0, 1.0), shininess) * ndl * (0.15 + 0.85 * glossiness);
             DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * ndl / PI;
             SPECULAR_LIGHT += sc * LIGHT_COLOR * ATTENUATION * highlight;
@@ -161,7 +164,11 @@ public static class MaterialBuilder
 
     public static string Shading(JsonObject layer, JsonObject? over) => Text(layer, over, "shading") == "blinnphong" ? "blinnphong" : "pbr";
 
+    /// A surface that shows media (a picture or a video from the web) is drawn by the shader, whose base map the media fills in once it has arrived.
+    public static JsonObject? MediaOf(JsonObject layer, JsonObject? over) => (over?["media"] ?? layer["media"]) as JsonObject;
+
     public static bool IsTextured(JsonObject layer, JsonObject? over) =>
+        MediaOf(layer, over) is not null ||
         Shading(layer, over) == "blinnphong" || Map(layer, over, "texture") is not null || Map(layer, over, "builtin") is not null || MapKeys.Skip(1).Any(key => Map(layer, over, key) is not null);
 
     /// How the alpha channel is used: "none" (opaque), "blend" (see-through) or "mask" (cut out with a cutoff). Without a choice, an object with transparency below 1 blends.
@@ -213,6 +220,7 @@ public static class MaterialBuilder
         material.SetShaderParameter("albedo", new Color(color, alpha));
         material.SetShaderParameter("roughness_value", roughness); material.SetShaderParameter("metallic_value", metallic);
         material.SetShaderParameter("alpha_cutoff", cutoff);
+        material.SetShaderParameter("normal_strength", Mathf.Clamp(Number(layer, over, "normalStrength", 1f), 0, 2)); material.SetShaderParameter("spec_strength", Mathf.Clamp(Number(layer, over, "specularStrength", 1f), 0, 2)); material.SetShaderParameter("ao_strength", Mathf.Clamp(Number(layer, over, "aoStrength", 1f), 0, 1));
         material.SetShaderParameter("emission_color", emission ?? Colors.Black); material.SetShaderParameter("emission_strength", emission is null ? 0f : strength);
         material.SetShaderParameter("spec_color", ColorOf(Text(layer, over, "specularColor"), Colors.White));
         material.SetShaderParameter("glossiness", Mathf.Clamp(Number(layer, over, "glossiness", .5f), 0, 1)); material.SetShaderParameter("environment", Mathf.Clamp(Number(layer, over, "environment", 0), 0, 1));

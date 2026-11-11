@@ -73,6 +73,30 @@ public sealed class ScriptApi(Func<string, string, string?, Task<(long Status, s
         return status is >= 200 and < 300 ? new ScriptResult(true, "Script salvo. A ilha aplica a nova versão em até 15 segundos.", scriptId) : new ScriptResult(false, Explain(status, body));
     }
 
+    /// <summary>Checks a source on the server without saving it: ok, or the first error with its line (0 when it has none).</summary>
+    public async Task<(bool Valid, int Line, string Message)> ValidateAsync(Guid objectId, string source)
+    {
+        var (status, body) = await transport("POST", $"{Base(objectId)}/validate", JsonSerializer.Serialize(new { source }, Web));
+        if (status is < 200 or >= 300) return (false, 0, Explain(status, body));
+        try
+        {
+            using var doc = JsonDocument.Parse(body); var root = doc.RootElement;
+            if (root.GetProperty("valid").GetBoolean()) return (true, 0, "Sem erros de sintaxe.");
+            var first = root.GetProperty("errors")[0];
+            return (false, first.GetProperty("line").GetInt32(), first.GetProperty("message").GetString() ?? "Erro no script.");
+        }
+        catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException or ArgumentOutOfRangeException) { return (false, 0, "Resposta inválida do servidor."); }
+    }
+
+    /// <summary>Restarts one script (<paramref name="scriptId"/>) or all of the object's scripts; the source is never touched.</summary>
+    public async Task<ScriptResult> ResetAsync(Guid objectId, Guid? scriptId = null)
+    {
+        var (status, body) = await transport("POST", scriptId is { } id ? $"{Base(objectId)}/{id}/reset" : $"{Base(objectId)}/reset", "{}");
+        if (status is < 200 or >= 300) return new ScriptResult(false, Explain(status, body));
+        var count = 0; try { using var doc = JsonDocument.Parse(body); count = doc.RootElement.GetProperty("reset").GetInt32(); } catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
+        return new ScriptResult(true, count == 1 ? "1 script reiniciado." : $"{count} scripts reiniciados.");
+    }
+
     public async Task<ScriptResult> DeleteAsync(Guid objectId, Guid scriptId)
     {
         var (status, body) = await transport("DELETE", $"{Base(objectId)}/{scriptId}", null);

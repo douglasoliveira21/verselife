@@ -403,9 +403,10 @@ public partial class ServerMain : Node
         if (!_players.TryGetValue(peerId, out var actor) || !actor.Authenticated || operationJson.Length > 100_000) return;
         var now = DateTimeOffset.UtcNow; while (actor.BuildTimes.Count > 0 && now - actor.BuildTimes.Peek() > TimeSpan.FromSeconds(1)) actor.BuildTimes.Dequeue(); if (actor.BuildTimes.Count >= 20) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "rate_limit"); return; }
         BuildCommand? command; try { command = JsonSerializer.Deserialize<BuildCommand>(operationJson, new JsonSerializerOptions(JsonSerializerDefaults.Web)); } catch { command = null; }
-        if (command is null || command.Operation is not ("create" or "update" or "delete" or "return" or "rez" or "structure" or "protect" or "properties" or "lock" or "unlock") || (command.Object is not null && !ValidBuildCommand(command.Object)) || (command.ObjectIds?.Length ?? 0) > 500) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "invalid_operation"); return; }
+        if (command is null || command.Operation is not ("create" or "update" or "delete" or "return" or "rez" or "structure" or "protect" or "properties" or "buy" or "lock" or "unlock" or "live") || (command.Object is not null && !ValidBuildCommand(command.Object)) || (command.ObjectIds?.Length ?? 0) > 500) { _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationRejected, "invalid_operation"); return; }
         actor.BuildTimes.Enqueue(now);
         if (command.Operation is "lock" or "unlock") { HandleLock(actor, command, now); return; }
+        if (command.Operation == "live") { if (LifeVerse.Shared.Building.LivePoses.Accept(command.Poses, _locks, actor.UserId, now)) foreach (var other in _players.Values.Where(x => x.Authenticated && x.PeerId != peerId)) _bridge.RpcId(other.PeerId, NetworkBridge.MethodName.BuildOperationApplied, JsonSerializer.Serialize(new { operation = "live", userId = actor.UserId, poses = command.Poses })); return; }
 
         // someone else is editing it: the island refuses before the API is even asked
         var targets = command.Operation is "create" or "rez" ? [] : command.Operation == "structure" ? (command.Links?.Select(l => l.ObjectId).ToArray() ?? []) : (command.ObjectIds ?? (command.ObjectId is { } one ? [one] : []));
@@ -688,6 +689,6 @@ public partial class ServerMain : Node
     private sealed record WorldSnapshotResponse(Guid IslandId, long Version, string TerrainJson, string EnvironmentJson, string IntegrityHash);
     private sealed record SnapshotWriteResponse(long Version);
     private sealed record StructureLink(Guid ObjectId, Guid? GroupId, Guid? ParentId, int ExpectedRevision);
-    private sealed record BuildCommand(string Operation, Guid? ObjectId, BuildObjectCommand? Object, int ExpectedRevision, Guid[]? ObjectIds = null, Guid? PackageItemId = null, float OriginX = 0, float OriginY = 0, float OriginZ = 0, StructureLink[]? Links = null, bool? Locked = null, JsonElement? Properties = null);
+    private sealed record BuildCommand(string Operation, Guid? ObjectId, BuildObjectCommand? Object, int ExpectedRevision, Guid[]? ObjectIds = null, LifeVerse.Shared.Building.LivePose[]? Poses = null, Guid? PackageItemId = null, float OriginX = 0, float OriginY = 0, float OriginZ = 0, StructureLink[]? Links = null, bool? Locked = null, JsonElement? Properties = null);
     private sealed record BuildObjectCommand(string PrimitiveType, float PositionX, float PositionY, float PositionZ, float RotationX, float RotationY, float RotationZ, float ScaleX, float ScaleY, float ScaleZ, string? MaterialJson, string? PhysicsJson, Guid? GroupId, int ExpectedRevision = 0, string? GeometryJson = null, string? Name = null, string? Description = null, Guid? ParentObjectId = null, string? PermissionsJson = null, string? ContentJson = null, float? PivotX = null, float? PivotY = null, float? PivotZ = null);
 }

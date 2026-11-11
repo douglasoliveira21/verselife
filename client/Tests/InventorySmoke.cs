@@ -14,7 +14,7 @@ public partial class InventorySmoke : Node
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
     private readonly Dictionary<Guid, BuildObjectState> _server = [];
-    private BuildEditor _editor = null!;
+    private LifeVerse.Client.Build.BuildEditorController _editor = null!;
 
     public override async void _Ready()
     {
@@ -22,8 +22,8 @@ public partial class InventorySmoke : Node
         {
             var world = GD.Load<PackedScene>("res://Scenes/World.tscn").Instantiate<Node3D>();
             AddChild(world);
-            _editor = world.GetNode<BuildEditor>("BuildEditor");
-            _editor.OperationSink = Sink;
+            _editor = world.GetNode<LifeVerse.Client.Build.BuildEditorController>("BuildEditorController");
+            _editor.Synchronizer.OperationSink = Sink;
             if (world.FindChild("Entrar_em_uma_ilha", true, false) is Control joinWindow) joinWindow.Visible = false;
             var cache = world.GetNode<ModelCache>("ModelCache");
             var inventory = world.GetNode<InventoryPanel>("InventoryPanel");
@@ -201,7 +201,7 @@ public partial class InventorySmoke : Node
             var state = _server.Values.Single();
             Require(state.PrimitiveType == "mesh" && state.GeometryJson.Contains(modelAsset.ToString()), $"unexpected object: {state.PrimitiveType} {state.GeometryJson}");
             await Frames(5);
-            var view = _editor.ViewForTesting(state.Id) ?? throw new InvalidOperationException("the mesh object has no view");
+            var view = _editor.Synchronizer.Views.GetValueOrDefault(state.Id) ?? throw new InvalidOperationException("the mesh object has no view");
             var model = view.GetNodeOrNull<Node3D>("Model") ?? throw new InvalidOperationException("the model did not appear inside the object");
             var proxy = view.GetNode<MeshInstance3D>("PrimitiveMesh");
             var size = ((BoxMesh)proxy.Mesh).Size;
@@ -209,20 +209,20 @@ public partial class InventorySmoke : Node
             Require(((BoxShape3D)view.GetNode<StaticBody3D>("CollisionBody").GetChild<CollisionShape3D>(0).Shape).Size.IsEqualApprox(size), "collision does not match the model");
             Require(model.GetChildCount() > 0 && model.GetChild<Node3D>(0).Position.Length() < .01f, "the model should be centred on the object origin");
             Require(Mathf.Abs(view.Scale.X - 2f) < .001f, "a freshly placed model starts two metres across");
-            Require(_editor.Active && _editor.Selection.Count == 1 && _editor.Selection[0] == view, "placing a model should select it with the handles on");
+            Require(_editor.Active && _editor.Selection.Count == 1 && _editor.Selection.Ids[0] == state.Id, "placing a model should select it with the handles on");
 
             // The same model again reuses the cache; moving the object keeps the model.
             inventory.PlaceForTesting(modelItem, new Vector3(4, 1, -6));
             Require(_server.Count == 2 && cache.CachedModels == 1, "the cache should hold one model for two objects");
             await Frames(3);
-            Require(_editor.ViewForTesting(_server.Keys.Last())!.GetNodeOrNull<Node3D>("Model") is not null, "the second object should show the model too");
+            Require(_editor.Synchronizer.Views.GetValueOrDefault(_server.Keys.Last())!.GetNodeOrNull<Node3D>("Model") is not null, "the second object should show the model too");
             await Capture("models");
 
             // A model that is not available leaves a visible marker instead of nothing.
             var broken = Guid.NewGuid(); var brokenState = new BuildObjectState { Id = broken, PrimitiveType = "mesh", Name = "Perdido", GeometryJson = $"{{\"assetId\":\"{Guid.NewGuid()}\"}}", PositionX = -4, PositionY = 1, PositionZ = -6 };
-            _server[broken] = brokenState; _editor.LoadStatesForTesting([brokenState]);
+            _server[broken] = brokenState; _editor.Synchronizer.OnOperation(JsonSerializer.Serialize(new { operation = "create", objectState = brokenState }, Web)); await Frames(3);
             await Frames(5);
-            Require(_editor.ViewForTesting(broken)!.GetNodeOrNull<Node3D>("Model") is null && _editor.ViewForTesting(broken)!.GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is not null, "an unavailable model must keep its placeholder");
+            Require(_editor.Synchronizer.Views.GetValueOrDefault(broken)!.GetNodeOrNull<Node3D>("Model") is null && _editor.Synchronizer.Views.GetValueOrDefault(broken)!.GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is not null, "an unavailable model must keep its placeholder");
 
             // Thumbnails: generated placeholders per kind, and a real render of the model when a renderer exists.
             var placeholder = ThumbnailLoader.Placeholder("models").GetImage();
@@ -303,7 +303,7 @@ public partial class InventorySmoke : Node
         var payload = JsonSerializer.Deserialize<BuildObjectState>(root.GetProperty("object").GetRawText(), Web)!;
         payload.Id = Guid.NewGuid(); payload.Revision = 1;
         _server[payload.Id] = payload;
-        _editor.ApplyOperationForTesting(JsonSerializer.Serialize(new { operation, objectState = payload }, Web));
+        _editor.Synchronizer.OnOperation(JsonSerializer.Serialize(new { operation, objectState = payload }, Web));
         return true;
     }
 

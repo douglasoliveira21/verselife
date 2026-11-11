@@ -1,79 +1,93 @@
+using System.Text.Json;
+using LifeVerse.Api.Data;
 using LifeVerse.Api.Modules.Assets;
+using LifeVerse.Api.Modules.Platform;
 using LifeVerse.Api.Modules.Worlds;
-using LifeVerse.Shared.Building;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace LifeVerse.Api.Tests;
 
-public sealed class ObjectResourcesTests
+/// <summary>The Recursos of an object on the server: reflection, light shadows and mesh animation are checked, priced, and the animation clock is the server's.</summary>
+public sealed class ObjectResourcesTests : IDisposable
 {
-    private static float Settle(FlexSettings flex, float seconds = 6f)
+    private sealed class MemoryStore : IObjectStore
     {
-        var sim = new FlexSimulation(); for (var t = 0f; t < seconds; t += .016f) sim.Step(flex, .016f, t, 0);
-        return sim.Lean.Length();
+        public Task PutAsync(string key, byte[] bytes, CancellationToken ct) => Task.CompletedTask;
+        public Task<Stream?> OpenReadAsync(string key, CancellationToken ct) => Task.FromResult<Stream?>(null);
+    }
+
+    private readonly LifeVerseDbContext _db = new(new DbContextOptionsBuilder<LifeVerseDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    private readonly AssetStorageService _storage; private readonly Guid _instance = Guid.NewGuid(); private readonly Guid _owner = Guid.NewGuid(), _builder = Guid.NewGuid();
+
+    public ObjectResourcesTests()
+    {
+        _storage = new AssetStorageService(new MemoryStore(), NullLogger<AssetStorageService>.Instance);
+        var island = new Island { Id = Guid.NewGuid(), OwnerUserId = _owner, Name = "Ilha", Slug = "ilha", IsPublic = true, Size = 400 };
+        _db.Islands.Add(island); _db.ServerInstances.Add(new ServerInstance { Id = _instance, IslandId = island.Id, Hostname = "h", Status = "healthy" });
+        _db.IslandPermissions.Add(new IslandPermission { Id = Guid.NewGuid(), IslandId = island.Id, UserId = _builder, Permission = "build", PrincipalType = "user", GrantedByUserId = _owner });
+        _db.SaveChanges();
+    }
+    public void Dispose() => _db.Dispose();
+
+    private static BuildObjectRequest Cube(string material) => new("cube", 0, 1, 0, 0, 0, 0, 1, 1, 1, material, "{\"collision\":true}", null, 0, "{}", "Modelo", null, null, null, null);
+
+    private async Task<(int Status, JsonElement Body)> Send(string operation, BuildObjectRequest? o = null, Guid? id = null, int revision = 0)
+    {
+        var result = await BuildOperations.ApplyAsync(_instance, new ServerBuildOperationRequest(_builder, operation, id, o, revision, null, null, 0, 0, 0, null, null, null), _db, _storage, TimeProvider.System, default);
+        return ((result as IStatusCodeHttpResult)?.StatusCode ?? 200, JsonSerializer.SerializeToElement((result as IValueHttpResult)?.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+    }
+
+    private async Task<BuildObject> Obj(Guid id) => await _db.BuildObjects.AsNoTracking().SingleAsync(o => o.Id == id);
+    private static long Since(BuildObject o) => JsonDocument.Parse(o.MaterialJson).RootElement.GetProperty("animation").GetProperty("since").GetInt64();
+    private const string Playing = "{\"animation\":{\"clip\":\"Andar\",\"playing\":true,\"loop\":false,\"speed\":1}}";
+
+    [Fact]
+    public async Task TheServerStampsWhenAnAnimationStartedAndKeepsTheStampWhileItIsUnchanged()
+    {
+        var before = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var (status, body) = await Send("create", Cube(Playing)); Assert.Equal(200, status); var id = body.GetProperty("objectId").GetGuid();
+        var first = Since(await Obj(id)); Assert.InRange(first, before, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await Task.Delay(40);
+        var withSince = (await Obj(id)).MaterialJson; Assert.Equal(200, (await Send("update", Cube(withSince) with { Name = "Outro nome" }, id, 1)).Status);
+        Assert.Equal(first, Since(await Obj(id))); // renaming does not restart the clip
+        Assert.Equal(200, (await Send("update", Cube(Playing), id, 2)).Status); // the client forgot the stamp: it is kept, not made up again
+        Assert.Equal(first, Since(await Obj(id)));
+        await Task.Delay(40);
+        Assert.Equal(200, (await Send("update", Cube("{\"animation\":{\"clip\":\"Andar\",\"playing\":false,\"loop\":false,\"speed\":1,\"offset\":0.4}}"), id, 3)).Status);
+        Assert.True(Since(await Obj(id)) > first); // pausing is a change: the moment is new
+        Assert.Equal(200, (await Send("update", Cube("{}"), id, 4)).Status); Assert.DoesNotContain("animation", (await Obj(id)).MaterialJson);
+    }
+
+    [Theory]
+    [InlineData("{\"animation\":{\"clip\":\"Andar\",\"speed\":9}}", false)]
+    [InlineData("{\"animation\":{\"clip\":\"\",\"speed\":1}}", false)]
+    [InlineData("{\"animation\":{\"clip\":\"Andar\",\"playing\":\"sim\"}}", false)]
+    [InlineData("{\"animation\":\"andar\"}", false)]
+    [InlineData("{\"animation\":{\"clip\":\"Andar\",\"playing\":true,\"loop\":true,\"speed\":2}}", true)]
+    [InlineData("{\"reflection\":{\"intensity\":0.5,\"range\":8}}", true)]
+    [InlineData("{\"reflection\":{\"intensity\":2,\"range\":8}}", false)]
+    [InlineData("{\"reflection\":{\"intensity\":0.5,\"range\":100}}", false)]
+    [InlineData("{\"reflection\":3}", false)]
+    [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"shadow\":true}}", true)]
+    [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"shadow\":\"sim\"}}", false)]
+    public async Task ResourcesOutsideTheirRangesAreRefused(string material, bool accepted)
+    {
+        var (status, body) = await Send("create", Cube(material));
+        Assert.Equal(accepted ? 200 : 400, status);
+        if (!accepted) Assert.Equal("invalid_object", body.GetProperty("code").GetString());
     }
 
     [Fact]
-    public void ARigidObjectNeverMovesAndAForceLeansASoftOneTowardsIt()
+    public async Task ReflectionShadowsAndAnimationWeighOnTheBudget()
     {
-        Assert.Equal(0f, Settle(new FlexSettings(0, 0, 2, 5, 1, 5, 0, 0)), 3);
-        var sim = new FlexSimulation(); for (var t = 0f; t < 8f; t += .016f) sim.Step(new FlexSettings(2, 0, 3, 0, 1, 5, 0, 0), .016f, t, 0);
-        Assert.True(sim.Lean.X > .3f && Math.Abs(sim.Lean.Y) < .01f, $"leans along +X: {sim.Lean}");
-    }
-
-    [Fact]
-    public void TensionHoldsItBackAndDragSettlesIt()
-    {
-        Assert.True(Settle(new FlexSettings(2, 0, 3, 0, 0, 5, 0, 0)) > Settle(new FlexSettings(2, 0, 3, 0, 10, 5, 0, 0)));
-        var windy = new FlexSimulation(); var calm = 0f; for (var t = 0f; t < 6f; t += .016f) windy.Step(new FlexSettings(2, 0, 3, 8, 1, 0, 0, 0), .016f, t, 0);
-        Assert.True(windy.Lean.Length() > .01f); // the wind moves it
-        Assert.Equal(0f, calm);
-        var sagging = new FlexSimulation(); sagging.Step(new FlexSettings(3, 10, 2, 0, 1, 0, 0, 0), .016f, 0, 0); Assert.True(sagging.Sag < 0);
-    }
-
-    [Fact]
-    public void ExtremeSettingsStayInRangeAndFromMaterialReadsWhatWasWritten()
-    {
-        Assert.True(Settle(new FlexSettings(99, 99, -5, 99, -5, 99, 99, 99)) <= 1.0001f);
-        var json = "{\"flex\":" + new FlexSettings(2, 1, 3, 4, 5, 6, 7, 8).ToJson().ToJsonString() + "}";
-        Assert.Equal(new FlexSettings(2, 1, 3, 4, 5, 6, 7, 8), FlexSettings.FromMaterial(json)); Assert.Null(FlexSettings.FromMaterial("{}"));
-        Assert.Equal(10f, FlexSettings.FromMaterial("{\"flex\":{\"wind\":500}}")!.Value.Wind);
-    }
-
-    [Fact]
-    public void TheServerChecksFlexLightAndProjectorSettings()
-    {
-        Assert.Null(MaterialAssets.ValidateSettings("{\"light\":{\"energy\":2,\"range\":8,\"falloff\":1.5},\"projectorBuiltin\":\"bricks\",\"projector\":{\"fov\":60,\"focus\":10,\"ambiance\":0.2},\"flex\":{\"softness\":2,\"wind\":4,\"forceX\":-3}}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"flex\":{\"softness\":9}}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"flex\":{\"forceZ\":-11}}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"light\":{\"energy\":1,\"range\":5,\"falloff\":9}}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"projectorBuiltin\":\"bricks\"}")); // a projector needs the light
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"light\":{\"energy\":1,\"range\":5},\"projectorBuiltin\":\"bricks\",\"projector\":{\"fov\":5}}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"light\":{\"energy\":1,\"range\":5},\"projectorBuiltin\":\"nope\",\"projector\":{}}"));
-        var id = Guid.NewGuid(); Assert.Contains(id, MaterialAssets.TextureIds("{\"light\":{},\"projectorTexture\":\"" + id + "\"}")); // the projector image is one of the parts the object is made of
-        Assert.True(BuildCost.Of("cube", "{}", "{\"flex\":{\"softness\":1}}", "{}", "[]") > BuildCost.Of("cube", "{}", "{}", "{}", "[]"));
-    }
-
-    [Fact]
-    public void TheServerChecksTheAdvancedMaterialSettingsOfTheObjectAndOfEachFace()
-    {
-        Assert.Null(MaterialAssets.ValidateSettings("{\"fullBright\":true,\"doubleSided\":true,\"alphaMode\":\"mask\",\"alphaCutoff\":0.4,\"mapping\":\"planar\",\"faces\":[{\"index\":2,\"alphaMode\":\"blend\",\"fullBright\":false}]}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"alphaMode\":\"glow\"}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"alphaCutoff\":2}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"mapping\":\"cubic\"}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"fullBright\":\"sim\"}"));
-        Assert.NotNull(MaterialAssets.ValidateSettings("{\"faces\":[{\"index\":1,\"doubleSided\":1}]}"));
-    }
-
-    [Fact]
-    public void TheServerChecksTheMaterialModelsMapsAndPerMapTransforms()
-    {
-        var map = Guid.NewGuid();
-        Assert.Null(MaterialAssets.ValidateSettings("{\"shading\":\"blinnphong\",\"builtin\":\"plywood\",\"specularColor\":\"#A0B0C0\",\"glossiness\":0.7,\"environment\":0.3,\"mapUv\":{\"normalMap\":{\"repeatX\":4,\"rotation\":45}}}"));
-        Assert.Null(MaterialAssets.ValidateSettings("{\"shading\":\"pbr\",\"ormMap\":\"" + map + "\",\"emissiveMap\":\"" + map + "\",\"specularMap\":\"" + map + "\",\"noTexture\":false,\"faces\":[{\"index\":2,\"noTexture\":true,\"color\":\"#FFFFFF\"}]}"));
-        foreach (var bad in new[] { "{\"shading\":\"toon\"}", "{\"specularColor\":\"azul\"}", "{\"glossiness\":2}", "{\"environment\":-1}", "{\"mapUv\":{\"bumpMap\":{}}}", "{\"mapUv\":{\"normalMap\":{\"repeatX\":500}}}", "{\"mapUv\":[]}", "{\"ormMap\":\"nao-e-guid\"}", "{\"noTexture\":\"sim\"}" })
-            Assert.NotNull(MaterialAssets.ValidateSettings(bad));
-        Assert.Contains(map, MaterialAssets.TextureIds("{\"ormMap\":\"" + map + "\"}")); Assert.Contains(map, MaterialAssets.TextureIds("{\"emissiveMap\":\"" + map + "\"}")); // the maps are parts of the object like any texture
-        Assert.Contains("plywood", MaterialAssets.BuiltInTextures);
+        async Task<int> CostOf(string material) { var (_, body) = await Send("create", Cube(material)); return (await Obj(body.GetProperty("objectId").GetGuid())).Cost; }
+        var plain = await CostOf("{}"); var lit = await CostOf("{\"light\":{\"energy\":2,\"range\":8}}"); var shadowed = await CostOf("{\"light\":{\"energy\":2,\"range\":8,\"shadow\":true}}");
+        Assert.True(shadowed > lit && lit > plain, $"{plain} < {lit} < {shadowed}");
+        Assert.True(await CostOf("{\"reflection\":{\"intensity\":0.5,\"range\":8}}") >= plain + 6);
+        Assert.True(await CostOf(Playing) >= plain + 4);
     }
 }

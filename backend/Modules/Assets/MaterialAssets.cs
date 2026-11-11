@@ -18,7 +18,7 @@ public static class MaterialAssets
     private static readonly (string Key, float Min, float Max)[] Ranges =
     [
         ("uvRepeatX", .01f, 100f), ("uvRepeatY", .01f, 100f), ("uvOffsetX", -100f, 100f), ("uvOffsetY", -100f, 100f), ("uvRotation", -360f, 360f),
-        ("emissionStrength", 0f, 16f), ("roughness", 0f, 1f), ("metallic", 0f, 1f), ("transparency", 0f, 1f), ("alphaCutoff", 0f, 1f), ("glossiness", 0f, 1f), ("environment", 0f, 1f)
+        ("emissionStrength", 0f, 16f), ("roughness", 0f, 1f), ("metallic", 0f, 1f), ("transparency", 0f, 1f), ("alphaCutoff", 0f, 1f), ("glossiness", 0f, 1f), ("environment", 0f, 1f), ("normalStrength", 0f, 2f), ("specularStrength", 0f, 2f), ("aoStrength", 0f, 1f)
     ];
 
     /// <summary>Every image asset the material refers to, across the object and its faces.</summary>
@@ -74,6 +74,17 @@ public static class MaterialAssets
     private static string? ValidateResources(JsonElement root)
     {
         if (root.TryGetProperty("light", out var light) && light.ValueKind == JsonValueKind.Object && !InRange(light, "falloff", .1f, 4f)) return "Light falloff must be 0.1 to 4.";
+        if (root.TryGetProperty("light", out var shadowLight) && shadowLight.ValueKind == JsonValueKind.Object && shadowLight.TryGetProperty("shadow", out var shadow) && shadow.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return "Light shadow must be true or false.";
+        if (root.TryGetProperty("reflection", out var reflection))
+        {
+            if (reflection.ValueKind != JsonValueKind.Object || !InRange(reflection, "intensity", 0f, 1f) || !InRange(reflection, "range", 2f, 30f)) return "Reflection intensity must be 0 to 1 and its range 2 to 30 metres.";
+        }
+        if (root.TryGetProperty("animation", out var animation))
+        {
+            if (animation.ValueKind != JsonValueKind.Object || !InRange(animation, "speed", .1f, 4f)) return "Mesh animation speed must be 0.1 to 4.";
+            if (animation.TryGetProperty("clip", out var clip) && (clip.ValueKind != JsonValueKind.String || (clip.GetString()?.Length ?? 0) is 0 or > 64)) return "The animation clip needs a name of 1 to 64 letters.";
+            foreach (var flag in new[] { "playing", "loop" }) if (animation.TryGetProperty(flag, out var value) && value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return $"Mesh animation '{flag}' must be true or false.";
+        }
         if (root.TryGetProperty("flex", out var flex))
         {
             if (flex.ValueKind != JsonValueKind.Object) return "Flexible path settings must be an object.";
@@ -90,8 +101,32 @@ public static class MaterialAssets
         return null;
     }
 
+    private static readonly string[] MediaImageExtensions = [".png", ".jpg", ".jpeg", ".webp"];
+    private static readonly string[] MediaVideoExtensions = [".ogv"];
+
+    /// <summary>
+    /// The media of a surface (an image or a video from the web): its kind, an https address on a public host with an extension that kind plays, and the flags. Addresses that reach the
+    /// person's own network (localhost, private ranges, bare IP numbers), carry a user name or are very long are refused, so a surface can never be used to probe somebody's computer.
+    /// </summary>
+    public static string? ValidateMedia(JsonElement layer)
+    {
+        if (!layer.TryGetProperty("media", out var media)) return null;
+        if (media.ValueKind != JsonValueKind.Object) return "Media settings must be an object.";
+        var type = media.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+        if (type is not ("image" or "video")) return "Media type must be image or video.";
+        var url = media.TryGetProperty("url", out var u) && u.ValueKind == JsonValueKind.String ? u.GetString() ?? string.Empty : string.Empty;
+        if (url.Length is 0 or > 500 || !Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo)) return "Media must come from a public https address.";
+        var host = uri.Host.ToLowerInvariant();
+        if (host is "localhost" || host.EndsWith(".localhost", StringComparison.Ordinal) || host.EndsWith(".local", StringComparison.Ordinal) || host.EndsWith(".internal", StringComparison.Ordinal) || !host.Contains('.') || System.Net.IPAddress.TryParse(host.Trim('[', ']'), out _)) return "Media must come from a public host name, not an address on a private network.";
+        var extensions = type == "image" ? MediaImageExtensions : MediaVideoExtensions;
+        if (!extensions.Any(e => uri.AbsolutePath.EndsWith(e, StringComparison.OrdinalIgnoreCase))) return type == "image" ? "An image must be a PNG, JPG or WebP file." : "A video must be an Ogg Theora (.ogv) file.";
+        foreach (var flag in new[] { "playing", "loop", "glow" }) if (media.TryGetProperty(flag, out var value) && value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return $"Media '{flag}' must be true or false.";
+        return null;
+    }
+
     private static string? CheckLayer(JsonElement layer)
     {
+        if (ValidateMedia(layer) is { } mediaError) return mediaError;
         if (layer.TryGetProperty("alphaMode", out var alphaMode) && (alphaMode.ValueKind != JsonValueKind.String || alphaMode.GetString() is not ("none" or "blend" or "mask"))) return "Alpha mode must be none, blend or mask.";
         if (layer.TryGetProperty("mapping", out var mapping) && (mapping.ValueKind != JsonValueKind.String || mapping.GetString() is not ("default" or "planar"))) return "Mapping must be default or planar.";
         if (layer.TryGetProperty("shading", out var shading) && (shading.ValueKind != JsonValueKind.String || shading.GetString() is not ("pbr" or "blinnphong"))) return "Shading must be pbr or blinnphong.";

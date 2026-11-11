@@ -30,7 +30,7 @@ public sealed class ContextServices
     public Action<string> Gesture { get; init; } = _ => { };
     public Action<InteractableSeat> Sit { get; init; } = _ => { };
     public Action<Guid> Touch { get; init; } = _ => { };
-    public Action<Guid, GizmoMode?> EditObject { get; init; } = (_, _) => { };
+    public Action<Guid, LifeVerse.Client.Build.BuildGizmoMode?> EditObject { get; init; } = (_, _) => { };
     public Action<Guid, string> ObjectCommand { get; init; } = (_, _) => { };
     public Action<Guid> SelectObject { get; init; } = _ => { };
     public Action<Guid> DeleteObject { get; init; } = _ => { };
@@ -110,9 +110,9 @@ public static class InteractionRegistry
                 Label = "Editar", Icon = "hammer", Tooltip = "Mover, girar, esticar, duplicar ou excluir",
                 Children =
                 [
-                    new() { Label = "Mover", Icon = "move", Run = () => s.EditObject(id, GizmoMode.Move) },
-                    new() { Label = "Girar", Icon = "rotate", Run = () => s.EditObject(id, GizmoMode.Rotate) },
-                    new() { Label = "Esticar", Icon = "expand", Run = () => s.EditObject(id, GizmoMode.Scale) },
+                    new() { Label = "Mover", Icon = "move", Run = () => s.EditObject(id, LifeVerse.Client.Build.BuildGizmoMode.Move) },
+                    new() { Label = "Girar", Icon = "rotate", Run = () => s.EditObject(id, LifeVerse.Client.Build.BuildGizmoMode.Rotate) },
+                    new() { Label = "Esticar", Icon = "expand", Run = () => s.EditObject(id, LifeVerse.Client.Build.BuildGizmoMode.Scale) },
                     new() { Label = "Textura", Icon = "image", Run = () => s.EditObject(id, null), Tooltip = "Abre o editor com o objeto selecionado (aba Textura)" },
                     new() { Label = "Duplicar", Icon = "copy-plus", Run = () => { s.EditObject(id, null); s.ObjectCommand(id, "duplicate"); } },
                     new() { Label = "Excluir", Icon = "trash", Accent = true, Run = () => { s.EditObject(id, null); s.ObjectCommand(id, "delete"); }, Tooltip = "Exclui o objeto (Ctrl+Z desfaz)" }
@@ -196,7 +196,7 @@ public partial class ContextInteractionManager : Node
         var camera = GetViewport().GetCamera3D();
         if (camera is null) return null;
         var origin = camera.ProjectRayOrigin(screen); var direction = camera.ProjectRayNormal(screen);
-        var query = PhysicsRayQueryParameters3D.Create(origin, origin + direction * PickReach, uint.MaxValue & ~BuildGizmo.PhysicsLayer);
+        var query = PhysicsRayQueryParameters3D.Create(origin, origin + direction * PickReach, uint.MaxValue);
         if (_player is not null) query.Exclude = [_player.GetRid()];
         var hit = _player is null ? new Godot.Collections.Dictionary() : _player.GetWorld3D().DirectSpaceState.IntersectRay(query);
         var hitDistance = hit.Count > 0 ? origin.DistanceTo(hit["position"].AsVector3()) : float.PositiveInfinity;

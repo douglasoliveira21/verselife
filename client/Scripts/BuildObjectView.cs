@@ -40,6 +40,13 @@ public sealed class BuildObjectState
     public float PivotX { get; set; }
     public float PivotY { get; set; }
     public float PivotZ { get; set; }
+    /// <summary>What the object weighs on the island budget, as the server counted it (never computed here).</summary>
+    public int Cost { get; set; }
+    /// <summary>What a click does: touch, sit, buy, pay, open, zoom, ignore or none.</summary>
+    public string ClickAction { get; set; } = "touch";
+    public Guid? LastOwnerUserId { get; set; }
+    /// <summary>When the server removes a temporary object (null for the others).</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 }
 
 public partial class BuildObjectView : Node3D
@@ -116,6 +123,7 @@ public partial class BuildObjectView : Node3D
                 arrays[(int)Mesh.ArrayType.Vertex] = face.Positions.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
                 arrays[(int)Mesh.ArrayType.Normal] = face.Normals.Select(p => new Vector3(p.X, p.Y, p.Z)).ToArray();
                 arrays[(int)Mesh.ArrayType.TexUV] = face.Uvs.Select(p => new Vector2(p.X, p.Y)).ToArray();
+                arrays[(int)Mesh.ArrayType.Tangent] = TangentsOf((Vector3[])arrays[(int)Mesh.ArrayType.Vertex].AsVector3Array(), (Vector3[])arrays[(int)Mesh.ArrayType.Normal].AsVector3Array(), (Vector2[])arrays[(int)Mesh.ArrayType.TexUV].AsVector2Array(), face.Indices);
                 arrays[(int)Mesh.ArrayType.Index] = face.Indices;
                 built.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
                 ids.Add(face.Id); triangles += face.Indices.Length / 3; ends.Add(triangles);
@@ -133,11 +141,13 @@ public partial class BuildObjectView : Node3D
         {
             var entry = faces.GetValueOrDefault(_faceIds[i]);
             var materialKey = state.MaterialJson + "#" + (entry?.ToJsonString() ?? "");
-            if (!MaterialCache.TryGetValue(materialKey, out var cached))
+            var hasMedia = MaterialBuilder.MediaOf(material, entry) is not null; // a surface with media is this object's own: nobody else shares it
+            Material? cached = null;
+            if (hasMedia || !MaterialCache.TryGetValue(materialKey, out cached))
             {
                 cached = MaterialBuilder.Build(material, entry, Textures);
                 // a textured material built before the texture cache exists would stay without its image for good: do not share it
-                if (Textures is not null || !MaterialBuilder.IsTextured(material, entry))
+                if (!hasMedia && (Textures is not null || !MaterialBuilder.IsTextured(material, entry)))
                 {
                     if (MaterialCache.Count >= MaterialCacheLimit) MaterialCache.Clear();
                     MaterialCache[materialKey] = cached;
@@ -145,6 +155,7 @@ public partial class BuildObjectView : Node3D
             }
             visual.SetSurfaceOverrideMaterial(i, cached);
         }
+        AttachMedia(visual, material, i => faces.GetValueOrDefault(_faceIds[i]), _faceIds.Count);
         AddObjectLight(material);
         for (var i = 0; i < _faceIds.Count; i++) _faceBase.Add(visual.GetSurfaceOverrideMaterial(i));
         if (!TryGetBool(state.PhysicsJson, "collision", true) || mesh.GetSurfaceCount() == 0) { AddSelectionBody(new BoxShape3D { Size = mesh.GetAabb().Size }); return; }
@@ -185,7 +196,7 @@ public partial class BuildObjectView : Node3D
             if (proxy?.MaterialOverride is StandardMaterial3D missing) missing.AlbedoColor = new Color(.9f, .3f, .3f, .4f);
             return;
         }
-        AddChild(model.Node); ApplyModelMaterial(model.Node);
+        AddChild(model.Node); ApplyModelMaterial(model.Node); AddLightAndResources(ParseMaterial(State.MaterialJson), model.Node);
         if (proxy is not null)
         {
             proxy.Mesh = new BoxMesh { Size = model.Size };
@@ -343,6 +354,7 @@ public partial class BuildObjectView : Node3D
         if (keepTag is not null) Callable.From(() => { if (IsInstanceValid(this)) SetLockedBy(keepTag); }).CallDeferred();
         _applyId++; _modelAsset = null; _faceIds.Clear(); _faceTriangleEnd.Clear(); _faceBase.Clear();
         if (state.PrimitiveType.Equals("mesh", StringComparison.OrdinalIgnoreCase)) { BuildMeshObject(state); return; }
+        if (IsNature(state.PrimitiveType)) { BuildNature(state); return; }
         if (PrimMesh.Supports(state.PrimitiveType)) { BuildProcedural(state); return; }
         var mesh = CreateMesh(state.PrimitiveType, state.GeometryJson); var materialJson = ParseMaterial(state.MaterialJson); var visual = new MeshInstance3D { Name = "PrimitiveMesh", Mesh = mesh, MaterialOverride = MaterialBuilder.Build(materialJson, null, Textures) }; AddChild(visual); ApplyRange(visual); AddObjectLight(materialJson);
         if (!TryGetBool(state.PhysicsJson, "collision", true)) { AddSelectionBody(CreateShape(state.PrimitiveType)); return; }
@@ -395,9 +407,12 @@ public partial class BuildObjectView : Node3D
     }
 
     /// A glowing object lights its surroundings: a light with the colour, strength and reach saved with the material.
-    private void AddObjectLight(JsonObject material)
+    private void AddObjectLight(JsonObject material) { AddFlex(material); AddLightAndResources(material, null); }
+
+    /// The light, the projector, the reflection and (for a model) the animation of an object.
+    private void AddLightAndResources(JsonObject material, Node? model)
     {
-        AddFlex(material);
+        AddResources(material, model);
         if (material["light"] is not JsonObject light) return;
         float Read(string key, float fallback) => light[key] is JsonValue v && v.TryGetValue<double>(out var n) && double.IsFinite(n) ? (float)n : fallback;
         Color color; try { color = light["color"] is JsonValue c && c.TryGetValue<string>(out var text) ? Color.FromHtml(text) : Colors.White; } catch { color = Colors.White; }
@@ -407,7 +422,7 @@ public partial class BuildObjectView : Node3D
         float Projector(string key, float fallback) => projector?[key] is JsonValue v && v.TryGetValue<double>(out var n) && double.IsFinite(n) ? (float)n : fallback;
         // with a projector the round light is only the "ambiance" (the share of the light that falls outside the image)
         var ambient = hasImage ? Mathf.Clamp(Projector("ambiance", .1f), 0f, 1f) : 1f;
-        AddChild(new ObjectLight { Name = "ObjectLight", LightColor = color, LightEnergy = energy * ambient, OmniRange = range, OmniAttenuation = Mathf.Clamp(Read("falloff", 1f), .1f, 4f), ShadowEnabled = false });
+        AddChild(new ObjectLight { Name = "ObjectLight", LightColor = color, LightEnergy = energy * ambient, OmniRange = range, OmniAttenuation = Mathf.Clamp(Read("falloff", 1f), .1f, 4f), ShadowEnabled = false, WantsShadow = light["shadow"] is JsonValue shadow && shadow.TryGetValue<bool>(out var casts) && casts });
         if (!hasImage) return;
         var spot = new SpotLight3D
         {
@@ -448,10 +463,13 @@ public partial class BuildObjectView : Node3D
     /// Dynamic lights are expensive, so only the first few in the world are switched on; the rest stay dark until some go away.
     public partial class ObjectLight : OmniLight3D
     {
-        public const int MaxLights = 16;
+        public const int MaxLights = 16, MaxShadows = 4;
+        private static int _shadows;
+        private bool _casting;
+        public bool WantsShadow { get; set; }
         private static int _active;
-        public override void _EnterTree() { _active++; Visible = _active <= MaxLights; }
-        public override void _ExitTree() { _active--; }
+        public override void _EnterTree() { _active++; Visible = _active <= MaxLights; if (WantsShadow && _shadows < MaxShadows) { ShadowEnabled = true; _casting = true; _shadows++; } }
+        public override void _ExitTree() { _active--; if (_casting) { _shadows--; _casting = false; } }
         public static int ActiveForTesting => _active;
     }
 

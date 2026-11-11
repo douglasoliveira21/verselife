@@ -8,8 +8,8 @@ public sealed class BuildValidationTests
     [Fact]
     public void Catalog_ContainsAllPhaseFivePrimitives()
     {
-        var expected = new[] { "cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid", "torus", "hemisphere" };
-        // The eleven primitives plus "mesh", which shows an imported 3D model.
+        var expected = new[] { "cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid", "torus", "hemisphere", "tree", "grass" };
+        // The primitives (with tree and grass) plus "mesh", which shows an imported 3D model.
         Assert.Equal(expected.Length + 1, BuildCatalog.PrimitiveTypes.Length);
         Assert.True(BuildCatalog.IsPrimitive("mesh"));
         foreach (var primitive in expected) Assert.True(BuildCatalog.IsPrimitive(primitive));

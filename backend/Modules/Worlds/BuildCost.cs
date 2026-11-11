@@ -22,7 +22,7 @@ public static class BuildCost
             {
                 using var document = JsonDocument.Parse(geometryJson);
                 double Read(string key, double fallback) => document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var n) && double.IsFinite(n) ? n : fallback;
-                hollow = Read("hollow", 0); twist = Read("twist", 0); cutStart = Read("cutStart", 0); cutEnd = Read("cutEnd", 1);
+                hollow = Read("hollow", 0); twist = Read("twist", 0) - Read("twistBegin", 0); cutStart = Read("cutStart", 0); cutEnd = Read("cutEnd", 1);
             }
             catch (JsonException) { }
         var type = primitiveType.ToLowerInvariant();
@@ -30,7 +30,7 @@ public static class BuildCost
         double basic = type switch
         {
             "cube" => 16, "prism" => 12, "pyramid" => 12, "cone" => 56, "cylinder" => 96, "tube" => 192, "plane" => 2,
-            "sphere" => 2048, "hemisphere" => 1024, "torus" or "ring" => 1536, "mesh" => 4000, _ => 100
+            "sphere" => 2048, "hemisphere" => 1024, "torus" or "ring" => 1536, "tree" => 160, "grass" => 48, "mesh" => 4000, _ => 100
         };
         if (type is "cube" or "prism" or "pyramid" or "cone" or "cylinder" or "tube")
         {
@@ -80,6 +80,10 @@ public static class BuildCost
                 if (root.TryGetProperty("light", out _)) textures += 5;
                 if (root.TryGetProperty("projector", out _) || root.TryGetProperty("projectorTexture", out _) || root.TryGetProperty("projectorBuiltin", out _)) textures += 4; // a projector adds a shadowless spot light and an image
                 if (root.TryGetProperty("flex", out _)) effects += 3; // a flexible object is animated every frame
+                if (root.TryGetProperty("media", out var mediaNode) && mediaNode.ValueKind == JsonValueKind.Object) effects += mediaNode.TryGetProperty("type", out var mediaType) && mediaType.GetString() == "video" ? 12 : 5; // a picture or a video from the web is drawn (and streamed) for everybody
+                if (root.TryGetProperty("reflection", out _)) effects += 6; // a reflection probe renders the surroundings
+                if (root.TryGetProperty("animation", out _)) effects += 4; // a rigged mesh is animated every frame
+                if (root.TryGetProperty("light", out var lightNode) && lightNode.ValueKind == JsonValueKind.Object && lightNode.TryGetProperty("shadow", out var shadowNode) && shadowNode.ValueKind == JsonValueKind.True) effects += 3; // a light that casts shadows costs more
                 if (root.TryGetProperty("faces", out var faces) && faces.ValueKind == JsonValueKind.Array) textures += Math.Min(faces.GetArrayLength(), 32);
                 if (root.TryGetProperty("transparency", out var alpha) && alpha.ValueKind == JsonValueKind.Number && alpha.TryGetDouble(out var a) && a < .999) effects += 1; // see-through surfaces cost more to draw
                 if (root.TryGetProperty("emission", out _)) effects += 1;
@@ -102,7 +106,7 @@ public static class BuildCost
             using var document = JsonDocument.Parse(geometryJson);
             if (document.RootElement.ValueKind != JsonValueKind.Object) return false;
             double Read(string key, double fallback) => document.RootElement.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetDouble(out var n) && double.IsFinite(n) ? n : fallback;
-            return Read("hollow", 0) > 0 || Read("twist", 0) != 0 || Read("cutStart", 0) > 0 || Read("cutEnd", 1) < 1;
+            return Read("hollow", 0) > 0 || Read("twist", 0) != Read("twistBegin", 0) || Read("cutStart", 0) > 0 || Read("cutEnd", 1) < 1;
         }
         catch (JsonException) { return false; }
     }

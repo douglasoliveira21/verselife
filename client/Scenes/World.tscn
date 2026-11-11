@@ -6,7 +6,6 @@
 [ext_resource path="res://Scripts/WorldNetworkUI.cs" type="Script" id="4"]
 [ext_resource path="res://Scripts/IslandTerrain.cs" type="Script" id="5"]
 [ext_resource path="res://Scripts/IslandEnvironmentController.cs" type="Script" id="6"]
-[ext_resource path="res://Scripts/BuildEditor.cs" type="Script" id="7"]
 [ext_resource path="res://Scripts/InventoryPanel.cs" type="Script" id="8"]
 [ext_resource path="res://Scripts/LuaScriptEditor.cs" type="Script" id="9"]
 [ext_resource path="res://Scripts/HudEditor.cs" type="Script" id="10"]
@@ -76,9 +75,6 @@ script = ExtResource("5")
 
 [node name="EnvironmentController" type="Node" parent="."]
 script = ExtResource("6")
-
-[node name="BuildEditor" type="Node3D" parent="."]
-script = ExtResource("7")
 
 [node name="InventoryPanel" type="Node3D" parent="."]
 script = ExtResource("8")

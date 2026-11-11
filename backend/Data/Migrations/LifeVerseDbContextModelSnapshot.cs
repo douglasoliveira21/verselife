@@ -661,6 +661,14 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("ClickAction")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("touch")
+                        .HasColumnName("click_action");
+
                     b.Property<string>("ContentJson")
                         .IsRequired()
                         .HasColumnType("jsonb")
@@ -692,6 +700,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("edit_locked");
 
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
                     b.Property<string>("GeometryJson")
                         .IsRequired()
                         .HasColumnType("jsonb")
@@ -704,6 +716,10 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Property<Guid>("IslandId")
                         .HasColumnType("uuid")
                         .HasColumnName("island_id");
+
+                    b.Property<Guid?>("LastOwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("last_owner_user_id");
 
                     b.Property<string>("MaterialJson")
                         .IsRequired()

@@ -1,3 +1,4 @@
+using LifeVerse.Client.Build;
 using Godot;
 using LifeVerse.Client.Autoloads;
 
@@ -64,7 +65,7 @@ public partial class ViewerUI
         AddChoiceSubmenu(world, "Clima (somente neste computador)", ["Limpo", "Nublado", "Chuva", "Tempestade", "Neblina"], index => SetWeather(WeatherNames[index]));
         AddMenu(row, "Conteúdo",
             ("Importar conteúdo…", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OpenImporter(), false),
-            ("Construir   B", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true), false),
+            ("Construir   B", () => BuildHost.SetActive(_world, true), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
             ("Marketplace e carteira…", () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle(), false),
             ("-", null, false),
@@ -199,7 +200,7 @@ public partial class ViewerUI
         view.Text = "Ver";
         row.AddChild(view);
         ToolButton(row, "photo", "Foto", "Capturar a tela sem a interface", TakeSnapshot);
-        ToolButton(row, "hammer", "Construir", "Ferramentas de construção (B)", () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true));
+        ToolButton(row, "hammer", "Construir", "Ferramentas de construção (B)", () => BuildHost.SetActive(_world, true));
         ToolButton(row, "search", "Buscar", "Buscar ilhas, pessoas, amigos, grupos, lojas, eventos e lugares", () => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.Toggle());
         _peopleButton = ToolButton(row, "people", "Pessoas", "Buscar pessoas, amigos e grupos", () => _people?.Toggle(), toggle: true);
         ToolButton(row, "pin", "Mapa", "Mapa, busca e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle());
@@ -295,12 +296,12 @@ public partial class ViewerUI
             Gesture = name => _player?.Gesture(name),
             Sit = seat => _player?.SitOn(seat),
             Touch = id => _network.TouchObject(id),
-            EditObject = (id, mode) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.EditObject(id, mode),
-            ObjectCommand = (_, command) => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.RunCommand(command),
-            SelectObject = id => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SelectFromContext(id),
-            DeleteObject = id => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.DeleteOwnedObject(id),
-            StartBuilding = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.SetActive(true),
-            StartPlacing = () => _world.GetNodeOrNull<BuildEditor>("BuildEditor")?.StartPlacing(),
+            EditObject = (id, mode) => BuildHost.EditObject(_world, id, mode),
+            ObjectCommand = (_, command) => BuildHost.RunCommand(_world, command),
+            SelectObject = id => BuildHost.SelectFromContext(_world, id),
+            DeleteObject = id => BuildHost.DeleteOwnedObject(_world, id),
+            StartBuilding = () => BuildHost.SetActive(_world, true),
+            StartPlacing = () => BuildHost.StartPlacing(_world),
             AboutLand = point => _world.GetNodeOrNull<LandManager>("LandManager")?.AboutAt(point),
             SelectLand = () => _world.GetNodeOrNull<LandManager>("LandManager")?.SetActive(true),
             EnterVehicle = id => _network.EnterVehicle(id),
@@ -313,8 +314,8 @@ public partial class ViewerUI
         if (_player is not null) _player.ContextRequested += position => { if (!ToolsOwnTheMouse()) _context.OpenAt(position); };
     }
 
-    /// While the build or terrain tools are active a right click belongs to them (the editing camera), not to the menu.
-    private bool ToolsOwnTheMouse() => (_world.GetNodeOrNull<BuildEditor>("BuildEditor")?.EditCameraActive ?? false) || (_world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.Active ?? false);
+
+    private bool ToolsOwnTheMouse() => BuildHost.OwnsTheMouse(_world) || (_world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.Active ?? false);
 
     private static string LandDemo()
     {
@@ -352,16 +353,14 @@ public partial class ViewerUI
             if (view == "land-trade") { land.AboutAt(new Vector3(36, 0, 8)); land.ShowTradeForTesting(); land.OpenBuyForTesting(); }
             var overview = new Camera3D { Fov = 55, Transform = new Transform3D(Basis.Identity, new Vector3(30, 80, 50)).LookingAt(new Vector3(30, 0, 14), Vector3.Back) }; _world.AddChild(overview); overview.MakeCurrent();
         }
-        if (view.StartsWith("build", StringComparison.Ordinal) && _world.GetNodeOrNull<BuildEditor>("BuildEditor") is { } editor)
+        if (view.StartsWith("build", StringComparison.Ordinal) && _world.GetNodeOrNull<BuildEditorController>(BuildHost.NodeName) is { } editor)
         {
-            var state = new BuildObjectState { Id = Guid.NewGuid(), PrimitiveType = "cube", Name = "Torre", Description = "Torre de tijolos torcida e vazada, construção demonstrativa do LifeVerse.", GeometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", PositionX = 0, PositionY = 1, PositionZ = -4, ScaleX = 2, ScaleY = 2, ScaleZ = 2, Revision = 1, ContentJson = "[{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Campainha\",\"category\":\"sounds\"},{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Madeira\",\"category\":\"textures\"},{\"assetId\":\"" + Guid.NewGuid() + "\",\"name\":\"Porta\",\"category\":\"models\"}]", MaterialJson = "{\"color\":\"#FFFFFF\",\"builtin\":\"bricks\",\"uvRepeatX\":2,\"uvRepeatY\":3,\"uvRotation\":0,\"light\":{\"color\":\"#FFD9A0\",\"energy\":1.5,\"range\":8}}" };
-            editor.SetActive(true); editor.LoadStatesForTesting([state]); editor.SelectIds([state.Id]);
-            editor.SetPackageNameForTesting("Torre Torcida");
-            editor.ShowLimits("{\"objects\":1234,\"maxObjects\":5000,\"cost\":52000,\"maxCost\":200000,\"canBuildHere\":true,\"isAdmin\":false,\"parcel\":{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Praça\",\"mine\":true,\"publicBuild\":false,\"objects\":45,\"maxObjects\":100,\"cost\":300,\"maxCost\":2000}}");
-            editor.PreviewTutorialForTesting(2);
-            var tab = Array.IndexOf(new[] { "geral", "objeto", "textura", "recursos", "conteudo", "alinhar" }, view.Contains('-') ? view[(view.IndexOf('-') + 1)..] : "objeto");
-            editor.ShowTabForTesting(Math.Max(tab, 0));
-            if (tab > 0) editor.HideTutorialForTesting();
+            var id = Guid.NewGuid();
+            editor.SetActive(true);
+            editor.Synchronizer.OnOperation(System.Text.Json.JsonSerializer.Serialize(new { operation = "create", objectState = new { id, islandId = Guid.NewGuid(), creatorUserId = Guid.Empty, ownerUserId = Guid.Empty, name = "Torre", description = "Torre de tijolos torcida e vazada, construção demonstrativa do LifeVerse.", primitiveType = "cube", positionX = 0, positionY = 1, positionZ = -4, rotationX = 0, rotationY = 0, rotationZ = 0, scaleX = 2, scaleY = 2, scaleZ = 2, materialJson = "{}", geometryJson = "{\"hollow\":0.45,\"twist\":70,\"taperX\":0.35,\"taperY\":0.35,\"cutStart\":0.0,\"cutEnd\":0.8}", physicsJson = "{\"collision\":true}", permissionsJson = "{}", contentJson = "[]", revision = 1, cost = 2 } }));
+            editor.Selection.Set([id]);
+            var tab = Array.IndexOf(new[] { "geral", "objeto", "recursos", "textura", "conteudo" }, view.Contains('-') ? view[(view.IndexOf('-') + 1)..] : "objeto");
+            editor.Window.SelectTabForTesting(Math.Max(tab, 0));
         }
         if (view == "people" && _people is not null)
         {

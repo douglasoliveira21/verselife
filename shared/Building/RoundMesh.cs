@@ -40,7 +40,7 @@ public static partial class PrimMesh
         {
             var ax = sphere ? .5f * MathF.Sin(MathF.PI * s) : a0; var ay = sphere ? ax : b0;
             var x = MathF.Cos(theta) * ax * MathF.Max(0f, 1f - p.TaperX * s); var y = MathF.Sin(theta) * ay * MathF.Max(0f, 1f - p.TaperY * s);
-            var twist = MathF.PI / 180f * p.Twist * s; var cos = MathF.Cos(twist); var sin = MathF.Sin(twist);
+            var twist = MathF.PI / 180f * (p.TwistBegin + (p.Twist - p.TwistBegin) * s); var cos = MathF.Cos(twist); var sin = MathF.Sin(twist);
             return new Vector2(x * cos - y * sin, x * sin + y * cos);
         }
         Vector3 Pos(float s, float theta, float scale = 1f)

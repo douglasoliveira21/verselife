@@ -15,6 +15,7 @@ public static class BuildSharing
 {
     public static readonly string[] SaleTypes = ["none", "original", "copy", "contents"];
     public const int MaxPrice = 10_000_000;
+    public static readonly string[] ClickActions = ["touch", "sit", "buy", "pay", "open", "zoom", "ignore", "none"];
 
     private static JsonObject Parse(string? json) { try { return JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json) as JsonObject ?? new JsonObject(); } catch (JsonException) { return new JsonObject(); } }
     public static bool Flag(string? permissionsJson, string key) => Parse(permissionsJson)[key] is JsonValue v && v.TryGetValue<bool>(out var on) && on;
@@ -58,6 +59,8 @@ public static partial class BuildOperations
         string? Text(string key) => p.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
         var ownerRights = Int("ownerRights"); var nextRights = Int("nextOwnerRights"); var saleType = Text("saleType"); var price = Int("salePrice");
         var setGroup = p.TryGetProperty("groupId", out var groupElement); Guid? group = setGroup && groupElement.ValueKind == JsonValueKind.String && Guid.TryParse(groupElement.GetString(), out var parsedGroup) ? parsedGroup : null;
+        var clickAction = Text("clickAction");
+        if (clickAction is not null && !BuildSharing.ClickActions.Contains(clickAction)) return Refuse(400, "invalid_click_action");
         if (saleType is not null && !BuildSharing.SaleTypes.Contains(saleType)) return Refuse(400, "invalid_sale_type");
         if (price is < 0 or > BuildSharing.MaxPrice) return Refuse(400, "invalid_price");
         if (setGroup && groupElement.ValueKind != JsonValueKind.Null && group is null) return Refuse(400, "invalid_group");
@@ -75,16 +78,19 @@ public static partial class BuildOperations
             var type = saleType ?? BuildSharing.Sale(o.PermissionsJson).Type;
             if (type == "copy" && !ItemRights.IsCopyable(newOwner)) return Refuse(403, "no_copy");
             if (type is "original" && !ItemRights.Has(newOwner, Right.Transfer)) return Refuse(403, "no_transfer");
+            if (clickAction == "buy" && type == "none") return Refuse(409, "buy_needs_sale"); // the click would offer nothing
         }
         var changed = new List<BuildObject>();
         foreach (var o in objects)
         {
-            var before = (o.OwnerRights, o.NextOwnerRights, o.GroupId, o.PermissionsJson);
+            var before = (o.OwnerRights, o.NextOwnerRights, o.GroupId, o.PermissionsJson, o.ClickAction);
             if (ownerRights is { } r2) o.OwnerRights = ItemRights.Normalize(r2);
             o.NextOwnerRights = ItemRights.Clamp(nextRights ?? o.NextOwnerRights, o.OwnerRights);
             if (setGroup) o.GroupId = group;
             o.PermissionsJson = BuildSharing.With(o.PermissionsJson, Flag("groupShare"), Flag("anyoneMove"), Flag("anyoneCopy"), saleType, price);
-            if (before == (o.OwnerRights, o.NextOwnerRights, o.GroupId, o.PermissionsJson)) continue;
+            if (clickAction is not null) o.ClickAction = clickAction;
+            if (o.ClickAction == "buy" && BuildSharing.Sale(o.PermissionsJson).Type == "none") o.ClickAction = "touch"; // taking the object off sale takes the buy click with it
+            if (before == (o.OwnerRights, o.NextOwnerRights, o.GroupId, o.PermissionsJson, o.ClickAction)) continue;
             o.Revision++; o.UpdatedAt = now; changed.Add(o);
             db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = o.Id, ActorUserId = actor, Operation = "properties", PayloadJson = "{}", Revision = o.Revision, CreatedAt = now });
         }

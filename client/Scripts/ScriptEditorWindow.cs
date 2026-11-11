@@ -54,6 +54,7 @@ public partial class ScriptEditorWindow : Node
         var buttons = new HBoxContainer(); buttons.AddThemeConstantOverride("separation", 8); content.AddChild(buttons);
         var save = new Button { Text = "Salvar (Ctrl+S)", FocusMode = Control.FocusModeEnum.None, TooltipText = "Grava o script no objeto; a ilha aplica a nova versão em até 15 segundos" }; UiStyle.StyleButton(save, UiStyle.ButtonKind.Primary, 16, 6, 14); save.Pressed += () => _ = SaveAsync(); buttons.AddChild(save);
         var runs = new Button { Text = "Atualizar console", FocusMode = Control.FocusModeEnum.None, TooltipText = "Mostra como foram as últimas execuções" }; UiStyle.StyleButton(runs, UiStyle.ButtonKind.Secondary, 16, 6, 14); runs.Pressed += () => _ = RefreshConsoleAsync(); buttons.AddChild(runs);
+        var validate = new Button { Text = "Validar", FocusMode = Control.FocusModeEnum.None, TooltipText = "Confere a sintaxe sem salvar e mostra a linha do erro" }; UiStyle.StyleButton(validate, UiStyle.ButtonKind.Secondary, 16, 6, 14); validate.Pressed += () => _ = ValidateAsync(); buttons.AddChild(validate);
         var help = new Label { Text = "Eventos: on_start, on_touch, on_enter, on_timer, on_chat, on_message · object.say, get_position/rotation/scale, set_position/rotation/scale, move, rotate, set_color, set_material, create_timer, cancel_timers, state_get, state_set, send_message, get_id, get_name, play_sound, stop_sound, set_text · lv.time", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; help.AddThemeFontSizeOverride("font_size", 14); help.AddThemeColorOverride("font_color", UiStyle.TextMuted); buttons.AddChild(help);
         _console = new Label { Text = "Console: sem execuções ainda.", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(0, 120) }; _console.AddThemeFontSizeOverride("font_size", 14);
         var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(0, 130), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; scroll.AddChild(_console); _console.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; content.AddChild(scroll);
@@ -104,6 +105,18 @@ public partial class ScriptEditorWindow : Node
         var result = await _api.SaveAsync(_object, _script, name, _code.Text);
         if (!result.Ok) { _info.Text = result.Message; return; }
         _dirty = false; _version++; _heading.Text = "Script: " + name; _info.Text = $"{result.Message} (versão {_version})"; Saved?.Invoke();
+    }
+
+    /// <summary>Validar: asks the server to parse the code in the box (saved or not); an error is shown with its line and the cursor goes there.</summary>
+    public async Task<bool> ValidateAsync()
+    {
+        if (_script == Guid.Empty) return false;
+        _info.Text = "Validando…";
+        var (valid, line, message) = await _api.ValidateAsync(_object, _code.Text);
+        if (valid) { _info.Text = message; return true; }
+        _info.Text = line > 0 ? $"Erro na linha {line}: {message}" : message;
+        if (line > 0 && line <= _code.GetLineCount()) { _code.SetCaretLine(line - 1); _code.CenterViewportToCaret(); }
+        return false;
     }
 
     public async Task RefreshConsoleAsync()

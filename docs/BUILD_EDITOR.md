@@ -1,3 +1,5 @@
+> **Aviso:** este documento descreve o editor clássico, que foi removido. O editor atual está em `docs/BUILD_EDITOR_V2.md`; as partes de servidor (regras, vínculos, colaboração) continuam valendo.
+
 # Editor de construção 3D
 
 O modo Construir abre pelo botão **Construir** da barra inferior, por Conteúdo > Construir ou pela tecla `B`. O editor suporta cubo, esfera, cilindro, cone, plano, prisma, tubo, anel e pirâmide.

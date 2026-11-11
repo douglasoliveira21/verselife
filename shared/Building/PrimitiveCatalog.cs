@@ -6,7 +6,7 @@ namespace LifeVerse.Shared.Building;
 /// </summary>
 public static class PrimitiveCatalog
 {
-    public static readonly string[] Types = ["cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid", "torus", "hemisphere", "mesh"];
+    public static readonly string[] Types = ["cube", "sphere", "cylinder", "cone", "plane", "prism", "tube", "ring", "pyramid", "torus", "hemisphere", "tree", "grass", "mesh"];
 
     public static bool IsKnown(string type) => Types.Contains(type, StringComparer.OrdinalIgnoreCase);
 }

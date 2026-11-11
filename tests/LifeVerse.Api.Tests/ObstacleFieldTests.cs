@@ -196,3 +196,16 @@ public sealed class MeshObstacleTests
     [Fact]
     public void PrimitivesKeepBlockingByDefault() => Assert.True(ObstacleField.Blocks("{}", "cube") && ObstacleField.Blocks("", "sphere"));
 }
+
+public sealed class PlantObstacleTests
+{
+    [Fact]
+    public void GrassIsWalkedThroughAndATreeIsOnlyItsTrunk()
+    {
+        Assert.False(ObstacleField.Blocks("{}", "grass"));
+        Assert.True(ObstacleField.Blocks("{}", "tree"));
+        var tree = ObstacleField.For("tree", new Vector3(10, 2, 10), Vector3.Zero, new Vector3(4, 6, 4));
+        Assert.NotNull(tree); Assert.Equal(ObstacleShape.Cylinder, tree!.Value.Shape);
+        Assert.True(tree.Value.Radius < .5f, "a thin trunk, not a box the size of the crown");
+    }
+}

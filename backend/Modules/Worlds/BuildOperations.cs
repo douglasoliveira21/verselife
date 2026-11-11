@@ -40,6 +40,7 @@ public static partial class BuildOperations
             case "structure": return await Exclusive(db, island.Id, ct, () => StructureAsync(request, island, actor, isAdmin, parcels, db, now, ct));
             case "protect": return await ProtectAsync(request, island, actor, isAdmin, parcels, db, now, ct);
             case "properties": return await PropertiesAsync(request, island, actor, isAdmin, db, now, ct);
+            case "buy": return await Exclusive(db, island.Id, ct, () => BuyAsync(request, island, actor, db, storage, now, ct));
             case "rez": return await Exclusive(db, island.Id, ct, () => RezAsync(request, island, actor, isAdmin, hasBuild, parcels, db, storage, now, ct));
             default: return Refuse(400, "invalid_operation");
         }
@@ -73,6 +74,7 @@ public static partial class BuildOperations
         var parts = ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson);
         if (await ObjectRights.ValidateSinglesAsync(db, actor, parts, null, null, ct) is { } inUse) return Refuse(409, inUse); // a thing that cannot be copied is in one object only
         var item = BuildEndpoints.NewObject(island.Id, actor, o, now);
+        ObjectAnimation.Stamp(item, "{}", now);
         var inherited = await ObjectRights.InheritAsync(db, actor, parts, ct); item.OwnerRights = inherited.Owner; item.NextOwnerRights = ItemRights.Clamp(inherited.NextOwner, inherited.Owner);
         db.BuildObjects.Add(item);
         return await FinishAsync(db, island, actor, "create", item, o, now, ct);
@@ -98,8 +100,9 @@ public static partial class BuildOperations
         if (changes && !ItemRights.Has((await ObjectRights.EffectiveAsync(db, item, ct)).Owner, Right.Modify)) return Refuse(403, "no_modify"); // moving and turning never need Modify; changing what the object is does, for everyone
         var before = ObjectRights.PartsOf(item.PrimitiveType, item.GeometryJson, item.MaterialJson, item.ContentJson); var after = ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson ?? item.GeometryJson, o.MaterialJson ?? item.MaterialJson, o.ContentJson ?? item.ContentJson);
         if (changes && await ObjectRights.ValidateSinglesAsync(db, actor, after, before, item.Id, ct) is { } inUse) return Refuse(409, inUse);
-        var previousPermissions = item.PermissionsJson; var oldCost = item.Cost;
+        var previousPermissions = item.PermissionsJson; var oldCost = item.Cost; var previousMaterial = item.MaterialJson;
         BuildEndpoints.Apply(item, o);
+        ObjectAnimation.Stamp(item, previousMaterial, now);
         if (item.OwnerUserId != actor && !isAdmin) item.PermissionsJson = previousPermissions; // only the owner (or an island admin) changes what others may do
         if (changes) { var inherited = await ObjectRights.InheritAsync(db, actor, after, ct); item.OwnerRights &= inherited.Owner; item.NextOwnerRights = ItemRights.Clamp(item.NextOwnerRights & inherited.NextOwner, item.OwnerRights); } // new parts can only take rights away
 
@@ -264,6 +267,7 @@ public static partial class BuildOperations
 
     private static async Task<IResult> FinishAsync(LifeVerseDbContext db, Island island, Guid actor, string operation, BuildObject item, BuildObjectRequest? payload, DateTimeOffset now, CancellationToken ct, List<BuildObject>? healed = null)
     {
+        if (operation is "create" or "update") TemporaryObjects.Refresh(item, now);
         db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = island.Id, ObjectId = item.Id, ActorUserId = actor, Operation = operation, PayloadJson = JsonSerializer.Serialize((object?)payload ?? new { }), Revision = item.Revision, CreatedAt = now });
         if (await TrySaveAsync(db, item.Id, ct) is { } conflict) return conflict;
         return Results.Ok(new { operation, objectState = item.DeletedAt is null ? BuildEndpoints.ToResponse(item) : null, objectId = item.Id, revision = item.Revision, healed = (healed ?? []).Select(BuildEndpoints.ToResponse).ToArray() });

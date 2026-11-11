@@ -1,3 +1,4 @@
+using LifeVerse.Client.Build;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -626,14 +627,14 @@ public partial class InventoryPanel : Node3D
     {
         if (IsPackage(info))
         {
-            if (GetParent()?.GetNodeOrNull<BuildEditor>("BuildEditor") is not { } builder) { _status.Text = "O editor de construção não está disponível."; return; }
-            builder.PreviewPackage(info.ItemId, position - Vector3.Up * 1f);
+            if (GetParent() is not { } host || BuildHost.Editor(host) is null) { _status.Text = "O editor de construção não está disponível."; return; }
+            BuildHost.PreviewPackage(host, info.ItemId, position - Vector3.Up * 1f);
             _status.Text = $"Colocando \"{info.Name}\"…";
             return;
         }
         if (!IsModel(info)) { _status.Text = "Só modelos 3D e construções podem ser colocados no mundo."; return; }
-        if (GetParent()?.GetNodeOrNull<BuildEditor>("BuildEditor") is not { } editor) { _status.Text = "O editor de construção não está disponível."; return; }
-        editor.CreateMeshFromAsset(info.AssetId, info.Name, position);
+        if (GetParent() is not { } world || BuildHost.Editor(world) is null) { _status.Text = "O editor de construção não está disponível."; return; }
+        BuildHost.CreateMeshFromAsset(world, info.AssetId, info.Name, position);
         _status.Text = $"Colocando \"{info.Name}\"…";
     }
 
@@ -643,7 +644,7 @@ public partial class InventoryPanel : Node3D
         var camera = GetViewport().GetCamera3D();
         if (camera is null) return new Vector3(0, .5f, 0);
         var origin = camera.ProjectRayOrigin(screen); var direction = camera.ProjectRayNormal(screen);
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(origin, origin + direction * 150f, uint.MaxValue & ~BuildGizmo.PhysicsLayer));
+        var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(origin, origin + direction * 150f, uint.MaxValue));
         return hit.Count > 0 ? hit["position"].AsVector3() + Vector3.Up * 1f : origin + direction * 6f;
     }
 

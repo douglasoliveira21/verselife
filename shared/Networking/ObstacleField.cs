@@ -29,7 +29,8 @@ public sealed class ObstacleField
     /// <summary>True for objects that stop people: solid, not a trigger zone.</summary>
     public static bool Blocks(string? physicsJson, string? primitiveType = null)
     {
-        var mesh = string.Equals(primitiveType, "mesh", StringComparison.OrdinalIgnoreCase); // an imported model collides exactly on the client; only a box the person chose is a wall here
+        var mesh = string.Equals(primitiveType, "mesh", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(primitiveType, "grass", StringComparison.OrdinalIgnoreCase)) return false; // grass is walked through // an imported model collides exactly on the client; only a box the person chose is a wall here
         if (string.IsNullOrWhiteSpace(physicsJson)) return !mesh;
         try
         {
@@ -60,6 +61,7 @@ public sealed class ObstacleField
                 : new Obstacle(ObstacleShape.Box, position, rotation, new Vector3(wide, .5f * scale.Y, wide), 0),
             "torus" or "ring" => new Obstacle(ObstacleShape.Cylinder, position, rotation, new Vector3(wide, .15f * scale.Y, wide), wide),
             "plane" => new Obstacle(ObstacleShape.Box, position, rotation, new Vector3(.5f * scale.X, .025f * scale.Y, .5f * scale.Z), 0),
+            "tree" => new Obstacle(ObstacleShape.Cylinder, position - new Vector3(0, .2f * scale.Y, 0), rotation, new Vector3(.08f * MathF.Max(scale.X, scale.Z), .3f * scale.Y, .08f * MathF.Max(scale.X, scale.Z)), .08f * MathF.Max(scale.X, scale.Z)), // only the trunk stops people
             "hemisphere" => new Obstacle(ObstacleShape.Box, position, rotation, new Vector3(.5f * scale.X, .25f * scale.Y, .5f * scale.Z), 0),
             _ => new Obstacle(ObstacleShape.Box, position, rotation, scale * .5f, 0)
         };

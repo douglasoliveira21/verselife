@@ -14,7 +14,7 @@ public sealed record StoreRequest(Guid ProductId, Guid? ObjectId, string Display
 
 public static class EconomyEndpoints
 {
-    private const long FeeBps = 500;
+    internal const long FeeBps = 500;
     /// <summary>The most a product can cost. The fee is computed as price x 5 %: far below this, nothing can overflow.</summary>
     public const long MaxPriceCoins = 1_000_000_000_000;
     public static IEndpointRouteBuilder MapEconomyEndpoints(this IEndpointRouteBuilder endpoints)
@@ -127,8 +127,8 @@ public static class EconomyEndpoints
         catch (Exception exception) when (Inventory.RaceFailures.IsRace(exception)) { db.ChangeTracker.Clear(); return Results.Conflict(new { error = "stale" }); } // somebody else got there first (the last unit, the same coins, the same account): nothing was charged and nothing was delivered
     }
 
-    private static async Task<Wallet> EnsureWallet(LifeVerseDbContext db, Guid userId, CancellationToken ct) { var wallet = await db.Wallets.SingleOrDefaultAsync(x => x.UserId == userId, ct); if (wallet is not null) return wallet; wallet = new Wallet { Id = Guid.NewGuid(), UserId = userId, AvailableCoins = 0, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow }; db.Wallets.Add(wallet); await db.SaveChangesAsync(ct); return wallet; }
+    internal static async Task<Wallet> EnsureWallet(LifeVerseDbContext db, Guid userId, CancellationToken ct) { var wallet = await db.Wallets.SingleOrDefaultAsync(x => x.UserId == userId, ct); if (wallet is not null) return wallet; wallet = new Wallet { Id = Guid.NewGuid(), UserId = userId, AvailableCoins = 0, CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow }; db.Wallets.Add(wallet); await db.SaveChangesAsync(ct); return wallet; }
     // Two first-ever purchases may both create the (user-less) platform account; the oldest one is the one used, so a duplicate never breaks later purchases.
-    private static async Task<LedgerAccount> EnsureAccount(LifeVerseDbContext db, Guid? userId, string type) { var account = await db.LedgerAccounts.Where(x => x.UserId == userId && x.AccountType == type).OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).FirstOrDefaultAsync(); if (account is not null) return account; account = new LedgerAccount { Id = Guid.NewGuid(), UserId = userId, AccountType = type, CreatedAt = DateTimeOffset.UtcNow }; db.LedgerAccounts.Add(account); await db.SaveChangesAsync(); return account; }
+    internal static async Task<LedgerAccount> EnsureAccount(LifeVerseDbContext db, Guid? userId, string type) { var account = await db.LedgerAccounts.Where(x => x.UserId == userId && x.AccountType == type).OrderBy(x => x.CreatedAt).ThenBy(x => x.Id).FirstOrDefaultAsync(); if (account is not null) return account; account = new LedgerAccount { Id = Guid.NewGuid(), UserId = userId, AccountType = type, CreatedAt = DateTimeOffset.UtcNow }; db.LedgerAccounts.Add(account); await db.SaveChangesAsync(); return account; }
     private static bool User(HttpContext context, out Guid id) => Guid.TryParse(context.User.FindFirstValue(JwtRegisteredClaimNames.Sub), out id);
 }
