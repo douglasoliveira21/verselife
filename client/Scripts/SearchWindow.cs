@@ -57,6 +57,9 @@ public partial class SearchWindow : Node
 
     public void Toggle() { if (_window.Visible) _window.Visible = false; else Open(); }
 
+    /// <summary>Opens the window and searches for this text right away.</summary>
+    public void OpenWithQuery(string text) { Open(); _query.Text = text; Search(); }
+
     public void Open()
     {
         _window.Visible = true; _window.MoveToFront(); _query.GrabFocus(); ShowHints();

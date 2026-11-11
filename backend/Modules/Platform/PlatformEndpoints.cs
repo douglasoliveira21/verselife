@@ -11,7 +11,7 @@ using LifeVerse.Api.Modules.Users;
 namespace LifeVerse.Api.Modules.Platform;
 
 public sealed record RegisterServerRequest(Guid InstanceId, Guid IslandId, string Hostname, int Port);
-public sealed record HeartbeatRequest(string Status, int Players = 0);
+public sealed record HeartbeatRequest(string Status, int Players = 0, LifeVerse.Shared.Platform.ServerReport? Report = null);
 public sealed record ValidateEntryTokenRequest(string Token, Guid IslandId);
 public sealed record ValidateEntryTokenResponse(Guid UserId, Guid AvatarId, Guid IslandId, Guid SessionId, Guid TokenId,
     int ProtocolVersion, DateTimeOffset ExpiresAt, string DisplayName, string AppearanceJson, bool CanEditTerrain = false,
@@ -171,7 +171,10 @@ public static class PlatformEndpoints
             var hasHealthy = await db.ServerInstances.AnyAsync(x => x.IslandId == islandId && x.StoppedAt == null && x.Status == "healthy" && x.LastHeartbeatAt > timeProvider.GetUtcNow().AddSeconds(-45), ct);
             if (!hasHealthy) await db.Islands.Where(x => x.Id == islandId && x.DeletedAt == null).ExecuteUpdateAsync(s => s.SetProperty(x => x.RuntimeState, "suspended").SetProperty(x => x.UpdatedAt, timeProvider.GetUtcNow()), ct);
         }
-        return Results.NoContent();
+        var heartbeatNow = timeProvider.GetUtcNow();
+        await ServerChannel.StoreReportAsync(db, instanceId, request.Report, heartbeatNow, ct);
+        var commands = islandId is { } owned ? await ServerChannel.TakeCommandsAsync(db, owned, heartbeatNow, ct) : [];
+        return commands.Count == 0 ? Results.NoContent() : Results.Ok(new { commands });
     }
 
     private static async Task<IResult> StopAsync(Guid instanceId, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider timeProvider, CancellationToken ct)

@@ -95,7 +95,7 @@ public static class SearchIndexer
         var flipped = new List<Guid>(); var written = 0;
         foreach (var i in islands)
         {
-            var findable = i.DeletedAt == null && i.IsPublic; if (findable != existing.ContainsKey(i.Id)) flipped.Add(i.Id);
+            var findable = i.DeletedAt == null && i.IsPublic && i.ShowInSearch; if (findable != existing.ContainsKey(i.Id)) flipped.Add(i.Id);
             if (Put(db, existing, SearchKinds.Island, i.Id, findable, now, i.UpdatedAt, e =>
             {
                 e.Title = i.Name; e.Subtitle = "Ilha · " + i.Category; e.Category = i.Category; e.Description = SearchText.Snippet(i.Description, 400); e.SearchText = Words(i.Name, i.Category, i.Description);
@@ -244,7 +244,7 @@ public static class SearchIndexer
     {
         var removed = 0;
         async Task Drop(IQueryable<SearchEntry> lines) { var list = await lines.ToListAsync(ct); if (list.Count == 0) return; db.SearchEntries.RemoveRange(list); removed += list.Count; await db.SaveChangesAsync(ct); }
-        await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Island && !db.Islands.Any(i => i.Id == e.RefId && i.IsPublic && i.DeletedAt == null)));
+        await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Island && !db.Islands.Any(i => i.Id == e.RefId && i.IsPublic && i.ShowInSearch && i.DeletedAt == null)));
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Parcel && !db.IslandParcels.Any(p => p.Id == e.RefId && p.DeletedAt == null && p.AccessMode == "public" && db.Islands.Any(i => i.Id == p.IslandId && i.IsPublic && i.DeletedAt == null))));
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Person && !db.Users.Any(u => u.Id == e.RefId && u.DeletedAt == null && u.Status == "active")));
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Group && !db.SocialGroups.Any(g => g.Id == e.RefId && g.DeletedAt == null && g.Privacy == "public")));

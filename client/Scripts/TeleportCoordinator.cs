@@ -133,6 +133,7 @@ public partial class TeleportCoordinator : Node
         ("island_not_found", _) => ("Essa ilha não existe mais.", false),
         ("island_private", _) => ("Essa ilha é privada e você não tem acesso a ela.", false),
         ("access_denied", _) => ("Você não tem permissão para entrar nessa ilha.", false),
+        ("island_closed", _) => ("Essa ilha está temporariamente fechada.", false),
         ("island_full", _) => ("A ilha de destino está lotada no momento. Tente de novo em instantes.", true),
         ("invalid_destination", _) => ("O ponto de destino não fica dentro dessa ilha.", false),
         ("same_island", _) => ("Você já está nessa ilha.", false),

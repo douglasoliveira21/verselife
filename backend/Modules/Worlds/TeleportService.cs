@@ -29,9 +29,7 @@ public static class TeleportService
         await db.SaveChangesAsync(ct);
     }
 
-    private static async Task<bool> CanEnterAsync(LifeVerseDbContext db, Island island, Guid userId, CancellationToken ct) =>
-        island.IsPublic || island.OwnerUserId == userId ||
-        await db.IslandPermissions.AsNoTracking().AnyAsync(p => p.IslandId == island.Id && p.UserId == userId && p.RevokedAt == null && (p.Permission == "enter" || p.Permission == "build" || p.Permission == "admin"), ct);
+    private static Task<bool> CanEnterAsync(LifeVerseDbContext db, Island island, Guid userId, CancellationToken ct) => IslandAccess.AllowsAsync(db, island, userId, DateTimeOffset.UtcNow, ct);
 
     /// <summary>How many places of an island are taken: people its server reports plus the reservations of other trips going there.</summary>
     public static async Task<int> TakenPlacesAsync(LifeVerseDbContext db, Guid islandId, Guid exceptUser, DateTimeOffset now, CancellationToken ct)
@@ -56,7 +54,7 @@ public static class TeleportService
         var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(i => i.Id == request.DestinationIslandId && i.DeletedAt == null, ct);
         if (island is null) return new(404, "island_not_found");
         if (request.SourceIslandId == island.Id) return new(409, "same_island");
-        if (!await CanEnterAsync(db, island, userId, ct)) return new(403, island.IsPublic ? "access_denied" : "island_private");
+        if (!await CanEnterAsync(db, island, userId, ct)) return new(403, island.AccessClosed ? "island_closed" : island.IsPublic ? "access_denied" : "island_private");
         if (request.X is { } x && request.Z is { } z)
         {
             var half = island.Size / 2f;

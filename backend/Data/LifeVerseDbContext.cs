@@ -17,6 +17,9 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<ServerInstance> ServerInstances => Set<ServerInstance>();
     public DbSet<TeleportTransfer> TeleportTransfers => Set<TeleportTransfer>();
     public DbSet<IslandPermission> IslandPermissions => Set<IslandPermission>();
+    public DbSet<IslandBan> IslandBans => Set<IslandBan>();
+    public DbSet<IslandAuditEntry> IslandAudit => Set<IslandAuditEntry>();
+    public DbSet<IslandServerCommand> IslandServerCommands => Set<IslandServerCommand>();
     public DbSet<IslandSnapshot> IslandSnapshots => Set<IslandSnapshot>();
     public DbSet<IslandChange> IslandChanges => Set<IslandChange>();
     public DbSet<IslandParcel> IslandParcels => Set<IslandParcel>();
@@ -161,6 +164,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.Description).HasMaxLength(4000);
             b.Property(x => x.CoverImageUrl).HasMaxLength(1024);
             b.Property(x => x.Category).HasMaxLength(32);
+            b.Property(x => x.ContentRating).HasMaxLength(12).HasDefaultValue("livre"); b.Property(x => x.Language).HasMaxLength(12).HasDefaultValue("pt-BR"); b.Property(x => x.ShowInSearch).HasDefaultValue(true); b.Property(x => x.ShowOnMap).HasDefaultValue(true); b.Property(x => x.AccessClosed).HasDefaultValue(false);
             b.Property(x => x.EnvironmentJson).HasColumnType("jsonb");
             b.Property(x => x.ResourceLimitsJson).HasColumnType("jsonb");
             b.Property(x => x.RuntimeState).HasMaxLength(24);
@@ -171,6 +175,24 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<PlayerLocation>(b => { b.ToTable("player_locations", "world"); b.HasKey(x => x.UserId); b.HasIndex(x => x.IslandId); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<IslandServerCommand>(b =>
+        {
+            b.ToTable("island_commands", "world"); b.HasKey(x => x.Id); b.Property(x => x.Kind).HasMaxLength(16); b.Property(x => x.Text).HasMaxLength(400); b.HasIndex(x => new { x.IslandId, x.DeliveredAt });
+            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<IslandAuditEntry>(b =>
+        {
+            b.ToTable("island_audit", "world"); b.HasKey(x => x.Id); b.Property(x => x.Category).HasMaxLength(16); b.Property(x => x.Action).HasMaxLength(40); b.Property(x => x.Summary).HasMaxLength(400); b.Property(x => x.Resource).HasMaxLength(200);
+            b.Property(x => x.BeforeJson).HasColumnType("jsonb"); b.Property(x => x.AfterJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.IslandId, x.CreatedAt }); b.HasIndex(x => new { x.IslandId, x.ActorUserId });
+            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<IslandBan>(b =>
+        {
+            b.ToTable("island_bans", "world"); b.HasKey(x => x.Id); b.Property(x => x.Reason).HasMaxLength(200);
+            b.HasIndex(x => new { x.IslandId, x.UserId, x.RevokedAt }); b.HasIndex(x => new { x.IslandId, x.CreatedAt });
+            b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<IslandPermission>(b =>
         {
             b.ToTable("permissions", "world"); b.HasKey(x => x.Id);
@@ -280,7 +302,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         {
             b.ToTable("server_instances", "platform");
             b.HasKey(x => x.Id);
-            b.Property(x => x.Hostname).HasMaxLength(255);
+            b.Property(x => x.Hostname).HasMaxLength(255); b.Property(x => x.ReportJson).HasColumnType("jsonb").HasDefaultValue("{}");
             b.Property(x => x.Status).HasMaxLength(24);
             b.HasIndex(x => new { x.IslandId, x.Status });
             b.HasIndex(x => x.LastHeartbeatAt);

@@ -176,6 +176,13 @@ public sealed class Island
     public float SpawnX { get; set; }
     public float SpawnY { get; set; } = 1f;
     public float SpawnZ { get; set; }
+    /// <summary>livre, moderado or adulto.</summary>
+    public string ContentRating { get; set; } = "livre";
+    public string Language { get; set; } = "pt-BR";
+    public bool ShowInSearch { get; set; } = true;
+    public bool ShowOnMap { get; set; } = true;
+    /// <summary>Temporarily closed: only the owner and administrators can come in. Whether the island is public is kept, so opening it again brings it back as it was.</summary>
+    public bool AccessClosed { get; set; }
     public string EnvironmentJson { get; set; } = "{}";
     public string ResourceLimitsJson { get; set; } = "{}";
     public string RuntimeState { get; set; } = "suspended";
@@ -198,6 +205,8 @@ public sealed class IslandPermission
     public Guid GrantedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
+    /// <summary>After this moment the permission no longer counts (null: it does not expire).</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 }
 
 /// <summary>Where a person was last: the island and the spot, written by the island servers, so signing in again brings them back to the same place.</summary>
@@ -641,6 +650,9 @@ public sealed class ServerInstance
     public DateTimeOffset LastHeartbeatAt { get; set; }
     /// <summary>How many people the island server says are connected (sent with its heartbeat); used to keep a full island from taking more.</summary>
     public int PlayerCount { get; set; }
+    /// <summary>The last report the server sent with its heartbeat (who is connected and how it is doing), as ServerReport JSON.</summary>
+    public string ReportJson { get; set; } = "{}";
+    public DateTimeOffset? ReportedAt { get; set; }
     public DateTimeOffset? StoppedAt { get; set; }
 }
 
@@ -673,4 +685,51 @@ public sealed class TeleportTransfer
     /// <summary>The island server of the source has been told to let go of the person.</summary>
     public DateTimeOffset? SourceReleasedAt { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
+}
+
+/// <summary>A person banned from an island. Kept after it ends (lifted or expired) so the island has a history of who was banned, by whom and why.</summary>
+public sealed class IslandBan
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid UserId { get; set; }
+    public Guid BannedByUserId { get; set; }
+    public required string Reason { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>When the ban ends by itself (null: permanent).</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+    public Guid? RevokedByUserId { get; set; }
+}
+
+/// <summary>One thing somebody did to an island through the management window, kept as it was: who, what, to what, and the values before and after. Entries are only ever added.</summary>
+public sealed class IslandAuditEntry
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid ActorUserId { get; set; }
+    /// <summary>geral, acesso, banimento, permissao or objeto.</summary>
+    public required string Category { get; set; }
+    public required string Action { get; set; }
+    public required string Summary { get; set; }
+    public string Resource { get; set; } = string.Empty;
+    public string BeforeJson { get; set; } = "null";
+    public string AfterJson { get; set; } = "null";
+    /// <summary>Ties together the entries written by the same request.</summary>
+    public Guid CorrelationId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>Something an administrator asked an island server to do (remove a person, tell everybody something). The server picks it up with its next heartbeat; one nobody picked up in time is dropped.</summary>
+public sealed class IslandServerCommand
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public required string Kind { get; set; }
+    public Guid? TargetUserId { get; set; }
+    public string Text { get; set; } = string.Empty;
+    public Guid CreatedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? DeliveredAt { get; set; }
 }

@@ -105,5 +105,15 @@ public static class UiIconData
         ["triangle"] = (false, "<path d=\"M12 4l9 16H3z\"/>"),
         ["move-all"] = (false, "<path d=\"M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3\"/>"),
         ["ground"] = (false, "<path d=\"M12 4v10M8 10l4 4 4-4M3 20h18\"/>"),
+        ["home"] = (false, "<path d=\"M5 12l-2 0l9 -9l9 9l-2 0\" /> <path d=\"M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7\" /> <path d=\"M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v6\" />"),
+        ["ban"] = (false, "<path d=\"M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0\" /> <path d=\"M5.7 5.7l12.6 12.6\" />"),
+        ["shield"] = (false, "<path d=\"M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3\" />"),
+        ["mountain"] = (false, "<path d=\"M3 20l5 -10l4 6l3 -4l6 8z\" />"),
+        ["chart"] = (false, "<path d=\"M4 20h16\" /> <path d=\"M6 20v-7\" /> <path d=\"M12 20v-13\" /> <path d=\"M18 20v-9\" />"),
+        ["power"] = (false, "<path d=\"M7 6a7.75 7.75 0 1 0 10 0\" /> <path d=\"M12 4l0 8\" />"),
+        ["calendar"] = (false, "<path d=\"M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12\" /> <path d=\"M16 3v4\" /> <path d=\"M8 3v4\" /> <path d=\"M4 11h16\" />"),
+        ["doc"] = (false, "<path d=\"M14 3v4a1 1 0 0 0 1 1h4\" /> <path d=\"M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2\" /> <path d=\"M9 13h6\" /> <path d=\"M9 17h6\" />"),
+        ["external"] = (false, "<path d=\"M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6\" /> <path d=\"M11 13l9 -9\" /> <path d=\"M15 4h5v5\" />"),
+        ["globe"] = (false, "<path d=\"M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0\" /> <path d=\"M3.6 9h16.8\" /> <path d=\"M3.6 15h16.8\" /> <path d=\"M11.5 3a17 17 0 0 0 0 18\" /> <path d=\"M12.5 3a17 17 0 0 1 0 18\" />"),
     };
 }

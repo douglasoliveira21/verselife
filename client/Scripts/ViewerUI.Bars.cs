@@ -55,6 +55,7 @@ public partial class ViewerUI
             ("Ofertas de itens…", () => _world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow")?.Toggle(() => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Refresh()), false),
             ("Buscar no LifeVerse…", () => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.Toggle(), false),
             ("Mapa de terrenos e busca…", () => _world.GetNodeOrNull<LandMapWindow>("LandMapWindow")?.Toggle(), false),
+            ("Gerenciar esta ilha…", () => _world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow")?.Toggle(), false),
             ("Selecionar terreno (limites e donos)", () => _world.GetNodeOrNull<LandManager>("LandManager")?.SetActive(true), false),
             ("Tirar foto", TakeSnapshot, false));
         var environment = new PopupMenu { Name = "Ambiente" };

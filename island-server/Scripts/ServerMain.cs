@@ -607,8 +607,8 @@ public partial class ServerMain : Node
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                using var response = await _api.PutAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/heartbeat", new { status = "healthy", players = _players.Values.Count(x => x.Authenticated) }, ct);
-                if (!response.IsSuccessStatusCode) Log("heartbeat_failed", new { status = (int)response.StatusCode });
+                try { await SendHeartbeatAsync(ct); }
+                catch (Exception exception) when (exception is not OperationCanceledException) { Log("heartbeat_failed", new { error = exception.Message }); }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }

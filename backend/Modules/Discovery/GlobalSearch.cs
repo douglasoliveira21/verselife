@@ -56,9 +56,9 @@ public static class GlobalSearch
         var blocked = await BlockedAsync(db, viewer, ct); var ok = new HashSet<Guid>();
         List<Guid> Ids(string kind) => [.. found.Where(e => e.Kind == kind).Select(e => e.RefId)];
         async Task Keep(string kind, IQueryable<Guid> live) { var ids = (await live.ToListAsync(ct)).ToHashSet(); foreach (var e in found.Where(e => e.Kind == kind && ids.Contains(e.RefId))) ok.Add(e.Id); }
-        var open = db.Islands.AsNoTracking().Where(i => i.IsPublic && i.DeletedAt == null).Select(i => i.Id);
+        var open = db.Islands.AsNoTracking().Where(i => i.IsPublic && i.ShowInSearch && i.DeletedAt == null).Select(i => i.Id);
 
-        var islands = Ids(SearchKinds.Island); if (islands.Count > 0) await Keep(SearchKinds.Island, db.Islands.AsNoTracking().Where(i => islands.Contains(i.Id) && i.IsPublic && i.DeletedAt == null).Select(i => i.Id));
+        var islands = Ids(SearchKinds.Island); if (islands.Count > 0) await Keep(SearchKinds.Island, db.Islands.AsNoTracking().Where(i => islands.Contains(i.Id) && i.IsPublic && i.ShowInSearch && i.DeletedAt == null).Select(i => i.Id));
         var parcels = Ids(SearchKinds.Parcel); if (parcels.Count > 0) await Keep(SearchKinds.Parcel, db.IslandParcels.AsNoTracking().Where(p => parcels.Contains(p.Id) && p.DeletedAt == null && p.AccessMode == "public" && open.Contains(p.IslandId)).Select(p => p.Id));
         var people = Ids(SearchKinds.Person); if (people.Count > 0) await Keep(SearchKinds.Person, db.Users.AsNoTracking().Where(u => people.Contains(u.Id) && u.Id != viewer && u.DeletedAt == null && u.Status == "active" && u.PasswordHash != "!" && !u.PrivacyJson.Contains("\"profile\":\"private\"") && !u.PrivacyJson.Contains("\"searchable\":\"no\"")).Select(u => u.Id));
         var groups = Ids(SearchKinds.Group); if (groups.Count > 0) await Keep(SearchKinds.Group, db.SocialGroups.AsNoTracking().Where(g => groups.Contains(g.Id) && g.DeletedAt == null && g.Privacy == "public").Select(g => g.Id));
