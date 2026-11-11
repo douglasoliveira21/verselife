@@ -2505,6 +2505,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("requested_by_user_id");
 
+                    b.Property<Guid?>("RestoreSnapshotId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("restore_snapshot_id");
+
                     b.Property<string>("Result")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2595,6 +2599,19 @@ namespace LifeVerse.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("BackupAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("backup_at");
+
+                    b.Property<Guid?>("BackupByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("backup_by_user_id");
+
+                    b.Property<string>("BackupName")
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)")
+                        .HasColumnName("backup_name");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")

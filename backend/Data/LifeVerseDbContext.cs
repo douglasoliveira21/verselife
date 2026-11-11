@@ -217,7 +217,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         });
         modelBuilder.Entity<IslandSnapshot>(b =>
         {
-            b.ToTable("snapshots", "world"); b.HasKey(x => x.Id); b.Property(x => x.TerrainJson).HasColumnType("jsonb"); b.Property(x => x.EnvironmentJson).HasColumnType("jsonb"); b.Property(x => x.IntegrityHash).HasMaxLength(64);
+            b.ToTable("snapshots", "world"); b.HasKey(x => x.Id); b.Property(x => x.BackupName).HasMaxLength(80); b.Property(x => x.TerrainJson).HasColumnType("jsonb"); b.Property(x => x.EnvironmentJson).HasColumnType("jsonb"); b.Property(x => x.IntegrityHash).HasMaxLength(64);
             b.HasIndex(x => new { x.IslandId, x.Version }).IsUnique(); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade);
         });
         modelBuilder.Entity<IslandChange>(b =>

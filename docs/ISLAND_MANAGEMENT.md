@@ -2,7 +2,7 @@
 
 Abre em **Mundo → Gerenciar esta ilha…**. É a janela onde o proprietário (e quem tem a permissão `admin`) cuida da ilha onde está.
 
-## O que já funciona
+## O que já funciona (as 13 seções)
 
 | Parte | Estado |
 |---|---|
@@ -22,7 +22,7 @@ Abre em **Mundo → Gerenciar esta ilha…**. É a janela onde o proprietário (
 | **Ambiente**: horário, luz, clima, neblina e cor do céu da ilha toda, com predefinições do jogo e suas, aplicar, desfazer e voltar ao padrão | pronto |
 | **Mídia**: música da ilha (endereço verificado na hora, nome, volume, tocar sozinha, testar), vídeo explicado como não disponível | pronto |
 | **Física**: objetos físicos, corpos simulados pelo servidor e tempo de física; lista com estado; congelar e liberar um objeto ou todos | pronto (os números dependem do servidor da ilha novo) |
-| Terreno | **ainda não**: cada uma mostra "Ainda não disponível nesta versão" e o que vai reunir. Nenhuma tem dado inventado |
+| **Terreno**: desenho do relevo e números do último salvamento, backups com nome, restaurar um backup (reinício) | pronto (restaurar depende do servidor da ilha novo) |
 
 ## Como a aba Geral decide as coisas
 
@@ -45,7 +45,7 @@ Abre em **Mundo → Gerenciar esta ilha…**. É a janela onde o proprietário (
 
 ## Limites conhecidos desta entrega
 
-- 1 das 13 seções não existe ainda (acima).
+- As 13 seções têm página de verdade. Onde algo ainda não existe (vídeo, importar mapa de alturas, água), a tela diz isso em vez de fingir.
 - **Definir no Mundo** (clicar no cenário para escolher o ponto) está desligado, com dica. Falta a ferramenta de seleção no mundo.
 - **Gerenciar** administradores está desligado até existir a aba Permissões.
 - Não há botão de enquadrar a imagem.
@@ -240,3 +240,17 @@ A API não alcança os jogadores; só o servidor da ilha alcança. O canal usa o
 - Um objeto congelado que o dono **devolve ao inventário** volta estático (a devolução guarda o estado atual).
 - O estado "físico" é reconhecido pelo ajuste `mode: physical`; objetos de veículo ou física própria de script não aparecem aqui.
 - Os números do servidor exigem o servidor da ilha novo.
+
+## Aba Terreno
+
+- **Terreno atual**: um desenho do relevo (grade de até 24 por 24 alturas, com água, areia, grama, pedra e neve por altura), e os números do **último salvamento** do servidor da ilha: versão, há quanto tempo foi salvo, tamanho em metros e em células, altura mínima, média e máxima, nível do mar e uma verificação curta (hash). O servidor da ilha salva o terreno sozinho cerca de uma vez por minuto.
+- **Backup**: guarda um desses salvamentos **com um nome** (até 80 caracteres, nome único, até 10 por ilha). Só vira backup se o salvamento puder ser lido pelo jogo. Excluir um backup tira só o nome; o terreno atual não muda. Aparece quem criou.
+- **Restaurar** (com confirmação, "agora" ou em 1, 5 ou 10 minutos): o servidor da ilha guarda o terreno na memória e o gravaria por cima, então restaurar é um **reinício**: nos avisos e na hora de mandar o servidor parar, o terreno do backup é gravado como o salvamento mais novo (mantendo o ambiente salvo agora) e a versão da ilha sobe, o que faz o servidor antigo ser **recusado** se tentar gravar o terreno velho; o servidor que sobe carrega o backup. Acompanhe e cancele na aba Reinicialização. **Com a ilha desligada** (ninguém conectado), vale na hora. Objetos, pessoas e o ambiente da ilha não mudam; tudo o que foi esculpido depois do backup se perde.
+- Criar, excluir e restaurar entram no Histórico e Auditoria (categoria Terreno). Só o proprietário e os administradores.
+- Migração nova: `Phase75TerrainBackups` (`snapshots.backup_name/backup_by_user_id/backup_at` e `island_restarts.restore_snapshot_id`).
+
+### Limites
+- **Não existem** importar ou exportar mapa de alturas, mudar texturas, mexer na altura da água nem recalcular colisões e navegação: o servidor da ilha não oferece isso a quem administra de fora. (O editor de terreno do jogo continua esculpindo.)
+- O backup é **o último salvamento automático**, com até cerca de um minuto de atraso em relação ao que está na tela de quem esculpe.
+- **Restaurar precisa do servidor da ilha novo** (ele precisa obedecer ao comando de parar e recusar a gravação antiga, o que já vale pela versão).
+- **Atenção, fora deste trabalho:** o servidor da ilha grava um salvamento **a cada minuto mesmo sem mudanças** (`world.snapshots`), e nada apaga os antigos. Cada um tem o terreno inteiro (algumas centenas de KB), então a tabela cresce sem parar. Não mexi nisso por ser apagar dados; vale decidir uma regra de retenção (por exemplo, manter 48 horas, os backups e o mais recente).

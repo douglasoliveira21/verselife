@@ -30,7 +30,7 @@ public static class IslandAudit
 public static class IslandAuditManagement
 {
     public const int PageSize = 10;
-    private static readonly string[] Categories = ["geral", "acesso", "banimento", "permissao", "objeto", "servidor", "ambiente", "midia", "fisica", "construcao"];
+    private static readonly string[] Categories = ["geral", "acesso", "banimento", "permissao", "objeto", "servidor", "ambiente", "midia", "fisica", "terreno", "construcao"];
 
     public static IEndpointRouteBuilder MapIslandAuditManagement(this IEndpointRouteBuilder endpoints)
     {

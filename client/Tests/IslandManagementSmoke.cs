@@ -30,6 +30,10 @@ public partial class IslandManagementSmoke : Node3D
         public sealed record Obj(string Name, Guid Owner, string OwnerName, string Type, int Cost, int Scripts, string Physics, int Order) { public Guid Id { get; } = Guid.NewGuid(); public DateTimeOffset Created => new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero).AddMinutes(Order); }
         public readonly List<Obj> Objs = [];
         public int Returned;
+        public sealed record TerrainBackup(Guid Id, string Name, long Version, bool Valid);
+        public readonly List<TerrainBackup> TerrainBackups = [];
+        public readonly List<string> TerrainRestoreSent = [];
+        public long TerrainVersion = 42; public bool TerrainSaved = true, TerrainRestoring;
         public sealed record PhysObj(Guid Id, string Name, string Owner, int Cost, bool Frozen);
         public readonly List<PhysObj> Phys = [];
         public bool PhysReport = true; public int PhysKept;
@@ -345,6 +349,38 @@ public partial class IslandManagementSmoke : Node3D
                     var sent = JsonNode.Parse(body!)!.AsObject(); var all = sent["all"]!.GetValue<bool>(); var ids = sent["objectIds"]!.AsArray().Select(x => Guid.Parse(x!.GetValue<string>())).ToList(); var freeze = rest == "/freeze"; var changed = 0;
                     for (var i = 0; i < Phys.Count; i++) if (Phys[i].Frozen != freeze && (all || ids.Contains(Phys[i].Id))) { Phys[i] = Phys[i] with { Frozen = freeze }; changed++; }
                     return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { changed, restored = changed - PhysKept, kept = freeze ? 0 : Math.Min(PhysKept, changed) })));
+                }
+            }
+            var terrainPath = $"/api/v1/worlds/islands/{Island}/management/terrain";
+            if (path.StartsWith(terrainPath, StringComparison.Ordinal))
+            {
+                var rest = path[terrainPath.Length..];
+                string Doc() => JsonSerializer.Serialize(new
+                {
+                    island = new { size = 256, version = TerrainVersion }, running = ServerOnline,
+                    current = TerrainSaved ? new
+                    {
+                        version = TerrainVersion, savedAt = DateTimeOffset.UtcNow.AddSeconds(-40), hash = "ABCDEF123456",
+                        stats = new { cells = 128, cellSize = 2.0, sizeMeters = 256.0, seaLevel = -0.8, minHeight = -8.0, maxHeight = 14.5, avgHeight = 1.2, vertices = 16641 },
+                        preview = new { size = 4, heights = new[] { -8.0, -3.0, -3.0, -8.0, -3.0, 2.0, 6.0, -3.0, -3.0, 6.0, 14.5, -3.0, -8.0, -3.0, -3.0, -8.0 }, seaLevel = -0.8 },
+                    } : null,
+                    backups = TerrainBackups.Select(b => new { id = b.Id, name = b.Name, version = b.Version, savedAt = DateTimeOffset.UtcNow.AddHours(-2), backupAt = DateTimeOffset.UtcNow, by = "AliceVerse", stats = new { minHeight = -8.0, maxHeight = 9.0 }, valid = b.Valid }),
+                    limits = new { maxBackups = 10, nameLimit = 80 }, restoring = TerrainRestoring ? new { restartId = Guid.NewGuid(), status = "scheduled", scheduledFor = DateTimeOffset.UtcNow.AddMinutes(5), snapshotId = Guid.NewGuid() } : null,
+                });
+                if (method == "GET" && rest == "") return Task.FromResult<(long, string)>((200, Doc()));
+                if (method == "POST" && rest == "/backups")
+                {
+                    var name = JsonNode.Parse(body!)!["name"]!.GetValue<string>();
+                    if (!TerrainSaved) return Task.FromResult<(long, string)>((409, "{\"message\":\"O terreno ainda não foi salvo pelo servidor da ilha; tente de novo em um minuto.\"}"));
+                    if (TerrainBackups.Any(b => b.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) return Task.FromResult<(long, string)>((409, "{\"message\":\"Já existe um backup com esse nome.\"}"));
+                    TerrainBackups.Add(new TerrainBackup(Guid.NewGuid(), name, TerrainVersion - 1, true)); return Task.FromResult<(long, string)>((200, Doc()));
+                }
+                if (method == "DELETE" && rest.StartsWith("/backups/", StringComparison.Ordinal)) { TerrainBackups.RemoveAll(b => b.Id == Guid.Parse(rest[9..])); return Task.FromResult<(long, string)>((204, "")); }
+                if (method == "POST" && rest.EndsWith("/restore", StringComparison.Ordinal))
+                {
+                    TerrainRestoreSent.Add(body!); if (TerrainRestoring) return Task.FromResult<(long, string)>((409, "{\"message\":\"Já existe uma reinicialização agendada ou em andamento. Cancele ou espere terminar.\"}"));
+                    if (!ServerOnline) { TerrainVersion++; return Task.FromResult<(long, string)>((200, "{\"applied\":true,\"scheduled\":false}")); }
+                    TerrainRestoring = true; return Task.FromResult<(long, string)>((200, "{\"applied\":false,\"scheduled\":true}"));
                 }
             }
             return Task.FromResult<(long, string)>((404, "{}"));
@@ -728,10 +764,36 @@ public partial class IslandManagementSmoke : Node3D
             Require(physics.IndicatorsForTesting.Split('|')[1] == "—" && physics.IndicatorsForTesting.Split('|')[3] == "—", "without a report from the island server its figures are blank");
             server.PhysReport = true; window.SelectSectionForTesting("geral");
 
-            // --- other sections --------------------------------------------------------------------------------------------
-            window.SelectSectionForTesting("terreno"); await Frames(2);
-            Require(window.CurrentSection == "terreno" && window.PageVisibleForTesting("terreno") && !window.PageVisibleForTesting("geral"), "a click changes the page");
-            Require(window.PagePlaceholderTextForTesting("terreno").Contains("Ainda não disponível"), "a section that is not built says so instead of faking data");
+            // --- Terreno ---------------------------------------------------------------------------------------------------
+            window.SelectSectionForTesting("terreno"); await Frames(4);
+            var terrain = window.Terrain;
+            Require(window.PageVisibleForTesting("terreno") && terrain.InfoForTesting.StartsWith("42|") && terrain.InfoForTesting.Contains("256 × 256 m") && terrain.InfoForTesting.Contains("-8 m / 1,2 m / 14,5 m") && terrain.InfoForTesting.EndsWith("-0,8 m"), $"the figures of the ground are the server's ({terrain.InfoForTesting})");
+            Require(terrain.PictureShownForTesting && terrain.BackupsForTesting == 0 && terrain.RestoringForTesting == "", "the ground is drawn and there are no backups yet");
+            terrain.NameForTesting = ""; await terrain.CreateForTesting(); Require(terrain.StatusForTesting.Contains("nome"), "a backup needs a name");
+            server.TerrainSaved = false; terrain.NameForTesting = "Antes da festa"; await terrain.CreateForTesting(); await Frames(2);
+            Require(terrain.StatusForTesting.Contains("ainda não foi salvo") && terrain.BackupsForTesting == 0, "without a save of the terrain a backup is refused with the reason"); server.TerrainSaved = true;
+            await terrain.CreateForTesting(); await Frames(3);
+            Require(terrain.BackupsForTesting == 1 && terrain.NameForTesting == "" && terrain.RowTextsForTesting[0].Contains("Antes da festa") && terrain.RowTextsForTesting[0].Contains("AliceVerse") && terrain.StatusForTesting.Contains("criado"), "a backup is created and listed with who made it");
+            terrain.NameForTesting = "antes da FESTA"; await terrain.CreateForTesting(); await Frames(2); Require(terrain.StatusForTesting.Contains("Já existe") && terrain.BackupsForTesting == 1, "the same name twice is refused");
+            terrain.SelectWhenForTesting(2); await terrain.RestoreFirstForTesting(); await Frames(3);
+            Require(server.TerrainRestoreSent.Count == 1 && server.TerrainRestoreSent[0].Contains("\"mode\":\"in\"") && server.TerrainRestoreSent[0].Contains("\"minutes\":5") && terrain.RestoringForTesting.Contains("Restauração agendada") && terrain.RestoringForTesting.Contains("Reinicialização"), "restoring with the server up schedules a restart and says where to follow it");
+            await terrain.RestoreFirstForTesting(); await Frames(2); Require(terrain.StatusForTesting.Contains("Já existe"), "a second restore is refused while one is scheduled");
+            server.TerrainRestoring = false; server.ServerOnline = false; terrain.SelectWhenForTesting(0); await terrain.RestoreFirstForTesting(); await Frames(3);
+            Require(server.TerrainVersion == 43 && terrain.StatusForTesting.Contains("restaurado"), "with nobody on the island the restore is applied at once"); server.ServerOnline = true;
+            await terrain.DeleteFirstForTesting(); await Frames(3); Require(terrain.BackupsForTesting == 0 && terrain.StatusForTesting.Contains("excluído"), "a backup can be deleted");
+            server.TerrainBackups.Add(new Server.TerrainBackup(Guid.NewGuid(), "Quebrado", 30, false)); await terrain.LoadAsync(); await Frames(2);
+            Require(terrain.RowTextsForTesting[0].Contains("ilegível"), "a backup that cannot be read is marked");
+            server.TerrainBackups.Clear(); await terrain.LoadAsync(); await Frames(2);
+            window.SelectSectionForTesting("geral");
+
+            // --- all thirteen sections are real pages ------------------------------------------------------------------------
+            foreach (var section in LifeVerse.Client.Scripts.IslandManagement.IslandManagementWindow.Sections)
+            {
+                window.SelectSectionForTesting(section.Id); await Frames(2);
+                Require(window.CurrentSection == section.Id && window.PageVisibleForTesting(section.Id), $"a click opens {section.Title}");
+                Require(!window.PagePlaceholderTextForTesting(section.Id).Contains("Ainda não disponível") || section.Id == "midia", $"{section.Title} is built, not a placeholder"); // the only page that says it in a card is the video of Mídia
+                foreach (var other in LifeVerse.Client.Scripts.IslandManagement.IslandManagementWindow.Sections.Where(s => s.Id != section.Id)) if (window.PageVisibleForTesting(other.Id)) throw new InvalidOperationException($"{other.Title} is still visible when {section.Title} is open");
+            }
             Require(!window.SaveEnabledForTesting, "a section without anything to save cannot be saved");
             window.SelectSectionForTesting("geral"); Require(window.NameForTesting == "Ilha Boa", "the summary stays");
 
@@ -758,6 +820,7 @@ public partial class IslandManagementSmoke : Node3D
             if (OS.GetEnvironment("LIFEVERSE_SHOT") is { Length: > 0 } shot)
             {
                 GetWindow().Size = new Vector2I(1536, 1024); window.SetViewportForTesting(new Vector2(1536, 1024)); await Frames(6);
+                server.TerrainBackups.Add(new Server.TerrainBackup(Guid.NewGuid(), "Antes da festa", 41, true)); server.TerrainBackups.Add(new Server.TerrainBackup(Guid.NewGuid(), "Ilha limpa", 30, true));
                 server.MediaUrl = "https://cdn.example.com/radio/praia.mp3"; server.MediaName = "Rádio da Praia"; server.MediaVolume = .45;
                 server.EnvLook = "{\"hour\":18.5,\"weather\":\"clear\",\"light\":0.85,\"sky\":\"#FF9A5A\"}"; server.EnvCustom["Meu entardecer"] = "{\"hour\":19}";
                 server.RestartActive = new Server.Rs(Guid.NewGuid(), "scheduled", 272, "Atualização do servidor", DateTimeOffset.UtcNow, null, ""); server.RestartHistory.Add(new Server.Rs(Guid.NewGuid(), "completed", 0, "Manutenção", DateTimeOffset.UtcNow.AddDays(-2), 52, "ok"));

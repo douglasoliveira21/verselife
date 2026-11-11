@@ -152,6 +152,7 @@ app.MapIslandRestartManagement();
 app.MapIslandEnvironmentManagement();
 app.MapIslandMediaManagement();
 app.MapIslandPhysicsManagement();
+app.MapIslandTerrainManagement();
 app.MapWelcomeEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapSearchModerationEndpoints();

@@ -235,6 +235,10 @@ public sealed class IslandSnapshot
     public required string EnvironmentJson { get; set; }
     public required string IntegrityHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>Set when somebody kept this save as a named backup (the automatic saves are only a trail of recent states).</summary>
+    public string? BackupName { get; set; }
+    public Guid? BackupByUserId { get; set; }
+    public DateTimeOffset? BackupAt { get; set; }
 }
 
 public sealed class IslandChange
@@ -770,4 +774,6 @@ public sealed class IslandRestart
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public string Result { get; set; } = string.Empty;
+    /// <summary>When set, the terrain of this saved state is put back at the moment the server is told to stop (see IslandTerrainManagement).</summary>
+    public Guid? RestoreSnapshotId { get; set; }
 }

@@ -53,6 +53,7 @@ public static class IslandRestartService
         }
         var running = await ServerChannel.RunningAsync(db, restart.IslandId, now, ct);
         if (running is null) { Finish(db, restart, "failed", "A ilha estava desligada na hora do reinício.", now); return; }
+        if (restart.RestoreSnapshotId is { } snapshot && !await IslandTerrainManagement.ApplyRestoreAsync(db, restart.IslandId, snapshot, restart.RequestedByUserId, now, ct)) { Finish(db, restart, "failed", "O backup do terreno não pôde ser lido; nada foi mudado.", now); return; }
         db.IslandServerCommands.Add(new IslandServerCommand { Id = Guid.NewGuid(), IslandId = restart.IslandId, Kind = ServerCommandKinds.Shutdown, Text = restart.Reason, CreatedByUserId = restart.RequestedByUserId, CreatedAt = now, ExpiresAt = now + ServerChannel.CommandLifetime });
         restart.Status = "running"; restart.StartedAt = now;
     }
@@ -61,7 +62,7 @@ public static class IslandRestartService
     {
         var started = restart.StartedAt ?? restart.ScheduledFor;
         var alive = await db.ServerInstances.AsNoTracking().Where(x => x.IslandId == restart.IslandId && x.StoppedAt == null && x.Status == "healthy" && x.LastHeartbeatAt > now.AddSeconds(-45)).ToListAsync(ct);
-        if (alive.Any(x => x.StartedAt > started)) { Finish(db, restart, "completed", "A ilha reiniciou e voltou ao ar.", now); return; }
+        if (alive.Any(x => x.StartedAt > started)) { Finish(db, restart, "completed", restart.RestoreSnapshotId is null ? "A ilha reiniciou e voltou ao ar." : "A ilha reiniciou com o terreno restaurado.", now); return; }
         if (now - started > GiveUpAfter) { Finish(db, restart, "failed", alive.Count > 0 ? "O servidor da ilha não obedeceu ao pedido (versão antiga?)." : "A ilha não voltou ao ar em 5 minutos.", now); return; }
         if (alive.Count == 0) await ensure(restart.IslandId); // the old server is gone: ask for a new one (asking again is harmless)
     }

@@ -53,6 +53,7 @@ public partial class IslandManagementWindow : Node
     private IslandEnvironmentPage _environment = null!;
     private IslandMediaPage _media = null!;
     private IslandPhysicsPage _physics = null!;
+    private IslandTerrainPage _terrain = null!;
     private ConfirmationDialog _confirm = null!;
     private AcceptDialog _help = null!;
     private Action? _confirmed;
@@ -86,6 +87,7 @@ public partial class IslandManagementWindow : Node
     public IslandEnvironmentPage Environment => _environment;
     public IslandMediaPage Media => _media;
     public IslandPhysicsPage Physics => _physics;
+    public IslandTerrainPage Terrain => _terrain;
     /// <summary>Asked to open the profile of a person.</summary>
     public Action<Guid>? ViewProfile { get; set; }
     public bool Loading => _loadingNow;
@@ -108,7 +110,7 @@ public partial class IslandManagementWindow : Node
     public Vector2 PanelMinForTesting => _panel.GetCombinedMinimumSize();
     public bool PageVisibleForTesting(string id) => _pages.TryGetValue(id, out var page) && page.Visible;
     public string PagePlaceholderTextForTesting(string id) => _pages.TryGetValue(id, out var page) ? string.Join("|", page.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)) : "";
-    public void UseTransportForTesting(Func<string, string, string?, Task<(long, string)>> transport) { _transport = transport; _api = new IslandManagementApi(transport); _access?.Bind(_api); _bans?.Bind(_api); _perms?.Bind(_api); _objects?.Bind(_api); _audit?.Bind(_api); _admin?.Bind(_api); _performance?.Bind(_api); _restart?.Bind(_api); _environment?.Bind(_api); _media?.Bind(_api); _physics?.Bind(_api); }
+    public void UseTransportForTesting(Func<string, string, string?, Task<(long, string)>> transport) { _transport = transport; _api = new IslandManagementApi(transport); _access?.Bind(_api); _bans?.Bind(_api); _perms?.Bind(_api); _objects?.Bind(_api); _audit?.Bind(_api); _admin?.Bind(_api); _performance?.Bind(_api); _restart?.Bind(_api); _environment?.Bind(_api); _media?.Bind(_api); _physics?.Bind(_api); _terrain?.Bind(_api); }
     public void PressSaveForTesting() => _save.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressRestoreForTesting() => _restore.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressCloseForTesting() => RequestClose();
@@ -248,7 +250,8 @@ public partial class IslandManagementWindow : Node
         _pageHost.AddChild(_media); _pages["midia"] = _media;
         _physics = new IslandPhysicsPage { Name = "Physics", Visible = false }; _physics.SetAnchorsPreset(Control.LayoutPreset.FullRect); _physics.Bind(_api!); _physics.Notify += text => Notify(text); _physics.Ask = (text, ok, action) => Ask(text, ok, action);
         _pageHost.AddChild(_physics); _pages["fisica"] = _physics;
-        foreach (var section in Sections.Skip(1).Where(s => s.Id is not ("acesso" or "banimentos" or "permissoes" or "objetos" or "auditoria" or "administracao" or "desempenho" or "reinicializacao" or "ambiente" or "midia" or "fisica"))) { var page = Placeholder(section); page.Visible = false; _pageHost.AddChild(page); _pages[section.Id] = page; }
+        _terrain = new IslandTerrainPage { Name = "Terrain", Visible = false }; _terrain.SetAnchorsPreset(Control.LayoutPreset.FullRect); _terrain.Bind(_api!); _terrain.Notify += text => Notify(text); _terrain.Ask = (text, ok, action) => Ask(text, ok, action);
+        _pageHost.AddChild(_terrain); _pages["terreno"] = _terrain;
 
         _loading = new PanelContainer { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop }; _loading.SetAnchorsPreset(Control.LayoutPreset.FullRect); ((PanelContainer)_loading).AddThemeStyleboxOverride("panel", IslandUi.Box(new Color(IslandUi.MainPanel, .72f), null, 10, 0));
         _loadingText = IslandUi.Text("Carregando dados da ilha…", 17, IslandUi.TextSecondary, true); _loadingText.HorizontalAlignment = HorizontalAlignment.Center; _loadingText.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; _loading.AddChild(_loadingText); _pageHost.AddChild(_loading);
@@ -259,23 +262,6 @@ public partial class IslandManagementWindow : Node
         var retry = IslandUi.Action("Tentar novamente", "reset", IslandUi.Kind.Secondary, 42); retry.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter; retry.Pressed += () => _ = LoadAsync(); box.AddChild(retry);
         failure.AddChild(IslandUi.Padded(box, 40, 20, 40, 20)); _failure = failure; _pageHost.AddChild(failure);
         return _pageHost;
-    }
-
-    private static Control Placeholder(Section section)
-    {
-        var card = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill }; card.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        card.AddThemeStyleboxOverride("panel", IslandUi.Box(IslandUi.CardBackground, IslandUi.BorderDefault, IslandUi.RadiusCard));
-        var box = IslandUi.Column(10); box.Alignment = BoxContainer.AlignmentMode.Center; box.CustomMinimumSize = new Vector2(420, 0);
-        var icon = UiStyle.IconRect(section.Icon, IslandUi.AccentPrimary, 44); icon.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter; box.AddChild(icon);
-        var title = IslandUi.Text(section.Title, 22, IslandUi.TextPrimary, true); title.HorizontalAlignment = HorizontalAlignment.Center; title.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; box.AddChild(title);
-        var summary = IslandUi.Text(section.Summary, 15, IslandUi.TextSecondary, false, true); summary.HorizontalAlignment = HorizontalAlignment.Center; box.AddChild(summary);
-        box.AddChild(IslandUi.Pill("Ainda não disponível nesta versão", IslandUi.AccentSecondary));
-        var pillHolder = box.GetChild<Control>(box.GetChildCount() - 1); pillHolder.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
-        var plan = IslandUi.Column(4); plan.AddChild(IslandUi.Text("Vai reunir aqui:", 14, IslandUi.TextMuted, true));
-        foreach (var line in section.Covers) plan.AddChild(IslandUi.Text("•  " + line, 14, IslandUi.TextSecondary, false, true));
-        box.AddChild(IslandUi.Padded(plan, 0, 8, 0, 0));
-        var center = new CenterContainer(); center.AddChild(box); card.AddChild(center);
-        return card;
     }
 
     private Control BuildFooter()
@@ -374,6 +360,7 @@ public partial class IslandManagementWindow : Node
         if (id == "ambiente" && _info is not null) _ = _environment.LoadAsync();
         if (id == "midia" && _info is not null) _ = _media.LoadAsync();
         if (id == "fisica" && _info is not null) _ = _physics.LoadAsync();
+        if (id == "terreno" && _info is not null) _ = _terrain.LoadAsync();
         foreach (var section in Sections) PaintItem(section);
         RefreshFooter();
     }
@@ -413,7 +400,7 @@ public partial class IslandManagementWindow : Node
     {
         _info = info; _island = info.Id; _lastSyncAt = Time.GetTicksMsec() / 1000.0; _failure.Visible = false;
         var keepMode = preserveAccessDraft && _access.IsDirty ? _access.DraftMode : null;
-        _bans.SetIsland(info.Id); _perms.SetIsland(info.Id); _objects.SetIsland(info.Id); _audit.SetIsland(info.Id); _admin.SetIsland(info.Id); _performance.SetIsland(info.Id); _restart.SetIsland(info.Id); _environment.SetIsland(info.Id); _media.SetIsland(info.Id); _physics.SetIsland(info.Id); _admin.SetClosedState(info.AccessMode == "closed"); _general.Fill(info); _access.Fill(info); if (keepMode is not null) _access.SetDraft(keepMode);
+        _bans.SetIsland(info.Id); _perms.SetIsland(info.Id); _objects.SetIsland(info.Id); _audit.SetIsland(info.Id); _admin.SetIsland(info.Id); _performance.SetIsland(info.Id); _restart.SetIsland(info.Id); _environment.SetIsland(info.Id); _media.SetIsland(info.Id); _physics.SetIsland(info.Id); _terrain.SetIsland(info.Id); _admin.SetClosedState(info.AccessMode == "closed"); _general.Fill(info); _access.Fill(info); if (keepMode is not null) _access.SetDraft(keepMode);
         _name.Text = Fit(info.Name, 23, 380); _name.TooltipText = info.Name; _name.MouseFilter = Control.MouseFilterEnum.Pass; _id.Text = Fit($"ID da Ilha: {info.Id}", 13, 340, UiStyle.Medium); _id.TooltipText = info.Id.ToString(); _visitors.Text = $"{info.Visitors} / {info.MaxPlayers}";
         var color = IslandUi.StateColor(info.State); _stateText.Text = IslandUi.StateText(info.State); _stateText.AddThemeColorOverride("font_color", color);
         ((PanelContainer)_statePill).AddThemeStyleboxOverride("panel", IslandUi.Box(new Color(color, .15f), color, 7, 1, 11, 3)); ((ColorRect)_stateDot).Color = color;

@@ -162,4 +162,10 @@ public sealed class IslandManagementApi(Func<string, string, string?, Task<(long
     public Task<IslandReply> PhysicsGet(Guid island, string query, string state, int page) => Send("GET", $"/api/v1/worlds/islands/{island}/management/physics?page={page}&state={Uri.EscapeDataString(state)}&q={Uri.EscapeDataString(query)}");
     public Task<IslandReply> PhysicsFreeze(Guid island, IEnumerable<Guid>? ids, bool all) => Send("POST", $"/api/v1/worlds/islands/{island}/management/physics/freeze", new { objectIds = ids ?? [], all });
     public Task<IslandReply> PhysicsRelease(Guid island, IEnumerable<Guid>? ids, bool all) => Send("POST", $"/api/v1/worlds/islands/{island}/management/physics/release", new { objectIds = ids ?? [], all });
+
+    // ---- terrain ----
+    public Task<IslandReply> TerrainGet(Guid island) => Send("GET", $"/api/v1/worlds/islands/{island}/management/terrain");
+    public Task<IslandReply> TerrainBackup(Guid island, string name) => Send("POST", $"/api/v1/worlds/islands/{island}/management/terrain/backups", new { name });
+    public Task<IslandReply> TerrainBackupDelete(Guid island, Guid snapshot) => Send("DELETE", $"/api/v1/worlds/islands/{island}/management/terrain/backups/{snapshot}");
+    public Task<IslandReply> TerrainRestore(Guid island, Guid snapshot, string mode, int? minutes) => Send("POST", $"/api/v1/worlds/islands/{island}/management/terrain/backups/{snapshot}/restore", new { mode, minutes });
 }
