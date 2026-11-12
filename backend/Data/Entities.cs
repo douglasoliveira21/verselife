@@ -327,6 +327,10 @@ public sealed class IslandParcel
     public string Code { get; set; } = string.Empty;
     /// <summary>The picture of the parcel (asset:id of an image the owner chose), or empty.</summary>
     public string ImageUrl { get; set; } = string.Empty;
+    /// <summary>Whether proximity voice works on this parcel: off, nobody on it speaks or hears (the island server drops the audio).</summary>
+    public bool AllowVoice { get; set; } = true;
+    /// <summary>Whether people who build here (and are not the owner or the tenant) may put media (a picture or video on a surface) in their objects.</summary>
+    public bool AllowMedia { get; set; } = true;
 }
 
 /// <summary>One line of a parcel's access list: a person allowed in (kind allow) or kept out (kind ban), for ever or until a time.</summary>

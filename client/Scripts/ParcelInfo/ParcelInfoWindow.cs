@@ -30,7 +30,7 @@ public sealed class ParcelInfoApi(IslandManagementApi inner)
     public Task<IslandReply> AccessMode(Guid island, Guid parcel, string mode) => inner.Send("PUT", $"{Parcel(island, parcel)}/access-mode", new { mode });
     public Task<IslandReply> AddAccess(Guid island, Guid parcel, Guid user, string kind, int? minutes) => inner.Send("POST", $"{Parcel(island, parcel)}/access", new { userId = user, kind, minutes, reason = "" });
     public Task<IslandReply> RemoveAccess(Guid island, Guid parcel, Guid entry) => inner.Send("DELETE", $"{Parcel(island, parcel)}/access/{entry}");
-    public Task<IslandReply> Options(Guid island, Guid parcel, string buildMode, bool allowScripts, int? autoReturnMinutes) => inner.Send("PUT", $"{Parcel(island, parcel)}/options", new { buildMode, allowScripts, autoReturnMinutes });
+    public Task<IslandReply> Options(Guid island, Guid parcel, string buildMode, bool allowScripts, int? autoReturnMinutes, bool? allowVoice = null, bool? allowMedia = null) => inner.Send("PUT", $"{Parcel(island, parcel)}/options", new { buildMode, allowScripts, autoReturnMinutes, allowVoice, allowMedia });
     public Task<IslandReply> Objects(Guid island, Guid parcel) => inner.Send("GET", $"{Parcel(island, parcel)}/objects");
     public Task<IslandReply> ReturnObjects(Guid island, Guid parcel, string scope, IEnumerable<Guid>? ids, string reason) => inner.Send("POST", $"{Parcel(island, parcel)}/objects/return", new { scope, objectIds = ids, reason });
     public Task<IslandReply> Media(Guid island, Guid parcel, string url, double volume, bool autoplay, string name) => inner.Send("PUT", $"{Parcel(island, parcel)}/media", new { musicUrl = url, volume, autoplay, name });

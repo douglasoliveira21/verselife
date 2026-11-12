@@ -130,7 +130,7 @@ Cabeçalho: imagem, **código e nome**, ilha e área, e o estado (Disponível, �
 
 **Servidor:** `GET /land/parcels/{id}/about` junta tudo isto (qualquer um que possa entrar na ilha lê; o que é só do dono vem com bandeiras `canManage`, `isTenant`, `isStaff`), `PUT /land/parcels/{id}/image` põe ou tira a imagem (dono do terreno ou equipe; precisa ser **imagem do inventário da própria pessoa**). A imagem do terreno é entregue a quem pode entrar na ilha, como a capa. Migração `Phase78ParcelImage` (`parcels.image_url`). Código: `LandAbout` e `ParcelInfoWindow`. Testes: `LandAboutTests` e `ParcelInfoSmoke`.
 
-**Limites:** “Criar objetos”, “Usar voz”, “Usar mídia” e “Permitir visitantes” do prompt não existem como regras separadas no jogo; ficaram em **Permissões** as regras que existem (quem constrói, scripts, devolução automática) e o acesso na aba **Acesso**. O mercado e Minhas Propriedades mostram essa imagem nos cards (veja a seção seguinte).
+**Limites:** “Criar objetos” e “Permitir visitantes” do prompt não existem como regras separadas no jogo (voz e mídia ganharam regra própria, veja “Voz e mídia por terreno”); ficaram em **Permissões** as regras que existem (quem constrói, scripts, devolução automática) e o acesso na aba **Acesso**. O mercado e Minhas Propriedades mostram essa imagem nos cards (veja a seção seguinte).
 
 ---
 
@@ -148,3 +148,18 @@ Sem migração nem rota nova. Testes: `IslandLandPagesSmoke`.
 # Imagem do terreno no mercado e em Minhas Propriedades
 
 A imagem de divulgação que o dono põe na aba **Geral** de “Sobre este Terreno” agora aparece nos **cards do Mercado Imobiliário** e nos cards de **Meus Terrenos** (em Minhas Propriedades). Sem imagem, o card usa a **capa da ilha**, e sem ela, o desenho de mapa de antes. O servidor manda `image` nos itens do mercado e `imageUrl` nos terrenos de `properties/mine`; a imagem é entregue a quem pode entrar na ilha (a rota que serve a capa serve também as imagens dos terrenos). Sem migração nova. Testes: `LandMarketTests`, `RealEstateMarketSmoke`, `MyPropertiesSmoke`.
+
+---
+
+# Voz e mídia por terreno
+
+Duas regras novas na aba **Permissões** de “Sobre este Terreno” (só o dono muda; os outros leem). Ambas **ligadas por padrão**: os terrenos que já existem não mudam.
+
+- **Permitir voz neste terreno.** Desligada, **ninguém fala nem ouve** a voz de perto dentro do terreno. Quem manda isso valer é o **servidor da ilha**: ele recebe do `land-sync` a lista dos terrenos com voz desligada (`rules`) e, a cada pacote de voz, **descarta** o áudio de quem fala de dentro de um deles e **não entrega** áudio a quem escuta de dentro de um deles. O cliente não decide nada. Quem está fora continua se ouvindo normalmente.
+- **Permitir mídia nos objetos de outras pessoas.** Desligada, quem só constrói no terreno (nem dono, nem locatário, nem administrador da ilha) **não pode pôr mídia** (imagem ou vídeo numa superfície) nos objetos: criar, colar ou editar um objeto para ter mídia volta `media_not_allowed` (403), como já acontece com scripts. O que **já estava lá continua**. O dono, o locatário e a equipe da ilha podem sempre.
+
+Servidor: `PUT /land/parcels/{id}/options` aceita `allowVoice` e `allowMedia` (opcionais: uma requisição que não os manda deixa como estão); `GET …/about` os devolve. Migração `Phase79ParcelVoiceMedia` (`parcels.allow_voice`, `parcels.allow_media`, padrão ligado). Código: `LandRules` (compartilhado), `ServerVoice` (servidor da ilha), `BuildRules.CanPutMedia`. Testes: `LandVoiceMediaTests`, `ParcelInfoSmoke`.
+
+**Publique API e servidor de ilhas juntos:** o servidor de ilhas antigo ignora `rules` e a voz continua liberada em todo lugar.
+
+**Limites:** o cliente ainda não avisa “voz desligada neste terreno” na barra de voz (o áudio simplesmente não passa); a regra de mídia vale para quem constrói e não retira mídia que já existia; a música do próprio terreno (aba Mídia) é do dono e não é afetada.

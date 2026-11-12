@@ -19,7 +19,7 @@ public sealed record CategoryRequest(string Category);
 public sealed record ImageRequest(string? Image);
 public sealed record AccessAddRequest(Guid UserId, string Kind, int? Minutes, string? Reason);
 public sealed record EjectRequest(Guid UserId);
-public sealed record OptionsRequest(string BuildMode, bool AllowScripts, int? AutoReturnMinutes);
+public sealed record OptionsRequest(string BuildMode, bool AllowScripts, int? AutoReturnMinutes, bool? AllowVoice = null, bool? AllowMedia = null);
 public sealed record ArrivalRequest(double? X, double? Z, double Yaw, string Mode);
 public sealed record EnvironmentRequest(string? Environment);
 public sealed record MediaRequest(string? MusicUrl, float Volume, bool Autoplay, string? Name);
@@ -81,7 +81,7 @@ public static class LandEndpoints
         group.MapDelete("/parcels/{parcelId:guid}/access/{entryId:guid}", async (Guid islandId, Guid parcelId, Guid entryId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandAdmin.RemoveAccessAsync(db, parcelId, user, entryId, t, ct)));
         group.MapPut("/parcels/{parcelId:guid}/options", async (Guid islandId, Guid parcelId, OptionsRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            await Run(c, islandId, db, ct, user => LandAdmin.SetOptionsAsync(db, parcelId, user, r.BuildMode, r.AllowScripts, r.AutoReturnMinutes, t, ct)));
+            await Run(c, islandId, db, ct, user => LandAdmin.SetOptionsAsync(db, parcelId, user, r.BuildMode, r.AllowScripts, r.AutoReturnMinutes, t, ct, r.AllowVoice, r.AllowMedia)));
         group.MapPost("/parcels/{parcelId:guid}/eject", async (Guid islandId, Guid parcelId, EjectRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandAdmin.EjectAsync(db, parcelId, user, r.UserId, t, ct)));
         group.MapGet("/parcels/{parcelId:guid}/access", async (Guid islandId, Guid parcelId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
@@ -123,7 +123,7 @@ public static class LandEndpoints
 
         // what the island servers ask for (internal, like the other platform routes)
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/land-sync", async (Guid instanceId, long? since, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            !Modules.Platform.PlatformEndpoints.HasValidServiceKey(context, config) ? Results.Unauthorized() : await LandSync.BuildAsync(db, instanceId, since ?? 0, t, ct) is { } answer ? Results.Ok(new { access = answer.Access, events = answer.Events, cursor = answer.Cursor, terrain = answer.Terrain, teleport = answer.Teleport }) : Results.NotFound()).WithTags("Platform");
+            !Modules.Platform.PlatformEndpoints.HasValidServiceKey(context, config) ? Results.Unauthorized() : await LandSync.BuildAsync(db, instanceId, since ?? 0, t, ct) is { } answer ? Results.Ok(new { access = answer.Access, events = answer.Events, cursor = answer.Cursor, terrain = answer.Terrain, teleport = answer.Teleport, rules = answer.Rules }) : Results.NotFound()).WithTags("Platform");
         return endpoints;
     }
 

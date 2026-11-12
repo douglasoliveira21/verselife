@@ -166,19 +166,20 @@ public static class LandAdmin
     /// The building rules of a parcel: who may build (owner, builders list, everyone, nobody), whether visitors who build may put scripts in
     /// their objects, and after how many minutes the objects of people who may not build here are sent back (null: never; 1 to 10080).
     /// </summary>
-    public static async Task<CommerceResult> SetOptionsAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, string buildMode, bool allowScripts, int? autoReturnMinutes, TimeProvider clock, CancellationToken ct)
+    public static async Task<CommerceResult> SetOptionsAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, string buildMode, bool allowScripts, int? autoReturnMinutes, TimeProvider clock, CancellationToken ct, bool? allowVoice = null, bool? allowMedia = null)
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
         if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
         if (!BuildModes.Contains(buildMode)) return CommerceResult.Fail("bad_mode");
         if (autoReturnMinutes is { } minutes && (minutes < 1 || minutes > 10_080)) return CommerceResult.Fail("bad_duration");
         parcel.BuildMode = buildMode; parcel.AutoReturnMinutes = autoReturnMinutes;
+        if (allowVoice is { } voice) parcel.AllowVoice = voice; if (allowMedia is { } media) parcel.AllowMedia = media; // left alone when the request does not say
         // the old "build" and "run_scripts" keys keep meaning the same to everything that reads them
         var permissions = System.Text.Json.Nodes.JsonNode.Parse(parcel.PermissionsJson) as System.Text.Json.Nodes.JsonObject ?? [];
         permissions["build"] = buildMode == "everyone"; permissions["run_scripts"] = allowScripts;
         parcel.PermissionsJson = permissions.ToJsonString();
-        Log(db, parcel, actor, "build_options", new { buildMode, allowScripts, autoReturnMinutes }, clock.GetUtcNow());
-        return await SaveAsync(db, ct, new { parcelId, buildMode, allowScripts, autoReturnMinutes });
+        Log(db, parcel, actor, "build_options", new { buildMode, allowScripts, autoReturnMinutes, voice = parcel.AllowVoice, media = parcel.AllowMedia }, clock.GetUtcNow());
+        return await SaveAsync(db, ct, new { parcelId, buildMode, allowScripts, autoReturnMinutes, allowVoice = parcel.AllowVoice, allowMedia = parcel.AllowMedia });
     }
 
     public static async Task<CommerceResult> AddAccessAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, Guid userId, string kind, int? minutes, string? reason, TimeProvider clock, CancellationToken ct, string operation = "access_add")

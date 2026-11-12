@@ -50,7 +50,7 @@ public static class LandAbout
             parcel = new
             {
                 id = parcel.Id, code = parcel.Code, name = parcel.Name, description = parcel.Description, category = parcel.Category, area = parcel.Area, cells = view.Cells, imageUrl = parcel.ImageUrl, createdAt = parcel.CreatedAt, revision = parcel.Revision,
-                accessMode = parcel.AccessMode, buildMode = parcel.BuildMode, allowScripts = view.AllowScripts, autoReturnMinutes = parcel.AutoReturnMinutes, teleportMode = parcel.TeleportMode, spawnX = view.ArrivalX, spawnZ = view.ArrivalZ, yaw = parcel.ArrivalYaw, media,
+                accessMode = parcel.AccessMode, buildMode = parcel.BuildMode, allowScripts = view.AllowScripts, allowVoice = parcel.AllowVoice, allowMedia = parcel.AllowMedia, autoReturnMinutes = parcel.AutoReturnMinutes, teleportMode = parcel.TeleportMode, spawnX = view.ArrivalX, spawnZ = view.ArrivalZ, yaw = parcel.ArrivalYaw, media,
             },
             island = new { id = island.Id, name = island.Name, size = island.Size, coverImageUrl = island.CoverImageUrl },
             owner = new { id = parcel.OwnerUserId, name = parcel.GroupId is not null ? groupName ?? "Grupo" : Name(parcel.OwnerUserId), kind = parcel.GroupId is null ? "person" : "group", groupId = parcel.GroupId, groupName },

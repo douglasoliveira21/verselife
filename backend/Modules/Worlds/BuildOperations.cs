@@ -68,6 +68,7 @@ public static partial class BuildOperations
         var parcel = BuildRules.ParcelAt(parcels, o.PositionX, o.PositionZ);
         if (BuildRules.CanBuildAt(parcel, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);
         if (BuildCost.HasScripts(o.ContentJson) && BuildRules.CanPutScripts(parcel, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts);
+        if (BuildCost.HasMedia(o.MaterialJson) && BuildRules.CanPutMedia(parcel, actor, isAdmin) is { } noMedia) return Refuse(403, noMedia);
         var cost = BuildCost.Of(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.PhysicsJson, o.ContentJson);
         if (await LimitAsync(db, island, parcel, cost, null, ct) is { } limit) return Refuse(409, limit);
         if ((o.ParentObjectId is not null || o.GroupId is not null) && await ValidateNewLinkAsync(db, island.Id, o, ct) is { } linkProblem) return Refuse(400, linkProblem); // a new object may only join a linkset the way the rules allow
@@ -95,6 +96,7 @@ public static partial class BuildOperations
         var there = BuildRules.ParcelAt(parcels, o.PositionX, o.PositionZ);
         if (there?.Id != here?.Id && BuildRules.CanBuildAt(there, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);
         if (BuildCost.HasScripts(o.ContentJson) && !BuildCost.HasScripts(item.ContentJson) && BuildRules.CanPutScripts(there, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts); // adding the first script
+        if (BuildCost.HasMedia(o.MaterialJson) && !BuildCost.HasMedia(item.MaterialJson) && BuildRules.CanPutMedia(there, actor, isAdmin) is { } noMedia) return Refuse(403, noMedia); // adding the first media
 
         var changes = ObjectRights.ChangesWhatItIs(item, o);
         if (changes && !ItemRights.Has((await ObjectRights.EffectiveAsync(db, item, ct)).Owner, Right.Modify)) return Refuse(403, "no_modify"); // moving and turning never need Modify; changing what the object is does, for everyone
@@ -196,6 +198,7 @@ public static partial class BuildOperations
             var parcel = BuildRules.ParcelAt(parcels, o.PositionX, o.PositionZ);
             if (BuildRules.CanBuildAt(parcel, actor, isAdmin, hasBuild) is { } denied) return Refuse(403, denied);
             if (BuildCost.HasScripts(o.ContentJson) && BuildRules.CanPutScripts(parcel, actor, isAdmin) is { } noScripts) return Refuse(403, noScripts);
+            if (BuildCost.HasMedia(o.MaterialJson) && BuildRules.CanPutMedia(parcel, actor, isAdmin) is { } noMedia) return Refuse(403, noMedia);
             var parts = ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson);
             foreach (var single in parts.Singles) if (!singles.Add(single) && !await ObjectRights.CanBeInManyAsync(db, actor, single, ct)) return Refuse(409, "no_copy_in_use"); // the same thing twice in one construction
             if (await ObjectRights.ValidateSinglesAsync(db, actor, parts, null, null, ct) is { } inUse) return Refuse(409, inUse);
@@ -331,7 +334,7 @@ public static partial class BuildOperations
         return Results.Ok(new
         {
             objects, maxObjects = BuildCost.Limit(island.ResourceLimitsJson, "objects", 5000), cost, maxCost = BuildCost.Limit(island.ResourceLimitsJson, "cost", BuildCost.DefaultIslandBudget),
-            canBuildHere = BuildRules.CanBuildAt(parcel, user, isAdmin, hasBuild) is null, isAdmin, parcel = parcelInfo, canPutScripts = BuildRules.CanPutScripts(parcel, user, isAdmin) is null
+            canBuildHere = BuildRules.CanBuildAt(parcel, user, isAdmin, hasBuild) is null, isAdmin, parcel = parcelInfo, canPutScripts = BuildRules.CanPutScripts(parcel, user, isAdmin) is null, canPutMedia = BuildRules.CanPutMedia(parcel, user, isAdmin) is null
         });
     }
 

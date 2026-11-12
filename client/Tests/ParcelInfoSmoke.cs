@@ -18,6 +18,7 @@ public partial class ParcelInfoSmoke : Node3D
         public bool Owner = true, Tenant, Gone, Down;
         public bool Staff = false;
         public string Name = "Centro Comercial", Description = "Terreno ideal para lojas", Category = "comercial", Image = "", AccessMode = "public", BuildMode = "owner", Teleport = "free";
+        public bool Voice = true, Media = true;
         public bool Scripts; public int? AutoReturn; public double? SpawnX, SpawnZ; public double Yaw; public int Revision = 1;
         public long? Sale, Rent; public bool Leased; public string? MusicUrl; public double MusicVolume = .6; public bool Autoplay = true; public string MusicName = "";
         public readonly List<(Guid Id, string Name, string Kind)> Entries = [];
@@ -29,7 +30,7 @@ public partial class ParcelInfoSmoke : Node3D
         {
             parcel = new
             {
-                id = Parcel, code = "L-03", name = Name, description = Description, category = Category, area = 1024.0, cells = 64, imageUrl = Image, createdAt = DateTimeOffset.UtcNow.AddDays(-30), revision = Revision, accessMode = AccessMode, buildMode = BuildMode, allowScripts = Scripts, autoReturnMinutes = AutoReturn,
+                id = Parcel, code = "L-03", name = Name, description = Description, category = Category, area = 1024.0, cells = 64, imageUrl = Image, createdAt = DateTimeOffset.UtcNow.AddDays(-30), revision = Revision, accessMode = AccessMode, buildMode = BuildMode, allowScripts = Scripts, allowVoice = Voice, allowMedia = Media, autoReturnMinutes = AutoReturn,
                 teleportMode = Teleport, spawnX = SpawnX, spawnZ = SpawnZ, yaw = Yaw, media = MusicUrl is null ? null : new { musicUrl = MusicUrl, volume = MusicVolume, autoplay = Autoplay, name = MusicName },
             },
             island = new { id = Island, name = "Ilha Tropical", size = 256, coverImageUrl = (string?)null },
@@ -68,7 +69,7 @@ public partial class ParcelInfoSmoke : Node3D
                 case "/rent": Leased = true; Tenant = true; Rent = null; return Task.FromResult(Ok());
                 case "/access": if (method == "GET") return Task.FromResult(Ok(new { mode = AccessMode, entries = Entries.Select(e => new { id = e.Id, userId = Carla, userName = e.Name, kind = e.Kind, reason = "", expiresAt = (DateTimeOffset?)null, createdAt = DateTimeOffset.UtcNow }) })); Entries.Add((Guid.NewGuid(), "Carla", json!["kind"]!.GetValue<string>())); return Task.FromResult(Ok());
                 case "/access-mode": AccessMode = json!["mode"]!.GetValue<string>(); return Task.FromResult(Ok());
-                case "/options": BuildMode = json!["buildMode"]!.GetValue<string>(); Scripts = json["allowScripts"]!.GetValue<bool>(); AutoReturn = json["autoReturnMinutes"]?.GetValue<int>(); return Task.FromResult(Ok());
+                case "/options": BuildMode = json!["buildMode"]!.GetValue<string>(); Scripts = json["allowScripts"]!.GetValue<bool>(); if (json["allowVoice"] is { } voice) Voice = voice.GetValue<bool>(); if (json["allowMedia"] is { } media) Media = media.GetValue<bool>(); AutoReturn = json["autoReturnMinutes"]?.GetValue<int>(); return Task.FromResult(Ok());
                 case "/objects": return Task.FromResult(Ok(Objects.Select(o => new { id = o.Id, name = o.Name, ownerUserId = Guid.NewGuid(), ownerName = o.Authorized ? "AliceVerse" : "Visitante", primitiveType = "cube", cost = 5, hasScripts = false, x = 1, y = 1, z = 1, createdAt = DateTimeOffset.UtcNow, authorized = o.Authorized })));
                 case "/objects/return": { var scope = json!["scope"]!.GetValue<string>(); if (string.IsNullOrWhiteSpace(json["reason"]?.GetValue<string>())) return Task.FromResult(Fail(400, "bad_reason")); var ids = json["objectIds"]?.AsArray().Select(x => Guid.Parse(x!.GetValue<string>())).ToList(); Objects.RemoveAll(o => scope == "others" ? !o.Authorized : ids!.Contains(o.Id)); return Task.FromResult(Ok()); }
                 case "/media": { var url = json!["musicUrl"]!.GetValue<string>(); if (url.Length == 0) MusicUrl = null; else { if (!url.StartsWith("https://", StringComparison.Ordinal)) return Task.FromResult(Fail(400, "not_https")); MusicUrl = url; MusicVolume = json["volume"]!.GetValue<double>(); Autoplay = json["autoplay"]!.GetValue<bool>(); MusicName = json["name"]!.GetValue<string>(); } return Task.FromResult(Ok()); }
@@ -124,6 +125,11 @@ public partial class ParcelInfoSmoke : Node3D
             // --- Permissões ----------------------------------------------------------------------------------------------------------------
             window.SelectTabForTesting("permissoes"); await Frames(2); Require(window.ButtonEnabledForTesting("Salvar Permissões") && window.TextForTesting.Contains("Construtores na lista"), "the owner sees the rules to change");
             Require(await window.SetOptionsForTesting("everyone", true, 15), "saving the rules works"); await Frames(3); Require(server.BuildMode == "everyone" && server.Scripts && server.AutoReturn == 15, "the rules were sent");
+            Require(window.VoiceFieldForTesting && window.MediaFieldForTesting && server.Voice && server.Media, "voice and media are on by default and the toggles show it");
+            window.VoiceFieldForTesting = false; window.MediaFieldForTesting = false; window.PressSavePermissionsForTesting(); await Frames(4);
+            Require(!server.Voice && !server.Media && server.BuildMode == "everyone", "the two switches go with the save");
+            Require(await window.SetOptionsForTesting("owner", false, null), "a save without them changes neither"); await Frames(3); Require(!server.Voice && !server.Media, "an older request leaves them as they were");
+            Require(await window.SetOptionsForTesting("everyone", true, 15, voice: true, media: true), "turning them back on works"); await Frames(3); Require(server.Voice && server.Media, "both are on again");
 
             // --- Objetos -----------------------------------------------------------------------------------------------------------------------
             window.SelectTabForTesting("objetos"); await Frames(4); Require(window.ObjectRowsForTesting == 3 && window.TextForTesting.Contains("120 de 1.000") && window.TextForTesting.Contains("Cadeira do visitante"), "the objects are listed with the prims in use");
@@ -157,7 +163,10 @@ public partial class ParcelInfoSmoke : Node3D
             Require(window.HasButtonForTesting("Comprar") && window.HasButtonForTesting("Ver Condições") && !window.HasButtonForTesting("Colocar à Venda"), "a visitor can buy what is for sale, not offer it");
             Require(window.TextForTesting.Contains("L$ 70.000") && window.TextForTesting.Contains("Bruno"), "price and seller are shown");
             window.SelectTabForTesting("acesso"); await Frames(3); Require(!window.HasButtonForTesting("Adicionar") && window.TextForTesting.Contains("O acesso é do dono"), "a visitor does not manage access");
+            server.Voice = false; server.Media = false; await window.LoadAsync();
             window.SelectTabForTesting("permissoes"); await Frames(2); Require(!window.HasButtonForTesting("Salvar Permissões") && window.TextForTesting.Contains("Só o dono do terreno muda"), "nor the rules");
+            Require(window.TextForTesting.Contains("Desligada neste terreno") && window.TextForTesting.Contains("Não permitida"), "a visitor reads that voice and media are off here");
+            server.Voice = true; server.Media = true; await window.LoadAsync();
             window.SelectTabForTesting("objetos"); await Frames(3); Require(window.ObjectRowsForTesting == 0 && window.TextForTesting.Contains("aparece para o dono"), "nor the objects");
             window.SelectTabForTesting("midia"); await Frames(2); Require(!window.HasButtonForTesting("Salvar Música") && window.TextForTesting.Contains("não toca música"), "nor the music");
             window.SelectTabForTesting("venda"); await Frames(2); Require(await window.BuyForTesting(), "buying works"); await Frames(3); Require(server.Sale is null && server.Owner, "the parcel is bought and the window shows the owner's view now");

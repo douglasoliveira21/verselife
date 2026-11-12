@@ -2281,6 +2281,18 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasDefaultValue("public")
                         .HasColumnName("access_mode");
 
+                    b.Property<bool>("AllowMedia")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("allow_media");
+
+                    b.Property<bool>("AllowVoice")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("allow_voice");
+
                     b.Property<double>("Area")
                         .HasColumnType("double precision")
                         .HasColumnName("area");

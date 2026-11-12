@@ -29,6 +29,8 @@ public sealed record ParcelFacts(Guid Id, string Name, Guid OwnerUserId, bool Pu
     public IReadOnlySet<Guid>? Banned { get; init; }
     /// <summary>Whether people who build here (and are not the owner or tenant) may put scripts in their objects.</summary>
     public bool AllowScripts { get; init; }
+    /// <summary>Whether people who build here (and are not the owner or tenant) may put media (a picture or video on a surface) in their objects.</summary>
+    public bool AllowMedia { get; init; } = true;
     /// <summary>For a parcel of a group: the members whose cargo lets them run it, who count as its owners.</summary>
     public IReadOnlySet<Guid>? Managers { get; init; }
     /// <summary>For a parcel of a group (or lent to one): the members who may build in it.</summary>
@@ -47,7 +49,7 @@ public sealed record ParcelFacts(Guid Id, string Name, Guid OwnerUserId, bool Pu
             var b = bounds.RootElement;
             bool Build() { try { using var p = JsonDocument.Parse(parcel.PermissionsJson); return p.RootElement.TryGetProperty("build", out var v) && v.ValueKind == JsonValueKind.True; } catch (JsonException) { return false; } }
             bool Scripts() { try { using var p = JsonDocument.Parse(parcel.PermissionsJson); return p.RootElement.TryGetProperty("run_scripts", out var v) && v.ValueKind == JsonValueKind.True; } catch (JsonException) { return false; } }
-            return new ParcelFacts(parcel.Id, parcel.Name, parcel.OwnerUserId, Build(), parcel.MaxObjects, b.GetProperty("minX").GetDouble(), b.GetProperty("minZ").GetDouble(), b.GetProperty("maxX").GetDouble(), b.GetProperty("maxZ").GetDouble()) { BuildMode = parcel.BuildMode, AllowScripts = Scripts(), AutoReturnMinutes = parcel.AutoReturnMinutes };
+            return new ParcelFacts(parcel.Id, parcel.Name, parcel.OwnerUserId, Build(), parcel.MaxObjects, b.GetProperty("minX").GetDouble(), b.GetProperty("minZ").GetDouble(), b.GetProperty("maxX").GetDouble(), b.GetProperty("maxZ").GetDouble()) { AllowMedia = parcel.AllowMedia, BuildMode = parcel.BuildMode, AllowScripts = Scripts(), AutoReturnMinutes = parcel.AutoReturnMinutes };
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { return null; }
     }
@@ -85,6 +87,10 @@ public static class BuildRules
     public static string? CanPutScripts(ParcelFacts? parcel, Guid actor, bool isIslandAdmin) =>
         isIslandAdmin || parcel is null || parcel.IsOwner(actor) || parcel.TenantUserId == actor || parcel.AllowScripts ? null : "scripts_not_allowed";
 
+
+    /// <summary>Null when this person may put media (a picture or video on a surface) into an object on this spot: the owner, the tenant and administrators always may; others only where the parcel allows media.</summary>
+    public static string? CanPutMedia(ParcelFacts? parcel, Guid actor, bool isIslandAdmin) =>
+        isIslandAdmin || parcel is null || parcel.IsOwner(actor) || parcel.TenantUserId == actor || parcel.AllowMedia ? null : "media_not_allowed";
 
     /// <summary>Null when the actor may change or delete an object that belongs to <paramref name="objectOwner"/> and stands in <paramref name="parcel"/>.</summary>
     public static string? CanEditObject(Guid actor, Guid objectOwner, bool isIslandAdmin, ParcelFacts? parcel) =>

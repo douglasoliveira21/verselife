@@ -129,6 +129,14 @@ public static class BuildCost
         }
     }
 
+    /// <summary>Whether the material carries media (a picture or a video shown on the surface).</summary>
+    public static bool HasMedia(string? materialJson)
+    {
+        if (string.IsNullOrWhiteSpace(materialJson)) return false;
+        try { using var document = JsonDocument.Parse(materialJson); return document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("media", out var media) && media.ValueKind == JsonValueKind.Object; }
+        catch (JsonException) { return false; }
+    }
+
     public static bool HasScripts(string? contentJson) => ContentCategories(contentJson).Any(c => c == "scripts");
 
     /// <summary>A limit stored in an island's resource limits JSON (for example "cost"), or the default.</summary>

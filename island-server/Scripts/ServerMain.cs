@@ -33,6 +33,7 @@ public partial class ServerMain : Node
     private string _terrainJson = "{}";
     private TerrainMap _terrain = new();
     private LandAccessMap _access = LandAccessMap.Empty;
+    private LandRules _landRules = LandRules.Empty;
     private LandTerrainRights _rights = LandTerrainRights.Empty;
     private long _landCursor;
     private readonly Dictionary<Guid, DateTimeOffset> _lastPushLog = [];
@@ -588,6 +589,7 @@ public partial class ServerMain : Node
             if (root.TryGetProperty("access", out var access)) _access = LandAccessMap.Parse(access);
             if (root.TryGetProperty("terrain", out var terrain)) _rights = LandTerrainRights.Parse(terrain);
             if (root.TryGetProperty("teleport", out var teleport)) _teleports = LandTeleport.Parse(teleport);
+            if (root.TryGetProperty("rules", out var rules)) _landRules = LandRules.Parse(rules);
             if (root.TryGetProperty("events", out var events) && events.ValueKind == JsonValueKind.Array)
                 foreach (var item in events.EnumerateArray())
                 {

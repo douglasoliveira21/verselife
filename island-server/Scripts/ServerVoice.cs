@@ -12,8 +12,9 @@ public partial class ServerMain
     {
         if (sequence < 0 || !_players.TryGetValue(peerId, out var speaker) || !speaker.Authenticated) return;
         if (!_voice.Allow(peerId, System.Environment.TickCount64, data.Length)) return;
+        if (!_landRules.VoiceAllowedAt(speaker.State.X, speaker.State.Z)) return; // voice is off on the parcel the speaker stands on
         var positions = _players.Values.Where(x => x.Authenticated).Select(x => new VoicePeer(x.PeerId, x.State.X, x.State.Y, x.State.Z)).ToList();
-        foreach (var hearer in VoiceRelay.Hearers(peerId, positions))
+        foreach (var hearer in VoiceRelay.Hearers(peerId, positions).Where(h => !_players.TryGetValue(h, out var listener) || _landRules.VoiceAllowedAt(listener.State.X, listener.State.Z)))
             _bridge.RpcId(hearer, NetworkBridge.MethodName.ReceiveVoice, peerId, sequence, data);
     }
 }

@@ -11,7 +11,7 @@ namespace LifeVerse.Api.Modules.Land;
 /// </summary>
 public static class LandSync
 {
-    public sealed record SyncAnswer(object Access, IReadOnlyList<JsonElement> Events, long Cursor, object? Terrain = null, object? Teleport = null);
+    public sealed record SyncAnswer(object Access, IReadOnlyList<JsonElement> Events, long Cursor, object? Terrain = null, object? Teleport = null, object? Rules = null);
 
     public static async Task<SyncAnswer?> BuildAsync(LifeVerseDbContext db, Guid instanceId, long sinceTicks, TimeProvider clock, CancellationToken ct)
     {
@@ -71,7 +71,12 @@ public static class LandSync
                 return new { id = p.Id, mode = p.TeleportMode, arrival = set ? new { x = p.SpawnX, z = p.SpawnZ, yaw = p.ArrivalYaw } : null, runs = LandGrid.Runs(allCells[p.Id]) };
             }).ToList()
         };
-        return new SyncAnswer(access, events, now.UtcTicks, terrain, teleport);
+        // the parcels where voice is off: the island server drops the audio of whoever stands on them and does not play it to them
+        var rules = new
+        {
+            parcels = parcels.Where(p => !p.AllowVoice && allCells.ContainsKey(p.Id)).Select(p => new { id = p.Id, voice = false, runs = LandGrid.Runs(allCells[p.Id]) }).ToList()
+        };
+        return new SyncAnswer(access, events, now.UtcTicks, terrain, teleport, rules);
     }
 
     private static JsonElement Element(object value) => JsonSerializer.SerializeToElement(value, new JsonSerializerOptions(JsonSerializerDefaults.Web));

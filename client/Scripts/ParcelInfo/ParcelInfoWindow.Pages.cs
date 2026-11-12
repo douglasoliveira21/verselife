@@ -16,6 +16,7 @@ public partial class ParcelInfoWindow
     private int _renderVersion;
     private readonly List<(Guid Id, CheckBox Box, bool Authorized)> _objectRows = [];
     private LineEdit? _returnReason;
+    private CheckBox? _voiceBox, _mediaBox;
 
     private static readonly string[] BuildModes = ["owner", "list", "everyone", "nobody"];
     private static readonly string[] BuildModeTexts = ["Só o dono e o locatário", "O dono e a lista de construtores", "Todos", "Ninguém (só a equipe da ilha)"];
@@ -41,7 +42,10 @@ public partial class ParcelInfoWindow
     public Task<bool> LeaveForTesting() => Obj(About, "rental") is { } r && Guid.TryParse(Str(r, "id"), out var id) ? Do(Api.End(IslandId, id), "Aluguel encerrado.") : Task.FromResult(false);
     public Task<bool> SetImageForTesting(string image) => Do(Api.Image(IslandId, _parcel, image), image.Length == 0 ? "Imagem removida." : "Imagem atualizada.");
     public Task<bool> SetAccessModeForTesting(string mode) => Do(Api.AccessMode(IslandId, _parcel, mode), "Acesso atualizado.");
-    public Task<bool> SetOptionsForTesting(string buildMode, bool scripts, int? minutes) => Do(Api.Options(IslandId, _parcel, buildMode, scripts, minutes), "Permissões atualizadas.");
+    public Task<bool> SetOptionsForTesting(string buildMode, bool scripts, int? minutes, bool? voice = null, bool? media = null) => Do(Api.Options(IslandId, _parcel, buildMode, scripts, minutes, voice, media), "Permissões atualizadas.");
+    public bool VoiceFieldForTesting { get => _voiceBox?.ButtonPressed ?? true; set { if (_voiceBox is not null) _voiceBox.ButtonPressed = value; } }
+    public bool MediaFieldForTesting { get => _mediaBox?.ButtonPressed ?? true; set { if (_mediaBox is not null) _mediaBox.ButtonPressed = value; } }
+    public void PressSavePermissionsForTesting() => PressForTesting("Salvar Permissões");
     public Task<bool> SaveMediaForTesting(string url, double volume, bool autoplay, string name) => Do(Api.Media(IslandId, _parcel, url, volume, autoplay, name), url.Length == 0 ? "Música removida." : "Música salva.");
     public async Task<bool> AddAccessForTesting(string name, string kind, int? minutes) { var id = await FindAsync(name); return id is { } user && await Do(Api.AddAccess(IslandId, _parcel, user, kind, minutes), "Pessoa adicionada."); }
     public int ObjectRowsForTesting => _objectRows.Count;
@@ -54,7 +58,7 @@ public partial class ParcelInfoWindow
 
     private void Render()
     {
-        _renderVersion++; _objectRows.Clear(); _nameEdit = null; _descEdit = null; _categoryDrop = null; _teleportDrop = null; _arrivalText = null; _returnReason = null;
+        _renderVersion++; _objectRows.Clear(); _voiceBox = null; _mediaBox = null; _nameEdit = null; _descEdit = null; _categoryDrop = null; _teleportDrop = null; _arrivalText = null; _returnReason = null;
         foreach (var child in _content.GetChildren()) child.QueueFree();
         switch (_tab)
         {
@@ -75,6 +79,9 @@ public partial class ParcelInfoWindow
     }
 
     private static Control Line(string key, string value, Color? color = null, float keyWidth = 170) => Line(key, IslandUi.Text(value, 14, color ?? IslandUi.TextPrimary, true, true), keyWidth);
+
+    /// <summary>A rule that is on unless the server says it is off (an older server does not send it).</summary>
+    private static bool Allows(JsonElement parcel, string name) => !parcel.TryGetProperty(name, out var v) || v.ValueKind != JsonValueKind.False;
 
     private static Control Note(string text) => IslandUi.Text(text, 13, IslandUi.TextMuted, false, true);
 
@@ -314,14 +321,16 @@ public partial class ParcelInfoWindow
         var buildIndex = Math.Max(0, Array.IndexOf(BuildModes, Str(p, "buildMode"))); var minutes = p.TryGetProperty("autoReturnMinutes", out var m) && m.ValueKind == JsonValueKind.Number ? m.GetInt32() : (int?)null;
         if (!Manage)
         {
-            body.AddChild(Line("Quem constrói:", BuildModeTexts[buildIndex])); body.AddChild(Line("Executar scripts:", Flag(p, "allowScripts") ? "Permitido" : "Não")); body.AddChild(Line("Devolução automática:", minutes is { } mm ? $"depois de {mm} minutos" : "Desligada")); body.AddChild(Note("Só o dono do terreno muda as permissões.")); return;
+            body.AddChild(Line("Quem constrói:", BuildModeTexts[buildIndex])); body.AddChild(Line("Executar scripts:", Flag(p, "allowScripts") ? "Permitido" : "Não")); body.AddChild(Line("Devolução automática:", minutes is { } mm ? $"depois de {mm} minutos" : "Desligada")); body.AddChild(Line("Voz:", Allows(p, "allowVoice") ? "Permitida" : "Desligada neste terreno", Allows(p, "allowVoice") ? IslandUi.TextPrimary : IslandUi.Warning)); body.AddChild(Line("Mídia nos objetos de outros:", Allows(p, "allowMedia") ? "Permitida" : "Não permitida", Allows(p, "allowMedia") ? IslandUi.TextPrimary : IslandUi.Warning)); body.AddChild(Note("Só o dono do terreno muda as permissões.")); return;
         }
         var build = IslandUi.Dropdown(BuildModes.Select((id, i) => (BuildModeTexts[i], id))); build.Select(buildIndex); body.AddChild(Line("Quem Constrói:", build));
         var scripts = new CheckBox { Text = "Permitir executar scripts", ButtonPressed = Flag(p, "allowScripts"), FocusMode = Control.FocusModeEnum.None }; body.AddChild(Line("Scripts:", scripts));
         var auto = IslandUi.Dropdown(AutoReturns.Select((v, i) => (v is null ? "Desligada" : $"Depois de {v} minutos", i.ToString(Pt)))); auto.Select(Math.Max(0, Array.FindIndex(AutoReturns, v => v == minutes))); body.AddChild(Line("Devolver Objetos de Quem Não Pode Construir:", auto));
+        _voiceBox = new CheckBox { Text = "Permitir voz neste terreno", ButtonPressed = Allows(p, "allowVoice"), FocusMode = Control.FocusModeEnum.None, TooltipText = "Desligada, ninguém fala nem ouve voz de perto dentro do terreno." }; body.AddChild(Line("Voz:", _voiceBox));
+        _mediaBox = new CheckBox { Text = "Permitir mídia nos objetos de outras pessoas", ButtonPressed = Allows(p, "allowMedia"), FocusMode = Control.FocusModeEnum.None, TooltipText = "Desligada, quem só constrói aqui não põe imagem ou vídeo em superfícies. O que já estava lá continua." }; body.AddChild(Line("Mídia:", _mediaBox));
         body.AddChild(Note($"Construtores na lista: {builders}. Quem entra e quem constrói por pessoa se define na aba Acesso."));
         var save = IslandUi.Action("Salvar Permissões", "ok", IslandUi.Kind.Primary, 42); save.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
-        save.Pressed += () => _ = Do(Api.Options(IslandId, _parcel, IslandUi.IdOf(build), scripts.ButtonPressed, AutoReturns[Math.Clamp(auto.Selected, 0, AutoReturns.Length - 1)]), "Permissões atualizadas."); body.AddChild(save);
+        save.Pressed += () => _ = Do(Api.Options(IslandId, _parcel, IslandUi.IdOf(build), scripts.ButtonPressed, AutoReturns[Math.Clamp(auto.Selected, 0, AutoReturns.Length - 1)], _voiceBox!.ButtonPressed, _mediaBox!.ButtonPressed), "Permissões atualizadas."); body.AddChild(save);
     }
 
     // ---- Objetos ----------------------------------------------------------------------------------------------------------------------
