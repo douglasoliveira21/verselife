@@ -16,7 +16,7 @@ public partial class IslandManagementSmoke : Node3D
     private sealed class Server
     {
         public string Name = "Ilha Tropical", Description = "Ilha tropical com praias.", Category = "social", Rating = "livre", Language = "pt-BR", Cover = "";
-        public int MaxPlayers = 60, Visitors = 12, Cost = 12450, MaxCost = 30000; public bool Public = true, InSearch = true, OnMap = true, CanEdit = true; public double X = 128, Z = 24;
+        public int MaxPlayers = 60, Visitors = 12, Cost = 12450, MaxCost = 30000; public bool Public = true, InSearch = true, OnMap = true, CanEdit = true, NotTheOwner = false; public double X = 128, Z = 24;
         public DateTimeOffset Updated = new(2026, 11, 11, 10, 0, 0, TimeSpan.Zero); public string State = "online";
         public readonly List<(string Method, string Path, string? Body)> Calls = [];
         public bool Offline; public bool Stale; public bool Closed;
@@ -59,7 +59,7 @@ public partial class IslandManagementSmoke : Node3D
         {
             id = Island, name = Name, description = Description, coverImageUrl = Cover.Length == 0 ? null : Cover, category = Category, contentRating = Rating, language = Language, isPublic = Public, accessMode = Mode, showInSearch = InSearch, showOnMap = OnMap,
             maxPlayers = MaxPlayers, size = 256, spawn = new { x = X, z = Z }, ownerUserId = Guid.NewGuid(), ownerName = "AliceVerse", adminCount = 3, createdAt = "2025-03-15T12:00:00Z", updatedAt = Updated, state = State, visitors = Visitors,
-            usage = new { objects = 320, maxObjects = 5000, cost = Cost, maxCost = MaxCost }, canEdit = CanEdit, isOwner = CanEdit,
+            usage = new { objects = 320, maxObjects = 5000, cost = Cost, maxCost = MaxCost }, canEdit = CanEdit, isOwner = CanEdit && NotTheOwner == false,
             options = new { categories = new[] { "social", "nature" }, ratings = new[] { "livre", "moderado", "adulto" }, languages = new[] { "pt-BR", "en-US" }, nameLimit = 48, descriptionLimit = 500, maxPlayersLimit = 256 },
         });
 
@@ -804,6 +804,21 @@ public partial class IslandManagementSmoke : Node3D
             server.CanEdit = false; await window.LoadAsync(); await Frames(2);
             Require(!window.General.EditableForTesting && !window.SaveEnabledForTesting, "without permission the fields are read-only and there is no save");
             server.CanEdit = true; await window.LoadAsync(); await Frames(2);
+
+            // --- an administrator who is not the owner -----------------------------------------------------------------------
+            server.NotTheOwner = true; await window.LoadAsync(); await Frames(2);
+            Require(!window.General.EditableForTesting, "an administrator cannot edit the general data, that is the owner's");
+            foreach (var tab in new[] { "reinicializacao", "ambiente", "midia", "fisica", "terreno" })
+            {
+                window.SelectSectionForTesting(tab); await Frames(2);
+                Require(window.OwnerLockedForTesting(tab) && window.OwnerBannerVisibleForTesting, $"the {tab} tab is locked for an administrator, with the reason shown");
+            }
+            window.SelectSectionForTesting("banimentos"); await Frames(2);
+            Require(!window.OwnerLockedForTesting("banimentos") && !window.OwnerBannerVisibleForTesting, "the bans tab stays open to administrators");
+            server.NotTheOwner = false; await window.LoadAsync(); await Frames(2);
+            window.SelectSectionForTesting("terreno"); await Frames(2);
+            Require(!window.OwnerLockedForTesting("terreno") && !window.OwnerBannerVisibleForTesting, "the owner finds the tab open");
+            window.SelectSectionForTesting("geral"); await Frames(2);
 
             // --- server down -------------------------------------------------------------------------------------------------
             server.Offline = true; await window.LoadAsync(); await Frames(2);

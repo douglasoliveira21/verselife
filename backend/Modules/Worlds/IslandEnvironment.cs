@@ -102,7 +102,7 @@ public static class IslandEnvironmentManagement
 
     public static async Task<IResult> SaveAsync(Guid islandId, LookRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var (json, error) = Check(request.Look);
         if (json is null) return Results.ValidationProblem(new Dictionary<string, string[]> { ["look"] = [error ?? "Ambiente inválido."] });
         if (island.UpdatedAt != request.ExpectedUpdatedAt) return Results.Conflict(new { error = "stale", message = "Outra pessoa alterou a ilha antes de você. Recarregue para ver as mudanças.", updatedAt = island.UpdatedAt });
@@ -114,7 +114,7 @@ public static class IslandEnvironmentManagement
 
     public static async Task<IResult> SavePresetAsync(Guid islandId, PresetRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var name = (request.Name ?? "").Trim();
         if (name.Length is 0 or > NameLimit) return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = [$"O nome deve ter de 1 a {NameLimit} caracteres."] });
         if (BuiltIn.Any(p => string.Equals(p.Title, name, StringComparison.OrdinalIgnoreCase))) return Results.Conflict(new { error = "reserved", message = "Esse nome já é de uma predefinição do jogo." });
@@ -130,7 +130,7 @@ public static class IslandEnvironmentManagement
 
     public static async Task<IResult> DeletePresetAsync(Guid islandId, string name, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var list = Presets(island); var index = list.FindIndex(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)); if (index < 0) return Results.NotFound();
         var removed = list[index]; list.RemoveAt(index); SetPresets(island, list);
         IslandAudit.Add(db, islandId, me, "ambiente", "preset_deleted", $"Excluiu a predefinição de ambiente {removed.Name}", removed.Name, Parse(removed.Look), null, now);

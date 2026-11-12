@@ -77,8 +77,8 @@ public sealed class IslandManagementTests : IDisposable
     [Fact]
     public async Task OnlyTheOwnerAndAdministratorsSave_AndTheChangesAreKept()
     {
-        Assert.Equal(403, (await Save(_stranger)).Status);
-        var (status, body) = await Save(_admin, r => r with { Name = "  Ilha Nova  ", Description = "Nova.", ContentRating = "moderado", Language = "en-US", MaxPlayers = 40, ShowInSearch = false, ShowOnMap = false, SpawnX = 10, SpawnZ = -5 });
+        Assert.Equal(403, (await Save(_stranger)).Status); Assert.Equal(403, (await Save(_admin, r => r with { Name = "Do administrador" })).Status); // the administrators look, only the owner changes the island
+        var (status, body) = await Save(_owner, r => r with { Name = "  Ilha Nova  ", Description = "Nova.", ContentRating = "moderado", Language = "en-US", MaxPlayers = 40, ShowInSearch = false, ShowOnMap = false, SpawnX = 10, SpawnZ = -5 });
         Assert.Equal(200, status);
         var island = await _db.Islands.AsNoTracking().SingleAsync();
         Assert.Equal("Ilha Nova", island.Name); Assert.Equal("moderado", island.ContentRating); Assert.Equal("en-US", island.Language); Assert.Equal(40, island.MaxPlayers);
@@ -106,7 +106,7 @@ public sealed class IslandManagementTests : IDisposable
     public async Task ASaveBasedOnAnOlderVersionIsRefusedInsteadOfOverwritingTheNewerOne()
     {
         var stale = (await _db.Islands.AsNoTracking().SingleAsync()).UpdatedAt;
-        Assert.Equal(200, (await Save(_admin, r => r with { Name = "Do Bruno" })).Status);
+        Assert.Equal(200, (await Save(_owner, r => r with { Name = "Do Bruno" })).Status);
         var (status, body) = await Save(_owner, r => r with { Name = "Da Alice", ExpectedUpdatedAt = stale });
         Assert.Equal(409, status); Assert.Equal("stale", body.GetProperty("error").GetString());
         Assert.Equal("Do Bruno", (await _db.Islands.AsNoTracking().SingleAsync()).Name);

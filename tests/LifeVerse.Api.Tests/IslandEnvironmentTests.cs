@@ -64,7 +64,7 @@ public sealed class IslandEnvironmentTests : IDisposable
     [Fact]
     public async Task ALookIsSavedCleanAndTheOldOneIsKeptInTheAuditTrail()
     {
-        var (status, body) = await Save(_admin, "{\"hour\":18.456,\"weather\":\"rain\",\"fog\":0.4,\"light\":1.2,\"sky\":\"#ff9a5a\"}");
+        var (status, body) = await Save(_owner, "{\"hour\":18.456,\"weather\":\"rain\",\"fog\":0.4,\"light\":1.2,\"sky\":\"#ff9a5a\"}");
         Assert.Equal(200, status);
         var look = body.GetProperty("look"); Assert.Equal(18.46, look.GetProperty("hour").GetDouble(), 2); Assert.Equal("rain", look.GetProperty("weather").GetString()); Assert.Equal("#FF9A5A", look.GetProperty("sky").GetString());
         Assert.Equal("{\"hour\":18.46,\"weather\":\"rain\",\"fog\":0.4,\"light\":1.2,\"sky\":\"#FF9A5A\"}", (await _db.Islands.AsNoTracking().SingleAsync()).LookJson);
@@ -85,7 +85,7 @@ public sealed class IslandEnvironmentTests : IDisposable
     public async Task ASaveOverANewerVersionIsRefused()
     {
         var old = (await _db.Islands.AsNoTracking().SingleAsync()).UpdatedAt;
-        Assert.Equal(200, (await Save(_admin, "{\"hour\":3}")).Status);
+        Assert.Equal(200, (await Save(_owner, "{\"hour\":3}")).Status);
         var (status, body) = await Save(_owner, "{\"hour\":20}", old);
         Assert.Equal(409, status); Assert.Equal("stale", body.GetProperty("error").GetString()); Assert.Contains("3", (await _db.Islands.AsNoTracking().SingleAsync()).LookJson);
     }
@@ -104,14 +104,14 @@ public sealed class IslandEnvironmentTests : IDisposable
     public async Task SavedLooksCanBeAddedReplacedAndDeleted_WithinLimits()
     {
         Assert.Equal(6, (await Get(_owner)).Body.GetProperty("builtIn").GetArrayLength());
-        Assert.Equal(200, (await Preset(_admin, "Meu pôr do sol", "{\"hour\":19,\"sky\":\"#FF8800\"}")).Status);
+        Assert.Equal(200, (await Preset(_owner, "Meu pôr do sol", "{\"hour\":19,\"sky\":\"#FF8800\"}")).Status);
         var again = (await Preset(_owner, "meu pôr do sol", "{\"hour\":20}")).Body; Assert.Equal(1, again.GetProperty("custom").GetArrayLength()); Assert.Equal(20, again.GetProperty("custom")[0].GetProperty("look").GetProperty("hour").GetInt32());
         Assert.Equal(409, (await Preset(_owner, "Noite", "{}")).Status); // the name of a look of the game
         Assert.True((await Preset(_owner, "  ", "{}")).Status is 400 or 422); Assert.True((await Preset(_owner, new string('n', 41), "{}")).Status is 400 or 422); Assert.True((await Preset(_owner, "Ruim", "{\"hour\":99}")).Status is 400 or 422);
         for (var i = 1; i < IslandEnvironmentManagement.MaxPresets; i++) Assert.Equal(200, (await Preset(_owner, "P" + i, "{}")).Status);
         Assert.Equal(409, (await Preset(_owner, "Demais", "{}")).Status);
-        Assert.Equal(204, Read(await IslandEnvironmentManagement.DeletePresetAsync(_island, "P1", As(_admin), _db, _clock, default)).Status);
-        Assert.Equal(404, Read(await IslandEnvironmentManagement.DeletePresetAsync(_island, "P1", As(_admin), _db, _clock, default)).Status);
+        Assert.Equal(204, Read(await IslandEnvironmentManagement.DeletePresetAsync(_island, "P1", As(_owner), _db, _clock, default)).Status);
+        Assert.Equal(404, Read(await IslandEnvironmentManagement.DeletePresetAsync(_island, "P1", As(_owner), _db, _clock, default)).Status);
         Assert.Equal(403, Read(await IslandEnvironmentManagement.DeletePresetAsync(_island, "P2", As(_visitor), _db, _clock, default)).Status);
         Assert.Equal(200, (await Preset(_owner, "Demais", "{}")).Status);
         Assert.Contains(await _db.IslandAudit.Select(e => e.Action).ToListAsync(), a => a == "preset_deleted");

@@ -93,8 +93,8 @@ public sealed class IslandTerrainTests : IDisposable
         Assert.Equal(409, (await Backup(_owner, "Nada salvo")).Status);
         var save = await Save(Terrain(3));
         Assert.True((await Backup(_owner, "  ")).Status is 400 or 422); Assert.True((await Backup(_owner, new string('n', 81))).Status is 400 or 422);
-        var body = (await Backup(_admin, "Antes da festa")).Body; var row = body.GetProperty("backups")[0];
-        Assert.Equal("Antes da festa", row.GetProperty("name").GetString()); Assert.Equal("bruno", row.GetProperty("by").GetString()); Assert.Equal(save.Version, row.GetProperty("version").GetInt64()); Assert.True(row.GetProperty("valid").GetBoolean());
+        var body = (await Backup(_owner, "Antes da festa")).Body; var row = body.GetProperty("backups")[0];
+        Assert.Equal("Antes da festa", row.GetProperty("name").GetString()); Assert.Equal("alice", row.GetProperty("by").GetString()); Assert.Equal(save.Version, row.GetProperty("version").GetInt64()); Assert.True(row.GetProperty("valid").GetBoolean());
         Assert.Equal(409, (await Backup(_owner, "antes da FESTA")).Status);
         for (var i = 1; i < IslandTerrainManagement.MaxBackups; i++) { await Save(Terrain(i)); Assert.Equal(200, (await Backup(_owner, "B" + i)).Status); }
         await Save(Terrain(9)); Assert.Equal(409, (await Backup(_owner, "Demais")).Status);
@@ -116,8 +116,8 @@ public sealed class IslandTerrainTests : IDisposable
         Assert.Equal(200, (await Restore(_owner, save.Id, "in", 5)).Status);
         Assert.Equal(409, Read(await IslandTerrainManagement.DeleteBackupAsync(_island, save.Id, As(_owner), _db, _clock, default)).Status);
         (await _db.IslandRestarts.SingleAsync()).Status = "cancelled"; await _db.SaveChangesAsync();
-        Assert.Equal(204, Read(await IslandTerrainManagement.DeleteBackupAsync(_island, save.Id, As(_admin), _db, _clock, default)).Status);
-        Assert.Null((await _db.IslandSnapshots.SingleAsync()).BackupName); Assert.Equal(404, Read(await IslandTerrainManagement.DeleteBackupAsync(_island, save.Id, As(_admin), _db, _clock, default)).Status);
+        Assert.Equal(204, Read(await IslandTerrainManagement.DeleteBackupAsync(_island, save.Id, As(_owner), _db, _clock, default)).Status);
+        Assert.Null((await _db.IslandSnapshots.SingleAsync()).BackupName); Assert.Equal(404, Read(await IslandTerrainManagement.DeleteBackupAsync(_island, save.Id, As(_owner), _db, _clock, default)).Status);
         Assert.Equal(403, Read(await IslandTerrainManagement.DeleteBackupAsync(_island, save.Id, As(_stranger), _db, _clock, default)).Status);
     }
 
@@ -125,7 +125,7 @@ public sealed class IslandTerrainTests : IDisposable
     public async Task WithNoServerRunningARestoreIsAppliedAtOnceAsTheNewestSaveKeepingTheEnvironment()
     {
         var old = await Save(Terrain(2), "{\"template\":\"velho\"}"); await Backup(_owner, "Velho"); await Save(Terrain(9), "{\"template\":\"novo\"}");
-        var (status, body) = await Restore(_admin, old.Id);
+        var (status, body) = await Restore(_owner, old.Id);
         Assert.Equal(200, status); Assert.True(body.GetProperty("applied").GetBoolean());
         var newest = await _db.IslandSnapshots.OrderByDescending(s => s.Version).FirstAsync();
         Assert.Equal(13, newest.Version); Assert.Equal(old.TerrainJson, newest.TerrainJson); Assert.Equal("{\"template\":\"novo\"}", newest.EnvironmentJson); // the terrain comes back, the rest does not

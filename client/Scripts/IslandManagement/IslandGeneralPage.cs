@@ -221,7 +221,7 @@ public partial class IslandGeneralPage : ScrollContainer
         _percent.AddThemeColorOverride("font_color", info.UsagePercent >= 90 ? IslandUi.Error : info.UsagePercent >= 75 ? IslandUi.AccentSecondary : IslandUi.TextPrimary);
         ShowAccess(info);
         _coverRef = info.CoverImageUrl; ShowCover(_coverRef);
-        UpdateCounts(); SetEditable(info.CanEdit); ClearErrors();
+        UpdateCounts(); SetEditable(info.CanEdit && info.IsOwner); ClearErrors();
         _filling = false;
     }
 

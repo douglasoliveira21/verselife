@@ -115,7 +115,7 @@ public static class IslandRestartService
 
     public static async Task<IResult> RequestAsync(Guid islandId, RestartRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var reason = (request.Reason ?? "").Trim(); var errors = new Dictionary<string, string[]>();
         if (reason.Length > ReasonLimit) errors["reason"] = [$"O motivo pode ter no máximo {ReasonLimit} caracteres."];
         DateTimeOffset when = now;
@@ -138,7 +138,7 @@ public static class IslandRestartService
 
     public static async Task<IResult> CancelAsync(Guid islandId, Guid restartId, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var restart = await db.IslandRestarts.SingleOrDefaultAsync(r => r.Id == restartId && r.IslandId == islandId, ct); if (restart is null) return Results.NotFound();
         if (restart.Status == "running") return Results.Conflict(new { error = "running", message = "A reinicialização já começou e não dá mais para cancelar." });
         if (restart.Status != "scheduled") return Results.NotFound();

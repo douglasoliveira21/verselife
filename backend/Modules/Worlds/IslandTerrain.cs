@@ -85,7 +85,7 @@ public static class IslandTerrainManagement
 
     public static async Task<IResult> BackupAsync(Guid islandId, BackupRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var name = (request.Name ?? "").Trim();
         if (name.Length is 0 or > NameLimit) return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = [$"O nome deve ter de 1 a {NameLimit} caracteres."] });
         var latest = await db.IslandSnapshots.Where(s => s.IslandId == islandId).OrderByDescending(s => s.Version).FirstOrDefaultAsync(ct);
@@ -101,7 +101,7 @@ public static class IslandTerrainManagement
 
     public static async Task<IResult> DeleteBackupAsync(Guid islandId, Guid snapshotId, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var backup = await db.IslandSnapshots.SingleOrDefaultAsync(s => s.Id == snapshotId && s.IslandId == islandId && s.BackupName != null, ct); if (backup is null) return Results.NotFound();
         if (await db.IslandRestarts.AnyAsync(r => r.IslandId == islandId && r.RestoreSnapshotId == snapshotId && (r.Status == "scheduled" || r.Status == "running"), ct)) return Results.Conflict(new { error = "in_use", message = "Esse backup está agendado para ser restaurado. Cancele a restauração antes de excluir." });
         var name = backup.BackupName!; backup.BackupName = null; backup.BackupByUserId = null; backup.BackupAt = null; // the save stays as part of the trail; it is only no longer kept under a name
@@ -112,7 +112,7 @@ public static class IslandTerrainManagement
 
     public static async Task<IResult> RestoreAsync(Guid islandId, Guid snapshotId, RestoreRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!;
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
         var backup = await db.IslandSnapshots.AsNoTracking().SingleOrDefaultAsync(s => s.Id == snapshotId && s.IslandId == islandId && s.BackupName != null, ct); if (backup is null) return Results.NotFound();
         if (Read(backup.TerrainJson) is null) return Results.Conflict(new { error = "unreadable", message = "Esse backup não pôde ser lido e não pode ser restaurado." });
         var minutes = request.Mode switch { "now" => 0, "in" when request.Minutes is { } m && IslandRestartService.AllowedMinutes.Contains(m) => m, _ => -1 };

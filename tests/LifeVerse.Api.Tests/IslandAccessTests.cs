@@ -82,7 +82,7 @@ public sealed class IslandAccessTests : IDisposable
     public async Task ClosingBlocksEveryoneButStaffAndOpeningAgainBringsBackTheOldMode()
     {
         Assert.Equal(200, (await Mode(_owner, "public")).Item1); Assert.True(await CanEnter(_stranger));
-        Assert.Equal(200, (await Mode(_admin, "closed")).Item1);
+        Assert.Equal(200, (await Mode(_owner, "closed")).Item1);
         Assert.False(await CanEnter(_stranger)); Assert.True(await CanEnter(_owner)); Assert.True(await CanEnter(_admin));
         Assert.Equal("closed", (await List(_owner)).Item2.GetProperty("mode").GetString());
         await Allow(_owner, "carla"); Assert.False(await CanEnter(_guest), "a person on the list cannot come in while it is closed");

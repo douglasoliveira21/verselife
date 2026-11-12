@@ -62,7 +62,7 @@ public sealed class IslandMediaTests : IDisposable
     public async Task AMusicIsSavedCleanReadBackAndTurnedOffByAnEmptyAddress()
     {
         var first = (await Get(_owner)).Body; Assert.Equal(JsonValueKind.Null, first.GetProperty("music").ValueKind); Assert.False(first.GetProperty("video").GetProperty("supported").GetBoolean());
-        var (status, body) = await Save(_admin, "  https://cdn.example.com/radio/a.ogg  ", .456f, false, "  Rádio da Praia  ");
+        var (status, body) = await Save(_owner, "  https://cdn.example.com/radio/a.ogg  ", .456f, false, "  Rádio da Praia  ");
         Assert.Equal(200, status); var music = body.GetProperty("music");
         Assert.Equal("https://cdn.example.com/radio/a.ogg", music.GetProperty("url").GetString()); Assert.Equal(.46, music.GetProperty("volume").GetDouble(), 2); Assert.False(music.GetProperty("autoplay").GetBoolean()); Assert.Equal("Rádio da Praia", music.GetProperty("name").GetString());
         var entry = await _db.IslandAudit.SingleAsync(); Assert.Equal("midia", entry.Category); Assert.Equal("{}", entry.BeforeJson); Assert.Contains("a.ogg", entry.AfterJson);
@@ -87,7 +87,7 @@ public sealed class IslandMediaTests : IDisposable
         Assert.True((await Save(_owner, "https://cdn.example.com/a.mp3", 1.5f)).Status is 400 or 422); Assert.True((await Save(_owner, "https://cdn.example.com/a.mp3", -.1f)).Status is 400 or 422);
         Assert.True((await Save(_owner, "https://cdn.example.com/a.mp3", float.NaN)).Status is 400 or 422); Assert.True((await Save(_owner, "https://cdn.example.com/a.mp3", .5f, true, new string('n', 81))).Status is 400 or 422);
         var old = (await _db.Islands.AsNoTracking().SingleAsync()).UpdatedAt;
-        Assert.Equal(200, (await Save(_admin, "https://cdn.example.com/b.mp3")).Status);
+        Assert.Equal(200, (await Save(_owner, "https://cdn.example.com/b.mp3")).Status);
         var (status, body) = await Save(_owner, "https://cdn.example.com/c.mp3", expected: old); Assert.Equal(409, status); Assert.Equal("stale", body.GetProperty("error").GetString());
         Assert.Contains("b.mp3", (await _db.Islands.AsNoTracking().SingleAsync()).MediaJson);
     }

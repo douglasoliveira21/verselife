@@ -29,6 +29,7 @@ public partial class IslandAccessPage : ScrollContainer
     private string _savedMode = "invite", _draftMode = "invite";
     private int _page = 1, _pages = 1, _total;
     private bool _canEdit;
+    private bool _isOwner; // the way people get in is the owner's to change; the list of people the administrators can keep
     private IslandManagementApi? _api;
     private Guid _island;
 
@@ -36,7 +37,7 @@ public partial class IslandAccessPage : ScrollContainer
     public event Action<string>? Notify;
     public event Action<Guid>? ViewProfile;
 
-    public bool IsDirty => _canEdit && _draftMode != _savedMode;
+    public bool IsDirty => _canEdit && _isOwner && _draftMode != _savedMode;
     public string DraftMode => _draftMode;
     public string SavedMode => _savedMode;
     public string SummaryForTesting => _summary.Text;
@@ -123,7 +124,7 @@ public partial class IslandAccessPage : ScrollContainer
 
     private void PickMode(string id)
     {
-        if (!_canEdit || _draftMode == id) return;
+        if (!_canEdit || !_isOwner || _draftMode == id) return;
         _draftMode = id; PaintModes(); Changed?.Invoke();
     }
 
@@ -149,7 +150,7 @@ public partial class IslandAccessPage : ScrollContainer
     /// <summary>Starts from what the server says about the island (mode and whether the person may change it).</summary>
     public void Fill(IslandInfo info)
     {
-        _island = info.Id; _canEdit = info.CanEdit; _savedMode = _draftMode = info.AccessMode;
+        _island = info.Id; _canEdit = info.CanEdit; _isOwner = info.IsOwner; _savedMode = _draftMode = info.AccessMode;
         _name.Editable = _canEdit; _expiry.Disabled = !_canEdit; _add.Disabled = !_canEdit;
         PaintModes(); Changed?.Invoke();
     }

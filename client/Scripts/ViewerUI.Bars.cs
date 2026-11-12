@@ -100,8 +100,13 @@ public partial class ViewerUI
 
         // Where you are, and whether you are connected.
         row.AddChild(UiStyle.IconRect("pin-filled", UiStyle.Accent, 22));
-        _islandName = new Label { Text = "Sem ilha", TooltipText = "Ilha atual" };
+        _islandName = new Label { Text = "Sem ilha", TooltipText = "Ilha atual. Clique para gerenciar a ilha.", MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.PointingHand };
         _islandName.AddThemeFontSizeOverride("font_size", 17);
+        _islandName.GuiInput += e =>
+        {
+            if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } && _network.CurrentIslandId != Guid.Empty)
+                _world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow")?.Toggle();
+        };
         row.AddChild(_islandName);
         row.AddChild(Divider(26));
         _indicator = new StatusDot { CustomMinimumSize = new Vector2(14, 14), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, TooltipText = "Estado da conexão" };

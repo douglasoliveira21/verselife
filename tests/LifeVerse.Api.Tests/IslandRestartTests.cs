@@ -62,7 +62,7 @@ public sealed class IslandRestartTests : IDisposable
     public async Task OnlyStaffAskAndSee()
     {
         Assert.Equal(403, (await Get(_stranger)).Status); Assert.Equal(403, (await Ask(_stranger, "now")).Status);
-        Assert.Equal(200, (await Get(_admin)).Status); Assert.Equal(200, (await Ask(_admin, "in", 5)).Status);
+        Assert.Equal(200, (await Get(_admin)).Status); Assert.Equal(403, (await Ask(_admin, "in", 5)).Status); Assert.Equal(200, (await Ask(_owner, "in", 5)).Status); // staff sees, only the owner restarts
     }
 
     [Fact]
@@ -152,11 +152,11 @@ public sealed class IslandRestartTests : IDisposable
     {
         var id = (await Ask(_owner, "in", 10)).Body.GetProperty("id").GetGuid();
         _now = _now.AddSeconds(310); Beat(); await Tick();
-        Assert.Equal(204, Read(await IslandRestartService.CancelAsync(_island, id, As(_admin), _db, _clock, default)).Status);
+        Assert.Equal(204, Read(await IslandRestartService.CancelAsync(_island, id, As(_owner), _db, _clock, default)).Status);
         Assert.Equal("cancelled", (await Only()).Status);
         Assert.Contains("cancelada", (await Commands()).Last().Text); // people who were warned are told it is off
         _now = _now.AddMinutes(20); await Tick(); Assert.DoesNotContain(await Commands(), c => c.Kind == ServerCommandKinds.Shutdown);
-        Assert.Equal(404, Read(await IslandRestartService.CancelAsync(_island, id, As(_admin), _db, _clock, default)).Status);
+        Assert.Equal(404, Read(await IslandRestartService.CancelAsync(_island, id, As(_owner), _db, _clock, default)).Status);
         Beat(); var again = (await Ask(_owner, "now")).Body.GetProperty("id").GetGuid(); await Tick();
         Assert.Equal(409, Read(await IslandRestartService.CancelAsync(_island, again, As(_owner), _db, _clock, default)).Status); // already running
         Assert.Equal(403, Read(await IslandRestartService.CancelAsync(_island, again, As(_stranger), _db, _clock, default)).Status);

@@ -349,6 +349,7 @@ public partial class IslandManagementWindow : Node
         if (_current == "midia" && id != "midia") _media.EndTest();
         _current = id;
         foreach (var (key, page) in _pages) page.Visible = key == id;
+        ApplyOwnerLock(id);
         if (id == "acesso" && _info is not null) _ = _access.LoadAsync();
         if (id == "banimentos" && _info is not null) _ = _bans.LoadAsync();
         if (id == "permissoes" && _info is not null) _ = _perms.LoadAsync();
@@ -363,6 +364,30 @@ public partial class IslandManagementWindow : Node
         if (id == "terreno" && _info is not null) _ = _terrain.LoadAsync();
         foreach (var section in Sections) PaintItem(section);
         RefreshFooter();
+    }
+
+    /// These tabs only the owner may change; the administrators can look, but the page ignores clicks and says why.
+    private static readonly HashSet<string> OwnerOnlyTabs = ["reinicializacao", "ambiente", "midia", "fisica", "terreno"];
+    private PanelContainer? _ownerBanner;
+    public bool OwnerLockedForTesting(string id) => _pages.TryGetValue(id, out var page) && page.ProcessMode == ProcessModeEnum.Disabled;
+    public bool OwnerBannerVisibleForTesting => _ownerBanner?.Visible == true;
+    public void SetInfoForTesting(IslandInfo info) { _info = info; ApplyOwnerLock(_current); RefreshFooter(); }
+
+    private void ApplyOwnerLock(string id)
+    {
+        var locked = OwnerOnlyTabs.Contains(id) && _info is { IsOwner: false };
+        foreach (var (key, page) in _pages)
+        {
+            var lockThis = locked && key == id;
+            page.ProcessMode = lockThis ? ProcessModeEnum.Disabled : ProcessModeEnum.Inherit; page.Modulate = new Color(1, 1, 1, lockThis ? .6f : 1f);
+        }
+        if (_ownerBanner is null)
+        {
+            _ownerBanner = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false }; _ownerBanner.AddThemeStyleboxOverride("panel", IslandUi.Box(IslandUi.AccentSelected, IslandUi.AccentPrimary, IslandUi.RadiusButton, 1, 14, 8));
+            var label = IslandUi.Text("Só o dono da ilha pode alterar esta aba. Você pode ver as informações.", 14, IslandUi.TextPrimary, true); label.MouseFilter = Control.MouseFilterEnum.Ignore; _ownerBanner.AddChild(label);
+            _ownerBanner.SetAnchorsPreset(Control.LayoutPreset.BottomWide); _ownerBanner.OffsetLeft = 16; _ownerBanner.OffsetRight = -16; _ownerBanner.OffsetTop = -52; _ownerBanner.OffsetBottom = -10; _pageHost.AddChild(_ownerBanner);
+        }
+        _ownerBanner.Visible = locked;
     }
 
     private void PaintItem(Section section)
@@ -398,7 +423,7 @@ public partial class IslandManagementWindow : Node
 
     private void Apply(IslandInfo info, bool preserveAccessDraft = false)
     {
-        _info = info; _island = info.Id; _lastSyncAt = Time.GetTicksMsec() / 1000.0; _failure.Visible = false;
+        _info = info; ApplyOwnerLock(_current); _island = info.Id; _lastSyncAt = Time.GetTicksMsec() / 1000.0; _failure.Visible = false;
         var keepMode = preserveAccessDraft && _access.IsDirty ? _access.DraftMode : null;
         _bans.SetIsland(info.Id); _perms.SetIsland(info.Id); _objects.SetIsland(info.Id); _audit.SetIsland(info.Id); _admin.SetIsland(info.Id); _performance.SetIsland(info.Id); _restart.SetIsland(info.Id); _environment.SetIsland(info.Id); _media.SetIsland(info.Id); _physics.SetIsland(info.Id); _terrain.SetIsland(info.Id); _admin.SetClosedState(info.AccessMode == "closed"); _general.Fill(info); _access.Fill(info); if (keepMode is not null) _access.SetDraft(keepMode);
         _name.Text = Fit(info.Name, 23, 380); _name.TooltipText = info.Name; _name.MouseFilter = Control.MouseFilterEnum.Pass; _id.Text = Fit($"ID da Ilha: {info.Id}", 13, 340, UiStyle.Medium); _id.TooltipText = info.Id.ToString(); _visitors.Text = $"{info.Visitors} / {info.MaxPlayers}";
@@ -427,11 +452,11 @@ public partial class IslandManagementWindow : Node
 
     private void RefreshFooter()
     {
-        var canEdit = _info?.CanEdit == true;
+        var canEdit = _info?.CanEdit == true && (_info.IsOwner || _current != "geral");
         _save.Disabled = !(canEdit && Dirty && !_saving && !_loadingNow);
         _restore.Disabled = !(_current == "geral" && canEdit && !_saving && !_loadingNow);
         _save.Text = _saving ? "Salvando…" : "Salvar Alterações";
-        _save.TooltipText = !canEdit && _info is not null ? "Você não tem permissão para alterar esta ilha." : !Dirty ? "Nenhuma alteração pendente." : "";
+        _save.TooltipText = !canEdit && _info is not null ? (_info.CanEdit ? "Só o dono da ilha pode alterar esta aba." : "Você não tem permissão para alterar esta ilha.") : !Dirty ? "Nenhuma alteração pendente." : "";
         _restore.TooltipText = _current == "geral" ? "" : "Só a aba Geral tem valores padrão.";
         foreach (var section in Sections) PaintItem(section);
     }
