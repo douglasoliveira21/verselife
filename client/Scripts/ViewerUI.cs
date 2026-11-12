@@ -145,6 +145,8 @@ public partial class ViewerUI : CanvasLayer
         if (_world.GetNodeOrNull<IslandLookService>("IslandLookService") is null) _world.AddChild(new IslandLookService { Name = "IslandLookService" });
         if (_world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow") is null)
             _world.AddChild(new IslandManagement.IslandManagementWindow { Name = "IslandManagementWindow", ViewInSearch = (_, name) => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.OpenWithQuery(name), ViewProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), CurrentPosition = () => _player is null ? null : (_player.GlobalPosition.X, _player.GlobalPosition.Z) });
+        if (_world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow") is null)
+            _world.AddChild(new LandManagement.LandManagementWindow { Name = "LandManagementWindow", Inspect = parcel => _world.GetNodeOrNull<LandManager>("LandManager")?.SelectCells(parcel.Cells) });
         foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditorController", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "ProfileWindow", "AppearanceWindow", "SearchWindow", "ItemRightsWindow", "ItemOffersWindow" })
             foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; if (child is not FloatingWindow) FloatingWindow.MakeDraggable(child); }
     }

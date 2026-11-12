@@ -80,7 +80,7 @@ public sealed class IslandManagementApi(Func<string, string, string?, Task<(long
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
-    private async Task<IslandReply> Send(string method, string path, object? body = null)
+    public async Task<IslandReply> Send(string method, string path, object? body = null)
     {
         var (status, text) = await transport(method, path, body is null ? null : JsonSerializer.Serialize(body, Web));
         JsonElement root = default;

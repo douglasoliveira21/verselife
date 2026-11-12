@@ -308,7 +308,7 @@ public partial class LandManager : Node3D
         });
     }
 
-    private static string ErrorCode(string body) { try { using var doc = JsonDocument.Parse(body); return doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() ?? string.Empty : string.Empty; } catch (JsonException) { return string.Empty; } }
+    public static string ErrorCode(string body) { try { using var doc = JsonDocument.Parse(body); return doc.RootElement.TryGetProperty("error", out var e) ? e.GetString() ?? string.Empty : string.Empty; } catch (JsonException) { return string.Empty; } }
 
     // ---- drawing over the ground -----------------------------------------------------------------------------
 

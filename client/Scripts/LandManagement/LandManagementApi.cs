@@ -1,0 +1,43 @@
+using System.Text.Json;
+using LifeVerse.Client.Scripts.IslandManagement;
+
+namespace LifeVerse.Client.Scripts.LandManagement;
+
+/// <summary>The calls of the land management window; they go through the same transport as the island window, so a test answers for the server.</summary>
+public sealed class LandManagementApi(IslandManagementApi inner)
+{
+    private static string Base(Guid island) => $"/api/v1/worlds/islands/{island}/land";
+
+    /// <summary>Turns a refusal into words: the server answers with a code, the person reads Portuguese.</summary>
+    public static string Words(IslandReply reply)
+    {
+        if (reply.Ok) return "";
+        var code = reply.Body.ValueKind == JsonValueKind.Object && reply.Body.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() ?? "" : "";
+        return code switch
+        {
+            "overlap" => "Essa área já pertence a outro terreno.",
+            "outside_island" => "A área passa dos limites da ilha.",
+            "too_big" => "A área é grande demais para um terreno.",
+            "empty" => "Marque algum quadrado no mapa.",
+            "bad_category" => "Finalidade inválida.",
+            "forbidden" => "Você não tem permissão para isso nesta ilha.",
+            "" => reply.Message,
+            _ => LandManager.AdminMessage((int)reply.Status, code),
+        };
+    }
+
+    public Task<IslandReply> Overview(Guid island) => inner.Send("GET", $"{Base(island)}/overview");
+    public Task<IslandReply> SetCategory(Guid island, Guid parcel, string category) => inner.Send("PUT", $"{Base(island)}/parcels/{parcel}/category", new { category });
+    public Task<IslandReply> Rename(Guid island, Guid parcel, string name, string description, int expectedRevision) => inner.Send("PATCH", $"/api/v1/worlds/islands/{island}/parcels/{parcel}", new { name, description, expectedRevision });
+    public Task<IslandReply> Claim(Guid island, string name, string description, IEnumerable<long> cells) =>
+        inner.Send("POST", $"{Base(island)}/claim", new { name, description, cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }) });
+    public Task<IslandReply> Split(Guid island, Guid parcel, IEnumerable<long> cells, string name) =>
+        inner.Send("POST", $"{Base(island)}/parcels/{parcel}/split", new { cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), name });
+    public Task<IslandReply> Merge(Guid island, IEnumerable<Guid> parcels, Guid primary) => inner.Send("POST", $"{Base(island)}/merge", new { parcelIds = parcels, primaryId = primary });
+    public Task<IslandReply> OfferSale(Guid island, Guid parcel, long price, bool includeObjects, string description) => inner.Send("POST", $"{Base(island)}/parcels/{parcel}/sale", new { price, includeObjects, description });
+    public Task<IslandReply> CancelSale(Guid island, Guid parcel) => inner.Send("DELETE", $"{Base(island)}/parcels/{parcel}/sale");
+    public Task<IslandReply> OfferRent(Guid island, Guid parcel, long pricePerPeriod, int periodDays, int minPeriods, int maxPeriods, long depositCoins, int graceDays) =>
+        inner.Send("POST", $"{Base(island)}/parcels/{parcel}/rental-offer", new { pricePerPeriod, periodDays, minPeriods, maxPeriods, depositCoins, graceDays, autoRenewAllowed = true });
+    public Task<IslandReply> CancelRentOffer(Guid island, Guid parcel) => inner.Send("DELETE", $"{Base(island)}/parcels/{parcel}/rental-offer");
+    public Task<IslandReply> EndRental(Guid island, Guid rental) => inner.Send("POST", $"{Base(island)}/rentals/{rental}/end", new { });
+}

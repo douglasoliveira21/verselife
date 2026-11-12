@@ -15,6 +15,7 @@ public sealed record RenewRequest(int Periods, string IdempotencyKey);
 public sealed record SplitRequest(int[][] Cells, string Name);
 public sealed record MergeRequest(Guid[] ParcelIds, Guid? PrimaryId);
 public sealed record AccessModeRequest(string Mode);
+public sealed record CategoryRequest(string Category);
 public sealed record AccessAddRequest(Guid UserId, string Kind, int? Minutes, string? Reason);
 public sealed record EjectRequest(Guid UserId);
 public sealed record OptionsRequest(string BuildMode, bool AllowScripts, int? AutoReturnMinutes);
@@ -40,6 +41,9 @@ public static class LandEndpoints
         });
         group.MapGet("", ViewAsync);
         group.MapGet("/version", VersionAsync);
+        group.MapGet("/overview", OverviewAsync);
+        group.MapPut("/parcels/{parcelId:guid}/category", async (Guid islandId, Guid parcelId, CategoryRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => LandOverview.SetCategoryAsync(db, islandId, parcelId, user, r.Category, t, ct)));
         group.MapPost("/claim", ClaimAsync);
         group.MapPost("/parcels/{parcelId:guid}/sale", async (Guid islandId, Guid parcelId, SaleRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandCommerce.OfferForSaleAsync(db, parcelId, user, new SaleOffer(r.Price, r.BuyerUserId, r.Description, r.IncludeObjects), t, ct)));
@@ -122,7 +126,7 @@ public static class LandEndpoints
     {
         "not_found" => Results.NotFound(new { error = result.Error }),
         "forbidden" => Results.Json(new { error = result.Error }, statusCode: 403),
-        "bad_key" or "bad_price" or "bad_terms" or "bad_periods" or "bad_buyer" or "bad_name" or "empty" or "bad_selection" or "bad_mode" or "bad_kind" or "bad_target" or "bad_duration" or "bad_reason" or "bad_scope" or "bad_primary" or "bad_limit" or "bad_environment" or "bad_volume" or "bad_point" or "too_long" or "not_https" or "bad_host" or "bad_type" =>Results.BadRequest(new { error = result.Error }),
+        "bad_key" or "bad_price" or "bad_terms" or "bad_periods" or "bad_buyer" or "bad_name" or "empty" or "bad_selection" or "bad_mode" or "bad_kind" or "bad_target" or "bad_duration" or "bad_reason" or "bad_scope" or "bad_primary" or "bad_limit" or "bad_environment" or "bad_volume" or "bad_point" or "too_long" or "not_https" or "bad_host" or "bad_type" or "bad_category" =>Results.BadRequest(new { error = result.Error }),
         _ => Results.Conflict(new { error = result.Error })
     };
 
@@ -148,6 +152,17 @@ public static class LandEndpoints
         var permissions = await db.IslandPermissions.AsNoTracking().Where(p => p.IslandId == islandId && p.UserId == user && p.RevokedAt == null).Select(p => p.Permission).ToListAsync(ct);
         if (!island.IsPublic && island.OwnerUserId != user && !permissions.Any(p => p is "enter" or "admin" or "build" or "edit")) return Results.Forbid();
         return Results.Ok(await LandService.ViewAsync(db, island, user, ct));
+    }
+
+    /// <summary>The numbers, parcels, offers, contracts and history behind the land management window. Owner and administrators only.</summary>
+    private static async Task<IResult> OverviewAsync(Guid islandId, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!TryUser(context, out var user)) return Results.Unauthorized();
+        var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(x => x.Id == islandId && x.DeletedAt == null, ct);
+        if (island is null) return Results.NotFound();
+        var now = clock.GetUtcNow();
+        if (!await LandOverview.IsStaffAsync(db, island, user, now, ct)) return Results.Forbid();
+        return Results.Ok(await LandOverview.BuildAsync(db, island, user, now, ct));
     }
 
     /// <summary>A cheap number that changes whenever a parcel is added, removed or changed: clients ask for it every few seconds and reload the land only when it moves.</summary>

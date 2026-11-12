@@ -305,6 +305,10 @@ public sealed class IslandParcel
     public string TeleportMode { get; set; } = "free";
     /// <summary>The parcel's music: { musicUrl, volume, autoplay, name } or {}.</summary>
     public string MediaJson { get; set; } = "{}";
+    /// <summary>What the land is for: residencial, comercial, mista, social or comum (a common area of the island).</summary>
+    public string Category { get; set; } = "residencial";
+    /// <summary>The short code people use for the parcel, such as L-03. Given the first time the island's land overview is read, in the order the parcels were made, and kept after that.</summary>
+    public string Code { get; set; } = string.Empty;
 }
 
 /// <summary>One line of a parcel's access list: a person allowed in (kind allow) or kept out (kind ban), for ever or until a time.</summary>

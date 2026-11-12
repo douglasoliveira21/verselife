@@ -261,7 +261,7 @@ public partial class LandManager
 
     // ---- doing things ------------------------------------------------------------------------------------------
 
-    private static string AdminMessage(int status, string error) => error switch
+    public static string AdminMessage(int status, string error) => error switch
     {
         "not_contiguous" => "O terreno precisa ficar de uma peça só (os quadrados têm de se encostar pelos lados).",
         "whole_parcel" => "Selecione só uma parte: o terreno inteiro não pode virar um novo.",

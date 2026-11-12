@@ -116,18 +116,19 @@ public static class IslandUi
     public static void Select(OptionButton drop, string id) { for (var i = 0; i < drop.ItemCount; i++) if (drop.GetItemMetadata(i).AsString() == id) { drop.Select(i); return; } }
 
     // ---- buttons ----------------------------------------------------------------------------------------------------------
-    public enum Kind { Primary, Secondary, Orange, Danger, Quiet }
+    public enum Kind { Primary, Secondary, Orange, Danger, Quiet, Purple }
+    public static readonly Color RentPurple = new("#B47AE8");
 
     public static Button Action(string text, string? icon, Kind kind = Kind.Secondary, int height = 40, int iconSize = 18)
     {
         var button = new Button { Text = text, CustomMinimumSize = new Vector2(0, height), FocusMode = Control.FocusModeEnum.None, ExpandIcon = false, IconAlignment = HorizontalAlignment.Left, Alignment = HorizontalAlignment.Center };
         var (fill, border, ink) = kind switch
         {
-            Kind.Primary => (AccentPrimary, AccentPrimary, new Color("#032327")), Kind.Orange => (new Color(AccentSecondary, .08f), AccentSecondary, new Color("#FFC27A")),
+            Kind.Primary => (AccentPrimary, AccentPrimary, new Color("#032327")), Kind.Orange => (new Color(AccentSecondary, .08f), AccentSecondary, new Color("#FFC27A")), Kind.Purple => (new Color(RentPurple, .12f), RentPurple, new Color("#E0C4F7")),
             Kind.Danger => (new Color(Error, .10f), Error, new Color("#FFA0A5")), Kind.Quiet => (new Color(0, 0, 0, 0), new Color(0, 0, 0, 0), TextSecondary), _ => (new Color(0, 0, 0, .10f), new Color("#4FA9C5"), TextPrimary),
         };
-        var hoverFill = kind switch { Kind.Primary => AccentHover, Kind.Orange => new Color(AccentSecondary, .22f), Kind.Danger => new Color(Error, .24f), Kind.Quiet => new Color(1, 1, 1, .08f), _ => new Color(AccentPrimary, .16f) };
-        var hoverBorder = kind switch { Kind.Primary => AccentHover, Kind.Orange => AccentSecondary, Kind.Danger => Error, Kind.Quiet => new Color(0, 0, 0, 0), _ => AccentPrimary };
+        var hoverFill = kind switch { Kind.Primary => AccentHover, Kind.Orange => new Color(AccentSecondary, .22f), Kind.Purple => new Color(RentPurple, .26f), Kind.Danger => new Color(Error, .24f), Kind.Quiet => new Color(1, 1, 1, .08f), _ => new Color(AccentPrimary, .16f) };
+        var hoverBorder = kind switch { Kind.Primary => AccentHover, Kind.Orange => AccentSecondary, Kind.Purple => RentPurple, Kind.Danger => Error, Kind.Quiet => new Color(0, 0, 0, 0), _ => AccentPrimary };
         button.AddThemeStyleboxOverride("normal", Box(fill, border, RadiusButton, 1, 16, 6)); button.AddThemeStyleboxOverride("hover", Box(hoverFill, hoverBorder, RadiusButton, 1, 16, 6));
         button.AddThemeStyleboxOverride("pressed", Box(hoverFill.Darkened(.2f), hoverBorder, RadiusButton, 1, 16, 6)); button.AddThemeStyleboxOverride("focus", Box(new Color(0, 0, 0, 0), null, RadiusButton, 0, 16, 6));
         button.AddThemeStyleboxOverride("disabled", Box(new Color(Disabled, .16f), new Color(Disabled, .45f), RadiusButton, 1, 16, 6));
