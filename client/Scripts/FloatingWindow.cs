@@ -18,6 +18,37 @@ public partial class FloatingWindow : PanelContainer
 
     public bool Minimized => _minimized;
 
+    private Control? _grip;
+    private bool _resizing;
+    private Vector2 _minimumSize = new(340, 300);
+
+    /// Size the window can be dragged down to (it never gets smaller than its content needs either).
+    public Vector2 MinimumDragSize { get => _minimumSize; set => _minimumSize = value; }
+
+    /// Adds a handle in the bottom-right corner to drag the window to the size that suits the person.
+    public void MakeResizable()
+    {
+        if (_grip is not null) return;
+        var overlay = new Control { MouseFilter = MouseFilterEnum.Ignore }; AddChild(overlay);
+        _grip = new Control { CustomMinimumSize = new Vector2(22, 22), MouseDefaultCursorShape = CursorShape.Fdiagsize, TooltipText = "Arraste para redimensionar" };
+        _grip.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomRight); _grip.OffsetLeft = -22; _grip.OffsetTop = -22; _grip.OffsetRight = -2; _grip.OffsetBottom = -2;
+        _grip.Draw += () => { for (var i = 0; i < 3; i++) _grip.DrawLine(new Vector2(18, 6 + i * 5), new Vector2(6 + i * 5, 18), new Color(UiStyle.TextMuted, .8f), 1.5f); };
+        _grip.GuiInput += input =>
+        {
+            if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left } button) { _resizing = button.Pressed; if (button.Pressed) MoveToFront(); }
+            else if (input is InputEventMouseMotion motion && _resizing) ResizeBy(motion.Relative);
+        };
+        overlay.AddChild(_grip);
+    }
+
+    /// Grows or shrinks the window from its bottom-right corner, keeping it on the screen and no smaller than its content.
+    public void ResizeBy(Vector2 delta)
+    {
+        var view = GetViewportRect().Size; var floor = GetCombinedMinimumSize().Max(_minimumSize);
+        var wanted = (Size + delta).Max(floor); var room = new Vector2(Math.Max(floor.X, view.X - Position.X - 8), Math.Max(floor.Y, view.Y - Position.Y - 8));
+        Size = wanted.Min(room);
+    }
+
     public FloatingWindow(string title, bool closable = true, string? icon = null, bool minimizable = false, bool expandable = false)
     {
         Name = title.Replace(' ', '_').Replace('-', '_');

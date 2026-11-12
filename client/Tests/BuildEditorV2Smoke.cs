@@ -25,6 +25,7 @@ public partial class BuildEditorV2Smoke : Node3D
             // the creation screen
             editor.SetActive(true);
             Require(editor.Active && editor.Window.Visible, "the window opens");
+            { var frame = editor.Window.FrameForTesting; var before = frame.Size; frame.ResizeBy(new Vector2(120, 90)); Require(frame.Size.X > before.X && frame.Size.Y > before.Y, "the build window can be dragged larger"); frame.ResizeBy(new Vector2(-2000, -2000)); Require(frame.Size.X >= 340 && frame.Size.Y >= 300, "and never smaller than its minimum"); }
             Require(editor.Window.Creation.TypesForTesting.Count == BuildPrimitiveFactory.Entries.Count && BuildPrimitiveFactory.Entries.All(e => PrimitiveCatalog.IsKnown(e.Type)), "every shape of the grid is one the server accepts");
             foreach (var type in new[] { "cube", "sphere", "cylinder", "prism", "torus", "tube", "ring", "cone", "pyramid", "hemisphere" }) Require(editor.Window.Creation.TypesForTesting.Contains(type), $"the grid has {type}");
             Require(editor.Window.Creation.TypesForTesting.Contains("tree") && editor.Window.Creation.TypesForTesting.Contains("grass"), "the grid has the tree and the grass");

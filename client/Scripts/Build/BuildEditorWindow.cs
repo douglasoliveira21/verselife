@@ -72,6 +72,7 @@ public partial class BuildEditorWindow : Node
     public string ImpactTextForTesting => _impactLabel.Text;
     public string ParcelTextForTesting => _parcelLabel.Text;
     public string StatusForTesting => _status.Text;
+    public FloatingWindow FrameForTesting => _window;
 
     public bool DuplicateEnabledForTesting => !_duplicate.Disabled;
     public bool DeleteEnabledForTesting => !_delete.Disabled;
@@ -83,7 +84,7 @@ public partial class BuildEditorWindow : Node
     public override void _Ready()
     {
         _window = new FloatingWindow("Construir", icon: "hammer") { Name = "BuildWindow", Visible = false, Theme = ViewerTheme.Create() };
-        _window.Place(0, 0, 24, 90, 484, 740); AddChild(_window);
+        _window.Place(0, 0, 24, 90, 484, 740); _window.MakeResizable(); AddChild(_window);
         _window.CloseRequested += () => CloseRequested?.Invoke();
         var content = _window.Content; content.AddThemeConstantOverride("separation", 10);
 
