@@ -44,6 +44,20 @@ public partial class VoiceUiSmoke : Node3D
             voice.Enabled = true;
             Require(!bar.TalkButton.Disabled, "buttons come back with voice");
 
+            // A parcel with voice switched off: the buttons grey out with a notice, nothing opens the microphone, and everything comes back when the avatar leaves.
+            var allowed = true; var where = "";
+            bar.VoiceRule = () => (allowed, where); await Frames(2);
+            Require(!bar.BlockedForTesting && bar.TalkButton.Text.Trim() == "Falar" && !voice.BlockedHere, "voice works where the rule allows it");
+            allowed = false; where = "Casa da Praia"; await Frames(2);
+            Require(bar.BlockedForTesting && voice.BlockedHere && bar.TalkButton.Disabled && bar.LockButton.Disabled, "where voice is off the buttons are greyed out and the voice stops capturing");
+            Require(bar.TalkButton.Text.Trim() == "Sem voz" && bar.TalkButton.TooltipText.Contains("desligada neste terreno") && bar.TalkButton.TooltipText.Contains("Casa da Praia"), $"and the notice names the place (got {bar.TalkButton.Text} / {bar.TalkButton.TooltipText})");
+            bar.PressTalk(true); Require(!voice.PushToTalk, "holding the button does nothing there"); bar.PressTalk(false);
+            voice.OpenMic = true; await Frames(2); Require(voice.BlockedHere, "an open microphone is not sending either"); voice.OpenMic = false;
+            allowed = true; where = ""; await Frames(2);
+            Require(!bar.BlockedForTesting && !voice.BlockedHere && !bar.TalkButton.Disabled && bar.TalkButton.Text.Trim() == "Falar" && bar.TalkButton.TooltipText.Contains("Segure"), "leaving the parcel brings voice back");
+            allowed = false; where = "Casa"; await Frames(2); voice.Enabled = false; voice.Enabled = true; await Frames(2); Require(bar.TalkButton.Disabled && bar.TalkButton.Text.Trim() == "Sem voz", "turning voice off and on keeps the notice while the rule says no");
+            allowed = true; await Frames(2);
+
             // Your own meter: a clean voice is green, a shout is red, and both settle when you stop.
             var rate = (int)AudioServer.GetMixRate(); voice.ExternalInput = true;
             voice.SendSamples(Enumerable.Range(0, rate / 5).Select(i => MathF.Sin(2f * MathF.PI * 300f * i / rate) * .25f).ToArray());

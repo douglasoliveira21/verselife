@@ -42,6 +42,10 @@ public partial class LandPresence : Node
 
     public void ClearCacheForTesting() => _cache.Clear();
     public Guid CurrentParcel => _current;
+    /// <summary>False while the avatar stands on a parcel where voice is switched off.</summary>
+    public bool VoiceAllowed { get; private set; } = true;
+    /// <summary>The name of the parcel that has voice off, for the notice (empty when voice works here).</summary>
+    public string VoiceOffIn { get; private set; } = string.Empty;
     public string PlayingUrl => _audio?.Playing == true ? _loadedUrl : string.Empty;
     public bool Playing => _audio?.Playing == true;
 
@@ -107,6 +111,7 @@ public partial class LandPresence : Node
         var id = parcel?.Id ?? Guid.Empty;
         if (id == _current && !force) return;
         var sameParcel = id == _current; _current = id;
+        VoiceAllowed = parcel?.AllowVoice ?? true; VoiceOffIn = VoiceAllowed || parcel is null ? string.Empty : parcel.Name;
         _environment ??= _land.GetParent()?.GetNodeOrNull<IslandEnvironmentController>("EnvironmentController");
         // What a person sees: the island's look (set in the management window) with the parcel's own settings on top; open ground gets the island's look alone.
         var islandLook = BaseLook?.Invoke();

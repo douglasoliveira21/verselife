@@ -198,7 +198,7 @@ public partial class ViewerUI
         inner.AddChild(send);
         row.AddChild(field);
 
-        var voiceBar = new VoiceBar { Name = "VoiceBar", SizeFlagsVertical = Control.SizeFlags.ShrinkCenter }; row.AddChild(voiceBar); voiceBar.Bind(_network.Voice);
+        var voiceBar = new VoiceBar { Name = "VoiceBar", SizeFlagsVertical = Control.SizeFlags.ShrinkCenter }; row.AddChild(voiceBar); voiceBar.Bind(_network.Voice); voiceBar.VoiceRule = () => _world.GetNodeOrNull<LandManager>("LandManager")?.Presence is { } presence ? (presence.VoiceAllowed, presence.VoiceOffIn) : (true, "");
         row.AddChild(Divider(32));
 
         _moveButton = ToolButton(row, "move", "Mover", "Andar, correr e voar", () => ToggleWindow(_moveWindow), toggle: true);

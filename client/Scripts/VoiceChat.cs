@@ -37,6 +37,9 @@ public partial class VoiceChat : Node
     public bool PushToTalk { get => _pushToTalk; set { if (_pushToTalk == value) return; _pushToTalk = value; EmitSignal(SignalName.SettingsChanged); } }
     /// Tests feed samples themselves through SendSamples; the microphone is then ignored.
     public bool ExternalInput { get; set; }
+    /// <summary>True while the avatar stands where voice is switched off: nothing is captured or sent (the island server would drop it anyway).</summary>
+    public bool BlockedHere { get => _blockedHere; set { if (_blockedHere == value) return; _blockedHere = value; if (value) { _pushToTalk = false; Reset(); } EmitSignal(SignalName.SettingsChanged); } }
+    private bool _blockedHere;
     public bool Talking => _talking;
     public int SentPackets { get; private set; }
     public int ReceivedPackets { get; private set; }
@@ -59,7 +62,7 @@ public partial class VoiceChat : Node
         if (ExternalInput) return;
         // A button held while the mouse is released elsewhere (window lost focus) must not leave the microphone on.
         if (_pushToTalk && !Input.IsMouseButtonPressed(MouseButton.Left)) PushToTalk = false;
-        var wantsToTalk = Enabled && Online && (OpenMic || PushToTalk);
+        var wantsToTalk = Enabled && !_blockedHere && Online && (OpenMic || PushToTalk);
         if (!wantsToTalk) { _capture?.ClearBuffer(); ReleaseTalking(); return; }
         if (!EnsureMicrophone()) return;
         var available = _capture!.GetFramesAvailable();

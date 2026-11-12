@@ -162,4 +162,10 @@ Servidor: `PUT /land/parcels/{id}/options` aceita `allowVoice` e `allowMedia` (o
 
 **Publique API e servidor de ilhas juntos:** o servidor de ilhas antigo ignora `rules` e a voz continua liberada em todo lugar.
 
-**Limites:** o cliente ainda não avisa “voz desligada neste terreno” na barra de voz (o áudio simplesmente não passa); a regra de mídia vale para quem constrói e não retira mídia que já existia; a música do próprio terreno (aba Mídia) é do dono e não é afetada.
+**Limites:** a regra de mídia vale para quem constrói e não retira mídia que já existia; a música do próprio terreno (aba Mídia) é do dono e não é afetada.
+
+## Aviso de voz desligada na barra de voz
+
+Ao entrar num terreno com a voz desligada, o botão **Falar** da barra de voz vira **Sem voz** e fica apagado, junto com o cadeado. A dica diz “A voz está desligada neste terreno (nome do terreno): quem está dentro não fala nem ouve.” O cliente também **para de capturar e enviar** áudio enquanto a pessoa está lá (o servidor da ilha descartaria de qualquer jeito); ao sair, tudo volta sozinho, e o microfone aberto (cadeado) continua como estava.
+
+Como funciona: a lista de terrenos que o cliente já recebe ganhou `allowVoice`; `LandPresence` guarda se a voz vale onde o avatar está (`VoiceAllowed`, `VoiceOffIn`); a `VoiceBar` pergunta isso a cada quadro (`VoiceRule`) e `VoiceChat.BlockedHere` corta a captura. Testes: `VoiceUiSmoke`, `LandPresenceSmoke`, `LandVoiceMediaTests`. O aviso depende da API nova (sem ela o cliente assume que a voz vale).

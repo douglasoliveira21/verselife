@@ -14,7 +14,7 @@ public sealed record LandParcelView(Guid Id, string Name, string Description, Gu
     Guid? RentalId = null, string? TenantName = null, bool TenantIsMe = false, string? RentStatus = null, DateTimeOffset? RentExpiresAt = null, long RentNextCharge = 0, bool RentAutoRenew = false, string AccessMode = "public",
     string BuildMode = "owner", bool AllowScripts = false, int? AutoReturnMinutes = null, int OthersObjects = 0, int OthersCost = 0, int Builders = 0, bool CanEditTerrain = false,
     double? ArrivalX = null, double? ArrivalZ = null, float ArrivalYaw = 0, string TeleportMode = "free", string Environment = "{}", string Media = "{}", bool EnvironmentAllowed = true,
-    Guid? GroupId = null, string? GroupName = null);
+    Guid? GroupId = null, string? GroupName = null, bool AllowVoice = true);
 
 public sealed record LandView(Guid IslandId, int Size, int CellSize, long Version, IReadOnlyList<LandParcelView> Parcels);
 
@@ -187,7 +187,7 @@ public static class LandService
                 parcel.BuildMode, fact.AllowScripts, parcel.AutoReturnMinutes, inside.Count(o => o.OwnerUserId != parcel.OwnerUserId), inside.Where(o => o.OwnerUserId != parcel.OwnerUserId).Sum(o => o.Cost), fact.Builders?.Count ?? 0,
                 TerrainEditors(parcel, rental?.TenantUserId, mineAccess.Where(a => a.ParcelId == parcel.Id).Select(a => new ParcelAccess { Id = a.Id, ParcelId = a.ParcelId, UserId = a.UserId, Kind = a.Kind, GrantedByUserId = a.GrantedByUserId, CreatedAt = a.CreatedAt }).ToList(), crowd is null ? null : [.. crowd.Managers, .. crowd.Builders]).Contains(viewer),
                 arrivalSet ? parcel.SpawnX : null, arrivalSet ? parcel.SpawnZ : null, parcel.ArrivalYaw, parcel.TeleportMode, parcel.EnvironmentJson, parcel.MediaJson, parcelEnvironment,
-                parcel.GroupId, parcel.GroupId is { } g2 ? groupNames.GetValueOrDefault(g2) : null));
+                parcel.GroupId, parcel.GroupId is { } g2 ? groupNames.GetValueOrDefault(g2) : null, parcel.AllowVoice));
         }
         var version = parcels.Count == 0 ? 0 : parcels.Max(p => p.UpdatedAt.UtcTicks) + parcels.Count;
         return new LandView(island.Id, island.Size, LandGrid.CellSize, version, views);

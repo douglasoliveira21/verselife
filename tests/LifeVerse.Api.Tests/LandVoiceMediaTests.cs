@@ -70,6 +70,14 @@ public sealed class LandVoiceMediaTests : IDisposable
     }
 
     [Fact]
+    public async Task TheLandViewTellsTheClientWhereVoiceIsOff()
+    {
+        Assert.True((await LandService.ViewAsync(_db, _island, _owner, default)).Parcels.Single().AllowVoice);
+        await Options(_owner, voice: false);
+        Assert.False((await LandService.ViewAsync(_db, _island, _visitor, default)).Parcels.Single().AllowVoice); // everybody who may look at the land sees it, so the voice bar can say so
+    }
+
+    [Fact]
     public async Task TheAboutViewCarriesBothSwitches()
     {
         await Options(_owner, voice: false);
