@@ -74,7 +74,7 @@ public static class LandProperties
             {
                 id = p.Id, islandId = p.IslandId, island = IslandName(p.IslandId), code = p.Code, name = p.Name, category = p.Category, area = p.Area, maxObjects = p.MaxObjects, objects = usage.GetValueOrDefault(p.Id), kind,
                 salePrice = p.SalePrice, rentPrice = p.RentPrice, rentPeriodDays = p.RentPeriodDays, tenant = rental is null ? null : Name(rental.TenantUserId), rentExpiresAt = rental?.ExpiresAt, rentalId = rental?.Id,
-                canVisit = p.AccessMode == "public" && p.TeleportMode != "disabled", createdAt = p.CreatedAt, revision = p.Revision,
+                canVisit = p.AccessMode == "public" && p.TeleportMode != "disabled", imageUrl = p.ImageUrl, createdAt = p.CreatedAt, revision = p.Revision,
             };
         }).ToList();
 

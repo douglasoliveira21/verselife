@@ -131,4 +131,12 @@ public sealed class LandMarketTests : IDisposable
         Assert.True((await IslandCommerce.RentAsync(_db, island.Id, _tenant, 1, Guid.NewGuid().ToString(), 700, _clock, default)).Ok);
         Assert.Equal(3, (await Search()).Total); var every = await Search(Query(onlyAvailable: false)); Assert.Equal("rented", every.Items.Single(i => i.Name == "Ilha Alugada").State);
     }
+
+    [Fact]
+    public async Task AParcelWithAPictureCarriesItToTheMarketAndOneWithoutLeavesItEmpty()
+    {
+        var withPicture = Claim(_island, "Com foto"); var without = Claim(_island, "Sem foto"); await Sell(withPicture, 100); await Sell(without, 200);
+        var picture = $"asset:{Guid.NewGuid():D}"; var stored = await _db.IslandParcels.SingleAsync(p => p.Id == withPicture.Id); stored.ImageUrl = picture; await _db.SaveChangesAsync();
+        var items = (await Search()).Items; Assert.Equal(picture, items.Single(i => i.Name == "Com foto").Image); Assert.Equal("", items.Single(i => i.Name == "Sem foto").Image);
+    }
 }

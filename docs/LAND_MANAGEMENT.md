@@ -130,7 +130,7 @@ Cabeçalho: imagem, **código e nome**, ilha e área, e o estado (Disponível, �
 
 **Servidor:** `GET /land/parcels/{id}/about` junta tudo isto (qualquer um que possa entrar na ilha lê; o que é só do dono vem com bandeiras `canManage`, `isTenant`, `isStaff`), `PUT /land/parcels/{id}/image` põe ou tira a imagem (dono do terreno ou equipe; precisa ser **imagem do inventário da própria pessoa**). A imagem do terreno é entregue a quem pode entrar na ilha, como a capa. Migração `Phase78ParcelImage` (`parcels.image_url`). Código: `LandAbout` e `ParcelInfoWindow`. Testes: `LandAboutTests` e `ParcelInfoSmoke`.
 
-**Limites:** “Criar objetos”, “Usar voz”, “Usar mídia” e “Permitir visitantes” do prompt não existem como regras separadas no jogo; ficaram em **Permissões** as regras que existem (quem constrói, scripts, devolução automática) e o acesso na aba **Acesso**. O mercado ainda mostra a capa da ilha nos cards de terrenos (a imagem do terreno entra lá numa próxima).
+**Limites:** “Criar objetos”, “Usar voz”, “Usar mídia” e “Permitir visitantes” do prompt não existem como regras separadas no jogo; ficaram em **Permissões** as regras que existem (quem constrói, scripts, devolução automática) e o acesso na aba **Acesso**. O mercado e Minhas Propriedades mostram essa imagem nos cards (veja a seção seguinte).
 
 ---
 
@@ -142,3 +142,9 @@ No menu da janela **Informações e Gerenciamento da Ilha**, depois de Históric
 - **Vendas e Aluguéis:** anúncios ativos, parcelas à venda e alugadas, contratos ativos, receita mensal, próximos vencimentos (7 dias) e a tabela dos **contratos em andamento** (imóvel, locador, locatário, valor, vencimento, estado). Botões: **Gerenciar Vendas** e **Gerenciar Aluguéis** abrem o Gerenciamento de Terrenos nessas seções; **Criar Anúncio** abre Vendas e já pergunta qual terreno anunciar.
 
 Sem migração nem rota nova. Testes: `IslandLandPagesSmoke`.
+
+---
+
+# Imagem do terreno no mercado e em Minhas Propriedades
+
+A imagem de divulgação que o dono põe na aba **Geral** de “Sobre este Terreno” agora aparece nos **cards do Mercado Imobiliário** e nos cards de **Meus Terrenos** (em Minhas Propriedades). Sem imagem, o card usa a **capa da ilha**, e sem ela, o desenho de mapa de antes. O servidor manda `image` nos itens do mercado e `imageUrl` nos terrenos de `properties/mine`; a imagem é entregue a quem pode entrar na ilha (a rota que serve a capa serve também as imagens dos terrenos). Sem migração nova. Testes: `LandMarketTests`, `RealEstateMarketSmoke`, `MyPropertiesSmoke`.

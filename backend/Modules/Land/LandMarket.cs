@@ -5,7 +5,7 @@ namespace LifeVerse.Api.Modules.Land;
 
 public sealed record MarketQuery(string? Q, string? Offer, string? Category, long? MinPrice, long? MaxPrice, double? MinArea, double? MaxArea, bool OnlyAvailable, bool WithVisit, string? Sort, int Page = 1, int PageSize = 9, string? Type = null, string? Region = null);
 
-public sealed record MarketItem(Guid ParcelId, Guid IslandId, string IslandName, string? IslandCover, string Code, string Name, string Description, string Category, double Area, int MaxObjects, string Offer, string State, long Price, int RentPeriodDays, string OwnerName, bool CanVisit, DateTimeOffset UpdatedAt, int RentMinPeriods = 1, int RentMaxPeriods = 1, long RentDeposit = 0, string Kind = "parcel", string Region = "");
+public sealed record MarketItem(Guid ParcelId, Guid IslandId, string IslandName, string? IslandCover, string Code, string Name, string Description, string Category, double Area, int MaxObjects, string Offer, string State, long Price, int RentPeriodDays, string OwnerName, bool CanVisit, DateTimeOffset UpdatedAt, int RentMinPeriods = 1, int RentMaxPeriods = 1, long RentDeposit = 0, string Kind = "parcel", string Region = "", string Image = "");
 
 public sealed record MarketPage(int Total, int Page, int PageSize, IReadOnlyList<MarketItem> Items);
 
@@ -69,7 +69,7 @@ public static partial class LandMarket
         foreach (var avatar in await db.Avatars.AsNoTracking().Where(a => owners.Contains(a.UserId)).Select(a => new { a.UserId, a.DisplayName }).ToListAsync(ct)) names[avatar.UserId] = avatar.DisplayName;
         var items = rows.Select(r => new MarketItem(r.p.Id, r.p.IslandId, r.Name, r.CoverImageUrl, r.p.Code, r.p.Name, r.p.Description, r.p.Category, r.p.Area, r.p.MaxObjects,
             r.saleOk ? "sale" : "rent", r.saleOk ? "sale" : r.isRented ? "rented" : "rent", r.price ?? 0, r.saleOk ? 0 : (r.isRented ? r.rentalDays ?? 0 : r.p.RentPeriodDays), names.GetValueOrDefault(r.p.OwnerUserId, "—"),
-            r.p.AccessMode == "public" && r.p.TeleportMode != "disabled", r.p.UpdatedAt, r.p.RentMinPeriods, r.p.RentMaxPeriods, r.p.RentDeposit)).ToList();
+            r.p.AccessMode == "public" && r.p.TeleportMode != "disabled", r.p.UpdatedAt, r.p.RentMinPeriods, r.p.RentMaxPeriods, r.p.RentDeposit, Image: r.p.ImageUrl)).ToList();
         var (islandTotal, islandItems) = type == "parcel" || category is not null ? (0, []) : await IslandsAsync(db, viewer, query, region, wanted, ct);
         var all = items.Concat(islandItems);
         var sorted = query.Sort switch

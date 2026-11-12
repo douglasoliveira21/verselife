@@ -285,7 +285,8 @@ public partial class RealEstateMarketWindow : Node
     {
         var frame = new PanelContainer { CustomMinimumSize = size, ClipContents = true, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; frame.AddThemeStyleboxOverride("panel", IslandUi.Box(new Color(StateColor(l), .18f), IslandUi.BorderDefault, 8, 1));
         var picture = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepCentered, Texture = UiStyle.Icon("map", new Color(StateColor(l), .8f), 44), MouseFilter = Control.MouseFilterEnum.Ignore }; frame.AddChild(picture);
-        if (l.IslandCover.StartsWith("asset:", StringComparison.Ordinal) && Guid.TryParse(l.IslandCover[6..], out var asset) && GetParent()?.GetNodeOrNull<TextureCache>("TextureCache") is { } cache)
+        var reference = l.Image.Length > 0 ? l.Image : l.IslandCover; // the picture of the parcel, or the cover of its island
+        if (reference.StartsWith("asset:", StringComparison.Ordinal) && Guid.TryParse(reference[6..], out var asset) && GetParent()?.GetNodeOrNull<TextureCache>("TextureCache") is { } cache)
             cache.Request(asset, texture => { if (texture is not null && IsInstanceValid(picture)) { picture.StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered; picture.Texture = texture; } }, l.IslandId);
         return frame;
     }

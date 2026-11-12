@@ -304,7 +304,7 @@ public partial class MyPropertiesWindow : Node
             var lines = new List<string> { $"{LandMath.Area(p.Area)} · {LandMath.CategoryText(p.Category)}", $"Prims: {LandMath.Number(p.Objects)} / {LandMath.Number(p.MaxObjects)}" };
             if (p.SalePrice is { } sale) lines.Add($"À venda por {LandMath.Money(sale)}"); if (p.RentPrice is { } rent && p.Kind != "rented") lines.Add($"Para alugar: {LandMath.Money(rent)} ({Period(p.RentPeriodDays)})");
             if (p.Tenant.Length > 0) lines.Add($"Alugado para {p.Tenant}" + (p.RentExpiresAt is { } at ? $" até {Day(at)}" : ""));
-            _content.AddChild(PropertyCard(Picture("", p.IslandId, KindColor(p.Kind), new Vector2(190, 100)), p.Title, p.Island, (KindText(p.Kind), KindColor(p.Kind)), [.. lines], [.. buttons]));
+            _content.AddChild(PropertyCard(Picture(p.Image, p.IslandId, KindColor(p.Kind), new Vector2(190, 100)), p.Title, p.Island, (KindText(p.Kind), KindColor(p.Kind)), [.. lines], [.. buttons]));
         }
     }
 
