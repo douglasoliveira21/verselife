@@ -3,9 +3,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Land;
 
-public sealed record MarketQuery(string? Q, string? Offer, string? Category, long? MinPrice, long? MaxPrice, double? MinArea, double? MaxArea, bool OnlyAvailable, bool WithVisit, string? Sort, int Page = 1, int PageSize = 9);
+public sealed record MarketQuery(string? Q, string? Offer, string? Category, long? MinPrice, long? MaxPrice, double? MinArea, double? MaxArea, bool OnlyAvailable, bool WithVisit, string? Sort, int Page = 1, int PageSize = 9, string? Type = null, string? Region = null);
 
-public sealed record MarketItem(Guid ParcelId, Guid IslandId, string IslandName, string? IslandCover, string Code, string Name, string Description, string Category, double Area, int MaxObjects, string Offer, string State, long Price, int RentPeriodDays, string OwnerName, bool CanVisit, DateTimeOffset UpdatedAt, int RentMinPeriods = 1, int RentMaxPeriods = 1, long RentDeposit = 0);
+public sealed record MarketItem(Guid ParcelId, Guid IslandId, string IslandName, string? IslandCover, string Code, string Name, string Description, string Category, double Area, int MaxObjects, string Offer, string State, long Price, int RentPeriodDays, string OwnerName, bool CanVisit, DateTimeOffset UpdatedAt, int RentMinPeriods = 1, int RentMaxPeriods = 1, long RentDeposit = 0, string Kind = "parcel", string Region = "");
 
 public sealed record MarketPage(int Total, int Page, int PageSize, IReadOnlyList<MarketItem> Items);
 
@@ -13,7 +13,7 @@ public sealed record MarketPage(int Total, int Page, int PageSize, IReadOnlyList
 /// The real estate market: land that is for sale or for rent on the public islands, with the filters, sorting and pages of the market window. Like the plain search, only what the person could really take is
 /// listed: a sale kept for somebody else, the person's own land and anything on a private island are left out. With "only available" off, land that is already rented is listed too (marked as rented).
 /// </summary>
-public static class LandMarket
+public static partial class LandMarket
 {
     public const int MaxPageSize = 30;
     public static readonly string[] Categories = LandOverview.Categories;
@@ -26,6 +26,8 @@ public static class LandMarket
         var parcels = db.IslandParcels.AsNoTracking().Where(p => p.DeletedAt == null);
         var islands = db.Islands.AsNoTracking().Where(i => i.DeletedAt == null && i.IsPublic);
         var onlyAvailable = query.OnlyAvailable;
+        var type = query.Type is "parcel" or "island" ? query.Type : "all"; var region = query.Region is "full" or "homestead" ? query.Region : null;
+        var size = Math.Clamp(query.PageSize, 1, MaxPageSize); var wanted = Math.Max(1, query.Page) * size;
 
         var joined = from p in parcels
                      join i in islands on p.IslandId equals i.Id
@@ -37,9 +39,10 @@ public static class LandMarket
                      let rentShown = p.OwnerUserId != viewer && ((p.RentPrice != null && rentOk) || (!onlyAvailable && isRented))
                      let price = saleOk ? p.SalePrice : (isRented ? rentalPrice : p.RentPrice)
                      where (offer == "sale" && saleOk) || (offer == "rent" && rentShown) || (offer == "any" && (saleOk || rentShown))
-                     select new { p, i.Name, i.CoverImageUrl, saleOk, rentOk, isRented, price, rentalDays };
+                     select new { p, i.Name, i.CoverImageUrl, i.Size, saleOk, rentOk, isRented, price, rentalDays };
 
         if (category is not null) joined = joined.Where(x => x.p.Category == category);
+        if (region == "full") joined = joined.Where(x => x.Size >= 256); else if (region == "homestead") joined = joined.Where(x => x.Size < 256);
         if (query.WithVisit) joined = joined.Where(x => x.p.AccessMode == "public" && x.p.TeleportMode != "disabled");
         if (!string.IsNullOrWhiteSpace(query.Q))
         {
@@ -51,7 +54,7 @@ public static class LandMarket
         if (query.MinPrice is { } minPrice) joined = joined.Where(x => x.price >= minPrice);
         if (query.MaxPrice is { } maxPrice) joined = joined.Where(x => x.price <= maxPrice);
 
-        var total = await joined.CountAsync(ct);
+        var total = type == "island" ? 0 : await joined.CountAsync(ct);
         var ordered = query.Sort switch
         {
             "price" => joined.OrderBy(x => x.saleOk ? x.p.SalePrice : x.p.RentPrice).ThenBy(x => x.p.Id),
@@ -60,14 +63,20 @@ public static class LandMarket
             "prims" => joined.OrderByDescending(x => x.p.MaxObjects).ThenBy(x => x.p.Id),
             _ => joined.OrderByDescending(x => x.p.UpdatedAt).ThenBy(x => x.p.Id),
         };
-        var size = Math.Clamp(query.PageSize, 1, MaxPageSize); var pages = Math.Max(1, (int)Math.Ceiling(total / (double)size)); var page = Math.Clamp(query.Page, 1, pages);
-        var rows = await ordered.Skip((page - 1) * size).Take(size).ToListAsync(ct);
+        var rows = type == "island" ? [] : await ordered.Take(wanted).ToListAsync(ct);
         var owners = rows.Select(r => r.p.OwnerUserId).Distinct().ToList();
         var names = await db.Users.AsNoTracking().Where(u => owners.Contains(u.Id)).Select(u => new { u.Id, u.Username }).ToDictionaryAsync(u => u.Id, u => u.Username, ct);
         foreach (var avatar in await db.Avatars.AsNoTracking().Where(a => owners.Contains(a.UserId)).Select(a => new { a.UserId, a.DisplayName }).ToListAsync(ct)) names[avatar.UserId] = avatar.DisplayName;
         var items = rows.Select(r => new MarketItem(r.p.Id, r.p.IslandId, r.Name, r.CoverImageUrl, r.p.Code, r.p.Name, r.p.Description, r.p.Category, r.p.Area, r.p.MaxObjects,
             r.saleOk ? "sale" : "rent", r.saleOk ? "sale" : r.isRented ? "rented" : "rent", r.price ?? 0, r.saleOk ? 0 : (r.isRented ? r.rentalDays ?? 0 : r.p.RentPeriodDays), names.GetValueOrDefault(r.p.OwnerUserId, "—"),
             r.p.AccessMode == "public" && r.p.TeleportMode != "disabled", r.p.UpdatedAt, r.p.RentMinPeriods, r.p.RentMaxPeriods, r.p.RentDeposit)).ToList();
-        return new MarketPage(total, page, size, items);
+        var (islandTotal, islandItems) = type == "parcel" || category is not null ? (0, []) : await IslandsAsync(db, viewer, query, region, wanted, ct);
+        var all = items.Concat(islandItems);
+        var sorted = query.Sort switch
+        {
+            "price" => all.OrderBy(i => i.Price), "price_desc" => all.OrderByDescending(i => i.Price), "area" => all.OrderByDescending(i => i.Area), "prims" => all.OrderByDescending(i => i.MaxObjects), _ => all.OrderByDescending(i => i.UpdatedAt),
+        };
+        var grand = total + islandTotal; var pages = Math.Max(1, (int)Math.Ceiling(grand / (double)size)); var page = Math.Clamp(query.Page, 1, pages);
+        return new MarketPage(grand, page, size, [.. sorted.ThenBy(i => i.ParcelId).ThenBy(i => i.IslandId).Skip((page - 1) * size).Take(size)]);
     }
 }

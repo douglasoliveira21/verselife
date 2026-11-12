@@ -195,6 +195,22 @@ public sealed class Island
     /// <summary>The island every new avatar arrives on (at most one island is it; see WelcomeIsland).</summary>
     public bool IsWelcome { get; set; }
     public long SnapshotVersion { get; set; }
+
+    // ---- for sale (null price: not for sale). The whole island, with its land and, when the sale says so, the seller's objects.
+    public long? SalePrice { get; set; }
+    /// <summary>When set, only this person may buy.</summary>
+    public Guid? SaleBuyerUserId { get; set; }
+    public string SaleDescription { get; set; } = string.Empty;
+    /// <summary>Whether the seller's objects stay on the island for the buyer (otherwise they go back to the seller's inventory).</summary>
+    public bool SaleIncludesObjects { get; set; } = true;
+
+    // ---- offered for rent (null price: not offered). The renter runs the island for the length of the contract; the owner stays the owner.
+    public long? RentPrice { get; set; }
+    public int RentPeriodDays { get; set; } = 30;
+    public int RentMinPeriods { get; set; } = 1;
+    public int RentMaxPeriods { get; set; } = 12;
+    public long RentDeposit { get; set; }
+    public int RentGraceDays { get; set; } = 3;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
@@ -309,6 +325,8 @@ public sealed class IslandParcel
     public string Category { get; set; } = "residencial";
     /// <summary>The short code people use for the parcel, such as L-03. Given the first time the island's land overview is read, in the order the parcels were made, and kept after that.</summary>
     public string Code { get; set; } = string.Empty;
+    /// <summary>The picture of the parcel (asset:id of an image the owner chose), or empty.</summary>
+    public string ImageUrl { get; set; } = string.Empty;
 }
 
 /// <summary>One line of a parcel's access list: a person allowed in (kind allow) or kept out (kind ban), for ever or until a time.</summary>
@@ -337,6 +355,43 @@ public sealed class ParcelGroupAccess
     public Guid GrantedByUserId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
+}
+
+/// <summary>A rental of a whole island: the tenant gets the administrator permission of the island while the contract runs (and keeps the owner's powers over the island's settings); the title never changes hands. Status: active, grace (overdue) or ended.</summary>
+public sealed class IslandLease
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public Guid LandlordUserId { get; set; }
+    public Guid TenantUserId { get; set; }
+    public long PricePerPeriod { get; set; }
+    public int PeriodDays { get; set; }
+    public long DepositCoins { get; set; }
+    public int GraceDays { get; set; }
+    public int Periods { get; set; }
+    public required string Status { get; set; }
+    public string? EndReason { get; set; }
+    public DateTimeOffset StartsAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? GraceUntil { get; set; }
+    public DateTimeOffset? EndedAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>The administrator permission given to the tenant for the contract (taken back when it ends).</summary>
+    public Guid? PermissionId { get; set; }
+}
+
+/// <summary>What happened to an island in money terms: sales, transfers, rent payments, deposits and refunds.</summary>
+public sealed class IslandTransaction
+{
+    public Guid Id { get; set; }
+    public Guid IslandId { get; set; }
+    public required string Type { get; set; }
+    public Guid? FromUserId { get; set; }
+    public Guid? ToUserId { get; set; }
+    public long Amount { get; set; }
+    public string DataJson { get; set; } = "{}";
+    public Guid? LedgerTransactionId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 /// <summary>A rental of a parcel: the tenant may build in it while the contract is active. Status: active, grace (overdue, no building) or ended.</summary>

@@ -31,7 +31,7 @@ public static class LandOverview
         catch (Exception exception) when (exception is DbUpdateConcurrencyException or DbUpdateException) { foreach (var entry in db.ChangeTracker.Entries().ToList()) entry.State = EntityState.Detached; }
     }
 
-    private static async Task<Dictionary<Guid, string>> NamesAsync(LifeVerseDbContext db, IEnumerable<Guid> ids, CancellationToken ct)
+    public static async Task<Dictionary<Guid, string>> NamesAsync(LifeVerseDbContext db, IEnumerable<Guid> ids, CancellationToken ct)
     {
         var wanted = ids.Distinct().ToList();
         var names = await db.Users.AsNoTracking().Where(u => wanted.Contains(u.Id)).Select(u => new { u.Id, u.Username }).ToDictionaryAsync(u => u.Id, u => u.Username, ct);

@@ -69,7 +69,7 @@ public static class IslandManagement
         if (!Who(context, out var user)) return Results.Unauthorized();
         var island = await db.Islands.SingleOrDefaultAsync(x => x.Id == islandId && x.DeletedAt == null, ct); if (island is null) return Results.NotFound();
         if (!await IsAdminAsync(db, island, user, ct)) return Results.Forbid();
-        if (island.OwnerUserId != user) return IslandOwnerOnly.Refusal();
+        if (!await IslandOwnerOnly.AllowsAsync(db, island, user)) return IslandOwnerOnly.Refusal();
         var errors = new Dictionary<string, string[]>();
         var name = (request.Name ?? "").Trim(); var description = (request.Description ?? "").Trim(); var cover = request.CoverImageUrl?.Trim();
         if (name.Length is < 1 or > NameLimit) errors["name"] = [$"O nome deve ter de 1 a {NameLimit} caracteres."];

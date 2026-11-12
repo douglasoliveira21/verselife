@@ -16,6 +16,7 @@ public sealed record SplitRequest(int[][] Cells, string Name);
 public sealed record MergeRequest(Guid[] ParcelIds, Guid? PrimaryId);
 public sealed record AccessModeRequest(string Mode);
 public sealed record CategoryRequest(string Category);
+public sealed record ImageRequest(string? Image);
 public sealed record AccessAddRequest(Guid UserId, string Kind, int? Minutes, string? Reason);
 public sealed record EjectRequest(Guid UserId);
 public sealed record OptionsRequest(string BuildMode, bool AllowScripts, int? AutoReturnMinutes);
@@ -28,6 +29,7 @@ public static class LandEndpoints
 {
     public static IEndpointRouteBuilder MapLandEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        endpoints.MapIslandRealEstateEndpoints();
         var group = endpoints.MapGroup("/api/v1/worlds/islands/{islandId:guid}/land").WithTags("Land").RequireAuthorization();
         // a parcel or a rental in the address must belong to the island in the address: no reaching across islands
         group.AddEndpointFilter(async (context, next) =>
@@ -42,6 +44,9 @@ public static class LandEndpoints
         group.MapGet("", ViewAsync);
         group.MapGet("/version", VersionAsync);
         group.MapGet("/overview", OverviewAsync);
+        group.MapGet("/parcels/{parcelId:guid}/about", AboutAsync);
+        group.MapPut("/parcels/{parcelId:guid}/image", async (Guid islandId, Guid parcelId, ImageRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => LandAbout.SetImageAsync(db, islandId, parcelId, user, r.Image, t, ct)));
         group.MapPut("/parcels/{parcelId:guid}/category", async (Guid islandId, Guid parcelId, CategoryRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandOverview.SetCategoryAsync(db, islandId, parcelId, user, r.Category, t, ct)));
         group.MapPost("/claim", ClaimAsync);
@@ -108,9 +113,13 @@ public static class LandEndpoints
         endpoints.MapGet("/api/v1/discovery/properties", async (string? q, string? offer, long? minPrice, long? maxPrice, double? minArea, double? maxArea, string? sort, int? skip, int? take, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
             !TryUser(c, out var user) ? Results.Unauthorized() : Results.Ok(await LandSearch.SearchAsync(db, user, new PropertyQuery(q, offer, minPrice, maxPrice, minArea, maxArea, sort, skip ?? 0, take ?? 20), ct))).WithTags("Discovery").RequireAuthorization();
 
+        // everything the person holds: islands, land, rentals, offers, payments and contracts
+        endpoints.MapGet("/api/v1/properties/mine", async (HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            !TryUser(c, out var user) ? Results.Unauthorized() : Results.Ok(await LandProperties.BuildAsync(db, user, t.GetUtcNow(), ct))).WithTags("Discovery").RequireAuthorization();
+
         // the real estate market window: filters, sorting and pages
-        endpoints.MapGet("/api/v1/discovery/market", async (string? q, string? offer, string? category, long? minPrice, long? maxPrice, double? minArea, double? maxArea, bool? onlyAvailable, bool? withVisit, string? sort, int? page, int? pageSize, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
-            !TryUser(c, out var user) ? Results.Unauthorized() : Results.Ok(await LandMarket.SearchAsync(db, user, new MarketQuery(q, offer, category, minPrice, maxPrice, minArea, maxArea, onlyAvailable ?? true, withVisit ?? false, sort, page ?? 1, pageSize ?? 9), ct))).WithTags("Discovery").RequireAuthorization();
+        endpoints.MapGet("/api/v1/discovery/market", async (string? q, string? offer, string? category, long? minPrice, long? maxPrice, double? minArea, double? maxArea, bool? onlyAvailable, bool? withVisit, string? sort, int? page, int? pageSize, string? type, string? region, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
+            !TryUser(c, out var user) ? Results.Unauthorized() : Results.Ok(await LandMarket.SearchAsync(db, user, new MarketQuery(q, offer, category, minPrice, maxPrice, minArea, maxArea, onlyAvailable ?? true, withVisit ?? false, sort, page ?? 1, pageSize ?? 9, type, region), ct))).WithTags("Discovery").RequireAuthorization();
 
         // what the island servers ask for (internal, like the other platform routes)
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/land-sync", async (Guid instanceId, long? since, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
@@ -130,7 +139,7 @@ public static class LandEndpoints
     {
         "not_found" => Results.NotFound(new { error = result.Error }),
         "forbidden" => Results.Json(new { error = result.Error }, statusCode: 403),
-        "bad_key" or "bad_price" or "bad_terms" or "bad_periods" or "bad_buyer" or "bad_name" or "empty" or "bad_selection" or "bad_mode" or "bad_kind" or "bad_target" or "bad_duration" or "bad_reason" or "bad_scope" or "bad_primary" or "bad_limit" or "bad_environment" or "bad_volume" or "bad_point" or "too_long" or "not_https" or "bad_host" or "bad_type" or "bad_category" =>Results.BadRequest(new { error = result.Error }),
+        "bad_key" or "bad_price" or "bad_terms" or "bad_periods" or "bad_buyer" or "bad_name" or "empty" or "bad_selection" or "bad_mode" or "bad_kind" or "bad_target" or "bad_duration" or "bad_reason" or "bad_scope" or "bad_primary" or "bad_limit" or "bad_environment" or "bad_volume" or "bad_point" or "too_long" or "not_https" or "bad_host" or "bad_type" or "bad_category" or "welcome_island" or "person_not_found" or "bad_image" =>Results.BadRequest(new { error = result.Error }),
         _ => Results.Conflict(new { error = result.Error })
     };
 
@@ -167,6 +176,17 @@ public static class LandEndpoints
         var now = clock.GetUtcNow();
         if (!await LandOverview.IsStaffAsync(db, island, user, now, ct)) return Results.Forbid();
         return Results.Ok(await LandOverview.BuildAsync(db, island, user, now, ct));
+    }
+
+    /// <summary>Everything one parcel says about itself, for whoever may enter the island.</summary>
+    private static async Task<IResult> AboutAsync(Guid islandId, Guid parcelId, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!TryUser(context, out var user)) return Results.Unauthorized();
+        var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(x => x.Id == islandId && x.DeletedAt == null, ct);
+        if (island is null) return Results.NotFound();
+        var permissions = await db.IslandPermissions.AsNoTracking().Where(p => p.IslandId == islandId && p.UserId == user && p.RevokedAt == null).Select(p => p.Permission).ToListAsync(ct);
+        if (!island.IsPublic && island.OwnerUserId != user && !permissions.Any(p => p is "enter" or "admin" or "build" or "edit")) return Results.Forbid();
+        return await LandAbout.AboutAsync(db, island, parcelId, user, clock.GetUtcNow(), ct) is { } about ? Results.Ok(about) : Results.NotFound();
     }
 
     /// <summary>A cheap number that changes whenever a parcel is added, removed or changed: clients ask for it every few seconds and reload the land only when it moves.</summary>

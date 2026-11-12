@@ -1834,6 +1834,30 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("owner_user_id");
 
+                    b.Property<long>("RentDeposit")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rent_deposit");
+
+                    b.Property<int>("RentGraceDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_grace_days");
+
+                    b.Property<int>("RentMaxPeriods")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_max_periods");
+
+                    b.Property<int>("RentMinPeriods")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_min_periods");
+
+                    b.Property<int>("RentPeriodDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("rent_period_days");
+
+                    b.Property<long?>("RentPrice")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rent_price");
+
                     b.Property<string>("ResourceLimitsJson")
                         .IsRequired()
                         .HasColumnType("jsonb")
@@ -1844,6 +1868,24 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasMaxLength(24)
                         .HasColumnType("character varying(24)")
                         .HasColumnName("runtime_state");
+
+                    b.Property<Guid?>("SaleBuyerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("sale_buyer_user_id");
+
+                    b.Property<string>("SaleDescription")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("sale_description");
+
+                    b.Property<bool>("SaleIncludesObjects")
+                        .HasColumnType("boolean")
+                        .HasColumnName("sale_includes_objects");
+
+                    b.Property<long?>("SalePrice")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sale_price");
 
                     b.Property<bool>("ShowInSearch")
                         .ValueGeneratedOnAdd()
@@ -2099,6 +2141,89 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("island_favorites", "discovery");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandLease", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<long>("DepositCoins")
+                        .HasColumnType("bigint")
+                        .HasColumnName("deposit_coins");
+
+                    b.Property<string>("EndReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("end_reason");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ended_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<int>("GraceDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("grace_days");
+
+                    b.Property<DateTimeOffset?>("GraceUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("grace_until");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<Guid>("LandlordUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("landlord_user_id");
+
+                    b.Property<int>("PeriodDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("period_days");
+
+                    b.Property<int>("Periods")
+                        .HasColumnType("integer")
+                        .HasColumnName("periods");
+
+                    b.Property<Guid?>("PermissionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("permission_id");
+
+                    b.Property<long>("PricePerPeriod")
+                        .HasColumnType("bigint")
+                        .HasColumnName("price_per_period");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("starts_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("TenantUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("tenant_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId", "Status");
+
+                    b.HasIndex("TenantUserId", "Status");
+
+                    b.ToTable("island_leases", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.IslandMetric", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2219,6 +2344,14 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Property<Guid?>("GroupId")
                         .HasColumnType("uuid")
                         .HasColumnName("group_id");
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasDefaultValue("")
+                        .HasColumnName("image_url");
 
                     b.Property<Guid>("IslandId")
                         .HasColumnType("uuid")
@@ -2663,6 +2796,55 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("snapshots", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<long>("Amount")
+                        .HasColumnType("bigint")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("data_json");
+
+                    b.Property<Guid?>("FromUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("from_user_id");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<Guid?>("LedgerTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("ledger_transaction_id");
+
+                    b.Property<Guid?>("ToUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("to_user_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IslandId", "CreatedAt");
+
+                    b.ToTable("island_transactions", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.ItemAuditEntry", b =>
@@ -5465,6 +5647,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandLease", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.IslandMetric", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.Island", null)
@@ -5543,6 +5734,15 @@ namespace LifeVerse.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.IslandSnapshot", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.IslandTransaction", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.Island", null)
                         .WithMany()

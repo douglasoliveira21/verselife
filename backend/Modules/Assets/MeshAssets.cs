@@ -86,7 +86,7 @@ public static class MeshAssets
         var usedAsTexture = !usedAsMesh && await UsedAsync(db, islandId, needle, geometry: false, ct);
         var usedAsSound = !usedAsMesh && !usedAsTexture && await UsedAsSoundAsync(db, islandId, needle, ct); // a sound that an object carries can be heard by whoever is on the island
         // the picture that represents the island is shown to everybody who may enter it (and to the people who manage it), even though no object uses it
-        var usedAsCover = !usedAsMesh && !usedAsTexture && !usedAsSound && string.Equals(island.CoverImageUrl, $"asset:{assetId:D}", StringComparison.OrdinalIgnoreCase);
+        var wanted = $"asset:{assetId:D}"; var usedAsCover = !usedAsMesh && !usedAsTexture && !usedAsSound && (string.Equals(island.CoverImageUrl, wanted, StringComparison.OrdinalIgnoreCase) || await db.IslandParcels.AnyAsync(p => p.IslandId == islandId && p.DeletedAt == null && p.ImageUrl == wanted, ct)); // or the picture of one of its parcels
         if (!usedAsMesh && !usedAsTexture && !usedAsSound && !usedAsCover) return Results.NotFound();
         var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == assetId && x.DeletedAt == null, ct);
         if (asset is null) return Results.NotFound();

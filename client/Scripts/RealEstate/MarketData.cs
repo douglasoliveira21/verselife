@@ -28,9 +28,13 @@ public sealed class MarketListing
     public int RentMinPeriods { get; init; } = 1;
     public int RentMaxPeriods { get; init; } = 1;
     public long RentDeposit { get; init; }
+    /// <summary>parcel or island: what is for sale or for rent.</summary>
+    public string Kind { get; init; } = "parcel";
+    public string Region { get; init; } = "";
+    public bool IsIsland => Kind == "island";
 
     public string Title => Code.Length > 0 ? $"{Code} — {Name}" : Name;
-    public string TypeText => $"Terreno {LandMath.CategoryText(Category)}";
+    public string TypeText => IsIsland ? (Region == "homestead" ? "Ilha Homestead" : "Ilha Full Region") : $"Terreno {LandMath.CategoryText(Category)}";
     public string PriceText => Offer == "sale" ? LandMath.Money(Price) : $"{LandMath.Money(Price)} / {(RentPeriodDays == 30 ? "mensal" : RentPeriodDays == 7 ? "semanal" : $"{RentPeriodDays} dias")}";
 }
 
@@ -57,7 +61,7 @@ public sealed class MarketPageData
             {
                 ParcelId = parcel, IslandId = island, IslandName = Str(item, "islandName"), IslandCover = Str(item, "islandCover"), Code = Str(item, "code"), Name = Str(item, "name"), Description = Str(item, "description"), Category = Str(item, "category"),
                 Area = Dbl(item, "area"), MaxObjects = (int)Long(item, "maxObjects"), Offer = Str(item, "offer"), State = Str(item, "state"), Price = Long(item, "price"), RentPeriodDays = (int)Long(item, "rentPeriodDays"), OwnerName = Str(item, "ownerName"),
-                CanVisit = item.TryGetProperty("canVisit", out var v) && v.ValueKind == JsonValueKind.True, RentMinPeriods = Math.Max(1, (int)Long(item, "rentMinPeriods")), RentMaxPeriods = Math.Max(1, (int)Long(item, "rentMaxPeriods")), RentDeposit = Long(item, "rentDeposit"),
+                CanVisit = item.TryGetProperty("canVisit", out var v) && v.ValueKind == JsonValueKind.True, RentMinPeriods = Math.Max(1, (int)Long(item, "rentMinPeriods")), RentMaxPeriods = Math.Max(1, (int)Long(item, "rentMaxPeriods")), RentDeposit = Long(item, "rentDeposit"), Kind = Str(item, "kind") is { Length: > 0 } kind ? kind : "parcel", Region = Str(item, "region"),
             });
         }
         return new MarketPageData { Total = (int)Long(root, "total"), Page = Math.Max(1, (int)Long(root, "page")), PageSize = Math.Max(1, (int)Long(root, "pageSize")), Items = list };
@@ -65,13 +69,14 @@ public sealed class MarketPageData
 }
 
 /// <summary>What the filters of the market window say, turned into the query the server understands.</summary>
-public sealed record MarketFilters(string Query = "", string Offer = "any", string Category = "", long? MinPrice = null, long? MaxPrice = null, double? MinArea = null, double? MaxArea = null, bool OnlyAvailable = true, bool WithVisit = false, string Sort = "new", int Page = 1, int PageSize = 9)
+public sealed record MarketFilters(string Query = "", string Offer = "any", string Category = "", long? MinPrice = null, long? MaxPrice = null, double? MinArea = null, double? MaxArea = null, bool OnlyAvailable = true, bool WithVisit = false, string Sort = "new", int Page = 1, int PageSize = 9, string Type = "", string Region = "")
 {
     public string ToQuery()
     {
         var parts = new List<string> { $"offer={Offer}", $"sort={Sort}", $"page={Page}", $"pageSize={PageSize}", $"onlyAvailable={(OnlyAvailable ? "true" : "false")}", $"withVisit={(WithVisit ? "true" : "false")}" };
         if (Query.Trim().Length > 0) parts.Add("q=" + Uri.EscapeDataString(Query.Trim()));
         if (Category.Length > 0) parts.Add("category=" + Category);
+        if (Type.Length > 0) parts.Add("type=" + Type); if (Region.Length > 0) parts.Add("region=" + Region);
         if (MinPrice is { } a) parts.Add($"minPrice={a}"); if (MaxPrice is { } b) parts.Add($"maxPrice={b}");
         if (MinArea is { } c) parts.Add("minArea=" + c.ToString(System.Globalization.CultureInfo.InvariantCulture)); if (MaxArea is { } d) parts.Add("maxArea=" + d.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return string.Join("&", parts);
@@ -82,6 +87,7 @@ public sealed record MarketFilters(string Query = "", string Offer = "any", stri
 public sealed class MarketApi(IslandManagementApi inner)
 {
     public Task<IslandReply> Search(MarketFilters filters) => inner.Send("GET", $"/api/v1/discovery/market?{filters.ToQuery()}");
-    public Task<IslandReply> Buy(MarketListing item) => inner.Send("POST", $"/api/v1/worlds/islands/{item.IslandId}/land/parcels/{item.ParcelId}/buy", new { expectedPrice = item.Price, idempotencyKey = Guid.NewGuid().ToString() });
-    public Task<IslandReply> Rent(MarketListing item, int periods) => inner.Send("POST", $"/api/v1/worlds/islands/{item.IslandId}/land/parcels/{item.ParcelId}/rent", new { periods, autoRenew = false, expectedPrice = item.Price, idempotencyKey = Guid.NewGuid().ToString() });
+    private static string Path(MarketListing item) => item.IsIsland ? $"/api/v1/worlds/islands/{item.IslandId}/real-estate" : $"/api/v1/worlds/islands/{item.IslandId}/land/parcels/{item.ParcelId}";
+    public Task<IslandReply> Buy(MarketListing item) => inner.Send("POST", $"{Path(item)}/buy", new { expectedPrice = item.Price, idempotencyKey = Guid.NewGuid().ToString() });
+    public Task<IslandReply> Rent(MarketListing item, int periods) => inner.Send("POST", $"{Path(item)}/rent", new { periods, autoRenew = false, expectedPrice = item.Price, idempotencyKey = Guid.NewGuid().ToString() });
 }

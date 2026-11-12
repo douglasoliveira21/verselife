@@ -103,4 +103,32 @@ public sealed class LandMarketTests : IDisposable
         Assert.Equal(2, (await Search()).Total); var visit = await Search(Query(visit: true)); Assert.Equal(["Aberta"], visit.Items.Select(i => i.Name)); Assert.All(visit.Items, i => Assert.True(i.CanVisit));
         Assert.False((await Search()).Items.Single(i => i.Name == "Fechada").CanVisit);
     }
+
+    private Island MakeIsland(string name, int size = 256, bool isPublic = true) { var island = new Island { Id = Guid.NewGuid(), OwnerUserId = _seller, Name = name, Slug = name.ToLowerInvariant().Replace(" ", "-"), IsPublic = isPublic, Size = size }; _db.Islands.Add(island); _db.SaveChanges(); return island; }
+
+    [Fact]
+    public async Task WholeIslandsForSaleOrRentAreListedNextToTheLand_WithTheirKindAndRegion()
+    {
+        var full = MakeIsland("Ilha Grande"); var small = MakeIsland("Ilha Pequena", 128); var hidden = MakeIsland("Ilha Secreta", isPublic: false); var parcel = Claim(_island, "Terreno"); await Sell(parcel, 900);
+        Assert.True((await IslandCommerce.OfferForSaleAsync(_db, full.Id, _seller, new SaleOffer(50000, null, "", true), _clock, default)).Ok);
+        Assert.True((await IslandCommerce.OfferForRentAsync(_db, small.Id, _seller, new RentOffer(2000, 30, 1, 6, 0, 3, false), _clock, default)).Ok);
+        Assert.True((await IslandCommerce.OfferForSaleAsync(_db, hidden.Id, _seller, new SaleOffer(1, null, "", true), _clock, default)).Ok);
+        var all = await Search(); Assert.Equal(3, all.Total); Assert.Equal(["island", "island", "parcel"], all.Items.Select(i => i.Kind).OrderBy(k => k).ToArray());
+        var big = all.Items.Single(i => i.Name == "Ilha Grande"); Assert.Equal(("island", "full", "sale", 50000L, 256d * 256d), (big.Kind, big.Region, big.State, big.Price, big.Area)); Assert.Equal(Guid.Empty, big.ParcelId);
+        var little = all.Items.Single(i => i.Name == "Ilha Pequena"); Assert.Equal(("homestead", "rent", 30), (little.Region, little.State, little.RentPeriodDays));
+        Assert.Equal(["Terreno"], (await Search(Query() with { Type = "parcel" })).Items.Select(i => i.Name)); Assert.Equal(2, (await Search(Query() with { Type = "island" })).Total);
+        Assert.Equal(["Ilha Grande"], (await Search(Query() with { Type = "island", Region = "full" })).Items.Select(i => i.Name)); Assert.Equal(["Ilha Pequena"], (await Search(Query() with { Type = "island", Region = "homestead" })).Items.Select(i => i.Name));
+        Assert.Equal(["Terreno"], (await Search(Query(category: "residencial"))).Items.Select(i => i.Name)); // a category of land keeps islands out
+        Assert.Equal(["Ilha Grande"], (await Search(Query(offer: "sale", min: 10000))).Items.Select(i => i.Name)); Assert.Equal(0, (await Search(who: _seller)).Total);
+    }
+
+    [Fact]
+    public async Task IslandPagesAndSortingMixWithLandAndRentedIslandsNeedTheFlag()
+    {
+        var island = MakeIsland("Ilha Alugada"); Assert.True((await IslandCommerce.OfferForRentAsync(_db, island.Id, _seller, new RentOffer(700, 10, 1, 4, 0, 2, false), _clock, default)).Ok);
+        for (var i = 0; i < 3; i++) { var p = Claim(_island, $"T{i}"); await Sell(p, 1000 + i * 100); }
+        var cheap = await Search(Query(sort: "price", size: 2)); Assert.Equal(4, cheap.Total); Assert.Equal(["Ilha Alugada", "T0"], cheap.Items.Select(i => i.Name)); var second = await Search(Query(sort: "price", size: 2, page: 2)); Assert.Equal(["T1", "T2"], second.Items.Select(i => i.Name));
+        Assert.True((await IslandCommerce.RentAsync(_db, island.Id, _tenant, 1, Guid.NewGuid().ToString(), 700, _clock, default)).Ok);
+        Assert.Equal(3, (await Search()).Total); var every = await Search(Query(onlyAvailable: false)); Assert.Equal("rented", every.Items.Single(i => i.Name == "Ilha Alugada").State);
+    }
 }

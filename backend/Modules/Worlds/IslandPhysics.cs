@@ -81,7 +81,7 @@ public static class IslandPhysicsManagement
 
     public static async Task<IResult> FreezeAsync(Guid islandId, FreezeRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (!await IslandOwnerOnly.AllowsAsync(db, island, me, now)) return IslandOwnerOnly.Refusal();
         var (items, bad) = await Pick(islandId, request, false, db, ct); if (bad is not null) return bad;
         var changed = new List<BuildObject>();
         foreach (var item in items.Where(i => IsPhysical(i.PhysicsJson)))
@@ -96,7 +96,7 @@ public static class IslandPhysicsManagement
 
     public static async Task<IResult> ReleaseAsync(Guid islandId, FreezeRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!; if (!await IslandOwnerOnly.AllowsAsync(db, island, me, now)) return IslandOwnerOnly.Refusal();
         var (items, bad) = await Pick(islandId, request, true, db, ct); if (bad is not null) return bad;
         int restored = 0, kept = 0;
         foreach (var item in items)

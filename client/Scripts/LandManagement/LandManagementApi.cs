@@ -21,6 +21,12 @@ public sealed class LandManagementApi(IslandManagementApi inner)
             "empty" => "Marque algum quadrado no mapa.",
             "bad_category" => "Finalidade inválida.",
             "forbidden" => "Você não tem permissão para isso nesta ilha.",
+            "owner_only" => "Só o dono da ilha pode fazer isso.",
+            "own_island" => "Esta ilha já é sua.",
+            "welcome_island" => "A ilha de boas-vindas do jogo não pode ser vendida, alugada nem transferida.",
+            "person_not_found" => "Não encontrei ninguém com esse nome.",
+            "for_sale" => "Retire a ilha da venda antes.",
+            "bad_buyer" => "Escolha outra pessoa que não seja você.",
             "" => reply.Message,
             _ => LandManager.AdminMessage((int)reply.Status, code),
         };

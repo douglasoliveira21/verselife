@@ -29,7 +29,7 @@ public static class LandCommerce
     private static async Task<IslandParcel?> ParcelAsync(LifeVerseDbContext db, Guid parcelId, CancellationToken ct) =>
         await db.IslandParcels.SingleOrDefaultAsync(p => p.Id == parcelId && p.DeletedAt == null, ct);
 
-    private static async Task<Wallet> WalletOfAsync(LifeVerseDbContext db, Guid userId, DateTimeOffset now, CancellationToken ct)
+    internal static async Task<Wallet> WalletOfAsync(LifeVerseDbContext db, Guid userId, DateTimeOffset now, CancellationToken ct)
     {
         var wallet = await db.Wallets.SingleOrDefaultAsync(w => w.UserId == userId, ct);
         if (wallet is not null) return wallet;
@@ -38,7 +38,7 @@ public static class LandCommerce
         return wallet;
     }
 
-    private static async Task<LedgerAccount> AccountAsync(LifeVerseDbContext db, Guid? userId, string type, DateTimeOffset now, CancellationToken ct)
+    internal static async Task<LedgerAccount> AccountAsync(LifeVerseDbContext db, Guid? userId, string type, DateTimeOffset now, CancellationToken ct)
     {
         var local = db.LedgerAccounts.Local.FirstOrDefault(a => a.UserId == userId && a.AccountType == type);
         if (local is not null) return local;
@@ -50,7 +50,7 @@ public static class LandCommerce
     }
 
     /// <summary>One ledger transaction: the payer is debited the sum of the parts and each receiver credited its part. A null receiver is the land escrow (deposits).</summary>
-    private static async Task<LedgerTransaction> LedgerAsync(LifeVerseDbContext db, string key, string type, Guid initiator, Guid payer, IReadOnlyList<(Guid? Receiver, long Amount)> parts, object metadata, DateTimeOffset now, CancellationToken ct)
+    internal static async Task<LedgerTransaction> LedgerAsync(LifeVerseDbContext db, string key, string type, Guid initiator, Guid payer, IReadOnlyList<(Guid? Receiver, long Amount)> parts, object metadata, DateTimeOffset now, CancellationToken ct)
     {
         var total = parts.Sum(p => p.Amount);
         var transaction = new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = type, Status = "completed", Amount = total, InitiatorUserId = initiator, MetadataJson = JsonSerializer.Serialize(metadata), CreatedAt = now, CompletedAt = now };
@@ -87,7 +87,7 @@ public static class LandCommerce
 
     private static Task<bool> HasLiveRentalAsync(LifeVerseDbContext db, Guid parcelId, CancellationToken ct) => db.ParcelRentals.AnyAsync(r => r.ParcelId == parcelId && (r.Status == "active" || r.Status == "grace"), ct);
 
-    private static bool KeyOk(string? key) => key is { Length: >= 8 and <= 128 };
+    internal static bool KeyOk(string? key) => key is { Length: >= 8 and <= 128 };
 
     // ---- selling -----------------------------------------------------------------------------------------------
 
@@ -328,6 +328,7 @@ public sealed class LandRentalWorker(IServiceScopeFactory scopes, ILogger<LandRe
                 using var scope = scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<LifeVerseDbContext>();
                 var count = await LandCommerce.ProcessDueAsync(db, scope.ServiceProvider.GetService<AssetStorageService>(), DateTimeOffset.UtcNow, stoppingToken);
+                count += await IslandCommerce.ProcessDueAsync(db, scope.ServiceProvider.GetService<AssetStorageService>(), DateTimeOffset.UtcNow, stoppingToken);
                 if (count > 0) logger.LogInformation("event=land_rentals_processed count={Count}", count);
                 var returned = await LandAutoReturn.RunAsync(db, scope.ServiceProvider.GetService<AssetStorageService>(), DateTimeOffset.UtcNow, stoppingToken);
                 if (returned > 0) logger.LogInformation("event=land_auto_return count={Count}", returned);

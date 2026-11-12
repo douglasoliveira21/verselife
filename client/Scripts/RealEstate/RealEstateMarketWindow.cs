@@ -13,8 +13,7 @@ namespace LifeVerse.Client.Scripts.RealEstate;
 public partial class RealEstateMarketWindow : Node
 {
     private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-BR");
-    private static readonly (string Id, string Text, bool Ready)[] Tabs = [("ilhas_venda", "Ilhas à Venda", false), ("ilhas_aluguel", "Ilhas para Alugar", false), ("homesteads", "Homesteads", false), ("terrenos", "Terrenos", true), ("comerciais", "Comerciais", true), ("residenciais", "Residenciais", true), ("todos", "Todos", true)];
-    private const string SoonTip = "Chega com a venda de ilhas inteiras.";
+    private static readonly (string Id, string Text, bool Ready)[] Tabs = [("ilhas_venda", "Ilhas à Venda", true), ("ilhas_aluguel", "Ilhas para Alugar", true), ("homesteads", "Homesteads", true), ("terrenos", "Terrenos", true), ("comerciais", "Comerciais", true), ("residenciais", "Residenciais", true), ("todos", "Todos", true)];
 
     private Control _root = null!;
     private PanelContainer _panel = null!;
@@ -103,6 +102,7 @@ public partial class RealEstateMarketWindow : Node
         _help = new AcceptDialog { Title = "Ajuda", OkButtonText = "Entendi", Unresizable = true, DialogText = "Aqui você acha terrenos à venda ou para alugar nas ilhas públicas.\n\n• As abas e os filtros mudam a lista; “Buscar” aplica.\n• “Visitar” leva você até a ilha do terreno.\n• “Comprar” e “Alugar” pedem a sua confirmação e cobram da sua carteira.\n• Terrenos seus e ofertas feitas para outra pessoa não aparecem.\n• Ilhas inteiras e Homesteads chegam com a venda de ilhas." };
         _panel.AddChild(_help);
         GetViewport().SizeChanged += Layout;
+        ApplyPreset(_tab);
     }
 
     public override void _ExitTree() { if (IsInsideTree() && GetViewport() is { } viewport) viewport.SizeChanged -= Layout; }
@@ -136,7 +136,7 @@ public partial class RealEstateMarketWindow : Node
         var row = IslandUi.Row(8);
         foreach (var (id, text, ready) in Tabs)
         {
-            var button = IslandUi.Action(text, null, IslandUi.Kind.Secondary, 38); button.ToggleMode = true; button.Disabled = !ready; button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; button.TooltipText = ready ? "" : SoonTip;
+            var button = IslandUi.Action(text, null, IslandUi.Kind.Secondary, 38); button.ToggleMode = true; button.Disabled = !ready; button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; 
             var tab = id; button.Pressed += () => _ = SelectTab(tab); _tabButtons[id] = button; row.AddChild(button);
         }
         _tabButtons[_tab].ButtonPressed = true;
@@ -150,10 +150,10 @@ public partial class RealEstateMarketWindow : Node
         var form = IslandUi.Column(8); form.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; scroll.AddChild(form);
         Label Caption(string text) => IslandUi.Text(text, 13, IslandUi.TextSecondary, true);
         form.AddChild(Caption("Buscar")); _query = IslandUi.Input("Nome, código ou ilha", 80); _query.TextSubmitted += text => _ = SearchAsync(1); form.AddChild(_query);
-        form.AddChild(Caption("Tipo de Imóvel")); _type = IslandUi.Dropdown([("Todos", "all"), ("Terrenos", "parcel"), ("Ilhas", "island")]); _type.SetItemDisabled(2, true); _type.TooltipText = SoonTip; form.AddChild(_type);
+        form.AddChild(Caption("Tipo de Imóvel")); _type = IslandUi.Dropdown([("Todos", "all"), ("Terrenos", "parcel"), ("Ilhas", "island")]); form.AddChild(_type);
         form.AddChild(Caption("Negociação")); _deal = IslandUi.Dropdown([("Todos", "any"), ("Venda", "sale"), ("Aluguel", "rent")]); form.AddChild(_deal);
         form.AddChild(Caption("Categoria")); _category = IslandUi.Dropdown([("Todas", ""), ("Residencial", "residencial"), ("Comercial", "comercial"), ("Mista", "mista"), ("Social", "social"), ("Área Comum", "comum")]); form.AddChild(_category);
-        form.AddChild(Caption("Tipo de Região")); _region = IslandUi.Dropdown([("Todos", "all"), ("Full Region", "full"), ("Homestead", "homestead")]); _region.SetItemDisabled(1, true); _region.SetItemDisabled(2, true); _region.TooltipText = SoonTip; form.AddChild(_region);
+        form.AddChild(Caption("Tipo de Região")); _region = IslandUi.Dropdown([("Todos", "all"), ("Full Region", "full"), ("Homestead", "homestead")]); form.AddChild(_region);
         form.AddChild(Caption("Área (m²)")); var area = IslandUi.Row(8); _minArea = Range("Mín."); _maxArea = Range("Máx."); area.AddChild(_minArea); area.AddChild(IslandUi.Text("–", 14, IslandUi.TextMuted)); area.AddChild(_maxArea); form.AddChild(area);
         form.AddChild(Caption("Preço (L$)")); var price = IslandUi.Row(8); _minPrice = Range("Mín."); _maxPrice = Range("Máx."); price.AddChild(_minPrice); price.AddChild(IslandUi.Text("–", 14, IslandUi.TextMuted)); price.AddChild(_maxPrice); form.AddChild(price);
         _onlyAvailable = new CheckBox { Text = "Somente disponíveis", ButtonPressed = true, FocusMode = Control.FocusModeEnum.None, TooltipText = "Desligado, mostra também o que já está alugado." }; form.AddChild(_onlyAvailable);
@@ -219,18 +219,27 @@ public partial class RealEstateMarketWindow : Node
 
     // ---- searching --------------------------------------------------------------------------------------------------------------------
 
+    /// What each tab asks for: the kind of property, the deal, the region and the category the filters are set to.
+    private void ApplyPreset(string tab)
+    {
+        var (type, deal, region, category) = tab switch
+        {
+            "ilhas_venda" => ("island", "sale", "all", ""), "ilhas_aluguel" => ("island", "rent", "all", ""), "homesteads" => ("island", "any", "homestead", ""),
+            "comerciais" => ("parcel", "any", "all", "comercial"), "residenciais" => ("parcel", "any", "all", "residencial"), "todos" => ("all", "any", "all", ""), _ => ("parcel", "any", "all", ""),
+        };
+        IslandUi.Select(_type, type); IslandUi.Select(_deal, deal); IslandUi.Select(_region, region); IslandUi.Select(_category, category);
+    }
+
     private async Task SelectTab(string id)
     {
         if (!Tabs.Any(t => t.Id == id && t.Ready)) return;
-        var before = _tab; _tab = id; foreach (var (key, button) in _tabButtons) button.ButtonPressed = key == id;
-        if (id == "comerciais") IslandUi.Select(_category, "comercial"); else if (id == "residenciais") IslandUi.Select(_category, "residencial"); else if (before is "comerciais" or "residenciais") _category.Select(0);
-        await SearchAsync(1);
+        _tab = id; foreach (var (key, button) in _tabButtons) button.ButtonPressed = key == id;
+        ApplyPreset(id); await SearchAsync(1);
     }
 
     private void Clear()
     {
-        _query.Text = ""; _type.Select(0); _deal.Select(0); _category.Select(0); _region.Select(0); _minArea.Text = _maxArea.Text = _minPrice.Text = _maxPrice.Text = ""; _onlyAvailable.ButtonPressed = true; _withVisit.ButtonPressed = false;
-        if (_tab is "comerciais" or "residenciais") { _tab = "terrenos"; foreach (var (key, button) in _tabButtons) button.ButtonPressed = key == _tab; }
+        _query.Text = ""; _minArea.Text = _maxArea.Text = _minPrice.Text = _maxPrice.Text = ""; _onlyAvailable.ButtonPressed = true; _withVisit.ButtonPressed = false; ApplyPreset(_tab);
     }
 
     private static long? Money(string text) => long.TryParse(text.Trim().Replace(".", ""), NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= 0 ? n : null;
@@ -238,8 +247,8 @@ public partial class RealEstateMarketWindow : Node
 
     private MarketFilters Filters(int page)
     {
-        var category = IslandUi.IdOf(_category); if (_tab == "comerciais") category = "comercial"; else if (_tab == "residenciais") category = "residencial";
-        return new MarketFilters(_query.Text, IslandUi.IdOf(_deal), category, Money(_minPrice.Text), Money(_maxPrice.Text), Metres(_minArea.Text), Metres(_maxArea.Text), _onlyAvailable.ButtonPressed, _withVisit.ButtonPressed, IslandUi.IdOf(_sort), page, 9);
+        var type = IslandUi.IdOf(_type); var region = IslandUi.IdOf(_region);
+        return new MarketFilters(_query.Text, IslandUi.IdOf(_deal), IslandUi.IdOf(_category), Money(_minPrice.Text), Money(_maxPrice.Text), Metres(_minArea.Text), Metres(_maxArea.Text), _onlyAvailable.ButtonPressed, _withVisit.ButtonPressed, IslandUi.IdOf(_sort), page, 9, type == "all" ? "" : type, region == "all" ? "" : region);
     }
 
     private async Task SearchAsync(int page)
@@ -350,14 +359,15 @@ public partial class RealEstateMarketWindow : Node
         content.AddChild(IslandUi.Text($"{l.Title}", 17, IslandUi.TextPrimary, true)); content.AddChild(IslandUi.Text($"{l.TypeText} na ilha {l.IslandName}", 14, IslandUi.TextSecondary));
         content.AddChild(IslandUi.Text($"{LandMath.Area(l.Area)} · {LandMath.Number(l.MaxObjects)} prims · vendedor: {l.OwnerName}", 14, IslandUi.TextSecondary));
         content.AddChild(IslandUi.Text($"Preço: {LandMath.Money(l.Price)}", 18, IslandUi.AccentSecondary, true)); content.AddChild(IslandUi.Text("O valor sai da sua carteira agora e o terreno passa a ser seu.", 13, IslandUi.TextMuted, false, true));
-        Ask("Comprar terreno", content, async () => await BuyAsync(l), "Comprar");
+        if (l.IsIsland) content.AddChild(IslandUi.Text("Você vira dono da ilha inteira, com os terrenos e objetos que o vendedor ainda tem nela. Terrenos de outras pessoas continuam sendo delas.", 13, IslandUi.TextMuted, false, true));
+        Ask(l.IsIsland ? "Comprar ilha" : "Comprar terreno", content, async () => await BuyAsync(l), "Comprar");
     }
 
     private async Task<bool> BuyAsync(MarketListing l)
     {
         var reply = await _api!.Buy(l);
         if (!reply.Ok) { Notify(LandManagementApi.Words(reply)); await SearchAsync(_page); return false; }
-        Notify($"Terreno comprado: {l.Title}."); await SearchAsync(_page); return true;
+        Notify($"{(l.IsIsland ? "Ilha comprada" : "Terreno comprado")}: {l.Title}."); await SearchAsync(_page); return true;
     }
 
     private void OpenRent(MarketListing l)
@@ -368,13 +378,14 @@ public partial class RealEstateMarketWindow : Node
         var total = IslandUi.Text("", 16, IslandUi.RentPurple, true); content.AddChild(total);
         void Update() => total.Text = $"Total agora: {LandMath.Money(l.Price * (long)periods.Value)}" + (l.RentDeposit > 0 ? $" + caução {LandMath.Money(l.RentDeposit)} (volta no fim)" : "");
         periods.ValueChanged += _ => Update(); Update();
-        Ask("Alugar terreno", content, async () => await RentAsync(l, (int)periods.Value), "Alugar");
+        if (l.IsIsland) content.AddChild(IslandUi.Text("Você cuida da ilha durante o contrato, mas ela continua sendo de quem a alugou para você.", 13, IslandUi.TextMuted, false, true));
+        Ask(l.IsIsland ? "Alugar ilha" : "Alugar terreno", content, async () => await RentAsync(l, (int)periods.Value), "Alugar");
     }
 
     private async Task<bool> RentAsync(MarketListing l, int periods)
     {
         var reply = await _api!.Rent(l, periods);
         if (!reply.Ok) { Notify(LandManagementApi.Words(reply)); await SearchAsync(_page); return false; }
-        Notify($"Terreno alugado: {l.Title}."); await SearchAsync(_page); return true;
+        Notify($"{(l.IsIsland ? "Ilha alugada" : "Terreno alugado")}: {l.Title}."); await SearchAsync(_page); return true;
     }
 }

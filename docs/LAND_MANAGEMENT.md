@@ -48,7 +48,7 @@ Cores do mapa: verde disponível, laranja à venda, roxo alugado, cinza vendido,
 
 Abre em **Mundo → Mercado imobiliário…**. Mostra terrenos à venda ou para alugar nas **ilhas públicas**.
 
-- **Abas:** Terrenos, Comerciais, Residenciais e Todos funcionam. **Ilhas à Venda, Ilhas para Alugar e Homesteads** aparecem desligadas (“chega com a venda de ilhas inteiras”); o mesmo vale para os itens “Ilhas”, “Full Region” e “Homestead” dos filtros.
+- **Abas:** Ilhas à Venda, Ilhas para Alugar, Homesteads, Terrenos, Comerciais, Residenciais e Todos. Cada aba acerta os filtros (tipo, negociação, região, categoria).
 - **Filtros:** busca (nome, código ou ilha), negociação (venda/aluguel), categoria, área e preço mínimos e máximos, “Somente disponíveis” (desligado, lista também o que já está alugado, marcado “Alugado”) e “Com visitação” (só terrenos de acesso público e com teleporte).
 - **Ordenar por:** mais recentes, menor preço, maior preço, maior área, mais prims. **Grade ou lista**, com **páginas** de 9.
 - **Cada card:** imagem (capa da ilha quando existe), código e nome, tipo, ilha, selo (À Venda, Para Alugar, Alugado), área, prims e preço (aluguel mostra “/ mensal”, “/ semanal” ou “/ N dias”).
@@ -57,4 +57,77 @@ Abre em **Mundo → Mercado imobiliário…**. Mostra terrenos à venda ou para 
 
 API: `GET /api/v1/discovery/market` devolve `{ total, page, pageSize, items }` (o `/discovery/properties` antigo continua igual). Código novo: `LandMarket` (servidor) e `RealEstateMarketWindow` (cliente). Testes: `LandMarketTests`, `RealEstateMarketSmoke`.
 
-Limites: sem migração nova; o tipo de região não existe ainda (precisa da venda de ilhas); “Visitar” entra na ilha, não teleporta até o terreno.
+Limites: “Visitar” entra na ilha, não teleporta até o terreno. Ilhas aparecem aqui só se forem públicas.
+
+---
+
+# Minhas Propriedades
+
+Abre em **Eu → Minhas propriedades…**. Mostra, com dados reais do servidor (`GET /api/v1/properties/mine`), tudo o que a pessoa tem no mercado imobiliário.
+
+| Aba | O que mostra | Botões |
+|---|---|---|
+| **Minhas Ilhas** | As ilhas que a pessoa criou: estado, prims usados/limite, visitantes/capacidade, terrenos | Gerenciar (abre o gerenciamento da ilha), Visitar, Anunciar ou Retirar anúncio (venda ou aluguel da ilha inteira) |
+| **Meus Terrenos** | Terrenos seus em todas as ilhas: estado, área, finalidade, prims, oferta, locatário | Visitar, Gerenciar (abre o gerenciamento de terrenos), Anunciar ou Retirar anúncio |
+| **Meus Aluguéis** | Terrenos seus alugados a outras pessoas | Ver Contrato, Encerrar (só depois do vencimento; o servidor confere) |
+| **Propriedades Alugadas** | Terrenos que a pessoa aluga, com o tempo que resta | Visitar, Renovar, Ver Contrato, Sair |
+| **Meus Anúncios** | Vendas e aluguéis oferecidos agora | Editar, Retirar |
+| **Pagamentos** | Compras, vendas, aluguéis pagos e recebidos, caução; filtro e totais | Recibo (com botão Copiar) |
+| **Contratos** | Aluguéis em que a pessoa é locadora ou locatária; filtro ativos/encerrados | — |
+
+**Resumo da Conta Imobiliária** (embaixo): *Imóveis Totais* (ilhas + terrenos seus + terrenos que aluga), *Em Uso* (ilhas online + terrenos seus que não estão alugados a outros + os que aluga), *Alugados* (terrenos seus com contrato ativo), *Receita Mensal* (aluguéis ativos em que a pessoa é locadora, convertidos para 30 dias) e *Próximos Vencimentos* (contratos ativos, dos dois lados, que vencem em 7 dias).
+
+Só entram em Pagamentos os registros de dinheiro (compra e venda, início e pagamento de aluguel, devolução de caução). Não há taxas no jogo, e o recibo diz isso.
+
+Código: `LandProperties` (servidor), `MyPropertiesWindow` e `PropertiesData` (cliente). Testes: `LandPropertiesTests`, `MyPropertiesSmoke`. Sem migração nova.
+
+Limites: o plano de hospedagem da plataforma (`economy.rentals`) não é mostrado aqui; “Visitar” entra na ilha, não teleporta até o terreno.
+
+---
+
+# Venda e aluguel de ilhas inteiras
+
+Uma ilha inteira entra no mercado como o terreno, com regras próprias (`IslandCommerce`, rotas em `/api/v1/worlds/islands/{id}/real-estate`).
+
+**Onde se faz:** aba **Propriedade** do gerenciamento da ilha (dono, ID, classe da região, tamanho, terrenos, situação, histórico e os botões) e o botão **Anunciar** de **Minhas Propriedades**. O mercado mostra as ilhas nas abas **Ilhas à Venda**, **Ilhas para Alugar** e **Homesteads**.
+
+**Classe da região:** deduzida do tamanho: 256 m ou mais é *Full Region*; menor, *Homestead*. Não há campo novo para isso.
+
+## Venda
+- Só o dono põe à venda: preço de 1 a 1.000.000.000, venda pública ou exclusiva para uma pessoa, descrição e se os objetos dele ficam com a ilha. A ilha de boas-vindas do jogo nunca é vendida. Venda e aluguel se excluem; não vende alugada.
+- **Compra** (uma só gravação: carteiras, livro-razão e titularidade): o comprador manda o preço que viu (se mudou, nada é cobrado); recusas: saldo insuficiente, carteira bloqueada, venda para outra pessoa, ilha já vendida, chave repetida (cobra uma vez só).
+- **O que muda de dono:** a ilha, **todos os terrenos que eram do vendedor** (os de outras pessoas continuam delas), e os objetos do vendedor, se a venda os incluía; senão eles voltam para o inventário do vendedor (nada é apagado). Ofertas dos terrenos que mudaram de dono são retiradas; **aluguéis em andamento continuam** e o aluguel passa a ir para o novo dono do terreno.
+- **Transferir Propriedade:** presente, para uma pessoa pelo nome, sem dinheiro. Não vale com a ilha à venda ou alugada.
+
+## Aluguel
+- O dono oferece (valor por período de 1 a 365 dias, mínimo e máximo de períodos, caução, dias de tolerância). Quem aluga paga os períodos ao dono e a caução vai para a custódia.
+- **A titularidade nunca muda.** O locatário recebe a permissão de **administrador** até o fim do contrato e passa a poder mexer no que é “só do dono” (reinício, terreno, ambiente, mídia, física, dados gerais, modo de acesso). Dar ou tirar o cargo de administrador continua do dono.
+- **Renovar** (só o locatário), **sair** (o locatário, a qualquer hora) e **encerrar** (o dono, só depois do vencimento). Ao terminar: a caução volta, o locatário perde as permissões e os objetos dele na ilha voltam para o inventário dele.
+- **Vencimento sem ninguém online:** o trabalhador de aluguéis (já existente) leva o contrato à tolerância e depois o encerra. Não há renovação automática de ilhas.
+- Enquanto alugada, a ilha não pode ser vendida nem transferida.
+
+## Dados
+Migração `Phase77IslandSalesAndLeases`: colunas de venda e aluguel em `world.islands` e as tabelas `world.island_leases` e `world.island_transactions`. Auditoria da ilha registra oferta, retirada, venda, transferência, aluguel e fim do aluguel. Testes: `IslandCommerceTests` (14), mercado e Minhas Propriedades com ilhas, `IslandPropertySmoke`.
+
+---
+
+# Sobre este Terreno
+
+A janela de **um terreno**. Abre com **botão direito no chão → Sobre este Terreno** (num terreno de alguém), e pelos botões **Inspecionar** e **Configurar** do Gerenciamento de Terrenos. A janela antiga “Sobre o terreno” continua para o que ela faz com **seleção**: marcar área livre, criar, dividir e unir (menu Mundo → Selecionar terreno, ou botão direito em chão sem dono).
+
+Cabeçalho: imagem, **código e nome**, ilha e área, e o estado (Disponível, À Venda, Para Alugar, Alugado, Área Comum). Oito abas:
+
+| Aba | O que mostra | Quem muda |
+|---|---|---|
+| **Geral** | imagem de divulgação, nome, descrição, área, categoria, ilha, proprietário, prims totais/usadas/livres com barra, ponto de chegada (**Usar Minha Posição**) e modo de teleporte | o dono (a equipe da ilha só muda finalidade e imagem) |
+| **Propriedade** | proprietário, tipo de titularidade (pessoa ou grupo), grupo, data de aquisição, direitos de revenda e locação, **histórico de transferência** | só leitura |
+| **Venda e Aluguel** | dono: colocar à venda, editar preço, retirar, habilitar aluguel, retirar oferta. Visitante: **Comprar**, **Alugar**, **Ver Condições** | dono; visitantes compram e alugam |
+| **Acesso** | modo (público, só a lista, privado) e lista de pessoas (permitir, banir, permitir construir, com duração) | o dono |
+| **Permissões** | quem constrói, executar scripts, devolução automática de objetos de quem não pode construir | o dono |
+| **Objetos** | prims em uso, lista de objetos, **devolver selecionados** ou **não autorizados** (com motivo) | o dono |
+| **Mídia** | música do terreno: endereço, nome, volume, tocar sozinha | o dono |
+| **Contrato** | aluguel em andamento (locador, locatário, valor, periodicidade, início, vencimento, situação, caução, renovação) com **Renovar**, **Sair** ou **Encerrar**; sem contrato, as condições da oferta | locatário e dono, pelas regras do servidor |
+
+**Servidor:** `GET /land/parcels/{id}/about` junta tudo isto (qualquer um que possa entrar na ilha lê; o que é só do dono vem com bandeiras `canManage`, `isTenant`, `isStaff`), `PUT /land/parcels/{id}/image` põe ou tira a imagem (dono do terreno ou equipe; precisa ser **imagem do inventário da própria pessoa**). A imagem do terreno é entregue a quem pode entrar na ilha, como a capa. Migração `Phase78ParcelImage` (`parcels.image_url`). Código: `LandAbout` e `ParcelInfoWindow`. Testes: `LandAboutTests` e `ParcelInfoSmoke`.
+
+**Limites:** “Criar objetos”, “Usar voz”, “Usar mídia” e “Permitir visitantes” do prompt não existem como regras separadas no jogo; ficaram em **Permissões** as regras que existem (quem constrói, scripts, devolução automática) e o acesso na aba **Acesso**. O mercado ainda mostra a capa da ilha nos cards de terrenos (a imagem do terreno entra lá numa próxima).

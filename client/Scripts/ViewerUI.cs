@@ -145,10 +145,15 @@ public partial class ViewerUI : CanvasLayer
         if (_world.GetNodeOrNull<IslandLookService>("IslandLookService") is null) _world.AddChild(new IslandLookService { Name = "IslandLookService" });
         if (_world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow") is null)
             _world.AddChild(new IslandManagement.IslandManagementWindow { Name = "IslandManagementWindow", ViewInSearch = (_, name) => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.OpenWithQuery(name), ViewProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), CurrentPosition = () => _player is null ? null : (_player.GlobalPosition.X, _player.GlobalPosition.Z) });
+        if (_world.GetNodeOrNull<RealEstate.MyPropertiesWindow>("MyPropertiesWindow") is null)
+            _world.AddChild(new RealEstate.MyPropertiesWindow { Name = "MyPropertiesWindow", Visit = JoinIslandById, ManageIsland = id => _ = _world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow")?.OpenAsync(id), ManageLand = id => _ = _world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow")?.OpenAsync(id) });
         if (_world.GetNodeOrNull<RealEstate.RealEstateMarketWindow>("RealEstateMarketWindow") is null)
             _world.AddChild(new RealEstate.RealEstateMarketWindow { Name = "RealEstateMarketWindow", Visit = JoinIslandById });
+        if (_world.GetNodeOrNull<ParcelInfo.ParcelInfoWindow>("ParcelInfoWindow") is null)
+            _world.AddChild(new ParcelInfo.ParcelInfoWindow { Name = "ParcelInfoWindow", Visit = JoinIslandById, Position = () => _player is null ? null : (_player.GlobalPosition.X, _player.GlobalPosition.Z, Mathf.PosMod(Mathf.RadToDeg(_player.Rotation.Y), 360.0)) });
+        if (_world.GetNodeOrNull<LandManager>("LandManager") is { } landForAbout) landForAbout.ParcelAbout = id => _ = _world.GetNodeOrNull<ParcelInfo.ParcelInfoWindow>("ParcelInfoWindow")?.OpenAsync(_network.CurrentIslandId, id);
         if (_world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow") is null)
-            _world.AddChild(new LandManagement.LandManagementWindow { Name = "LandManagementWindow", Inspect = parcel => _world.GetNodeOrNull<LandManager>("LandManager")?.SelectCells(parcel.Cells) });
+            _world.AddChild(new LandManagement.LandManagementWindow { Name = "LandManagementWindow", Inspect = parcel => _ = _world.GetNodeOrNull<ParcelInfo.ParcelInfoWindow>("ParcelInfoWindow")?.OpenAsync(_world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow")?.Data?.IslandId ?? _network.CurrentIslandId, parcel.Id) });
         foreach (var name in new[] { "InventoryPanel", "SocialPanel", "DiscoveryPanel", "MarketplacePanel", "SettingsPanel", "LuaScriptEditor", "HudEditor", "BuildEditorController", "TerrainEditor", "LandManager", "LandMapWindow", "GroupsWindow", "ProfileWindow", "AppearanceWindow", "SearchWindow", "ItemRightsWindow", "ItemOffersWindow" })
             foreach (var child in (_world.GetNodeOrNull(name)?.GetChildren() ?? []).OfType<PanelContainer>()) { child.Theme = theme; if (child is not FloatingWindow) FloatingWindow.MakeDraggable(child); }
     }

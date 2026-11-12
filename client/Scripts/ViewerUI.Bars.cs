@@ -38,6 +38,7 @@ public partial class ViewerUI
             ("Conversa local   Enter", () => _chat.GrabFocus(), false),
             ("Pessoas, amigos e grupos…", () => _people?.Toggle(), false),
             ("Meu perfil…", () => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenSelfAsync(), false),
+            ("Minhas propriedades…", () => _world.GetNodeOrNull<RealEstate.MyPropertiesWindow>("MyPropertiesWindow")?.Toggle(), false),
             ("Grupos e organizações…", () => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.Toggle(), false),
             ("Mensagens privadas…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
             ("Gestos", ToggleGestures, false),

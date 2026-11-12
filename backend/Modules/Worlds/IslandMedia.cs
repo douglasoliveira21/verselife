@@ -58,7 +58,7 @@ public static class IslandMediaManagement
 
     public static async Task<IResult> SaveAsync(Guid islandId, MediaRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
-        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!; if (island.OwnerUserId != me) return IslandOwnerOnly.Refusal();
+        var now = clock.GetUtcNow(); var (island, me, refusal) = await AdminOf(islandId, context, db, true, now, ct); if (island is null) return refusal!; if (!await IslandOwnerOnly.AllowsAsync(db, island, me, now)) return IslandOwnerOnly.Refusal();
         var url = (request.MusicUrl ?? "").Trim(); string json;
         if (url.Length == 0) json = "{}";
         else

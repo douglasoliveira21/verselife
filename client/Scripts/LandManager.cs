@@ -104,6 +104,8 @@ public partial class LandManager : Node3D
     private double _sinceCheck;
 
     /// Something to tell the person (a toast).
+    /// <summary>Opens "Sobre este Terreno" for a parcel (set by the main UI); without it the older selection window opens.</summary>
+    public Action<Guid>? ParcelAbout { get; set; }
     public event Action<string>? Said;
     /// The parcels or the selection changed.
     public event Action? Changed;
@@ -258,6 +260,7 @@ public partial class LandManager : Node3D
     public void AboutAt(Vector3 point)
     {
         var parcel = ParcelAt(point.X, point.Z);
+        if (parcel is not null && ParcelAbout is not null) { ParcelAbout(parcel.Id); return; } // the window about one parcel, when the game has it
         if (parcel is not null) { SelectCells([.. parcel.Cells]); return; }
         var cell = new HashSet<long> { LandMath.Key(LandMath.CellOf(point.X), LandMath.CellOf(point.Z)) };
         SelectCells(cell);

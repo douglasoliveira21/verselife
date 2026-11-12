@@ -85,7 +85,7 @@ public static class IslandAccessManagement
     public static async Task<IResult> SetModeAsync(Guid islandId, AccessModeRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
         var (island, refusal) = await AdminOf(islandId, context, db, true, ct); if (island is null) return refusal!;
-        if (!Who(context, out var asker) || island.OwnerUserId != asker) return IslandOwnerOnly.Refusal();
+        if (!Who(context, out var asker) || !await IslandOwnerOnly.AllowsAsync(db, island, asker)) return IslandOwnerOnly.Refusal();
         if (request.Mode is not (IslandAccess.Public or IslandAccess.Invite or IslandAccess.Closed)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["mode"] = ["Modo de acesso inválido."] });
         if (island.UpdatedAt != request.ExpectedUpdatedAt) return Results.Conflict(new { error = "stale", message = "Outra pessoa alterou a ilha antes de você. Recarregue para ver as mudanças.", updatedAt = island.UpdatedAt });
         Who(context, out var actor); var was = IslandAccess.ModeOf(island);
