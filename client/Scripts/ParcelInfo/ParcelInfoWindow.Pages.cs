@@ -274,7 +274,8 @@ public partial class ParcelInfoWindow
         content.AddChild(IslandUi.Text(_title.Text, 17, IslandUi.TextPrimary, true));
         var periods = IslandUi.Number(min, max, 1, $" período(s) de {Int(offer, "periodDays")} dias"); periods.Value = min; content.AddChild(periods);
         var total = IslandUi.Text("", 16, LandTerritoryMap.Rented, true); content.AddChild(total); void Update() => total.Text = $"Total agora: {LandMath.Money(price * (long)periods.Value)}" + (deposit > 0 ? $" + caução {LandMath.Money(deposit)} (volta no fim)" : ""); periods.ValueChanged += v => Update(); Update();
-        Ask("Alugar terreno", content, async () => await Do(Api.Rent(IslandId, _parcel, (int)periods.Value, price), "Terreno alugado."), "Alugar");
+        var auto = new CheckBox { Text = "Renovar sozinho a cada vencimento (cobra um período da minha carteira)", FocusMode = Control.FocusModeEnum.None, Visible = Flag(offer, "autoRenewAllowed") }; content.AddChild(auto);
+        Ask("Alugar terreno", content, async () => await Do(Api.Rent(IslandId, _parcel, (int)periods.Value, price, auto.Visible && auto.ButtonPressed), "Terreno alugado."), "Alugar");
     }
 
     // ---- Acesso ---------------------------------------------------------------------------------------------------------------------

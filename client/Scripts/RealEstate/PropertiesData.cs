@@ -78,6 +78,8 @@ public sealed class PropertiesApi(IslandManagementApi inner)
 {
     private static string Land(Guid island) => $"/api/v1/worlds/islands/{island}/land";
     public Task<IslandReply> Mine() => inner.Send("GET", "/api/v1/properties/mine");
+    public Task<IslandReply> Notices() => inner.Send("GET", "/api/v1/properties/notices?take=40");
+    public Task<IslandReply> ReadNotices(IEnumerable<Guid>? ids) => inner.Send("POST", "/api/v1/properties/notices/read", new { ids });
     public Task<IslandReply> OfferSale(Guid island, Guid parcel, long price, bool includeObjects) => inner.Send("POST", $"{Land(island)}/parcels/{parcel}/sale", new { price, includeObjects, description = "" });
     public Task<IslandReply> CancelSale(Guid island, Guid parcel) => inner.Send("DELETE", $"{Land(island)}/parcels/{parcel}/sale");
     public Task<IslandReply> OfferRent(Guid island, Guid parcel, long price, int days, int min, int max, long deposit) => inner.Send("POST", $"{Land(island)}/parcels/{parcel}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = 3, autoRenewAllowed = true });
@@ -89,7 +91,7 @@ public sealed class PropertiesApi(IslandManagementApi inner)
     private static string Estate(Guid island) => $"/api/v1/worlds/islands/{island}/real-estate";
     public Task<IslandReply> IslandOfferSale(Guid island, long price, bool includeObjects) => inner.Send("POST", $"{Estate(island)}/sale", new { price, includeObjects, description = "" });
     public Task<IslandReply> IslandCancelSale(Guid island) => inner.Send("DELETE", $"{Estate(island)}/sale");
-    public Task<IslandReply> IslandOfferRent(Guid island, long price, int days, int min, int max, long deposit) => inner.Send("POST", $"{Estate(island)}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = 3, autoRenewAllowed = false });
+    public Task<IslandReply> IslandOfferRent(Guid island, long price, int days, int min, int max, long deposit, bool autoRenewAllowed = false) => inner.Send("POST", $"{Estate(island)}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = 3, autoRenewAllowed });
     public Task<IslandReply> IslandCancelRent(Guid island) => inner.Send("DELETE", $"{Estate(island)}/rental-offer");
     public Task<IslandReply> IslandRenew(Guid island, Guid lease, int periods) => inner.Send("POST", $"{Estate(island)}/leases/{lease}/renew", new { periods, idempotencyKey = Guid.NewGuid().ToString() });
     public Task<IslandReply> IslandEnd(Guid island, Guid lease) => inner.Send("POST", $"{Estate(island)}/leases/{lease}/end", new { });

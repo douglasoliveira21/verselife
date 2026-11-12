@@ -20,6 +20,7 @@ public partial class MyPropertiesSmoke : Node3D
         public readonly List<P> Mine = [];
         public long? IslandSale, IslandRent; public int IslandDays = 30;
         public bool Down, Gone; public readonly List<string> Calls = [];
+        public readonly List<(Guid Id, string Title, bool Read)> Notices = [];
         public bool TenantRentalLive = true; public Guid TenantRental = Guid.NewGuid(); public Guid TenantParcel = Guid.NewGuid();
         private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
         private static string IslandName(Guid id) => id == IslandA ? "Ilha Tropical" : "Ilha Serenidade";
@@ -53,6 +54,8 @@ public partial class MyPropertiesSmoke : Node3D
             Calls.Add($"{method} {path}");
             if (Down) return Task.FromResult<(long, string)>((0, ""));
             if (path == "/api/v1/properties/mine") return Task.FromResult(Gone ? (404L, "") : Ok(Body()));
+            if (path.StartsWith("/api/v1/properties/notices", StringComparison.Ordinal) && method == "GET") return Task.FromResult(Ok(new { unread = Notices.Count(n => !n.Read), items = Notices.Select(n => new { id = n.Id, kind = "rent_grace", title = n.Title, body = "Detalhes", at = DateTimeOffset.UtcNow, read = n.Read }) }));
+            if (path == "/api/v1/properties/notices/read") { var ids = JsonNode.Parse(body!)!["ids"]?.AsArray().Select(x => Guid.Parse(x!.GetValue<string>())).ToHashSet(); for (var i = 0; i < Notices.Count; i++) if (ids is null || ids.Contains(Notices[i].Id)) Notices[i] = Notices[i] with { Read = true }; return Task.FromResult(Ok()); }
             var json = body is null ? null : JsonNode.Parse(body)!.AsObject();
             if (path.EndsWith("/real-estate/sale", StringComparison.Ordinal)) { if (method == "DELETE") IslandSale = null; else { if (IslandRent is not null) return Task.FromResult<(long, string)>((409, "{\"error\":\"conflict\"}")); IslandSale = json!["price"]!.GetValue<long>(); } return Task.FromResult(Ok()); }
             if (path.EndsWith("/real-estate/rental-offer", StringComparison.Ordinal)) { if (method == "DELETE") IslandRent = null; else { if (IslandSale is not null) return Task.FromResult<(long, string)>((409, "{\"error\":\"conflict\"}")); IslandRent = json!["pricePerPeriod"]!.GetValue<long>(); IslandDays = json["periodDays"]!.GetValue<int>(); } return Task.FromResult(Ok()); }
@@ -147,6 +150,19 @@ public partial class MyPropertiesSmoke : Node3D
             window.SelectTabForTesting("contratos"); await Frames(2); Require(window.RowsForTesting("contratos") >= 2, "contracts listed");
             var all = window.RowsForTesting("contratos"); window.SetContractFilterForTesting("ended"); await Frames(2); Require(window.RowsForTesting("contratos") >= 1 && window.RowsForTesting("contratos") < all, "filter: ended");
             window.SetContractFilterForTesting("live"); await Frames(2); Require(window.RowsForTesting("contratos") == all - window.Data.Contracts.Count(c => !c.Live), "filter: in force");
+
+            // --- notices -----------------------------------------------------------------------------------------------------------------------
+            Require(window.NoticeStripForTesting.Length == 0 && window.UnreadForTesting == 0, "no notices, no strip");
+            var told = new List<string>(); window.NoticeArrived = told.Add;
+            var firstNotice = Guid.NewGuid(); server.Notices.Add((firstNotice, "Aluguel vencido", false));
+            Require(await window.PollNoticesForTesting() == 1 && told.Count == 1 && told[0] == "Aluguel vencido", "a new notice is told once");
+            Require(window.UnreadForTesting == 1 && window.NoticeStripForTesting.Contains("1 aviso novo"), $"the strip says it (got {window.NoticeStripForTesting})");
+            Require(await window.PollNoticesForTesting() == 0 && told.Count == 1, "and not told again");
+            server.Notices.Add((Guid.NewGuid(), "Contrato terminou", false)); await window.PollNoticesForTesting();
+            Require(window.UnreadForTesting == 2 && window.NoticeStripForTesting.Contains("2 avisos novos") && told.Count == 2, "two unread");
+            await window.MarkNoticesReadForTesting(firstNotice); Require(window.UnreadForTesting == 1 && server.Notices[0].Read, "one marked read");
+            window.PressNoticesForTesting("Marcar como Lidos"); await Frames(4); await Task.Delay(50); await Frames(2);
+            Require(window.UnreadForTesting == 0 && window.NoticeStripForTesting.Length == 0 && server.Notices.All(n => n.Read), "all read, the strip goes away");
 
             // --- trouble ---------------------------------------------------------------------------------------------------------------------
             server.Gone = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("ainda não tem as suas propriedades"), $"an old server is told apart (got {window.NoteForTesting})");

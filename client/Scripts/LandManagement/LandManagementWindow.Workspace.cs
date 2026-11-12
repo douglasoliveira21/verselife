@@ -254,15 +254,17 @@ public partial class LandManagementWindow
         var name = IslandUi.Input("Nome do terreno", 120); content.AddChild(name);
         var description = IslandUi.TextArea("Descrição (opcional)", 70); content.AddChild(description);
         var category = IslandUi.Dropdown(LandOverviewData_Categories()); content.AddChild(category);
-        Ask("Criar parcela", content, async () => await CreateParcelAsync(name.Text.Trim(), description.Text.Trim(), IslandUi.IdOf(category)), "Criar");
+        var quota = IslandUi.Number(0, 100000, 10, "", 140); quota.TooltipText = "Quantos objetos cabem neste terreno. 0 = proporcional ao tamanho, do que a ilha ainda tem livre.";
+        var quotaRow = IslandUi.Row(8); quotaRow.AddChild(IslandUi.Text("Limite de objetos (0 = automático)", 14, IslandUi.TextSecondary)); quotaRow.AddChild(quota); content.AddChild(quotaRow);
+        Ask("Criar parcela", content, async () => await CreateParcelAsync(name.Text.Trim(), description.Text.Trim(), IslandUi.IdOf(category), (int)quota.Value), "Criar");
     }
 
     private IEnumerable<(string, string)> LandOverviewData_Categories() => (_data?.Categories is { Count: > 0 } c ? c : ["residencial", "comercial", "mista", "social", "comum"]).Select(id => (LandMath.CategoryText(id), id));
 
-    private async Task<bool> CreateParcelAsync(string name, string description, string category)
+    private async Task<bool> CreateParcelAsync(string name, string description, string category, int maxObjects = 0)
     {
         if (name.Length == 0) { Notify("Dê um nome ao terreno."); return false; }
-        var reply = await _api!.Claim(_island, name, description, _map.SelectedCells);
+        var reply = await _api!.Claim(_island, name, description, _map.SelectedCells, maxObjects > 0 ? maxObjects : null);
         if (!reply.Ok) { Notify(LandManagementApi.Words(reply)); return false; }
         if (category.Length > 0 && category != "residencial" && reply.Body.ValueKind == System.Text.Json.JsonValueKind.Object && reply.Body.TryGetProperty("id", out var id) && Guid.TryParse(id.GetString(), out var parcel)) await _api.SetCategory(_island, parcel, category);
         _map.ClearCells(); Notify("Terreno criado."); await LoadAsync(); return true;

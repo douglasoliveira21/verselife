@@ -30,11 +30,11 @@ public static class IslandRealEstate
         group.MapPost("/transfer", async (Guid islandId, TransferRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => IslandCommerce.TransferAsync(db, islandId, user, r.Name, t, ct)));
         group.MapPost("/rental-offer", async (Guid islandId, RentOfferRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            await Run(c, islandId, db, ct, user => IslandCommerce.OfferForRentAsync(db, islandId, user, new RentOffer(r.PricePerPeriod, r.PeriodDays, r.MinPeriods, r.MaxPeriods, r.DepositCoins, r.GraceDays, false), t, ct)));
+            await Run(c, islandId, db, ct, user => IslandCommerce.OfferForRentAsync(db, islandId, user, new RentOffer(r.PricePerPeriod, r.PeriodDays, r.MinPeriods, r.MaxPeriods, r.DepositCoins, r.GraceDays, r.AutoRenewAllowed), t, ct)));
         group.MapDelete("/rental-offer", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => IslandCommerce.CancelRentOfferAsync(db, islandId, user, t, ct)));
         group.MapPost("/rent", async (Guid islandId, RentRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            await Run(c, islandId, db, ct, user => IslandCommerce.RentAsync(db, islandId, user, r.Periods, r.IdempotencyKey, r.ExpectedPrice, t, ct)));
+            await Run(c, islandId, db, ct, user => IslandCommerce.RentAsync(db, islandId, user, r.Periods, r.IdempotencyKey, r.ExpectedPrice, t, ct, r.AutoRenew)));
         group.MapPost("/leases/{leaseId:guid}/renew", async (Guid islandId, Guid leaseId, RenewRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => IslandCommerce.RenewAsync(db, leaseId, user, r.Periods, r.IdempotencyKey, t, ct)));
         group.MapPost("/leases/{leaseId:guid}/end", async (Guid islandId, Guid leaseId, HttpContext c, LifeVerseDbContext db, AssetStorageService storage, TimeProvider t, CancellationToken ct) =>
@@ -74,8 +74,8 @@ public static class IslandRealEstate
             islandId = island.Id, name = island.Name, size = island.Size, region = IslandCommerce.RegionOf(island), ownerId = island.OwnerUserId, owner = Name(island.OwnerUserId), createdAt = island.CreatedAt, parcels,
             isOwner = island.OwnerUserId == viewer, isTenant = lease?.TenantUserId == viewer, isWelcome = island.IsWelcome,
             sale = island.SalePrice is { } price && forMe ? new { price, exclusive = island.SaleBuyerUserId is not null, includeObjects = island.SaleIncludesObjects, description = island.SaleDescription } : null,
-            rentOffer = island.RentPrice is { } rent ? new { price = rent, periodDays = island.RentPeriodDays, minPeriods = island.RentMinPeriods, maxPeriods = island.RentMaxPeriods, deposit = island.RentDeposit, graceDays = island.RentGraceDays } : null,
-            lease = lease is not null && (staff || lease.TenantUserId == viewer) ? new { id = lease.Id, tenant = Name(lease.TenantUserId), landlord = Name(lease.LandlordUserId), price = lease.PricePerPeriod, periodDays = lease.PeriodDays, status = lease.Status, startsAt = lease.StartsAt, expiresAt = lease.ExpiresAt, deposit = lease.DepositCoins } : null,
+            rentOffer = island.RentPrice is { } rent ? new { price = rent, periodDays = island.RentPeriodDays, minPeriods = island.RentMinPeriods, maxPeriods = island.RentMaxPeriods, deposit = island.RentDeposit, graceDays = island.RentGraceDays, autoRenewAllowed = island.RentAutoRenewAllowed } : null,
+            lease = lease is not null && (staff || lease.TenantUserId == viewer) ? new { id = lease.Id, tenant = Name(lease.TenantUserId), landlord = Name(lease.LandlordUserId), price = lease.PricePerPeriod, periodDays = lease.PeriodDays, status = lease.Status, startsAt = lease.StartsAt, expiresAt = lease.ExpiresAt, deposit = lease.DepositCoins, autoRenew = lease.AutoRenew } : null,
             history = history.Select(t => new { at = t.CreatedAt, type = t.Type, amount = t.Amount, from = t.FromUserId is { } f ? Name(f) : null, to = t.ToUserId is { } to ? Name(to) : null }),
         };
     }

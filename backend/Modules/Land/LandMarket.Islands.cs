@@ -40,7 +40,7 @@ public static partial class LandMarket
         foreach (var avatar in await db.Avatars.AsNoTracking().Where(a => owners.Contains(a.UserId)).Select(a => new { a.UserId, a.DisplayName }).ToListAsync(ct)) names[avatar.UserId] = avatar.DisplayName;
         var items = rows.Select(r => new MarketItem(Guid.Empty, r.i.Id, r.i.Name, r.i.CoverImageUrl, "", r.i.Name, r.i.Description, r.i.Category, r.area, LandBudget.IslandObjects(r.i),
             r.saleOk ? "sale" : "rent", r.saleOk ? "sale" : r.isRented ? "rented" : "rent", r.price ?? 0, r.saleOk ? 0 : (r.isRented ? r.leaseDays ?? 0 : r.i.RentPeriodDays), names.GetValueOrDefault(r.i.OwnerUserId, "—"),
-            !r.i.AccessClosed, r.i.UpdatedAt, r.i.RentMinPeriods, r.i.RentMaxPeriods, r.i.RentDeposit, "island", IslandCommerce.RegionOf(r.i))).ToList();
+            !r.i.AccessClosed, r.i.UpdatedAt, r.i.RentMinPeriods, r.i.RentMaxPeriods, r.i.RentDeposit, "island", IslandCommerce.RegionOf(r.i), "", r.i.RentAutoRenewAllowed)).ToList();
         if (query.Sort == "prims") items = [.. items.OrderByDescending(i => i.MaxObjects).Take(wanted)];
         return (total, items);
     }

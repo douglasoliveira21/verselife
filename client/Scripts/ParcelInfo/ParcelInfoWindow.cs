@@ -23,7 +23,7 @@ public sealed class ParcelInfoApi(IslandManagementApi inner)
     public Task<IslandReply> OfferRent(Guid island, Guid parcel, long price, int days, int min, int max, long deposit, int grace) => inner.Send("POST", $"{Parcel(island, parcel)}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = grace, autoRenewAllowed = true });
     public Task<IslandReply> CancelRent(Guid island, Guid parcel) => inner.Send("DELETE", $"{Parcel(island, parcel)}/rental-offer");
     public Task<IslandReply> Buy(Guid island, Guid parcel, long price) => inner.Send("POST", $"{Parcel(island, parcel)}/buy", new { expectedPrice = price, idempotencyKey = Guid.NewGuid().ToString() });
-    public Task<IslandReply> Rent(Guid island, Guid parcel, int periods, long price) => inner.Send("POST", $"{Parcel(island, parcel)}/rent", new { periods, autoRenew = false, expectedPrice = price, idempotencyKey = Guid.NewGuid().ToString() });
+    public Task<IslandReply> Rent(Guid island, Guid parcel, int periods, long price, bool autoRenew = false) => inner.Send("POST", $"{Parcel(island, parcel)}/rent", new { periods, autoRenew, expectedPrice = price, idempotencyKey = Guid.NewGuid().ToString() });
     public Task<IslandReply> Renew(Guid island, Guid rental, int periods) => inner.Send("POST", $"{Land(island)}/rentals/{rental}/renew", new { periods, idempotencyKey = Guid.NewGuid().ToString() });
     public Task<IslandReply> End(Guid island, Guid rental) => inner.Send("POST", $"{Land(island)}/rentals/{rental}/end", new { });
     public Task<IslandReply> Access(Guid island, Guid parcel) => inner.Send("GET", $"{Parcel(island, parcel)}/access");

@@ -19,6 +19,7 @@ public sealed class LandManagementApi(IslandManagementApi inner)
             "outside_island" => "A área passa dos limites da ilha.",
             "too_big" => "A área é grande demais para um terreno.",
             "empty" => "Marque algum quadrado no mapa.",
+            "budget_exceeded" => "A ilha não tem tantos objetos livres. Use um limite menor.",
             "bad_category" => "Finalidade inválida.",
             "forbidden" => "Você não tem permissão para isso nesta ilha.",
             "owner_only" => "Só o dono da ilha pode fazer isso.",
@@ -35,8 +36,8 @@ public sealed class LandManagementApi(IslandManagementApi inner)
     public Task<IslandReply> Overview(Guid island) => inner.Send("GET", $"{Base(island)}/overview");
     public Task<IslandReply> SetCategory(Guid island, Guid parcel, string category) => inner.Send("PUT", $"{Base(island)}/parcels/{parcel}/category", new { category });
     public Task<IslandReply> Rename(Guid island, Guid parcel, string name, string description, int expectedRevision) => inner.Send("PATCH", $"/api/v1/worlds/islands/{island}/parcels/{parcel}", new { name, description, expectedRevision });
-    public Task<IslandReply> Claim(Guid island, string name, string description, IEnumerable<long> cells) =>
-        inner.Send("POST", $"{Base(island)}/claim", new { name, description, cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }) });
+    public Task<IslandReply> Claim(Guid island, string name, string description, IEnumerable<long> cells, int? maxObjects = null) =>
+        inner.Send("POST", $"{Base(island)}/claim", new { name, description, cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), maxObjects });
     public Task<IslandReply> Split(Guid island, Guid parcel, IEnumerable<long> cells, string name) =>
         inner.Send("POST", $"{Base(island)}/parcels/{parcel}/split", new { cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), name });
     public Task<IslandReply> Merge(Guid island, IEnumerable<Guid> parcels, Guid primary) => inner.Send("POST", $"{Base(island)}/merge", new { parcelIds = parcels, primaryId = primary });

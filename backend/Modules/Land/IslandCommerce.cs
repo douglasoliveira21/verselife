@@ -108,6 +108,7 @@ public static class IslandCommerce
         var ledger = await LandCommerce.LedgerAsync(db, key!, "island_sale", buyer, buyer, [(seller, price)], new { islandId, seller }, now, ct);
         var (parcels, moved, toReturn) = await HandOverAsync(db, island, seller, buyer, includeObjects, now, ct);
         Record(db, islandId, "sale", buyer, seller, price, new { parcels, objectsMoved = moved, objectsReturned = toReturn.Length }, ledger.Id, now);
+        PropertyNotices.Add(db, seller, "sold", $"A sua ilha {island.Name} foi vendida por {LandCommerce.Money(price)}", $"Comprador: {await PropertyNotices.NameAsync(db, buyer, ct)}. O valor já está na sua carteira e a ilha, os terrenos e os objetos incluídos passaram para ele.", $"sold:{islandId}:{ledger.Id}", now);
         IslandAudit.Add(db, islandId, buyer, "administração", "island_sold", "A ilha foi vendida", "Propriedade", new { owner = seller }, new { owner = buyer, price, parcels }, now);
         var saved = await SaveAsync(db, ct, new { islandId, price, parcels, objectsMoved = moved });
         if (!saved.Ok) return saved;
@@ -144,7 +145,7 @@ public static class IslandCommerce
         if (offer.PeriodDays is < 1 or > 365 || offer.MinPeriods < 1 || offer.MaxPeriods < offer.MinPeriods || offer.MaxPeriods > 120 || offer.GraceDays is < 0 or > 60) return CommerceResult.Fail("bad_terms");
         if (await HasLiveLeaseAsync(db, islandId, ct)) return CommerceResult.Fail("rented");
         var now = clock.GetUtcNow();
-        island.RentPrice = offer.PricePerPeriod; island.RentPeriodDays = offer.PeriodDays; island.RentMinPeriods = offer.MinPeriods; island.RentMaxPeriods = offer.MaxPeriods; island.RentDeposit = offer.DepositCoins; island.RentGraceDays = offer.GraceDays;
+        island.RentPrice = offer.PricePerPeriod; island.RentPeriodDays = offer.PeriodDays; island.RentMinPeriods = offer.MinPeriods; island.RentMaxPeriods = offer.MaxPeriods; island.RentDeposit = offer.DepositCoins; island.RentGraceDays = offer.GraceDays; island.RentAutoRenewAllowed = offer.AutoRenewAllowed;
         island.SalePrice = null; island.SaleBuyerUserId = null; Touch(island, now);
         Record(db, islandId, "rent_listed", actor, null, offer.PricePerPeriod, new { offer.PeriodDays, offer.MinPeriods, offer.MaxPeriods, offer.DepositCoins }, null, now);
         IslandAudit.Add(db, islandId, actor, "administração", "island_rent_listed", "A ilha foi oferecida para aluguel", "Propriedade", null, new { price = offer.PricePerPeriod, days = offer.PeriodDays }, now);
@@ -168,7 +169,7 @@ public static class IslandCommerce
         db.IslandPermissions.Add(permission); await Task.CompletedTask; return permission;
     }
 
-    public static async Task<CommerceResult> RentAsync(LifeVerseDbContext db, Guid islandId, Guid tenant, int periods, string? key, long expectedPrice, TimeProvider clock, CancellationToken ct)
+    public static async Task<CommerceResult> RentAsync(LifeVerseDbContext db, Guid islandId, Guid tenant, int periods, string? key, long expectedPrice, TimeProvider clock, CancellationToken ct, bool autoRenew = false)
     {
         if (!LandCommerce.KeyOk(key)) return CommerceResult.Fail("bad_key");
         if (await db.LedgerTransactions.AnyAsync(t => t.IdempotencyKey == key, ct)) return CommerceResult.Done(new { islandId, alreadyDone = true });
@@ -186,9 +187,10 @@ public static class IslandCommerce
         var ledger = await LandCommerce.LedgerAsync(db, key!, "island_rental", tenant, tenant, [(island.OwnerUserId, rent), (null, deposit)], new { islandId, periods }, now, ct);
         var expires = now.AddDays((double)island.RentPeriodDays * periods);
         var permission = await GrantAdminAsync(db, island, tenant, expires, now, ct);
-        var lease = new IslandLease { Id = Guid.NewGuid(), IslandId = islandId, LandlordUserId = island.OwnerUserId, TenantUserId = tenant, PricePerPeriod = price, PeriodDays = island.RentPeriodDays, DepositCoins = deposit, GraceDays = island.RentGraceDays, Periods = periods, Status = "active", StartsAt = now, ExpiresAt = expires, CreatedAt = now, PermissionId = permission.Id };
+        var lease = new IslandLease { Id = Guid.NewGuid(), IslandId = islandId, LandlordUserId = island.OwnerUserId, TenantUserId = tenant, PricePerPeriod = price, PeriodDays = island.RentPeriodDays, DepositCoins = deposit, GraceDays = island.RentGraceDays, Periods = periods, AutoRenew = autoRenew && island.RentAutoRenewAllowed, Status = "active", StartsAt = now, ExpiresAt = expires, CreatedAt = now, PermissionId = permission.Id };
         db.IslandLeases.Add(lease); island.RentPrice = null; Touch(island, now);
         Record(db, islandId, "rent_start", tenant, island.OwnerUserId, rent, new { periods, deposit, leaseId = lease.Id }, ledger.Id, now);
+        PropertyNotices.Add(db, island.OwnerUserId, "rented", $"A sua ilha {island.Name} foi alugada", $"Locatário: {await PropertyNotices.NameAsync(db, tenant, ct)}, {periods} período(s), até {expires.ToLocalTime():dd/MM/yyyy}. Você recebeu {LandCommerce.Money(rent)}.", $"rented:{lease.Id}", now);
         IslandAudit.Add(db, islandId, tenant, "administração", "island_rented", "A ilha foi alugada", "Propriedade", null, new { tenant, periods, expires }, now);
         return await SaveAsync(db, ct, new { leaseId = lease.Id, expiresAt = expires, paid = total });
     }
@@ -200,18 +202,24 @@ public static class IslandCommerce
         var lease = await db.IslandLeases.SingleOrDefaultAsync(l => l.Id == leaseId && l.TenantUserId == tenant && (l.Status == "active" || l.Status == "grace"), ct);
         if (lease is null) return CommerceResult.Fail("not_found");
         if (periods is < 1 or > 120) return CommerceResult.Fail("bad_periods");
-        var now = clock.GetUtcNow(); var cost = lease.PricePerPeriod * periods;
+        return await ChargeRenewalAsync(db, lease, periods, key!, "island_renewal", clock.GetUtcNow(), ct);
+    }
+
+    private static async Task<CommerceResult> ChargeRenewalAsync(LifeVerseDbContext db, IslandLease lease, int periods, string key, string type, DateTimeOffset now, CancellationToken ct)
+    {
+        var tenant = lease.TenantUserId; var cost = lease.PricePerPeriod * periods;
         var tenantWallet = await LandCommerce.WalletOfAsync(db, tenant, now, ct); var landlordWallet = await LandCommerce.WalletOfAsync(db, lease.LandlordUserId, now, ct);
         if (tenantWallet.IsBlocked || landlordWallet.IsBlocked) return CommerceResult.Fail("wallet_blocked");
         if (tenantWallet.AvailableCoins < cost) return CommerceResult.Fail("insufficient_balance");
         tenantWallet.AvailableCoins -= cost; landlordWallet.AvailableCoins += cost; tenantWallet.UpdatedAt = landlordWallet.UpdatedAt = now;
-        var ledger = await LandCommerce.LedgerAsync(db, key!, "island_renewal", tenant, tenant, [(lease.LandlordUserId, cost)], new { leaseId, periods }, now, ct);
-        var from = lease.ExpiresAt > now ? lease.ExpiresAt : now; lease.ExpiresAt = from.AddDays((double)lease.PeriodDays * periods); lease.Periods += periods; lease.Status = "active"; lease.GraceUntil = null;
+        var ledger = await LandCommerce.LedgerAsync(db, key, type, tenant, tenant, [(lease.LandlordUserId, cost)], new { leaseId = lease.Id, periods }, now, ct);
+        var from = type == "island_autorenewal" || lease.ExpiresAt > now ? lease.ExpiresAt : now; // the clock renewing right on time does not eat into the new period
+        lease.ExpiresAt = from.AddDays((double)lease.PeriodDays * periods); lease.Periods += periods; lease.Status = "active"; lease.GraceUntil = null;
         var permission = lease.PermissionId is { } pid ? await db.IslandPermissions.SingleOrDefaultAsync(p => p.Id == pid, ct) : null;
         if (permission is null) { permission = new IslandPermission { Id = Guid.NewGuid(), IslandId = lease.IslandId, UserId = tenant, Permission = "admin", PrincipalType = "user", GrantedByUserId = lease.LandlordUserId, CreatedAt = now }; db.IslandPermissions.Add(permission); lease.PermissionId = permission.Id; }
         permission.RevokedAt = null; permission.ExpiresAt = lease.ExpiresAt;
-        Record(db, lease.IslandId, "rent_payment", tenant, lease.LandlordUserId, cost, new { periods, leaseId }, ledger.Id, now);
-        return await SaveAsync(db, ct, new { leaseId, expiresAt = lease.ExpiresAt, paid = cost });
+        Record(db, lease.IslandId, "rent_payment", tenant, lease.LandlordUserId, cost, new { periods, leaseId = lease.Id, auto = type == "island_autorenewal" }, ledger.Id, now);
+        return await SaveAsync(db, ct, new { leaseId = lease.Id, expiresAt = lease.ExpiresAt, paid = cost });
     }
 
     /// <summary>The tenant may leave at any time; the owner may only close a contract that has run out. The deposit goes back to the tenant, the tenant loses the administrator permission and the objects the tenant owns on the island go back to the tenant's inventory.</summary>
@@ -241,6 +249,7 @@ public static class IslandCommerce
         }
         Record(db, lease.IslandId, "rent_end", lease.LandlordUserId, lease.TenantUserId, lease.DepositCoins, new { reason, leaseId = lease.Id }, ledgerId, now);
         IslandAudit.Add(db, lease.IslandId, lease.TenantUserId, "administração", "island_rent_ended", "O aluguel da ilha terminou", "Propriedade", null, new { reason }, now);
+        if (reason == "expired") { var endedName = await db.Islands.AsNoTracking().Where(i => i.Id == lease.IslandId).Select(i => i.Name).FirstOrDefaultAsync(ct) ?? "a ilha"; PropertyNotices.Add(db, lease.TenantUserId, "rent_ended", $"O aluguel da ilha {endedName} terminou", "O prazo de tolerância acabou. Os seus objetos voltaram para o seu inventário e a caução foi devolvida.", $"ended:{lease.Id}:t", now); PropertyNotices.Add(db, lease.LandlordUserId, "rent_ended_owner", $"O aluguel da ilha {endedName} terminou", "O contrato não foi renovado e a ilha está livre de novo.", $"ended:{lease.Id}:l", now); }
         var saved = await SaveAsync(db, ct, new { leaseId = lease.Id, refunded = lease.DepositCoins });
         if (!saved.Ok || storage is null) return saved;
         var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(i => i.Id == lease.IslandId, ct); if (island is null) return saved;
@@ -253,9 +262,27 @@ public static class IslandCommerce
     public static async Task<int> ProcessDueAsync(LifeVerseDbContext db, AssetStorageService? storage, DateTimeOffset now, CancellationToken ct)
     {
         var done = 0;
-        foreach (var lease in await db.IslandLeases.Where(l => (l.Status == "active" && l.ExpiresAt <= now) || (l.Status == "grace" && l.GraceUntil <= now)).ToListAsync(ct))
+        foreach (var due in await db.IslandLeases.AsNoTracking().Where(l => (l.Status == "active" && l.ExpiresAt <= now) || (l.Status == "grace" && l.GraceUntil <= now)).Select(l => l.Id).ToListAsync(ct))
         {
-            if (lease.Status == "active" && lease.GraceDays > 0) { lease.Status = "grace"; lease.GraceUntil = lease.ExpiresAt.AddDays(lease.GraceDays); if (lease.GraceUntil > now) { await db.SaveChangesAsync(ct); done++; continue; } }
+            var lease = await db.IslandLeases.SingleAsync(l => l.Id == due, ct);
+            var island = await db.Islands.AsNoTracking().Where(i => i.Id == lease.IslandId).Select(i => i.Name).FirstOrDefaultAsync(ct) ?? "a ilha";
+            if (lease.Status == "active" && lease.AutoRenew)
+            {
+                var renewed = await ChargeRenewalAsync(db, lease, 1, $"island-auto:{lease.Id}:{lease.ExpiresAt.UtcTicks}", "island_autorenewal", now, ct);
+                if (renewed.Ok) { done++; continue; }
+                db.ChangeTracker.Clear(); lease = await db.IslandLeases.SingleAsync(l => l.Id == due, ct);
+                PropertyNotices.Add(db, lease.TenantUserId, "renewal_failed", $"Não consegui renovar o aluguel da ilha {island}", "O saldo da carteira não deu para cobrar mais um período. O contrato entrou em tolerância: renove antes que termine.", $"renewfail:{lease.Id}:{lease.ExpiresAt.UtcTicks}", now);
+            }
+            if (lease.Status == "active" && lease.GraceDays > 0)
+            {
+                lease.Status = "grace"; lease.GraceUntil = lease.ExpiresAt.AddDays(lease.GraceDays);
+                if (lease.GraceUntil > now)
+                {
+                    PropertyNotices.Add(db, lease.TenantUserId, "rent_grace", $"O aluguel da ilha {island} venceu: você está no prazo de tolerância", $"Renove até {lease.GraceUntil.Value.ToLocalTime():dd/MM/yyyy HH:mm}; depois dele o contrato termina.", $"grace:{lease.Id}", now);
+                    PropertyNotices.Add(db, lease.LandlordUserId, "rent_grace_owner", $"O aluguel da ilha {island} venceu e está em tolerância", $"Se não for renovado até {lease.GraceUntil.Value.ToLocalTime():dd/MM/yyyy HH:mm}, termina sozinho.", $"grace:{lease.Id}:l", now);
+                    await db.SaveChangesAsync(ct); done++; continue;
+                }
+            }
             await FinishAsync(db, storage, lease, "expired", now, ct); done++;
         }
         return done;

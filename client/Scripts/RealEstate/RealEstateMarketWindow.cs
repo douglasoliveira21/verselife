@@ -379,13 +379,14 @@ public partial class RealEstateMarketWindow : Node
         var total = IslandUi.Text("", 16, IslandUi.RentPurple, true); content.AddChild(total);
         void Update() => total.Text = $"Total agora: {LandMath.Money(l.Price * (long)periods.Value)}" + (l.RentDeposit > 0 ? $" + caução {LandMath.Money(l.RentDeposit)} (volta no fim)" : "");
         periods.ValueChanged += _ => Update(); Update();
+        var auto = new CheckBox { Text = "Renovar sozinho a cada vencimento (cobra um período da minha carteira)", FocusMode = Control.FocusModeEnum.None, Visible = l.AutoRenewAllowed }; content.AddChild(auto);
         if (l.IsIsland) content.AddChild(IslandUi.Text("Você cuida da ilha durante o contrato, mas ela continua sendo de quem a alugou para você.", 13, IslandUi.TextMuted, false, true));
-        Ask(l.IsIsland ? "Alugar ilha" : "Alugar terreno", content, async () => await RentAsync(l, (int)periods.Value), "Alugar");
+        Ask(l.IsIsland ? "Alugar ilha" : "Alugar terreno", content, async () => await RentAsync(l, (int)periods.Value, auto.Visible && auto.ButtonPressed), "Alugar");
     }
 
-    private async Task<bool> RentAsync(MarketListing l, int periods)
+    private async Task<bool> RentAsync(MarketListing l, int periods, bool autoRenew = false)
     {
-        var reply = await _api!.Rent(l, periods);
+        var reply = await _api!.Rent(l, periods, autoRenew);
         if (!reply.Ok) { Notify(LandManagementApi.Words(reply)); await SearchAsync(_page); return false; }
         Notify($"{(l.IsIsland ? "Ilha alugada" : "Terreno alugado")}: {l.Title}."); await SearchAsync(_page); return true;
     }

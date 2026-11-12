@@ -33,6 +33,20 @@ public partial class MyPropertiesWindow : Node
     private Vector2? _viewportOverride;
     private double _toastLeft;
     private readonly Dictionary<string, int> _rows = [];
+    private NoticesData _notices = new();
+    private Control _noticeStrip = null!;
+    private Label _noticeText = null!;
+    private readonly HashSet<Guid> _told = [];
+    private double _pollIn = 8, _pollEvery = 300;
+    private bool _firstPoll = true;
+    /// <summary>Said to the person when a new notice arrives (the main UI shows it as a toast).</summary>
+    public Action<string>? NoticeArrived { get; set; }
+    public int UnreadForTesting => _notices.Unread;
+    public IReadOnlyList<PropNotice> NoticesForTesting => _notices.Items;
+    public string NoticeStripForTesting => _noticeStrip.Visible ? _noticeText.Text : "";
+    public async Task<int> PollNoticesForTesting() => await PollNoticesAsync();
+    public async Task MarkNoticesReadForTesting(params Guid[] ids) => await MarkNoticesReadAsync(ids.Length == 0 ? null : ids);
+    public void PressNoticesForTesting(string text) { if (_noticeStrip.FindChildren("*", "Button", true, false).OfType<Button>().FirstOrDefault(b => b.Text.Trim() == text) is { } b) b.EmitSignal(BaseButton.SignalName.Pressed); }
 
     public Action<Guid>? ManageIsland { get; set; }
     public Action<Guid>? ManageLand { get; set; }
@@ -80,6 +94,11 @@ public partial class MyPropertiesWindow : Node
         {
             var button = IslandUi.Action(text, null, IslandUi.Kind.Secondary, 38); button.ToggleMode = true; button.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; var tab = id; button.Pressed += () => SelectTab(tab); _tabButtons[id] = button; tabs.AddChild(button);
         }
+        _noticeStrip = new PanelContainer { Visible = false }; ((PanelContainer)_noticeStrip).AddThemeStyleboxOverride("panel", IslandUi.Box(new Color(IslandUi.AccentSecondary, .12f), IslandUi.AccentSecondary, IslandUi.RadiusCard, 1, 14, 8));
+        var noticeRow = IslandUi.Row(10); _noticeStrip.AddChild(noticeRow); _noticeText = IslandUi.Text("", 14, IslandUi.TextPrimary, true, true); _noticeText.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; noticeRow.AddChild(_noticeText);
+        var seeNotices = IslandUi.Action("Ver Avisos", "bulb", IslandUi.Kind.Orange, 34); seeNotices.Pressed += ShowNotices; noticeRow.AddChild(seeNotices);
+        var readNotices = IslandUi.Action("Marcar como Lidos", null, IslandUi.Kind.Secondary, 34); readNotices.Pressed += () => _ = MarkNoticesReadAsync(null); noticeRow.AddChild(readNotices);
+        column.AddChild(_noticeStrip);
         _note = IslandUi.Text("", 14, IslandUi.TextMuted, false, true); column.AddChild(_note);
         var scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; column.AddChild(scroll);
         _content = IslandUi.Column(12); _content.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; scroll.AddChild(_content);
@@ -97,7 +116,13 @@ public partial class MyPropertiesWindow : Node
     }
 
     public override void _ExitTree() { if (IsInsideTree() && GetViewport() is { } viewport) viewport.SizeChanged -= Layout; }
-    public override void _Process(double delta) { if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; } }
+    public override void _Process(double delta)
+    {
+        if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; }
+        if (_api is null) return; _pollIn -= delta; if (_pollIn > 0) return; _pollIn = _pollEvery;
+        if (_transport is null && GetNodeOrNull<LifeVerse.Client.Autoloads.SessionManager>("/root/SessionManager") is not { IsAuthenticated: true }) return; // nobody is signed in
+        _ = PollNoticesAsync();
+    }
 
     // ---- structure --------------------------------------------------------------------------------------------------------------
 
@@ -176,6 +201,7 @@ public partial class MyPropertiesWindow : Node
         if (!reply.Ok) { _note.Text = reply.Status == 404 ? "O servidor ainda não tem as suas propriedades. Elas chegam com a próxima publicação da API." : reply.Status == 0 ? "Sem conexão com o servidor." : LandManagementApi.Words(reply); return; }
         var data = PropertiesData.Parse(reply.Body); if (data is null) { _note.Text = "O servidor mandou uma resposta que não entendi."; return; }
         _data = data; _note.Text = ""; Render();
+        await PollNoticesAsync();
     }
 
     private void SelectTab(string id) { _tab = id; foreach (var (key, button) in _tabButtons) button.ButtonPressed = key == id; Render(); }
@@ -185,6 +211,46 @@ public partial class MyPropertiesWindow : Node
         var reply = await call;
         if (!reply.Ok) { Notify(LandManagementApi.Words(reply)); return false; }
         Notify(done); await LoadAsync(); return true;
+    }
+
+    // ---- notices ----------------------------------------------------------------------------------------------------------------
+
+    private void ShowNoticeStrip()
+    {
+        _noticeStrip.Visible = _notices.Unread > 0;
+        if (_notices.Unread > 0) _noticeText.Text = _notices.Unread == 1 ? $"Você tem 1 aviso novo: {_notices.Items.FirstOrDefault(n => !n.Read)?.Title}" : $"Você tem {_notices.Unread} avisos novos. O mais recente: {_notices.Items.FirstOrDefault(n => !n.Read)?.Title}";
+    }
+
+    /// <summary>Asks for the notices; tells the person (once) about the ones not seen yet. Returns how many new ones were told.</summary>
+    private async Task<int> PollNoticesAsync()
+    {
+        if (_api is null) return 0;
+        var reply = await _api.Notices(); if (!reply.Ok || NoticesData.Parse(reply.Body) is not { } data) return 0;
+        _notices = data; ShowNoticeStrip();
+        var fresh = data.Items.Where(n => !n.Read && _told.Add(n.Id)).ToList();
+        if (fresh.Count > 0) NoticeArrived?.Invoke(_firstPoll && fresh.Count > 1 ? $"Você tem {fresh.Count} avisos novos sobre os seus imóveis." : fresh.Count == 1 ? fresh[0].Title : $"{fresh.Count} avisos novos sobre os seus imóveis. O mais recente: {fresh[0].Title}");
+        _firstPoll = false; return fresh.Count;
+    }
+
+    private async Task MarkNoticesReadAsync(IEnumerable<Guid>? ids)
+    {
+        if (_api is null) return;
+        var reply = await _api.ReadNotices(ids?.ToList()); if (!reply.Ok) { Notify(LandManagementApi.Words(reply)); return; }
+        await PollNoticesAsync();
+    }
+
+    private void ShowNotices()
+    {
+        var content = IslandUi.Column(10); content.CustomMinimumSize = new Vector2(560, 0);
+        if (_notices.Items.Count == 0) content.AddChild(IslandUi.Text("Nenhum aviso.", 15, IslandUi.TextMuted));
+        var list = IslandUi.Column(8);
+        foreach (var n in _notices.Items.Take(25))
+        {
+            var card = new PanelContainer(); card.AddThemeStyleboxOverride("panel", IslandUi.Box(IslandUi.InputBackground, n.Read ? IslandUi.BorderDefault : IslandUi.AccentSecondary, 8, 1, 10, 6)); var col = IslandUi.Column(2); card.AddChild(col);
+            col.AddChild(IslandUi.Text(n.Title, 14, n.Read ? IslandUi.TextSecondary : IslandUi.TextPrimary, true, true)); if (n.Body.Length > 0) col.AddChild(IslandUi.Text(n.Body, 13, IslandUi.TextMuted, false, true)); col.AddChild(IslandUi.Text(Moment(n.At), 12, IslandUi.TextMuted)); list.AddChild(card);
+        }
+        var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(0, 340), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled }; scroll.AddChild(list); list.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; content.AddChild(scroll);
+        Ask("Avisos", content, async () => { await MarkNoticesReadAsync(null); return true; }, "Marcar como lidos");
     }
 
     // ---- drawing -----------------------------------------------------------------------------------------------------------------------
@@ -397,14 +463,15 @@ public partial class MyPropertiesWindow : Node
         var period = IslandUi.Dropdown([("7 dias", "7"), ("14 dias", "14"), ("30 dias", "30")]); IslandUi.Select(period, editing is { PeriodDays: > 0 } ? editing.PeriodDays.ToString(Pt) : "30"); content.AddChild(period);
         var deposit = IslandUi.Number(0, 1_000_000_000, 1, " L$ de caução"); content.AddChild(deposit);
         var objects = new CheckBox { Text = "Incluir os meus objetos na venda", ButtonPressed = true, FocusMode = Control.FocusModeEnum.None }; content.AddChild(objects);
+        var islandAuto = new CheckBox { Text = "Deixar quem aluga renovar sozinho a cada vencimento", FocusMode = Control.FocusModeEnum.None }; content.AddChild(islandAuto);
         var note = IslandUi.Text("", 13, IslandUi.TextMuted, false, true); content.AddChild(note);
-        void Sync() { var rent = IslandUi.IdOf(kind) == "rent"; period.Visible = rent; deposit.Visible = rent; objects.Visible = !rent; price.Suffix = rent ? " L$ por período" : " L$"; note.Text = rent ? "Quem alugar cuida da ilha durante o contrato, mas ela continua sua." : "Quem comprar passa a ser o dono da ilha inteira, com os terrenos e objetos que ainda são seus."; }
+        void Sync() { var rent = IslandUi.IdOf(kind) == "rent"; period.Visible = rent; deposit.Visible = rent; islandAuto.Visible = rent; objects.Visible = !rent; price.Suffix = rent ? " L$ por período" : " L$"; note.Text = rent ? "Quem alugar cuida da ilha durante o contrato, mas ela continua sua." : "Quem comprar passa a ser o dono da ilha inteira, com os terrenos e objetos que ainda são seus."; }
         kind.ItemSelected += index => Sync(); Sync();
         Ask(editing is null ? "Anunciar ilha" : "Editar anúncio", content, async () =>
         {
             var rent = IslandUi.IdOf(kind) == "rent";
             if (editing is not null) await (editing.Kind == "sale" ? _api!.IslandCancelSale(i.Id) : _api!.IslandCancelRent(i.Id));
-            return rent ? await Do(_api!.IslandOfferRent(i.Id, (long)price.Value, int.Parse(IslandUi.IdOf(period)), 1, 6, (long)deposit.Value), "Ilha oferecida para aluguel.") : await Do(_api!.IslandOfferSale(i.Id, (long)price.Value, objects.ButtonPressed), "Ilha anunciada à venda.");
+            return rent ? await Do(_api!.IslandOfferRent(i.Id, (long)price.Value, int.Parse(IslandUi.IdOf(period)), 1, 6, (long)deposit.Value, islandAuto.ButtonPressed), "Ilha oferecida para aluguel.") : await Do(_api!.IslandOfferSale(i.Id, (long)price.Value, objects.ButtonPressed), "Ilha anunciada à venda.");
         }, editing is null ? "Anunciar" : "Salvar");
     }
 

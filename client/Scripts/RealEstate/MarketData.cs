@@ -33,6 +33,8 @@ public sealed class MarketListing
     public string Region { get; init; } = "";
     /// <summary>The picture of the parcel (asset:id), when its owner chose one.</summary>
     public string Image { get; init; } = "";
+    /// <summary>The owner lets the renter ask for the contract to renew by itself.</summary>
+    public bool AutoRenewAllowed { get; init; }
     public bool IsIsland => Kind == "island";
 
     public string Title => Code.Length > 0 ? $"{Code} — {Name}" : Name;
@@ -63,7 +65,7 @@ public sealed class MarketPageData
             {
                 ParcelId = parcel, IslandId = island, IslandName = Str(item, "islandName"), IslandCover = Str(item, "islandCover"), Code = Str(item, "code"), Name = Str(item, "name"), Description = Str(item, "description"), Category = Str(item, "category"),
                 Area = Dbl(item, "area"), MaxObjects = (int)Long(item, "maxObjects"), Offer = Str(item, "offer"), State = Str(item, "state"), Price = Long(item, "price"), RentPeriodDays = (int)Long(item, "rentPeriodDays"), OwnerName = Str(item, "ownerName"),
-                CanVisit = item.TryGetProperty("canVisit", out var v) && v.ValueKind == JsonValueKind.True, RentMinPeriods = Math.Max(1, (int)Long(item, "rentMinPeriods")), RentMaxPeriods = Math.Max(1, (int)Long(item, "rentMaxPeriods")), RentDeposit = Long(item, "rentDeposit"), Kind = Str(item, "kind") is { Length: > 0 } kind ? kind : "parcel", Region = Str(item, "region"), Image = Str(item, "image"),
+                CanVisit = item.TryGetProperty("canVisit", out var v) && v.ValueKind == JsonValueKind.True, RentMinPeriods = Math.Max(1, (int)Long(item, "rentMinPeriods")), RentMaxPeriods = Math.Max(1, (int)Long(item, "rentMaxPeriods")), RentDeposit = Long(item, "rentDeposit"), Kind = Str(item, "kind") is { Length: > 0 } kind ? kind : "parcel", Region = Str(item, "region"), Image = Str(item, "image"), AutoRenewAllowed = item.TryGetProperty("autoRenewAllowed", out var autoRenew) && autoRenew.ValueKind == JsonValueKind.True,
             });
         }
         return new MarketPageData { Total = (int)Long(root, "total"), Page = Math.Max(1, (int)Long(root, "page")), PageSize = Math.Max(1, (int)Long(root, "pageSize")), Items = list };
@@ -91,5 +93,5 @@ public sealed class MarketApi(IslandManagementApi inner)
     public Task<IslandReply> Search(MarketFilters filters) => inner.Send("GET", $"/api/v1/discovery/market?{filters.ToQuery()}");
     private static string Path(MarketListing item) => item.IsIsland ? $"/api/v1/worlds/islands/{item.IslandId}/real-estate" : $"/api/v1/worlds/islands/{item.IslandId}/land/parcels/{item.ParcelId}";
     public Task<IslandReply> Buy(MarketListing item) => inner.Send("POST", $"{Path(item)}/buy", new { expectedPrice = item.Price, idempotencyKey = Guid.NewGuid().ToString() });
-    public Task<IslandReply> Rent(MarketListing item, int periods) => inner.Send("POST", $"{Path(item)}/rent", new { periods, autoRenew = false, expectedPrice = item.Price, idempotencyKey = Guid.NewGuid().ToString() });
+    public Task<IslandReply> Rent(MarketListing item, int periods, bool autoRenew = false) => inner.Send("POST", $"{Path(item)}/rent", new { periods, autoRenew, expectedPrice = item.Price, idempotencyKey = Guid.NewGuid().ToString() });
 }

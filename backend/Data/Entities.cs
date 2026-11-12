@@ -211,6 +211,8 @@ public sealed class Island
     public int RentMaxPeriods { get; set; } = 12;
     public long RentDeposit { get; set; }
     public int RentGraceDays { get; set; } = 3;
+    /// <summary>Whether a renter may ask for the contract to renew by itself (charging one more period when it runs out).</summary>
+    public bool RentAutoRenewAllowed { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
@@ -382,6 +384,21 @@ public sealed class IslandLease
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>The administrator permission given to the tenant for the contract (taken back when it ends).</summary>
     public Guid? PermissionId { get; set; }
+    /// <summary>The renter asked for one more period to be charged when the contract runs out.</summary>
+    public bool AutoRenew { get; set; }
+}
+
+/// <summary>Something the real estate tells a person: a rental that is about to run out, a sale, a renewal that failed. Created by the server, read in My Properties, never edited. The key makes a notice appear only once.</summary>
+public sealed class PropertyNotice
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required string Kind { get; set; }
+    public required string Title { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public required string DedupeKey { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ReadAt { get; set; }
 }
 
 /// <summary>What happened to an island in money terms: sales, transfers, rent payments, deposits and refunds.</summary>

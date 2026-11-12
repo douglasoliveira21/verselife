@@ -12,7 +12,7 @@ public sealed class IslandRealEstateApi(IslandManagementApi inner)
     public Task<IslandReply> Get(Guid island) => inner.Send("GET", Base(island));
     public Task<IslandReply> OfferSale(Guid island, long price, bool includeObjects, string description) => inner.Send("POST", $"{Base(island)}/sale", new { price, includeObjects, description });
     public Task<IslandReply> CancelSale(Guid island) => inner.Send("DELETE", $"{Base(island)}/sale");
-    public Task<IslandReply> OfferRent(Guid island, long price, int days, int min, int max, long deposit, int grace) => inner.Send("POST", $"{Base(island)}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = grace, autoRenewAllowed = false });
+    public Task<IslandReply> OfferRent(Guid island, long price, int days, int min, int max, long deposit, int grace, bool autoRenewAllowed = false) => inner.Send("POST", $"{Base(island)}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = grace, autoRenewAllowed });
     public Task<IslandReply> CancelRent(Guid island) => inner.Send("DELETE", $"{Base(island)}/rental-offer");
     public Task<IslandReply> Transfer(Guid island, string name) => inner.Send("POST", $"{Base(island)}/transfer", new { name });
     public Task<IslandReply> Renew(Guid island, Guid lease, int periods) => inner.Send("POST", $"{Base(island)}/leases/{lease}/renew", new { periods, idempotencyKey = Guid.NewGuid().ToString() });
@@ -88,7 +88,7 @@ public partial class IslandPropertyPage : ScrollContainer
             : sale is { } s ? $"À venda por {LandMath.Money(Long(s, "price"))}" + (Flag(s, "exclusive") ? " (exclusiva para uma pessoa)" : "")
             : offer is { } o ? $"Para alugar por {LandMath.Money(Long(o, "price"))} a cada {Int(o, "periodDays")} dias" : "Sem anúncio";
         body.AddChild(Line("Situação", situation, lease is not null ? LandTerritoryMap.Rented : sale is not null ? IslandUi.AccentSecondary : offer is not null ? LandTerritoryMap.Rented : IslandUi.TextPrimary));
-        if (lease is { } li) { body.AddChild(Line("Valor do aluguel", $"{LandMath.Money(Long(li, "price"))} a cada {Int(li, "periodDays")} dias")); if (Long(li, "deposit") > 0) body.AddChild(Line("Caução", LandMath.Money(Long(li, "deposit")))); }
+        if (lease is { } li) { body.AddChild(Line("Valor do aluguel", $"{LandMath.Money(Long(li, "price"))} a cada {Int(li, "periodDays")} dias")); if (Long(li, "deposit") > 0) body.AddChild(Line("Caução", LandMath.Money(Long(li, "deposit")))); body.AddChild(Line("Renovação", Flag(li, "autoRenew") ? "Automática: um período é cobrado no vencimento" : "Manual")); }
 
         var buttons = IslandUi.Row(10); buttons.SizeFlagsHorizontal = SizeFlags.ExpandFill; body.AddChild(buttons);
         if (Flag(v, "isWelcome")) body.AddChild(IslandUi.Text("Esta é a ilha de boas-vindas do jogo: ela não pode ser vendida, alugada nem transferida.", 13, IslandUi.TextMuted, false, true));
@@ -165,7 +165,8 @@ public partial class IslandPropertyPage : ScrollContainer
         var max = IslandUi.Number(1, 52, 1, " período(s) no máximo"); max.Value = 6; content.AddChild(max);
         var deposit = IslandUi.Number(0, 1_000_000_000, 1, " L$ de caução"); content.AddChild(deposit);
         var grace = IslandUi.Number(0, 30, 1, " dia(s) de tolerância"); grace.Value = 3; content.AddChild(grace);
-        Ask("Alugar ilha", content, async () => await Do(_api!.OfferRent(_island, (long)price.Value, int.Parse(IslandUi.IdOf(period)), (int)min.Value, (int)max.Value, (long)deposit.Value, (int)grace.Value), "Ilha oferecida para aluguel."), "Anunciar");
+        var autoRenew = new CheckBox { Text = "Deixar quem aluga renovar sozinho a cada vencimento", FocusMode = FocusModeEnum.None, TooltipText = "Quem aluga escolhe; se escolher, um período a mais é cobrado da carteira dele no vencimento." }; content.AddChild(autoRenew);
+        Ask("Alugar ilha", content, async () => await Do(_api!.OfferRent(_island, (long)price.Value, int.Parse(IslandUi.IdOf(period)), (int)min.Value, (int)max.Value, (long)deposit.Value, (int)grace.Value, autoRenew.ButtonPressed), "Ilha oferecida para aluguel."), "Anunciar");
     }
 
     private void OpenTransfer()

@@ -30,6 +30,7 @@ public static class LandEndpoints
     public static IEndpointRouteBuilder MapLandEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapIslandRealEstateEndpoints();
+        endpoints.MapPropertyNoticeEndpoints();
         var group = endpoints.MapGroup("/api/v1/worlds/islands/{islandId:guid}/land").WithTags("Land").RequireAuthorization();
         // a parcel or a rental in the address must belong to the island in the address: no reaching across islands
         group.AddEndpointFilter(async (context, next) =>

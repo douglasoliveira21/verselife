@@ -87,6 +87,16 @@ public static class LandCommerce
 
     private static Task<bool> HasLiveRentalAsync(LifeVerseDbContext db, Guid parcelId, CancellationToken ct) => db.ParcelRentals.AnyAsync(r => r.ParcelId == parcelId && (r.Status == "active" || r.Status == "grace"), ct);
 
+    internal static string Label(IslandParcel parcel) => parcel.Code.Length > 0 ? $"{parcel.Code} — {parcel.Name}" : parcel.Name;
+    internal static string Money(long value) => "L$ " + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+
+    private static Task NoticeGraceAsync(LifeVerseDbContext db, Guid tenant, Guid landlord, string what, string id, DateTimeOffset until, DateTimeOffset now, CancellationToken ct)
+    {
+        PropertyNotices.Add(db, tenant, "rent_grace", $"O aluguel de {what} venceu: você está no prazo de tolerância", $"Renove até {until.ToLocalTime():dd/MM/yyyy HH:mm}. Nesse prazo não dá para construir; depois dele o contrato termina.", $"grace:{id}", now);
+        PropertyNotices.Add(db, landlord, "rent_grace_owner", $"O aluguel de {what} venceu e está em tolerância", $"Se não for renovado até {until.ToLocalTime():dd/MM/yyyy HH:mm}, termina sozinho.", $"grace:{id}:l", now);
+        return Task.CompletedTask;
+    }
+
     internal static bool KeyOk(string? key) => key is { Length: >= 8 and <= 128 };
 
     // ---- selling -----------------------------------------------------------------------------------------------
@@ -159,6 +169,7 @@ public static class LandCommerce
         parcel.SalePrice = null; parcel.SaleBuyerUserId = null; parcel.SaleDescription = string.Empty;
         Touch(db, parcel, buyer, "sold", new { seller, buyer, price, objectsMoved = moved }, now);
         Record(db, parcelId, "sale", buyer, seller, price, new { objectsMoved = moved }, ledger.Id, now);
+        PropertyNotices.Add(db, seller, "sold", $"Seu terreno {Label(parcel)} foi vendido por {Money(price)}", $"Comprador: {await PropertyNotices.NameAsync(db, buyer, ct)}. O valor já está na sua carteira.", $"sold:{parcelId}:{ledger.Id}", now);
         return await SaveAsync(db, ct, new { parcelId, price, objectsMoved = moved });
     }
 
@@ -219,6 +230,7 @@ public static class LandCommerce
         parcel.RentPrice = null;
         Touch(db, parcel, tenant, "rented", new { tenant, periods, rental.ExpiresAt }, now);
         Record(db, parcelId, "rent_start", tenant, parcel.OwnerUserId, rent, new { periods, deposit, rentalId = rental.Id }, ledger.Id, now);
+        PropertyNotices.Add(db, parcel.OwnerUserId, "rented", $"Seu terreno {Label(parcel)} foi alugado", $"Locatário: {await PropertyNotices.NameAsync(db, tenant, ct)}, {periods} período(s), até {rental.ExpiresAt.ToLocalTime():dd/MM/yyyy}. Você recebeu {Money(rent)}.", $"rented:{rental.Id}", now);
         return await SaveAsync(db, ct, new { rentalId = rental.Id, expiresAt = rental.ExpiresAt, paid = total });
     }
 
@@ -274,6 +286,7 @@ public static class LandCommerce
         }
         Record(db, rental.ParcelId, "rent_end", rental.LandlordUserId, rental.TenantUserId, rental.DepositCoins, new { reason, rentalId = rental.Id }, ledgerId, now);
         if (parcel is not null) Touch(db, parcel, rental.TenantUserId, "rent_ended", new { reason }, now);
+        if (reason == "expired") { var label = parcel is null ? "o terreno" : Label(parcel); PropertyNotices.Add(db, rental.TenantUserId, "rent_ended", $"O aluguel de {label} terminou", "O prazo de tolerância acabou. Os seus objetos voltaram para o seu inventário e a caução foi devolvida.", $"ended:{rental.Id}:t", now); PropertyNotices.Add(db, rental.LandlordUserId, "rent_ended_owner", $"O aluguel de {label} terminou", "O contrato não foi renovado e o terreno está livre de novo.", $"ended:{rental.Id}:l", now); }
         var saved = await SaveAsync(db, ct, new { rentalId = rental.Id, refunded = rental.DepositCoins });
         if (!saved.Ok || parcel is null || storage is null) return saved;
 
@@ -305,8 +318,11 @@ public static class LandCommerce
                 if (renewed.Ok) { done++; continue; }
                 db.ChangeTracker.Clear();
                 rental = await db.ParcelRentals.SingleAsync(r => r.Id == rental.Id, ct);
+                var failedName = await db.IslandParcels.AsNoTracking().Where(p => p.Id == rental.ParcelId).Select(p => p.Code + " — " + p.Name).FirstOrDefaultAsync(ct) ?? "o terreno";
+                PropertyNotices.Add(db, rental.TenantUserId, "renewal_failed", $"Não consegui renovar o aluguel de {failedName}", "O saldo da carteira não deu para cobrar mais um período. O contrato entrou em tolerância: renove em Minhas Propriedades antes que termine.", $"renewfail:{rental.Id}:{rental.ExpiresAt.UtcTicks}", now);
             }
             rental.Status = "grace"; rental.GraceUntil = rental.ExpiresAt.AddDays(rental.GraceDays);
+            await NoticeGraceAsync(db, rental.TenantUserId, rental.LandlordUserId, await db.IslandParcels.AsNoTracking().Where(p => p.Id == rental.ParcelId).Select(p => p.Code + " — " + p.Name).FirstOrDefaultAsync(ct) ?? "o terreno", rental.Id.ToString(), rental.GraceUntil!.Value, now, ct);
             await db.SaveChangesAsync(ct); done++;
         }
         var overIds = await db.ParcelRentals.Where(r => r.Status == "grace" && r.GraceUntil != null && r.GraceUntil <= now).Select(r => r.Id).ToListAsync(ct);
@@ -330,6 +346,8 @@ public sealed class LandRentalWorker(IServiceScopeFactory scopes, ILogger<LandRe
                 var count = await LandCommerce.ProcessDueAsync(db, scope.ServiceProvider.GetService<AssetStorageService>(), DateTimeOffset.UtcNow, stoppingToken);
                 count += await IslandCommerce.ProcessDueAsync(db, scope.ServiceProvider.GetService<AssetStorageService>(), DateTimeOffset.UtcNow, stoppingToken);
                 if (count > 0) logger.LogInformation("event=land_rentals_processed count={Count}", count);
+                var said = await PropertyNotices.ScanAsync(db, DateTimeOffset.UtcNow, stoppingToken);
+                if (said > 0) logger.LogInformation("event=property_notices count={Count}", said);
                 var returned = await LandAutoReturn.RunAsync(db, scope.ServiceProvider.GetService<AssetStorageService>(), DateTimeOffset.UtcNow, stoppingToken);
                 if (returned > 0) logger.LogInformation("event=land_auto_return count={Count}", returned);
             }

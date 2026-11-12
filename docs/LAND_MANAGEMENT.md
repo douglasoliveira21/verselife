@@ -175,3 +175,22 @@ Como funciona: a lista de terrenos que o cliente já recebe ganhou `allowVoice`;
 No painel **MÍDIA** da aba Textura do editor, aparece um aviso em laranja quando um objeto selecionado está num terreno **sem mídia para quem só constrói** e a pessoa não é a dona nem a locatária: “O terreno “Casa” não permite mídia nos objetos de quem não é o dono. O servidor vai recusar, a não ser que você seja o locatário ou da equipe da ilha.” O aviso **não trava** o botão Aplicar: o servidor é quem decide (a equipe da ilha pode, e o cliente não sabe quem é da equipe), mas a pessoa já sabe o porquê. Quando o servidor recusa mesmo assim, o editor explica: “Este terreno não permite mídia (imagem ou vídeo) em objetos de quem não é o dono.”
 
 Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel pergunta o terreno de cada objeto selecionado (`BuildMediaPanel.ParcelAt`, ligado ao `LandManager`). Testes: `BuildTextureSmoke`, `LandPresenceSmoke`, `LandVoiceMediaTests`.
+
+## Avisos e renovação automática (fase 80)
+
+- **Avisos (`PropertyNotice`)**: o servidor grava um aviso quando um terreno é vendido ou alugado, quando uma renovação automática falha, quando o aluguel entra em tolerância ou termina (para quem aluga e para quem recebe) e, via `PropertyNotices.ScanAsync` (chamado pelo `LandRentalWorker`), quando falta pouco para o vencimento. `GET /api/v1/properties/notices` lista e `POST /api/v1/properties/notices/read` marca como lidos.
+- **Cliente**: "Minhas Propriedades" consulta os avisos ao abrir e a cada 5 minutos; mostra uma faixa com "Ver Avisos" / "Marcar como Lidos" e avisa uma única vez (toast) de cada aviso novo.
+- **Renovação automática de ilhas alugadas**: `Island.RentAutoRenewAllowed` (quem anuncia permite) e `IslandLease.AutoRenew` (quem aluga escolhe). No vencimento o servidor cobra um período; se faltar saldo, avisa e segue o fluxo de tolerância. Migração: `Phase80PropertyNoticesAndLeaseRenewal`.
+- **Cota de objetos ao demarcar**: o diálogo "Criar parcela" aceita um limite de objetos (0 = proporcional à área); o servidor recusa com `budget_exceeded` se a ilha não tiver tanto livre.
+
+### Ainda não feito (e por quê)
+
+- **Expandir/reduzir uma parcela existente**: exige operações novas no servidor (recalcular área, cota e preço de anúncios abertos). Hoje é possível dividir e juntar.
+- **Hospedagem da ilha (plano da plataforma, `economy.rentals`) nas janelas**: o dado existe no servidor, mas não é exibido.
+- **Atualização ao vivo das janelas e "Visitar" até o terreno exato**: as janelas atualizam ao abrir/recarregar; "Visitar" leva à ilha, não ao terreno.
+- **Retenção de snapshots**: apaga dados; precisa de decisão do dono do produto sobre prazos.
+- **Pagamento em duas fases (reservar/liquidar)**: deliberadamente não feito; as operações usam chaves idempotentes no livro-razão.
+- **Testes de concorrência em PostgreSQL real**: exigem credenciais; os testes de Postgres ficam ignorados sem elas.
+- **"Criar objetos" / "Permitir visitantes"**: redundantes com as permissões de construção e o modo de acesso existentes.
+
+Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase80.
