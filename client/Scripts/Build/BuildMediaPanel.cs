@@ -23,11 +23,14 @@ public partial class BuildMediaPanel : VBoxContainer
     private readonly SpinBox[] _uv = new SpinBox[4];
     private Button _apply = null!, _remove = null!, _play = null!;
     private TextureRect _preview = null!;
-    private Label _status = null!, _webNote = null!;
+    private Label _status = null!, _webNote = null!, _rule = null!;
     private bool _filling;
     private double _uvTimer;
 
+    /// <summary>Finds the parcel at a spot (set by the editor from the land manager); without it no notice is shown.</summary>
+    public Func<double, double, LandParcelData?>? ParcelAt { get; set; }
     public event Action<string>? Said;
+    public string RuleNoteForTesting => _rule.Visible ? _rule.Text : "";
 
     public string StatusForTesting => _status.Text;
     public string WebNoteForTesting => _webNote.Text;
@@ -59,6 +62,7 @@ public partial class BuildMediaPanel : VBoxContainer
     {
         AddThemeConstantOverride("separation", 8); SizeFlagsHorizontal = SizeFlags.ExpandFill;
         AddChild(Heading("MÍDIA"));
+        _rule = new Label { Visible = false, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill }; _rule.AddThemeFontSizeOverride("font_size", 16); _rule.AddThemeColorOverride("font_color", UiStyle.Warning); AddChild(_rule);
         _type = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 36), FocusMode = FocusModeEnum.None, TooltipText = "O tipo de fonte" }; _type.AddItem("Imagem (PNG, JPG, WebP)"); _type.AddItem("Vídeo (Ogg Theora .ogv)"); AddChild(Row("TIPO", _type));
         _url = new LineEdit { PlaceholderText = "https://…", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 38), MaxLength = 500 }; _url.TextSubmitted += _ => Apply(); AddChild(Row("FONTE", _url));
         _webNote = new Label { Text = "Páginas da web: indisponível. O cliente ainda não tem um navegador embutido (a dependência técnica é o CEF ou um WebView do sistema).", AutowrapMode = TextServer.AutowrapMode.WordSmart }; _webNote.AddThemeFontSizeOverride("font_size", 15); _webNote.AddThemeColorOverride("font_color", UiStyle.TextMuted); AddChild(_webNote);
@@ -118,6 +122,15 @@ public partial class BuildMediaPanel : VBoxContainer
 
     // ---- showing the surface ------------------------------------------------------------------------------------------------
 
+    /// <summary>Says so when an object of the selection stands on a parcel that does not allow media from people who only build there (the server refuses it too; this only explains before the person tries).</summary>
+    private void ShowRule()
+    {
+        LandParcelData? blocked = null;
+        if (ParcelAt is not null) foreach (var view in _selection.Views()) if (ParcelAt(view.State.PositionX, view.State.PositionZ) is { AllowMedia: false } parcel && !parcel.Mine && parcel.State != "rented_by_me") { blocked = parcel; break; }
+        _rule.Visible = blocked is not null;
+        if (blocked is not null) _rule.Text = $"O terreno “{blocked.Name}” não permite mídia nos objetos de quem não é o dono. O servidor vai recusar, a não ser que você seja o locatário ou da equipe da ilha.";
+    }
+
     public void Refresh()
     {
         if (_material is null || _type is null || _uvTimer > 0) return;
@@ -134,6 +147,7 @@ public partial class BuildMediaPanel : VBoxContainer
         else { _preview.Texture = null; _play.Text = " Reproduzir"; _status.Text = "Escolha o tipo, cole o endereço e aperte Aplicar."; }
         var uv = _material.Uv("texture"); _uv[0].SetValueNoSignal(uv.RepeatX); _uv[1].SetValueNoSignal(uv.RepeatY); _uv[2].SetValueNoSignal(uv.OffsetX); _uv[3].SetValueNoSignal(uv.OffsetY);
         foreach (var control in new Control[] { _apply, _remove, _play }) ((BaseButton)control).Disabled = _selection.Count == 0;
+        ShowRule();
         _filling = false;
     }
 }

@@ -169,3 +169,9 @@ Servidor: `PUT /land/parcels/{id}/options` aceita `allowVoice` e `allowMedia` (o
 Ao entrar num terreno com a voz desligada, o botão **Falar** da barra de voz vira **Sem voz** e fica apagado, junto com o cadeado. A dica diz “A voz está desligada neste terreno (nome do terreno): quem está dentro não fala nem ouve.” O cliente também **para de capturar e enviar** áudio enquanto a pessoa está lá (o servidor da ilha descartaria de qualquer jeito); ao sair, tudo volta sozinho, e o microfone aberto (cadeado) continua como estava.
 
 Como funciona: a lista de terrenos que o cliente já recebe ganhou `allowVoice`; `LandPresence` guarda se a voz vale onde o avatar está (`VoiceAllowed`, `VoiceOffIn`); a `VoiceBar` pergunta isso a cada quadro (`VoiceRule`) e `VoiceChat.BlockedHere` corta a captura. Testes: `VoiceUiSmoke`, `LandPresenceSmoke`, `LandVoiceMediaTests`. O aviso depende da API nova (sem ela o cliente assume que a voz vale).
+
+## Aviso de mídia desligada no editor de construção
+
+No painel **MÍDIA** da aba Textura do editor, aparece um aviso em laranja quando um objeto selecionado está num terreno **sem mídia para quem só constrói** e a pessoa não é a dona nem a locatária: “O terreno “Casa” não permite mídia nos objetos de quem não é o dono. O servidor vai recusar, a não ser que você seja o locatário ou da equipe da ilha.” O aviso **não trava** o botão Aplicar: o servidor é quem decide (a equipe da ilha pode, e o cliente não sabe quem é da equipe), mas a pessoa já sabe o porquê. Quando o servidor recusa mesmo assim, o editor explica: “Este terreno não permite mídia (imagem ou vídeo) em objetos de quem não é o dono.”
+
+Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel pergunta o terreno de cada objeto selecionado (`BuildMediaPanel.ParcelAt`, ligado ao `LandManager`). Testes: `BuildTextureSmoke`, `LandPresenceSmoke`, `LandVoiceMediaTests`.

@@ -129,6 +129,15 @@ public partial class BuildTextureSmoke : Node3D
             Require(!ReferenceEquals(Surface(twin), Surface(view)), "a surface with media is the object's own, never shared with another");
             twin.QueueFree();
             media.Refresh(); Require(media.StatusForTesting.Contains("Imagem no ar") && media.HasPreviewForTesting, $"the panel shows the picture that is on ({media.StatusForTesting})");
+            // a parcel that does not allow media from people who only build there: the panel says so before the person tries (the server refuses it too)
+            media.Refresh(); Require(media.RuleNoteForTesting.Length == 0, "no parcel known: no notice");
+            media.ParcelAt = (x, z) => new LandParcelData { Name = "Casa", AllowMedia = false, Mine = false, State = "owned" }; media.Refresh();
+            Require(media.RuleNoteForTesting.Contains("“Casa”") && media.RuleNoteForTesting.Contains("não permite mídia"), $"a parcel with media off and somebody else's: the notice names it (got {media.RuleNoteForTesting})");
+            media.ParcelAt = (x, z) => new LandParcelData { Name = "Casa", AllowMedia = false, Mine = true, State = "own" }; media.Refresh(); Require(media.RuleNoteForTesting.Length == 0, "the owner is not told");
+            media.ParcelAt = (x, z) => new LandParcelData { Name = "Casa", AllowMedia = false, Mine = false, State = "rented_by_me" }; media.Refresh(); Require(media.RuleNoteForTesting.Length == 0, "nor the tenant");
+            media.ParcelAt = (x, z) => new LandParcelData { Name = "Casa", AllowMedia = true, Mine = false, State = "owned" }; media.Refresh(); Require(media.RuleNoteForTesting.Length == 0, "a parcel that allows media says nothing");
+            media.ParcelAt = (x, z) => null; media.Refresh(); Require(media.RuleNoteForTesting.Length == 0, "open ground says nothing");
+            Require(BuildPersistenceManager.RejectionText("media_not_allowed").Contains("não permite mídia"), "and when the server does refuse, the editor explains why");
             commands.Clear(); media.SetUvForTesting(2, 2, .5, 0); Require(Material(commands).GetProperty("mapUv").GetProperty("texture").GetProperty("repeatX").GetDouble() == 2, "scale and offset of the media");
             editor.Synchronizer.OnOperation(StateJson(id, "cube", 20, MaterialText(commands))); await Frames(2);
 

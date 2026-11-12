@@ -31,7 +31,7 @@ public partial class LandPresenceSmoke : Node
                 Parcel(mine, "Praça", "own", true, 0, 0, 5, 3, $",\"arrivalX\":8.0,\"arrivalZ\":6.0,\"arrivalYaw\":90,\"teleportMode\":\"forced\",\"environment\":\"{rich}\",\"media\":\"{media}\",\"environmentAllowed\":true") + "," +
                 Parcel(other, "Loja", "owned", false, 6, 0, 9, 3, ",\"teleportMode\":\"disabled\",\"environment\":\"{}\",\"media\":\"{}\",\"allowVoice\":false") + "," +
                 Parcel(sale, "Colina", "sale", false, 10, 0, 13, 3, ",\"salePrice\":900,\"environment\":\"{\\\"hour\\\":3}\",\"media\":\"{}\",\"environmentAllowed\":false") + "," +
-                Parcel(closed, "Cofre", "restricted", false, 14, 0, 17, 3, "") + "]}";
+                Parcel(closed, "Cofre", "restricted", false, 14, 0, 17, 3, ",\"allowMedia\":false") + "]}";
             land.Transport = (method, path, body) => { calls.Add($"{method} {path} {body}"); return (200, listing); };
             land.Apply(listing);
 
@@ -112,6 +112,7 @@ public partial class LandPresenceSmoke : Node
             Require(LandPresence.Refuse("http://cdn.example.com/a.mp3") == "not_https" && LandPresence.Refuse("https://127.0.0.1/a.mp3") == "bad_host" && LandPresence.Refuse("https://cdn.example.com/a.wav") == "bad_type", "the client refuses unsafe addresses itself");
 
             // ---- voice: a parcel can switch it off, and the presence says so while the avatar stands there
+            Require(!land.Parcels.First(p => p.Name == "Cofre").AllowMedia && land.Parcels.Where(p => p.Name != "Cofre").All(p => p.AllowMedia), "the parcel list carries the media rule (on unless the server says off)");
             var shop = land.Parcels.First(p => p.Name == "Loja"); Require(!shop.AllowVoice && land.Parcels.First(p => p.Name == "Praça").AllowVoice, "the parcel list carries the voice rule (on unless the server says off)");
             land.Presence.Apply(null, force: true); Require(land.Presence.VoiceAllowed && land.Presence.VoiceOffIn.Length == 0, "open ground has voice");
             land.Presence.Apply(shop); Require(!land.Presence.VoiceAllowed && land.Presence.VoiceOffIn == "Loja", "standing on a parcel with voice off says so, with its name");

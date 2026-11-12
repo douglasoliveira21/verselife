@@ -75,6 +75,7 @@ public sealed class LandVoiceMediaTests : IDisposable
         Assert.True((await LandService.ViewAsync(_db, _island, _owner, default)).Parcels.Single().AllowVoice);
         await Options(_owner, voice: false);
         Assert.False((await LandService.ViewAsync(_db, _island, _visitor, default)).Parcels.Single().AllowVoice); // everybody who may look at the land sees it, so the voice bar can say so
+        Assert.True((await LandService.ViewAsync(_db, _island, _visitor, default)).Parcels.Single().AllowMedia); await Options(_owner, media: false); Assert.False((await LandService.ViewAsync(_db, _island, _visitor, default)).Parcels.Single().AllowMedia); // the build editor reads it to warn before the person tries
     }
 
     [Fact]

@@ -82,6 +82,8 @@ public sealed class LandParcelData
     public bool EnvironmentAllowed { get; init; } = true;
     /// <summary>Whether proximity voice works on this parcel (the island server drops it when not).</summary>
     public bool AllowVoice { get; init; } = true;
+    /// <summary>Whether people who only build here (not the owner or the tenant) may put media in their objects.</summary>
+    public bool AllowMedia { get; init; } = true;
 }
 
 /// The territorial grid in the world: knows the parcels of the island (cells of 4 x 4 m, owners, how much is built), draws them over the
@@ -190,7 +192,7 @@ public partial class LandManager : Node3D
                         RentNextCharge = Money("rentNextCharge") ?? 0, RentAutoRenew = Flag("rentAutoRenew"), AccessMode = Text("accessMode") is { Length: > 0 } mode ? mode : "public",
                         BuildMode = Text("buildMode") is { Length: > 0 } buildMode ? buildMode : "owner", AllowScripts = Flag("allowScripts"), AutoReturnMinutes = item.TryGetProperty("autoReturnMinutes", out var autoReturn) && autoReturn.ValueKind == JsonValueKind.Number ? autoReturn.GetInt32() : null,
                         OthersObjects = Number("othersObjects"), OthersCost = Number("othersCost"), Builders = Number("builders"), CanEditTerrain = Flag("canEditTerrain"),
-                        ArrivalX = Real("arrivalX"), ArrivalZ = Real("arrivalZ"), ArrivalYaw = (float)(Real("arrivalYaw") ?? 0), TeleportMode = Text("teleportMode") is { Length: > 0 } tp ? tp : "free", EnvironmentAllowed = Flag("environmentAllowed", true), AllowVoice = Flag("allowVoice", true),
+                        ArrivalX = Real("arrivalX"), ArrivalZ = Real("arrivalZ"), ArrivalYaw = (float)(Real("arrivalYaw") ?? 0), TeleportMode = Text("teleportMode") is { Length: > 0 } tp ? tp : "free", EnvironmentAllowed = Flag("environmentAllowed", true), AllowVoice = Flag("allowVoice", true), AllowMedia = Flag("allowMedia", true),
                         Environment = ParcelEnvironment.Parse(Text("environment"))
                     }.WithMedia(Text("media"));
                     _parcels.Add(parcel);

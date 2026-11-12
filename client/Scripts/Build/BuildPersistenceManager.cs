@@ -43,6 +43,7 @@ public static class BuildPersistenceManager
             "parcel_forbidden" => "Este terreno não permite que você construa.",
             "parcel_banned" => "Você está banido deste terreno e não pode construir nele.",
             "scripts_not_allowed" => "Este terreno não permite scripts em objetos de quem não é o dono.",
+            "media_not_allowed" => "Este terreno não permite mídia (imagem ou vídeo) em objetos de quem não é o dono.",
             "not_owner" => "Este objeto não é seu: só o dono, o dono do terreno ou um administrador podem alterá-lo.",
             "not_allowed_to_return" => "Você não pode devolver esses objetos (só o dono do terreno ou um administrador).",
             "cost_limit" => "O custo total da ilha chegou ao limite; use formas mais simples ou apague algo.",

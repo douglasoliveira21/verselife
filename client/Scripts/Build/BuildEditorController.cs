@@ -91,7 +91,7 @@ public partial class BuildEditorController : Node3D
         _resourceManager = new BuildResourceManager { Name = "ResourceManager" }; AddChild(_resourceManager); _resourceManager.Initialize(_sync, _selection);
         _materials = new BuildMaterialManager { Name = "Materials" }; AddChild(_materials); _materials.Initialize(_sync, _selection, _faces, _history);
         _picker = new BuildTexturePicker { Name = "TexturePicker" }; AddChild(_picker);
-        _mediaPanel = new BuildMediaPanel { Name = "MediaPanel" }; _mediaPanel.Initialize(_selection, _materials);
+        _mediaPanel = new BuildMediaPanel { Name = "MediaPanel" }; _mediaPanel.Initialize(_selection, _materials); _mediaPanel.ParcelAt = (x, z) => GetParent()?.GetNodeOrNull<LandManager>("LandManager")?.ParcelAt(x, z);
         _window = new BuildEditorWindow { Name = "Window" }; AddChild(_window);
         _window.General.Initialize(_properties, _names, () => GetParent()?.GetNodeOrNull<LandManager>("LandManager")?.MyGroups ?? []); _window.General.Said += _window.SetStatus;
         _window.Object.Initialize(_sync, _selection, _properties, _geometry, _bodyFlags, _align, GroundAt); _window.Object.Said += _window.SetStatus; _align.Said += _window.SetStatus; _window.Resources.Initialize(_sync, _selection, _resourceManager, _picker); _window.Resources.Said += _window.SetStatus;
