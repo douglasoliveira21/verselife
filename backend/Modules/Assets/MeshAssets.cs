@@ -85,7 +85,9 @@ public static class MeshAssets
         var usedAsMesh = await UsedAsync(db, islandId, needle, geometry: true, ct);
         var usedAsTexture = !usedAsMesh && await UsedAsync(db, islandId, needle, geometry: false, ct);
         var usedAsSound = !usedAsMesh && !usedAsTexture && await UsedAsSoundAsync(db, islandId, needle, ct); // a sound that an object carries can be heard by whoever is on the island
-        if (!usedAsMesh && !usedAsTexture && !usedAsSound) return Results.NotFound();
+        // the picture that represents the island is shown to everybody who may enter it (and to the people who manage it), even though no object uses it
+        var usedAsCover = !usedAsMesh && !usedAsTexture && !usedAsSound && string.Equals(island.CoverImageUrl, $"asset:{assetId:D}", StringComparison.OrdinalIgnoreCase);
+        if (!usedAsMesh && !usedAsTexture && !usedAsSound && !usedAsCover) return Results.NotFound();
         var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == assetId && x.DeletedAt == null, ct);
         if (asset is null) return Results.NotFound();
         var version = await db.AssetVersions.AsNoTracking().SingleAsync(x => x.AssetId == assetId && x.Version == asset.CurrentVersion, ct);

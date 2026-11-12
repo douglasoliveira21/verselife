@@ -411,6 +411,9 @@ public partial class IslandManagementSmoke : Node3D
             Require(general.OwnerForTesting == "AliceVerse" && general.AdminsForTesting == "3 administradores" && general.CreatedForTesting == "15/03/2025", "owner, administrators and creation date");
             Require(general.ModeForTesting == "Pública" && general.CategoryForTesting == "social", "access mode and category");
             Require(general.EditableForTesting, "the owner can edit");
+            general.OpenPickerForTesting(); await Frames(2);
+            Require(LifeVerse.Client.Scripts.InventoryPanel.FileProblemText("The PNG is cut off (it has no ending). Export it again.").Contains("incompleto") && LifeVerse.Client.Scripts.InventoryPanel.FileProblemText("Ogg Opus is not supported. Export the sound as Ogg Vorbis (or WAV / MP3).").Contains("Ogg Vorbis") && LifeVerse.Client.Scripts.InventoryPanel.FileProblemText("algo novo") == "algo novo", "the reasons a file is refused are said in Portuguese, and an unknown one is shown as it came");
+            Require(general.PickerParentForTesting == window.GetParent(), "the picture picker is added next to the inventory and the texture cache (the world), not inside the page");
             Require(!window.SaveEnabledForTesting, "with nothing changed there is nothing to save");
 
             // --- a change enables save; reverting it disables again ------------------------------------------------------------

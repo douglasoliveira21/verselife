@@ -36,18 +36,27 @@ public partial class TextureCache : Node
         var network = GetNodeOrNull<NetworkManager>("/root/NetworkManager");
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
         var app = GetNodeOrNull<AppManager>("/root/AppManager");
-        if (network is null || session is null || app is null || !session.IsAuthenticated || network.CurrentIslandId == Guid.Empty) { Finish(assetId, null); return; }
+        if (network is null || session is null || app is null || !session.IsAuthenticated) { Finish(assetId, null); return; }
         var loader = GetParent()?.GetNodeOrNull<AssetLoadingService>("AssetLoadingService");
         if (loader?.TryReadCached(assetId) is { } onDisk) { Finish(assetId, Decode(onDisk)); return; } // already on this computer and still right
+        var headers = new[] { $"Authorization: Bearer {session.AccessToken}" };
+        // the person's own image (just imported, not on any object yet) comes from their own files
+        var own = $"{app.ApiBaseUrl}/api/v1/assets/{assetId}/download";
+        var island = network.CurrentIslandId == Guid.Empty ? null : $"{app.ApiBaseUrl}/api/v1/worlds/islands/{network.CurrentIslandId}/assets/{assetId}/file";
+        Get(island ?? own, headers, body =>
+        {
+            if (body is not null) { loader?.StoreIfKnown(assetId, body); Finish(assetId, Decode(body)); return; }
+            if (island is null) { Finish(assetId, null); return; }
+            Get(own, headers, second => Finish(assetId, second is null ? null : Decode(second)));
+        });
+    }
+
+    private void Get(string url, string[] headers, Action<byte[]?> done)
+    {
         var http = new HttpRequest { Timeout = 30, BodySizeLimit = 32 * 1024 * 1024 };
         AddChild(http);
-        http.RequestCompleted += (_, code, _, body) =>
-        {
-            http.QueueFree();
-            if (code is >= 200 and < 300) loader?.StoreIfKnown(assetId, body);
-            Finish(assetId, code is >= 200 and < 300 ? Decode(body) : null);
-        };
-        if (http.Request($"{app.ApiBaseUrl}/api/v1/worlds/islands/{network.CurrentIslandId}/assets/{assetId}/file", [$"Authorization: Bearer {session.AccessToken}"]) != Error.Ok) { http.QueueFree(); Finish(assetId, null); }
+        http.RequestCompleted += (_, code, _, body) => { http.QueueFree(); done(code is >= 200 and < 300 ? body : null); };
+        if (http.Request(url, headers) != Error.Ok) { http.QueueFree(); done(null); }
     }
 
     private void Finish(Guid assetId, Texture2D? texture) { _ready[assetId] = texture; Resolve(assetId, texture); }

@@ -28,6 +28,7 @@ public partial class BuildTexturePicker : Node
     public void SelectForTesting(int index) { _list.Select(index); OnSelected(index); }
     public void SourceForTesting(int source) => SelectSource(source);
     public void ConfirmForTesting() => Confirm();
+    public void ImportForTesting(string path) => ImportImage(path);
     public void LoadForTesting(string json) => ReadItems(json);
 
     private TextureCache? Cache => GetParent()?.GetNodeOrNull<TextureCache>("TextureCache");
@@ -47,7 +48,7 @@ public partial class BuildTexturePicker : Node
         _preview = new TextureRect { CustomMinimumSize = new Vector2(240, 200), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered, ClipContents = true }; side.AddChild(_preview);
         _name = new Label { Text = "—" }; _name.AddThemeFontOverride("font", UiStyle.Bold); side.AddChild(_name);
         _status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); _status.AddThemeFontSizeOverride("font_size", 16); side.AddChild(_status);
-        _files = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.png,*.jpg,*.jpeg,*.webp ; Imagens"], Title = "Importar textura" }; _files.FileSelected += ImportImage; AddChild(_files);
+        _files = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.png,*.jpg,*.jpeg,*.webp ; Imagens"], Title = "Importar textura", UseNativeDialog = true, Theme = ViewerTheme.Create(), MinSize = new Vector2I(760, 480) }; var pictures = OS.GetSystemDir(OS.SystemDir.Pictures); if (pictures.Length > 0) _files.CurrentDir = pictures; _files.FileSelected += ImportImage; AddChild(_files);
         _http = new HttpRequest { Timeout = 20 }; AddChild(_http); _http.RequestCompleted += OnCompleted;
     }
 
@@ -72,7 +73,7 @@ public partial class BuildTexturePicker : Node
         if (source == 1) _shown.AddRange(BuiltInTextures.All.Select(x => new Entry(null, x.Id, x.Label))); else _shown.AddRange(_mineEntries);
         for (var i = 0; i < _shown.Count; i++)
         {
-            var entry = _shown[i]; var slot = _list.AddItem(string.Empty, entry.Builtin is { } b ? BuiltInTextures.Get(b) : null, true); _list.SetItemTooltip(slot, entry.Name);
+            var entry = _shown[i]; var slot = _list.AddItem(entry.Name.Length > 14 ? entry.Name[..13] + "…" : entry.Name, entry.Builtin is { } b ? BuiltInTextures.Get(b) : null, true); _list.SetItemTooltip(slot, entry.Name);
             if (entry.Asset is not null && Guid.TryParse(entry.Asset, out var asset)) Cache?.Request(asset, texture => { if (texture is not null && IsInstanceValid(_list) && slot < _list.ItemCount && slot < _shown.Count && _shown[slot] == entry) _list.SetItemIcon(slot, texture); });
         }
         _status.Text = _shown.Count == 0 ? (source == 0 ? (_loaded ? "Nenhuma textura ainda. Use Importar imagem." : "Carregando suas texturas…") : "") : $"{_shown.Count} textura(s).";
@@ -126,15 +127,38 @@ public partial class BuildTexturePicker : Node
         if (_source == 0) SelectSource(0);
     }
 
+    private InventoryPanel? _watching;
+
     private void ImportImage(string path)
     {
+        var extension = System.IO.Path.GetExtension(path).ToLowerInvariant();
+        if (extension is not (".png" or ".jpg" or ".jpeg" or ".webp")) { _status.Text = "Escolha uma imagem PNG, JPG ou WebP."; return; }
         var size = Godot.FileAccess.FileExists(path) ? (long)Godot.FileAccess.GetFileAsBytes(path).Length : 0;
         if (size == 0) { _status.Text = "Não foi possível ler o arquivo."; return; }
         if (size > 8L * 1024 * 1024) { _status.Text = "A imagem passa de 8 MB; reduza o tamanho antes de importar."; return; }
+        var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
+        if (session is not { IsAuthenticated: true }) { _status.Text = "Entre no jogo para importar imagens."; return; }
         var inventory = GetParent()?.GetNodeOrNull<InventoryPanel>("InventoryPanel");
         if (inventory is null) { _status.Text = "O inventário não está disponível."; return; }
-        inventory.ItemsChanged += OnInventoryChanged; inventory.ImportTexture(path); _status.Text = "Enviando a imagem… ela aparece em Minhas texturas quando terminar.";
+        StopWatching(); _watching = inventory; inventory.ItemsChanged += OnInventoryChanged; inventory.UploadFinished += OnUploadFinished;
+        inventory.ImportTexture(path); _status.Text = "Enviando a imagem… ela aparece em Minhas texturas quando terminar.";
     }
 
-    private void OnInventoryChanged() { if (GetParent()?.GetNodeOrNull<InventoryPanel>("InventoryPanel") is { } inventory) inventory.ItemsChanged -= OnInventoryChanged; Load(); }
+    private void StopWatching()
+    {
+        if (_watching is null) return;
+        if (IsInstanceValid(_watching)) { _watching.ItemsChanged -= OnInventoryChanged; _watching.UploadFinished -= OnUploadFinished; }
+        _watching = null;
+    }
+
+    /// <summary>The server answered the upload. A refusal is shown here (the inventory window that would show it may be closed), with the reason the server gave.</summary>
+    private void OnUploadFinished(bool ok, string message)
+    {
+        if (!ok) { StopWatching(); _status.Text = $"Não foi possível importar a imagem: {message}"; return; }
+        _status.Text = message; // the list reloads when the inventory reports the new item
+    }
+
+    private void OnInventoryChanged() { StopWatching(); Load(); }
+
+    public override void _ExitTree() => StopWatching();
 }

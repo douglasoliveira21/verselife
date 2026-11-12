@@ -39,6 +39,10 @@ public partial class IslandGeneralPage : ScrollContainer
     public Func<(double X, double Z)?>? CurrentPosition { get; set; }
     /// <summary>Loads the picture of an asset (the window knows where the texture cache lives).</summary>
     public Action<Guid, Action<Texture2D?>>? RequestTexture { get; set; }
+    /// <summary>The node the picture picker is added to: the world, where the inventory and the texture cache are.</summary>
+    public Node? PickerHost { get; set; }
+    public Node? PickerParentForTesting => _picker?.GetParent();
+    public void OpenPickerForTesting() => OpenPicker();
 
     public IslandInfo? Loaded => _loaded;
     public string NameForTesting { get => _name.Text; set { _name.Text = value; _name.EmitSignal(LineEdit.SignalName.TextChanged, value); } }
@@ -299,7 +303,8 @@ public partial class IslandGeneralPage : ScrollContainer
 
     private void OpenPicker()
     {
-        if (_picker is null) { _picker = new BuildTexturePicker { Name = "IslandCoverPicker" }; AddChild(_picker); }
+        // The picker looks for the inventory and the texture cache among its siblings in the world, so it lives there (as in the profile), not inside this page.
+        if (_picker is null) { _picker = new BuildTexturePicker { Name = "IslandCoverPicker" }; (PickerHost ?? this).AddChild(_picker); }
         _picker.Open(false, entry => { if (Guid.TryParse(entry.Asset, out var asset)) { _coverRef = $"asset:{asset:D}"; ShowCover(_coverRef); NotifyChanged(); } });
     }
 

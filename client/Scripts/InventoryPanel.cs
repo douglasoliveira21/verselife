@@ -83,6 +83,9 @@ public partial class InventoryPanel : Node3D
     public static string SessionId { get; } = Guid.NewGuid().ToString("N");
     /// Raised when the server accepted a change (upload, move, favourite…), so other windows can refresh what they list.
     public event Action? ItemsChanged;
+    /// <summary>Raised when an upload (an import from disk) is answered: whether it worked and what to tell the person. The window that asked for it may be closed, so this is how it learns.</summary>
+    public event Action<bool, string>? UploadFinished;
+    private bool _uploadInFlight;
     /// Sends an image to the inventory as a texture (used by the build window's Importar imagem).
     public void ImportTexture(string path) => Upload(path);
     public void Toggle() { _window.Visible = !_window.Visible; if (_window.Visible) { _window.MoveToFront(); LoadItems(); } }
@@ -175,7 +178,7 @@ public partial class InventoryPanel : Node3D
         _folderName = new LineEdit { PlaceholderText = "Nome da pasta", CustomMinimumSize = new Vector2(280, 0) };
         _newFolderDialog.AddChild(_folderName); _newFolderDialog.Confirmed += CreateFolder; _folderName.TextSubmitted += _ => { _newFolderDialog.Hide(); CreateFolder(); };
         AddChild(_newFolderDialog);
-        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Importar para o inventário", Filters = ["*.glb,*.gltf ; Meshes e animações 3D", "*.png,*.jpg,*.jpeg,*.webp ; Imagens e texturas", "*.ogg,*.wav,*.mp3 ; Sons e áudios (OGG Vorbis, WAV, MP3)"] };
+        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Importar para o inventário", Filters = ["*.glb,*.gltf ; Meshes e animações 3D", "*.png,*.jpg,*.jpeg,*.webp ; Imagens e texturas", "*.ogg,*.wav,*.mp3 ; Sons e áudios (OGG Vorbis, WAV, MP3)"], UseNativeDialog = true, Theme = ViewerTheme.Create(), MinSize = new Vector2I(760, 480) };
         AddChild(_fileDialog);
         _zipDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.zip"], Title = "Importar pacote de arquivos" }; AddChild(_zipDialog); _zipDialog.FileSelected += UploadZip;
         _fileDialog.FileSelected += Upload;
@@ -292,6 +295,8 @@ public partial class InventoryPanel : Node3D
     private void OnResponse(long result, long code, string[] headers, byte[] body)
     {
         var kind = _inFlight;
+        var wasUpload = _uploadInFlight; _uploadInFlight = false;
+        if (wasUpload) UploadFinished?.Invoke(code is >= 200 and < 300, code is >= 200 and < 300 ? "Imagem importada." : result != (long)HttpRequest.Result.Success ? "Não foi possível falar com o servidor. Confira a conexão." : ErrorText(code, body));
         if (kind == Pending.Used) { Pump(); return; } // noting that an item was used needs no refresh
         if (kind == Pending.Unpack) { _status.Text = UnpackText(code, body.Length == 0 ? "{}" : Encoding.UTF8.GetString(body)); if (code is >= 200 and < 300) { LoadItems(); ItemsChanged?.Invoke(); } Pump(); return; }
         if (kind == Pending.Storage) { if (code is >= 200 and < 300 && ParseStorage(Encoding.UTF8.GetString(body)) is { } storage) { _storage = storage; UpdateStorage(); } Pump(); return; }
@@ -307,16 +312,34 @@ public partial class InventoryPanel : Node3D
         Pump();
     }
 
+
+    /// <summary>The server describes a refused file in English; this says the common ones in the language of the game and leaves any other text as it came.</summary>
+    public static string FileProblemText(string message)
+    {
+        var text = message.ToLowerInvariant();
+        (string Key, string Say)[] known =
+        [
+            ("opus", "OGG Opus não é suportado. Exporte o som como Ogg Vorbis (ou WAV / MP3)."), ("not ogg vorbis", "Esse OGG não é Ogg Vorbis, o único tipo que o jogo toca."),
+            ("only uncompressed wav", "Só WAV sem compressão (PCM) é aceito. Exporte de novo como PCM ou use OGG."), ("mono or stereo", "Use um som mono ou estéreo."), ("bits per sample", "Use 8, 16, 24 ou 32 bits por amostra."),
+            ("sample rate", "A taxa de amostragem deve ficar entre 4000 e 192000 Hz."), ("no sound data", "O arquivo de som está sem áudio."), ("invalid wav", "Esse arquivo não é um WAV válido."), ("invalid ogg", "Esse arquivo não é um OGG válido."), ("invalid mp3", "Esse arquivo não é um MP3 válido."),
+            ("cut off", "O arquivo está incompleto (cortado). Exporte de novo."), ("incomplete", "O arquivo está incompleto. Exporte de novo."), ("corrupt", "O arquivo está danificado. Exporte de novo."), ("damaged", "O arquivo está danificado. Exporte de novo."),
+            ("8192", "A imagem é grande demais: no máximo 8192 pixels de lado."), ("no pixels", "A imagem não tem pixels."), ("not a png", "Esse arquivo não é um PNG válido, mesmo com a extensão .png."), ("not a jpeg", "Esse arquivo não é um JPEG válido, mesmo com a extensão .jpg."),
+            ("not a webp", "Esse arquivo não é um WebP válido."), ("header", "Esse arquivo não é uma imagem válida do tipo escolhido."), ("not supported", "Esse tipo de arquivo não é aceito."), ("unsupported", "Esse tipo de arquivo não é aceito."),
+        ];
+        foreach (var (key, say) in known) if (text.Contains(key, StringComparison.Ordinal)) return say;
+        return message;
+    }
     /// What the server said, in words: the reason it refused a change (a name in use, a folder inside itself, too many levels…).
     private static string ErrorText(long code, byte[] body)
     {
         var error = string.Empty;
+        var fromFile = false;
         try
         {
             using var document = JsonDocument.Parse(Encoding.UTF8.GetString(body));
             if (document.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String) error = e.GetString() ?? string.Empty;
             else if (document.RootElement.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object && errors.TryGetProperty("file", out var fileErrors) && fileErrors.ValueKind == JsonValueKind.Array)
-                error = fileErrors.EnumerateArray().FirstOrDefault().GetString() ?? string.Empty;
+                { error = fileErrors.EnumerateArray().FirstOrDefault().GetString() ?? string.Empty; fromFile = true; }
         }
         catch (JsonException) { }
         return error switch
@@ -329,6 +352,13 @@ public partial class InventoryPanel : Node3D
             "not_found" => "Isso não existe mais, ou não é seu. A lista foi atualizada.",
             "invalid_move" => "Nada para mover (ou itens demais de uma vez).",
             "item_busy" => "Esse item está em uso agora (oferta ou venda).",
+            "storage_full" => "Seu inventário está cheio. Apague itens (e esvazie a lixeira) para liberar espaço.",
+            "file_too_large" => "O arquivo é grande demais para o servidor.",
+            "empty_file" => "O arquivo está vazio.",
+            "invalid_category" or "missing_file" => "O servidor não entendeu o envio. Tente de novo; se continuar, atualize o jogo.",
+            _ when code == 401 => "Sua sessão expirou. Entre de novo no jogo.",
+            _ when code == 413 => "O arquivo é grande demais para o servidor.",
+            _ when fromFile && !string.IsNullOrWhiteSpace(error) => FileProblemText(error),
             _ when !string.IsNullOrWhiteSpace(error) => $"Inventário: {error}",
             _ => $"Inventário: HTTP {code}"
         };
@@ -701,6 +731,7 @@ public partial class InventoryPanel : Node3D
         var session = GetNode<SessionManager>("/root/SessionManager");
         var url = $"{GetNode<AppManager>("/root/AppManager").ApiBaseUrl}{path}";
         _inFlight = kind;
+        _uploadInFlight = path == "/api/v1/assets/upload";
         string[] Tagged(string[] list) => [.. list, $"X-Client-Session: {SessionId}"]; // so the server can tell the other sessions of this person which one made the change
         var error = raw is not null ? _http.RequestRaw(url, Tagged(headers ?? []), method, raw) : _http.Request(url, Tagged(headers ?? [$"Authorization: Bearer {session.AccessToken}", "Content-Type: application/json"]), method, body ?? string.Empty);
         if (error != Error.Ok) { _status.Text = $"Não foi possível enviar o pedido ({error})."; Pump(); }

@@ -225,7 +225,7 @@ public partial class IslandManagementWindow : Node
     {
         _pageHost = new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill, ClipContents = true };
         _general = new IslandGeneralPage { Name = "General" }; _general.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _general.Changed += RefreshFooter; _general.ConfigureAccessRequested += () => Select("acesso"); _general.RequestTexture = RequestTexture;
+        _general.Changed += RefreshFooter; _general.ConfigureAccessRequested += () => Select("acesso"); _general.RequestTexture = RequestTexture; _general.PickerHost = GetParent();
         _pageHost.AddChild(_general); _pages["geral"] = _general;
         _access = new IslandAccessPage { Name = "Access", Visible = false }; _access.SetAnchorsPreset(Control.LayoutPreset.FullRect); _access.Bind(_api!); _access.Changed += RefreshFooter; _access.Notify += text => Notify(text); _access.ViewProfile += id => ViewProfile?.Invoke(id);
         _pageHost.AddChild(_access); _pages["acesso"] = _access;
