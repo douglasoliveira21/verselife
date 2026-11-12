@@ -14,12 +14,13 @@ public partial class TextureCache : Node
 
     public int CachedTextures => _ready.Count;
 
-    public void Request(Guid assetId, Action<Texture2D?> done)
+    /// The island whose endpoint serves the image can be named (a picture of another island, like a cover in the real estate market); without it the island the person is on is used.
+    public void Request(Guid assetId, Action<Texture2D?> done, Guid? island = null)
     {
         if (_ready.TryGetValue(assetId, out var texture)) { done(texture); return; }
         if (_waiting.TryGetValue(assetId, out var list)) { list.Add(done); return; }
         _waiting[assetId] = [done];
-        Fetch(assetId);
+        Fetch(assetId, island);
     }
 
     /// Supplies an image's bytes directly (tests, and the importer which already holds the file).
@@ -31,7 +32,7 @@ public partial class TextureCache : Node
         return texture is not null;
     }
 
-    private void Fetch(Guid assetId)
+    private void Fetch(Guid assetId, Guid? onIsland = null)
     {
         var network = GetNodeOrNull<NetworkManager>("/root/NetworkManager");
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
@@ -42,7 +43,8 @@ public partial class TextureCache : Node
         var headers = new[] { $"Authorization: Bearer {session.AccessToken}" };
         // the person's own image (just imported, not on any object yet) comes from their own files
         var own = $"{app.ApiBaseUrl}/api/v1/assets/{assetId}/download";
-        var island = network.CurrentIslandId == Guid.Empty ? null : $"{app.ApiBaseUrl}/api/v1/worlds/islands/{network.CurrentIslandId}/assets/{assetId}/file";
+        var from = onIsland ?? network.CurrentIslandId;
+        var island = from == Guid.Empty ? null : $"{app.ApiBaseUrl}/api/v1/worlds/islands/{from}/assets/{assetId}/file";
         Get(island ?? own, headers, body =>
         {
             if (body is not null) { loader?.StoreIfKnown(assetId, body); Finish(assetId, Decode(body)); return; }

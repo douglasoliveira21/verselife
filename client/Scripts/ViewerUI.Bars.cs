@@ -57,6 +57,7 @@ public partial class ViewerUI
             ("Mapa de terrenos e busca…", () => _world.GetNodeOrNull<LandMapWindow>("LandMapWindow")?.Toggle(), false),
             ("Gerenciar esta ilha…", () => _world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow")?.Toggle(), false),
             ("Gerenciar terrenos…", () => _world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow")?.Toggle(), false),
+            ("Mercado imobiliário…", () => _world.GetNodeOrNull<RealEstate.RealEstateMarketWindow>("RealEstateMarketWindow")?.Toggle(), false),
             ("Selecionar terreno (limites e donos)", () => _world.GetNodeOrNull<LandManager>("LandManager")?.SetActive(true), false),
             ("Tirar foto", TakeSnapshot, false));
         var environment = new PopupMenu { Name = "Ambiente" };

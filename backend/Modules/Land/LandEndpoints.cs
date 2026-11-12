@@ -108,6 +108,10 @@ public static class LandEndpoints
         endpoints.MapGet("/api/v1/discovery/properties", async (string? q, string? offer, long? minPrice, long? maxPrice, double? minArea, double? maxArea, string? sort, int? skip, int? take, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
             !TryUser(c, out var user) ? Results.Unauthorized() : Results.Ok(await LandSearch.SearchAsync(db, user, new PropertyQuery(q, offer, minPrice, maxPrice, minArea, maxArea, sort, skip ?? 0, take ?? 20), ct))).WithTags("Discovery").RequireAuthorization();
 
+        // the real estate market window: filters, sorting and pages
+        endpoints.MapGet("/api/v1/discovery/market", async (string? q, string? offer, string? category, long? minPrice, long? maxPrice, double? minArea, double? maxArea, bool? onlyAvailable, bool? withVisit, string? sort, int? page, int? pageSize, HttpContext c, LifeVerseDbContext db, CancellationToken ct) =>
+            !TryUser(c, out var user) ? Results.Unauthorized() : Results.Ok(await LandMarket.SearchAsync(db, user, new MarketQuery(q, offer, category, minPrice, maxPrice, minArea, maxArea, onlyAvailable ?? true, withVisit ?? false, sort, page ?? 1, pageSize ?? 9), ct))).WithTags("Discovery").RequireAuthorization();
+
         // what the island servers ask for (internal, like the other platform routes)
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/land-sync", async (Guid instanceId, long? since, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             !Modules.Platform.PlatformEndpoints.HasValidServiceKey(context, config) ? Results.Unauthorized() : await LandSync.BuildAsync(db, instanceId, since ?? 0, t, ct) is { } answer ? Results.Ok(new { access = answer.Access, events = answer.Events, cursor = answer.Cursor, terrain = answer.Terrain, teleport = answer.Teleport }) : Results.NotFound()).WithTags("Platform");

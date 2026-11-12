@@ -41,3 +41,20 @@ Cores do mapa: verde disponível, laranja à venda, roxo alugado, cinza vendido,
 - A imagem dos detalhes é a capa da ilha (terrenos ainda não têm imagem própria).
 - Vender, alugar, dividir e unir valem para terrenos **do próprio usuário**; num terreno de outra pessoa a equipe só muda a finalidade.
 - A API de produção precisa ser publicada (migração incluída) para a janela funcionar.
+
+---
+
+# Mercado Imobiliário
+
+Abre em **Mundo → Mercado imobiliário…**. Mostra terrenos à venda ou para alugar nas **ilhas públicas**.
+
+- **Abas:** Terrenos, Comerciais, Residenciais e Todos funcionam. **Ilhas à Venda, Ilhas para Alugar e Homesteads** aparecem desligadas (“chega com a venda de ilhas inteiras”); o mesmo vale para os itens “Ilhas”, “Full Region” e “Homestead” dos filtros.
+- **Filtros:** busca (nome, código ou ilha), negociação (venda/aluguel), categoria, área e preço mínimos e máximos, “Somente disponíveis” (desligado, lista também o que já está alugado, marcado “Alugado”) e “Com visitação” (só terrenos de acesso público e com teleporte).
+- **Ordenar por:** mais recentes, menor preço, maior preço, maior área, mais prims. **Grade ou lista**, com **páginas** de 9.
+- **Cada card:** imagem (capa da ilha quando existe), código e nome, tipo, ilha, selo (À Venda, Para Alugar, Alugado), área, prims e preço (aluguel mostra “/ mensal”, “/ semanal” ou “/ N dias”).
+- **Visitar** leva até a ilha do terreno. **Comprar** e **Alugar** pedem confirmação, mandam o preço que a pessoa viu (se mudou, nada é cobrado) e usam o mesmo caminho de dinheiro do resto dos terrenos. Aluguel mostra o total e a caução.
+- **Fica de fora da lista:** terreno seu, venda exclusiva para outra pessoa e qualquer coisa em ilha privada.
+
+API: `GET /api/v1/discovery/market` devolve `{ total, page, pageSize, items }` (o `/discovery/properties` antigo continua igual). Código novo: `LandMarket` (servidor) e `RealEstateMarketWindow` (cliente). Testes: `LandMarketTests`, `RealEstateMarketSmoke`.
+
+Limites: sem migração nova; o tipo de região não existe ainda (precisa da venda de ilhas); “Visitar” entra na ilha, não teleporta até o terreno.
