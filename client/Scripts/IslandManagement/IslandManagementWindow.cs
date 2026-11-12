@@ -28,6 +28,8 @@ public partial class IslandManagementWindow : Node
         new("reinicializacao", "Reinicialização", "power", "Reiniciar a ilha pelo gerenciador de mundos.", ["Reiniciar agora ou agendar, com aviso aos presentes", "Histórico de reinicializações"]),
         new("administracao", "Administração", "settings", "Jogadores conectados e operações da ilha.", ["Expulsar, banir e enviar avisos", "Fechar, reabrir e criar backup da ilha"]),
         new("auditoria", "Histórico e Auditoria", "history", "Quem fez o quê na ilha.", ["Filtros por período, pessoa e tipo de evento", "Valores anteriores e novos de cada alteração"]),
+        new("terrenos_parcelas", "Terrenos e Parcelas", "map", "Como a terra da ilha está dividida.", ["Área, parcelas vendidas, alugadas e livres", "Mapa territorial e acesso ao gerenciamento de terrenos"]),
+        new("vendas_alugueis", "Vendas e Aluguéis", "coins", "Anúncios e contratos dos terrenos.", ["Anúncios ativos, contratos e receita", "Gerenciar vendas e aluguéis"]),
         new("propriedade", "Propriedade", "doc", "De quem é a ilha e o que ela está fazendo no mercado.", ["Dono, classe da região e tamanho", "Venda, aluguel e transferência da ilha"]),
     ];
 
@@ -55,6 +57,8 @@ public partial class IslandManagementWindow : Node
     private IslandMediaPage _media = null!;
     private IslandPhysicsPage _physics = null!;
     private IslandTerrainPage _terrain = null!;
+    private IslandLandPage _land = null!;
+    private IslandDealsPage _deals = null!;
     private IslandPropertyPage _property = null!;
     private ConfirmationDialog _confirm = null!;
     private AcceptDialog _help = null!;
@@ -90,6 +94,10 @@ public partial class IslandManagementWindow : Node
     public IslandMediaPage Media => _media;
     public IslandPhysicsPage Physics => _physics;
     public IslandTerrainPage Terrain => _terrain;
+    public IslandLandPage Land => _land;
+    public IslandDealsPage Deals => _deals;
+    /// <summary>Opens the land management window on an island and a section of it (island, section, start a sale offer); set by the main UI.</summary>
+    public Action<Guid, string, bool>? OpenLandManagement { get; set; }
     public IslandPropertyPage Property => _property;
     /// <summary>Asked to open the profile of a person.</summary>
     public Action<Guid>? ViewProfile { get; set; }
@@ -113,7 +121,7 @@ public partial class IslandManagementWindow : Node
     public Vector2 PanelMinForTesting => _panel.GetCombinedMinimumSize();
     public bool PageVisibleForTesting(string id) => _pages.TryGetValue(id, out var page) && page.Visible;
     public string PagePlaceholderTextForTesting(string id) => _pages.TryGetValue(id, out var page) ? string.Join("|", page.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)) : "";
-    public void UseTransportForTesting(Func<string, string, string?, Task<(long, string)>> transport) { _transport = transport; _api = new IslandManagementApi(transport); _access?.Bind(_api); _bans?.Bind(_api); _perms?.Bind(_api); _objects?.Bind(_api); _audit?.Bind(_api); _admin?.Bind(_api); _performance?.Bind(_api); _restart?.Bind(_api); _environment?.Bind(_api); _media?.Bind(_api); _physics?.Bind(_api); _terrain?.Bind(_api); _property?.Bind(_api); }
+    public void UseTransportForTesting(Func<string, string, string?, Task<(long, string)>> transport) { _transport = transport; _api = new IslandManagementApi(transport); _access?.Bind(_api); _bans?.Bind(_api); _perms?.Bind(_api); _objects?.Bind(_api); _audit?.Bind(_api); _admin?.Bind(_api); _performance?.Bind(_api); _restart?.Bind(_api); _environment?.Bind(_api); _media?.Bind(_api); _physics?.Bind(_api); _terrain?.Bind(_api); _property?.Bind(_api); _land?.Bind(_api); _deals?.Bind(_api); }
     public void PressSaveForTesting() => _save.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressRestoreForTesting() => _restore.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressCloseForTesting() => RequestClose();
@@ -255,6 +263,10 @@ public partial class IslandManagementWindow : Node
         _pageHost.AddChild(_physics); _pages["fisica"] = _physics;
         _terrain = new IslandTerrainPage { Name = "Terrain", Visible = false }; _terrain.SetAnchorsPreset(Control.LayoutPreset.FullRect); _terrain.Bind(_api!); _terrain.Notify += text => Notify(text); _terrain.Ask = (text, ok, action) => Ask(text, ok, action);
         _pageHost.AddChild(_terrain); _pages["terreno"] = _terrain;
+        _land = new IslandLandPage { Name = "LandSummary", Visible = false }; _land.SetAnchorsPreset(Control.LayoutPreset.FullRect); _land.Bind(_api!); _land.OpenLandManagement = (island, section, offer) => OpenLandManagement?.Invoke(island, section, offer);
+        _pageHost.AddChild(_land); _pages["terrenos_parcelas"] = _land;
+        _deals = new IslandDealsPage { Name = "Deals", Visible = false }; _deals.SetAnchorsPreset(Control.LayoutPreset.FullRect); _deals.Bind(_api!); _deals.OpenLandManagement = (island, section, offer) => OpenLandManagement?.Invoke(island, section, offer);
+        _pageHost.AddChild(_deals); _pages["vendas_alugueis"] = _deals;
         _property = new IslandPropertyPage { Name = "Property", Visible = false }; _property.SetAnchorsPreset(Control.LayoutPreset.FullRect); _property.Bind(_api!); _property.Notify += text => Notify(text); _property.Changed += () => _ = LoadAsync();
         _pageHost.AddChild(_property); _pages["propriedade"] = _property;
 
@@ -367,6 +379,8 @@ public partial class IslandManagementWindow : Node
         if (id == "midia" && _info is not null) _ = _media.LoadAsync();
         if (id == "fisica" && _info is not null) _ = _physics.LoadAsync();
         if (id == "terreno" && _info is not null) _ = _terrain.LoadAsync();
+        if (id == "terrenos_parcelas" && _info is not null) _ = _land.LoadAsync();
+        if (id == "vendas_alugueis" && _info is not null) _ = _deals.LoadAsync();
         if (id == "propriedade" && _info is not null) _ = _property.LoadAsync();
         foreach (var section in Sections) PaintItem(section);
         RefreshFooter();
@@ -431,7 +445,7 @@ public partial class IslandManagementWindow : Node
     {
         _info = info; ApplyOwnerLock(_current); _island = info.Id; _lastSyncAt = Time.GetTicksMsec() / 1000.0; _failure.Visible = false;
         var keepMode = preserveAccessDraft && _access.IsDirty ? _access.DraftMode : null;
-        _bans.SetIsland(info.Id); _property.SetIsland(info.Id); _perms.SetIsland(info.Id); _objects.SetIsland(info.Id); _audit.SetIsland(info.Id); _admin.SetIsland(info.Id); _performance.SetIsland(info.Id); _restart.SetIsland(info.Id); _environment.SetIsland(info.Id); _media.SetIsland(info.Id); _physics.SetIsland(info.Id); _terrain.SetIsland(info.Id); _admin.SetClosedState(info.AccessMode == "closed"); _general.Fill(info); _access.Fill(info); if (keepMode is not null) _access.SetDraft(keepMode);
+        _bans.SetIsland(info.Id); _property.SetIsland(info.Id); _land.SetIsland(info.Id); _deals.SetIsland(info.Id); _perms.SetIsland(info.Id); _objects.SetIsland(info.Id); _audit.SetIsland(info.Id); _admin.SetIsland(info.Id); _performance.SetIsland(info.Id); _restart.SetIsland(info.Id); _environment.SetIsland(info.Id); _media.SetIsland(info.Id); _physics.SetIsland(info.Id); _terrain.SetIsland(info.Id); _admin.SetClosedState(info.AccessMode == "closed"); _general.Fill(info); _access.Fill(info); if (keepMode is not null) _access.SetDraft(keepMode);
         _name.Text = Fit(info.Name, 23, 380); _name.TooltipText = info.Name; _name.MouseFilter = Control.MouseFilterEnum.Pass; _id.Text = Fit($"ID da Ilha: {info.Id}", 13, 340, UiStyle.Medium); _id.TooltipText = info.Id.ToString(); _visitors.Text = $"{info.Visitors} / {info.MaxPlayers}";
         var color = IslandUi.StateColor(info.State); _stateText.Text = IslandUi.StateText(info.State); _stateText.AddThemeColorOverride("font_color", color);
         ((PanelContainer)_statePill).AddThemeStyleboxOverride("panel", IslandUi.Box(new Color(color, .15f), color, 7, 1, 11, 3)); ((ColorRect)_stateDot).Color = color;

@@ -119,7 +119,7 @@ public partial class LandManagementWindow
     {
         var offers = _data!.Parcels.Where(p => p.SalePrice is not null).ToList(); _rowCounts["vendas"] = offers.Count;
         var head = IslandUi.Row(10); head.AddChild(Title("Vendas", "Terrenos à venda na ilha e o que já foi vendido.")); head.GetChild<Control>(0).SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        var create = IslandUi.Action("Criar Anúncio", "plus", IslandUi.Kind.Orange, 40); create.Pressed += () => { var mine = _data.Parcels.Where(p => IsMine(p) && p.SalePrice is null && p.RentPrice is null && p.Kind is not ("rented" or "common")).ToList(); if (mine.Count == 0) { Notify("Você não tem terreno livre para anunciar."); return; } AskWhich("Criar anúncio de venda", mine, p => OpenSell(p)); }; head.AddChild(create); body.AddChild(head);
+        var create = IslandUi.Action("Criar Anúncio", "plus", IslandUi.Kind.Orange, 40); create.Pressed += CreateSaleOffer; head.AddChild(create); body.AddChild(head);
         var cards = IslandUi.Row(10); body.AddChild(cards);
         foreach (var (title, value) in new[] { ("Anúncios ativos", offers.Count.ToString(Pt)), ("Terrenos vendidos", _data.Totals.Sold.ToString(Pt)) })
         { var card = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; card.AddThemeStyleboxOverride("panel", IslandUi.Box(IslandUi.CardBackground, IslandUi.BorderDefault, IslandUi.RadiusCard, 1, 14, 8)); var c = IslandUi.Column(0); c.AddChild(IslandUi.Text(title, 12, IslandUi.TextSecondary, true)); c.AddChild(IslandUi.Text(value, 22, IslandUi.TextPrimary, true)); card.AddChild(c); cards.AddChild(card); }
@@ -133,6 +133,15 @@ public partial class LandManagementWindow
         var sold = _data.History.Where(h => h.What == "sale").ToList();
         body.AddChild(IslandUi.Text("Histórico de vendas", 17, IslandUi.TextPrimary, true));
         body.AddChild(Table(["Data", "Terreno", "Comprador", "Valor"], [1.2f, 1.6f, 1.2f, 1f], sold.Select(h => new Control[] { Cell(Short(h.At), null, false, 1.2f), Cell($"{h.Code} – {h.Parcel}", null, false, 1.6f), Cell(h.Actor, null, false, 1.2f), Cell(LandMath.Money(h.Amount ?? 0), LandTerritoryMap.OnSale, true, 1f) }).ToList(), "Ainda não houve vendas."));
+    }
+
+    /// <summary>Starts a sale offer: asks which of the person's free parcels, then the price.</summary>
+    public void CreateSaleOffer()
+    {
+        if (_data is null) return;
+        var mine = _data.Parcels.Where(p => IsMine(p) && p.SalePrice is null && p.RentPrice is null && p.Kind is not ("rented" or "common")).ToList();
+        if (mine.Count == 0) { Notify("Você não tem terreno livre para anunciar."); return; }
+        AskWhich("Criar anúncio de venda", mine, p => OpenSell(p));
     }
 
     private void AskWhich(string title, List<LandParcelRow> options, Action<LandParcelRow> then)

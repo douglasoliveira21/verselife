@@ -131,3 +131,14 @@ Cabeçalho: imagem, **código e nome**, ilha e área, e o estado (Disponível, �
 **Servidor:** `GET /land/parcels/{id}/about` junta tudo isto (qualquer um que possa entrar na ilha lê; o que é só do dono vem com bandeiras `canManage`, `isTenant`, `isStaff`), `PUT /land/parcels/{id}/image` põe ou tira a imagem (dono do terreno ou equipe; precisa ser **imagem do inventário da própria pessoa**). A imagem do terreno é entregue a quem pode entrar na ilha, como a capa. Migração `Phase78ParcelImage` (`parcels.image_url`). Código: `LandAbout` e `ParcelInfoWindow`. Testes: `LandAboutTests` e `ParcelInfoSmoke`.
 
 **Limites:** “Criar objetos”, “Usar voz”, “Usar mídia” e “Permitir visitantes” do prompt não existem como regras separadas no jogo; ficaram em **Permissões** as regras que existem (quem constrói, scripts, devolução automática) e o acesso na aba **Acesso**. O mercado ainda mostra a capa da ilha nos cards de terrenos (a imagem do terreno entra lá numa próxima).
+
+---
+
+# Abas do gerenciamento da ilha: Terrenos e Parcelas, Vendas e Aluguéis
+
+No menu da janela **Informações e Gerenciamento da Ilha**, depois de Histórico e Auditoria: **Terrenos e Parcelas**, **Vendas e Aluguéis** e **Propriedade**. As duas primeiras leem o mesmo `GET /land/overview` do Gerenciamento de Terrenos (só o dono e os administradores).
+
+- **Terrenos e Parcelas:** área total, parcelada e disponível (com porcentagem), quantidade de parcelas, vendidas, alugadas e disponíveis, um **mapa territorial** pequeno com as parcelas de verdade (sem clique), como a ilha está dividida (à venda agora, áreas comuns, prims da ilha, distribuídos e em uso) e o botão **Abrir Gerenciamento de Terrenos**.
+- **Vendas e Aluguéis:** anúncios ativos, parcelas à venda e alugadas, contratos ativos, receita mensal, próximos vencimentos (7 dias) e a tabela dos **contratos em andamento** (imóvel, locador, locatário, valor, vencimento, estado). Botões: **Gerenciar Vendas** e **Gerenciar Aluguéis** abrem o Gerenciamento de Terrenos nessas seções; **Criar Anúncio** abre Vendas e já pergunta qual terreno anunciar.
+
+Sem migração nem rota nova. Testes: `IslandLandPagesSmoke`.

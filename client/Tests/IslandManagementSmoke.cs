@@ -396,7 +396,7 @@ public partial class IslandManagementSmoke : Node3D
             window.UseTransportForTesting(server.Handle); AddChild(window); await Frames(3);
 
             // --- the structure ---------------------------------------------------------------------------------------------
-            Require(window.MenuForTesting.SequenceEqual(["Geral", "Acesso", "Banimentos", "Permissões", "Objetos e Prims", "Mídia", "Terreno", "Ambiente", "Física", "Desempenho", "Reinicialização", "Administração", "Histórico e Auditoria", "Propriedade"]), "the fourteen sections in order");
+            Require(window.MenuForTesting.SequenceEqual(["Geral", "Acesso", "Banimentos", "Permissões", "Objetos e Prims", "Mídia", "Terreno", "Ambiente", "Física", "Desempenho", "Reinicialização", "Administração", "Histórico e Auditoria", "Terrenos e Parcelas", "Vendas e Aluguéis", "Propriedade"]), "the sixteen sections in order");
 
             // --- real numbers ----------------------------------------------------------------------------------------------
             await window.OpenAsync(); await Frames(3);

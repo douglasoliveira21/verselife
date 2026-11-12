@@ -210,6 +210,13 @@ public partial class LandManagementWindow : Node
         _island = target; _root.Visible = true; Layout(); await LoadAsync();
     }
 
+    /// <summary>Opens the window on an island and goes straight to one of its sections (the island window's buttons use it); with <paramref name="startOffer"/> it also starts a sale offer.</summary>
+    public async Task OpenSectionAsync(Guid island, string section, bool startOffer = false)
+    {
+        await OpenAsync(island); if (_data is null) return;
+        Select(section); if (startOffer) CreateSaleOffer();
+    }
+
     private void ShowFailure(string text) { _failureText.Text = text; _failure.Visible = true; }
 
     public async Task LoadAsync()
