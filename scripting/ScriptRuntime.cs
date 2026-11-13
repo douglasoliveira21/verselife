@@ -60,9 +60,9 @@ public sealed record RegionInfo(Guid Id, string Name, int AvatarCount);
 public static class ScriptPermission
 {
     public const string ControlAnimation = "CONTROL_ANIMATION", ShowHud = "SHOW_HUD", RequestPayment = "REQUEST_PAYMENT", GiveItems = "GIVE_ITEMS", SendMessages = "SEND_MESSAGES", ControlMedia = "CONTROL_MEDIA",
-        ControlPhysics = "CONTROL_PHYSICS", ControlAvatar = "CONTROL_AVATAR", HttpRequests = "HTTP_REQUESTS", CreateNpcs = "CREATE_NPCS", RegionInfo = "REGION_INFO", ModifyObject = "MODIFY_OBJECT";
+        ControlPhysics = "CONTROL_PHYSICS", ControlAvatar = "CONTROL_AVATAR", HttpRequests = "HTTP_REQUESTS", CreateNpcs = "CREATE_NPCS", RegionInfo = "REGION_INFO", ModifyObject = "MODIFY_OBJECT", ControlVehicles = "CONTROL_VEHICLES";
 
-    public static readonly string[] All = [ModifyObject, ControlPhysics, ControlAnimation, ControlAvatar, ShowHud, RequestPayment, GiveItems, SendMessages, HttpRequests, CreateNpcs, ControlMedia, RegionInfo];
+    public static readonly string[] All = [ModifyObject, ControlPhysics, ControlAnimation, ControlAvatar, ShowHud, RequestPayment, GiveItems, SendMessages, HttpRequests, CreateNpcs, ControlMedia, RegionInfo, ControlVehicles];
 
     /// <summary>Asked of the avatar that is affected (the script may not act on a person without being allowed by that person).</summary>
     public static readonly string[] OfAvatars = [ControlAnimation, ControlAvatar, RequestPayment, ShowHud, GiveItems, SendMessages];
@@ -71,11 +71,11 @@ public static class ScriptPermission
     {
         ControlAnimation => "controlar as animações do seu avatar", ControlAvatar => "controlar o seu avatar", ShowHud => "mostrar um HUD na sua tela", RequestPayment => "pedir pagamentos em seu nome",
         GiveItems => "entregar itens a você", SendMessages => "enviar mensagens privadas a você", ControlMedia => "controlar a mídia do objeto", ControlPhysics => "controlar a física do objeto",
-        HttpRequests => "acessar endereços externos", CreateNpcs => "criar NPCs", RegionInfo => "ler informações da região", _ => "modificar o objeto"
+        HttpRequests => "acessar endereços externos", CreateNpcs => "criar NPCs", RegionInfo => "ler informações da região", ControlVehicles => "dirigir os veículos do dono", _ => "modificar o objeto"
     };
 
     /// <summary>Given by the owner of the object to the script (in the editor), never asked of avatars: what reaches beyond the object itself but not a person.</summary>
-    public static readonly string[] OfOwner = [ControlPhysics, ControlMedia, HttpRequests, CreateNpcs];
+    public static readonly string[] OfOwner = [ControlPhysics, ControlMedia, HttpRequests, CreateNpcs, ControlVehicles];
 
     public static bool IsKnown(string permission) => All.Contains(permission, StringComparer.Ordinal);
 }

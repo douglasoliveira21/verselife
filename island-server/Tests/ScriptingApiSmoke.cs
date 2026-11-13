@@ -199,6 +199,22 @@ public partial class ScriptingApiSmoke : Node
             Require(spawnedNpcs.Count >= 1 && scripting.Npcs.All.Count == spawnedNpcs.Count, $"the script made an NPC (spawned {spawnedNpcs.Count})");
             for (var i = 0; i < 6; i++) { scripting.Npcs.Tick(scripting.Now + i, 1f); } for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(60); }
             Require(scripting.Npcs.All.All(n => n.X == 35f) && said.Any(s => s.Name == "Guarda" && s.Text == "cheguei"), $"the NPC walked to where it was sent and spoke under its own name (said {string.Join("|", said.Select(s => s.Name + ":" + s.Text))})");
+
+            // vehicles: the owner's empty car driven by a script with the owner's permission, an autopilot that arrives and tells the script, and the seat taken back by a driver
+            var garage = Guid.NewGuid(); var garageScript = Guid.NewGuid(); var fleet = new LifeVerse.Shared.Vehicles.VehicleFleet(); var jipe = fleet.Add(Guid.NewGuid(), "Jipe", "car", 30, 20, 0, 20f, (_, _) => 1f, owner)!; scripting.Fleet = fleet;
+            var garageSource = "function on_touch(e) vehicle.driveTo(1, 30, 6, 10) end function on_vehicle_arrived(e) object.setName('chegou ' .. tostring(e.arrived)) end";
+            routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(garage, "Garagem", 30) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(garageScript, garage, "garagem", garageSource) + ",");
+            await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            scripting.Touch(donor, garage); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(jipe.TargetX is null, "without the owner's permission the car is not driven");
+            routes["island-content"] = routes["island-content"].Replace("\"grants\":[", "\"grants\":[{\"scriptId\":\"" + garageScript + "\",\"subjectId\":\"" + Guid.Empty + "\",\"permission\":\"CONTROL_VEHICLES\"},");
+            await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            scripting.Touch(donor, garage); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(jipe.TargetZ == 6f, "the script sent the car to a point");
+            posts.Clear(); var arrivals = new List<bool>(); for (var t = 0.0; t < 30 && arrivals.Count == 0; t += .05) fleet.Tick(.05f, (_, _) => 1f, -100, 1000, scripting.Now + t, (car, by, ok) => { arrivals.Add(ok); scripting.VehicleArrived(car, by, ok); });
+            Require(arrivals.SequenceEqual([true]) && MathF.Abs(jipe.State.Z - 6f) <= 3.5f, $"the car drove to the point (z {jipe.State.Z})");
+            for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("chegou true")), "the script heard that the car arrived");
             // shutdown
             said.Clear(); await scripting.ShutdownAsync(); await Run(2); Require(said.Any(s => s.Text == "desligando") && posts.Any(p => p.Contains("script-state") || p.Contains("script-runtime")), "scripts hear the shutdown and the state is saved");
 

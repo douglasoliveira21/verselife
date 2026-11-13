@@ -14,7 +14,7 @@ public partial class ServerMain
 
     private float WorldLimit => _terrain.HalfExtent + TerrainMap.OceanMargin;
 
-    private sealed record VehicleRow(Guid Id, string Name, string VehicleType, float PositionX, float PositionZ, float RotationY, float MaxSpeed);
+    private sealed record VehicleRow(Guid Id, string Name, string VehicleType, float PositionX, float PositionZ, float RotationY, float MaxSpeed, Guid OwnerUserId = default);
     private sealed record VehicleFeed(List<VehicleRow> Vehicles);
 
     /// Adds vehicles the API knows about that this island has not seen yet and tells everyone connected.
@@ -25,7 +25,7 @@ public partial class ServerMain
         var feed = await response.Content.ReadFromJsonAsync<VehicleFeed>(cancellationToken: ct);
         foreach (var row in feed?.Vehicles ?? [])
         {
-            if (_fleet.Add(row.Id, row.Name, row.VehicleType, row.PositionX, row.PositionZ, row.RotationY, row.MaxSpeed, _terrain.SampleHeight) is not { } vehicle) continue;
+            if (_fleet.Add(row.Id, row.Name, row.VehicleType, row.PositionX, row.PositionZ, row.RotationY, row.MaxSpeed, _terrain.SampleHeight, row.OwnerUserId) is not { } vehicle) continue;
             foreach (var target in _players.Values.Where(x => x.Authenticated)) SendVehicle(target.PeerId, vehicle);
             Log("vehicle_added", new { vehicle.Id, vehicle.Name });
         }
@@ -52,7 +52,7 @@ public partial class ServerMain
 
     private void SendAllVehicles(int peerId) { foreach (var vehicle in _fleet.Vehicles) SendVehicle(peerId, vehicle); }
 
-    private void TickVehicles(float dt) => _fleet.Tick(dt, _terrain.SampleHeight, _terrain.SeaLevel, WorldLimit);
+    private void TickVehicles(float dt) => _fleet.Tick(dt, _terrain.SampleHeight, _terrain.SeaLevel, WorldLimit, _scripting?.Now ?? 0, (car, by, arrived) => _scripting?.VehicleArrived(car, by, arrived));
 
     /// A driver does not walk: the avatar rides at the seat with the car's heading and velocity.
     private bool PinDriver(ConnectedPlayer player)
@@ -81,7 +81,7 @@ public partial class ServerMain
     {
         if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return;
         var result = _fleet.Enter(peerId, vehicleId, player.State.X, player.State.Y, player.State.Z);
-        if (result == EnterResult.Ok) { Log("vehicle_entered", new { peerId, vehicleId }); return; }
+        if (result == EnterResult.Ok) { Log("vehicle_entered", new { peerId, vehicleId }); if (_fleet.Get(vehicleId) is { } entered) _scripting?.VehicleSeat(entered, true, PresenceOf(player)); return; }
         _bridge.RpcId(peerId, NetworkBridge.MethodName.VehicleRejected, result switch
         {
             EnterResult.TooFar => "too_far", EnterResult.Occupied => "occupied", EnterResult.AlreadyDriving => "already_driving", _ => "no_vehicle"
@@ -91,7 +91,9 @@ public partial class ServerMain
     public void ExitVehicle(int peerId)
     {
         if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return;
+        var left = _fleet.VehicleOf(peerId);
         if (!_fleet.Exit(peerId, _terrain.SampleHeight, out var x, out var y, out var z)) return;
+        if (left is not null) _scripting?.VehicleSeat(left, false, PresenceOf(player));
         player.State.X = x; player.State.Y = y + AuthoritativeMovement.GroundOffset; player.State.Z = z;
         player.State.VelocityX = player.State.VelocityY = player.State.VelocityZ = 0; player.State.Seated = false;
         Log("vehicle_exited", new { peerId });

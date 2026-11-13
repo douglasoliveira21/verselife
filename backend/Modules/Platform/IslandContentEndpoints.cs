@@ -60,7 +60,7 @@ public static class IslandContentEndpoints
         var server = await db.ServerInstances.AsNoTracking().SingleOrDefaultAsync(x => x.Id == instanceId && x.StoppedAt == null, ct);
         if (server is null) return Results.NotFound();
         var vehicles = await db.Vehicles.AsNoTracking().Where(x => x.IslandId == server.IslandId && x.DeletedAt == null)
-            .Select(x => new { x.Id, x.Name, x.VehicleType, x.PositionX, x.PositionZ, x.RotationY, x.MaxSpeed }).Take(64).ToListAsync(ct);
+            .Select(x => new { x.Id, x.Name, x.VehicleType, x.PositionX, x.PositionZ, x.RotationY, x.MaxSpeed, x.OwnerUserId }).Take(64).ToListAsync(ct);
         return Results.Ok(new { vehicles });
     }
 

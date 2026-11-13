@@ -45,6 +45,9 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_item_added` | Um item foi posto no Conteúdo do objeto. | item.name, item.type, item.id |
 | `on_item_removed` | Um item saiu do Conteúdo do objeto. | item.name, item.type, item.id |
 | `on_npc_arrived` | Um NPC deste script chegou ao destino de npc.moveTo (ou parou no mar ou na borda da ilha). | npc (número), position {x, y, z} |
+| `on_vehicle_arrived` | Um piloto automático (vehicle.driveTo) deste script terminou. | vehicle {id, name, type, x, y, z, yaw, speed, occupied}, arrived (verdadeiro: chegou; falso: ficou preso) |
+| `on_vehicle_enter` | Alguém entrou em um veículo do dono do objeto. | vehicle, avatar_id, avatar_name, avatar.id, avatar.name |
+| `on_vehicle_exit` | Alguém saiu de um veículo do dono do objeto. | vehicle, avatar_id, avatar_name, avatar.id, avatar.name |
 | `on_item_given` | A entrega pedida com inventory.giveItem terminou: o avatar tem o item. | avatar_id, avatar.name, item (nome) |
 | `on_item_give_failed` | A entrega pedida com inventory.giveItem não aconteceu. | avatar_id, avatar.name, item, reason (not_copyable, item_unavailable, unavailable...) |
 | `on_animation_finished` | Uma animação de avatar começada por avatar.playAnimation terminou. | avatar_id, avatar.id, avatar.name, name, reason (finished, interrupted, stopped, replaced) |
@@ -1305,6 +1308,73 @@ Os números dos NPCs deste script.
 for _, id in ipairs(npc.list()) do npc.remove(id) end
 ```
 
+## Veículos
+
+### `vehicle.list()`
+
+Os veículos do dono do script nesta ilha: id, name, type, x, y, z, yaw, speed e occupied.
+
+- **Retorna:** lista de tabelas
+- **Permissão:** CONTROL_VEHICLES (o dono dá no editor, aba Permissões)
+- **Limites:** até 64
+- **Erros possíveis:** sem permissão
+
+```lua
+for _, v in ipairs(vehicle.list()) do chat.say(v.name .. ' ' .. v.id) end
+```
+
+### `vehicle.get(id)`
+
+Um veículo do dono do script pelo número.
+
+- **Retorna:** tabela ou nada
+- **Permissão:** CONTROL_VEHICLES
+- **Limites:** —
+- **Erros possíveis:** sem permissão
+
+```lua
+local v = vehicle.get(1)
+```
+
+### `vehicle.drive(id, aceleracao, direcao, freio)`
+
+Dirige um veículo PARADO (sem motorista) do dono: aceleração e direção de -1 a 1 (direção +1 é para a direita). O comando vale por 1 segundo: repita para continuar; sem novo comando o veículo freia.
+
+- **Retorna:** verdadeiro se o veículo é do dono e está vazio
+- **Permissão:** CONTROL_VEHICLES
+- **Limites:** 10 comandos por segundo por script
+- **Erros possíveis:** sem permissão; veículo de outro dono ou com motorista (devolve falso)
+
+```lua
+vehicle.drive(1, 1, 0.3, false)
+```
+
+### `vehicle.driveTo(id, x, z, velocidade)`
+
+Piloto automático: leva o veículo vazio até (x, z) em linha reta (não desvia de obstáculos), com a velocidade máxima dada (padrão 8 m/s). Ao chegar a 3 m, o script ouve on_vehicle_arrived (arrived = verdadeiro); se o veículo não se mexer por 6 s, arrived = falso. Quando alguém senta, o script perde o controle.
+
+- **Retorna:** verdadeiro se começou
+- **Permissão:** CONTROL_VEHICLES
+- **Limites:** 10 comandos por segundo; 5.000 m da origem
+- **Erros possíveis:** sem permissão; coordenadas longe demais
+
+```lua
+vehicle.driveTo(1, 120, -40, 10)
+```
+
+### `vehicle.stop(id)`
+
+Solta o veículo: ele freia até parar.
+
+- **Retorna:** verdadeiro se estava sob controle deste script
+- **Permissão:** CONTROL_VEHICLES
+- **Limites:** —
+- **Erros possíveis:** sem permissão
+
+```lua
+vehicle.stop(1)
+```
+
 ## Inventário
 
 ### `inventory.list()`
@@ -1736,6 +1806,7 @@ local agora = lv.time()
 | `CREATE_NPCS` | O script pode criar NPCs | não |
 | `CONTROL_MEDIA` | O script pode controlar a mídia do objeto | não |
 | `REGION_INFO` | O script pode ler informações da região | não |
+| `CONTROL_VEHICLES` | O script pode dirigir os veículos do dono | não |
 
 ## Estados de um script
 

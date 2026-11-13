@@ -100,7 +100,7 @@ public partial class ScriptEditorWindow : Node
         _tabs.SetTabTitle(1, "Problemas");
     }
 
-    private static readonly (string Name, string Text)[] OwnerPermissions = [("CONTROL_PHYSICS", "Controlar a física do objeto (physics.*)"), ("HTTP_REQUESTS", "Acessar endereços externos (http.*)"), ("CONTROL_MEDIA", "Controlar a mídia do objeto"), ("CREATE_NPCS", "Criar NPCs")];
+    private static readonly (string Name, string Text)[] OwnerPermissions = [("CONTROL_PHYSICS", "Controlar a física do objeto (physics.*)"), ("HTTP_REQUESTS", "Acessar endereços externos (http.*)"), ("CONTROL_MEDIA", "Controlar a mídia do objeto"), ("CREATE_NPCS", "Criar NPCs (npc.*)"), ("CONTROL_VEHICLES", "Dirigir os seus veículos parados (vehicle.*)")];
     private readonly Dictionary<string, CheckBox> _ownerBoxes = [];
 
     private Label PermissionsTab()
