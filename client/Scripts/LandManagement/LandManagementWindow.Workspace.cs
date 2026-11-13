@@ -17,7 +17,7 @@ public partial class LandManagementWindow
     private readonly Dictionary<string, Label> _detail = [];
     private readonly Dictionary<string, Label> _selection = [];
     private Button _inspect = null!, _edit = null!, _split = null!, _merge = null!, _sell = null!, _rent = null!;
-    private Button _create = null!, _cut = null!, _join = null!, _clear = null!, _undoButton = null!, _redoButton = null!;
+    private Button _create = null!, _cut = null!, _expand = null!, _shrink = null!, _join = null!, _clear = null!, _undoButton = null!, _redoButton = null!;
     private readonly Dictionary<LandTerritoryMap.Tool, Button> _toolButtons = [];
     private readonly Stack<HashSet<long>> _undo = new(), _redo = new();
     private HashSet<long> _lastCells = [];
@@ -31,11 +31,13 @@ public partial class LandManagementWindow
     public string SelectionForTesting(string key) => _selection.TryGetValue(key, out var label) ? label.Text : "";
     public bool DetailVisibleForTesting => _detailCard.Visible;
     public bool SelectionVisibleForTesting => _selectionCard.Visible;
-    public bool ButtonEnabledForTesting(string name) => name switch { "inspecionar" => !_inspect.Disabled, "editar" => !_edit.Disabled, "dividir" => !_split.Disabled, "unir" => !_merge.Disabled, "vender" => !_sell.Disabled, "alugar" => !_rent.Disabled, "criar" => !_create.Disabled, "cortar" => !_cut.Disabled, "juntar" => !_join.Disabled, _ => false };
+    public bool ButtonEnabledForTesting(string name) => name switch { "inspecionar" => !_inspect.Disabled, "editar" => !_edit.Disabled, "dividir" => !_split.Disabled, "unir" => !_merge.Disabled, "vender" => !_sell.Disabled, "alugar" => !_rent.Disabled, "criar" => !_create.Disabled, "cortar" => !_cut.Disabled, "expandir" => !_expand.Disabled, "reduzir" => !_shrink.Disabled, "juntar" => !_join.Disabled, _ => false };
     public void SelectParcelForTesting(Guid? id) { _map.Select(id); RefreshWorkspace(); }
     public void MarkForTesting((int, int) a, (int, int) b, bool remove = false) { _map.MarkRectangleForTesting(a, b, remove ? LandTerritoryMap.Tool.Remove : LandTerritoryMap.Tool.Add); }
     public async Task CreateParcelForTesting(string name, string category) => await CreateParcelAsync(name, "", category);
     public async Task SplitForTesting(string name) => await SplitAsync(name);
+    public async Task<bool> ExpandForTesting(int extra) => Selected is { } p && await ExpandAsync(p, extra);
+    public async Task<bool> ShrinkForTesting() => ParcelsTouching(_map.SelectedCells).FirstOrDefault() is { } p && await ShrinkAsync(p);
     public async Task MergeForTesting(Guid primary) => await MergeAsync(primary);
     public async Task SellForTesting(long price) => await SellAsync(price, true, "");
     public async Task RentOfferForTesting(long price, int days) => await OfferRentAsync(price, days, 1, 6, 0, 3);
@@ -135,6 +137,7 @@ public partial class LandManagementWindow
         Button Cell(string text, string icon, IslandUi.Kind kind, Action act) { var b = IslandUi.Action(text, icon, kind, 38, 16); b.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; b.Pressed += act; grid.AddChild(b); return b; }
         _create = Cell("Criar Parcela", "plus", IslandUi.Kind.Primary, OpenCreate); _clear = Cell("Limpar", "close", IslandUi.Kind.Secondary, () => _map.ClearCells());
         _cut = Cell("Dividir", "scissors", IslandUi.Kind.Secondary, OpenSplit); _join = Cell("Unir", "link", IslandUi.Kind.Secondary, UniteSelected);
+        _expand = Cell("Expandir", "plus", IslandUi.Kind.Secondary, OpenExpand); _shrink = Cell("Reduzir", "minus", IslandUi.Kind.Secondary, OpenShrink);
         return card;
     }
 
@@ -213,6 +216,7 @@ public partial class LandManagementWindow
         _create.Disabled = n == 0 || inside > 0;
         var one = touching.Count == 1 ? touching[0] : null;
         _cut.Disabled = !(one is not null && IsMine(one) && one.Kind != "rented" && inside == n && n < one.Cells.Count);
+        _shrink.Disabled = _cut.Disabled; _expand.Disabled = !(Selected is { } grow && IsMine(grow) && grow.Kind != "rented" && n > 0 && inside == 0);
         _join.Disabled = !(_map.Picked.Count >= 2 && _map.Picked.All(id => _data.Parcels.Any(p => p.Id == id && IsMine(p) && p.Kind != "rented")));
         _undoButton.Disabled = _undo.Count == 0; _redoButton.Disabled = _redo.Count == 0;
     }
@@ -238,6 +242,32 @@ public partial class LandManagementWindow
         var content = IslandUi.Column(8); content.AddChild(IslandUi.Text("A parte marcada vira um terreno novo, do mesmo dono. As duas partes precisam ficar de uma peça só.", 14, IslandUi.TextSecondary, false, true));
         var name = IslandUi.Input("Nome do terreno novo", 120); content.AddChild(name);
         Ask("Dividir terreno", content, async () => await SplitAsync(name.Text.Trim()), "Dividir");
+    }
+
+    private void OpenExpand()
+    {
+        if (Selected is not { } parcel) return;
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"Os {_map.SelectedCells.Count} quadrados marcados passam a fazer parte de “{parcel.Name}”. Eles precisam encostar no terreno. Anúncios abertos deste terreno são retirados.", 14, IslandUi.TextSecondary, false, true));
+        var extra = IslandUi.Number(0, 100000, 10, "", 140); extra.TooltipText = "Objetos a mais para o terreno. 0 mantém o limite atual.";
+        var row = IslandUi.Row(8); row.AddChild(IslandUi.Text("Objetos a mais (0 = manter)", 14, IslandUi.TextSecondary)); row.AddChild(extra); content.AddChild(row);
+        Ask($"Expandir {parcel.Code}", content, async () => await ExpandAsync(parcel, (int)extra.Value), "Expandir");
+    }
+
+    private async Task<bool> ExpandAsync(LandParcelRow parcel, int extraObjects)
+    {
+        var ok = await Do(_api!.Expand(_island, parcel.Id, _map.SelectedCells, extraObjects), "Terreno expandido."); if (ok) _map.ClearCells(); return ok;
+    }
+
+    private void OpenShrink()
+    {
+        var parcel = ParcelsTouching(_map.SelectedCells).FirstOrDefault(); if (parcel is null) return;
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"Os {_map.SelectedCells.Count} quadrados marcados saem de “{parcel.Name}” e voltam a ser terreno livre da ilha. O terreno precisa continuar de uma peça só e sem objetos nessa área. O limite de objetos não muda.", 14, IslandUi.TextSecondary, false, true));
+        Ask($"Reduzir {parcel.Code}", content, async () => await ShrinkAsync(parcel), "Reduzir");
+    }
+
+    private async Task<bool> ShrinkAsync(LandParcelRow parcel)
+    {
+        var ok = await Do(_api!.Shrink(_island, parcel.Id, _map.SelectedCells), "Terreno reduzido."); if (ok) _map.ClearCells(); return ok;
     }
 
     private async Task<bool> SplitAsync(string name)

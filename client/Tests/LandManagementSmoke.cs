@@ -69,6 +69,13 @@ public partial class LandManagementSmoke : Node3D
                 if (action == "category") { var c = json!["category"]!.GetValue<string>(); if (!new[] { "residencial", "comercial", "mista", "social", "comum" }.Contains(c)) return Task.FromResult(Fail(400, "bad_category")); p.Category = c; p.Revision++; return Task.FromResult(Ok()); }
                 if (action == "sale") { if (p.Owner != Me) return Task.FromResult(Fail(403, "forbidden")); if (method == "DELETE") { p.Sale = null; return Task.FromResult(Ok()); } p.Sale = json!["price"]!.GetValue<long>(); p.Revision++; return Task.FromResult(Ok()); }
                 if (action == "rental-offer") { if (method == "DELETE") { p.Rent = null; return Task.FromResult(Ok()); } p.Rent = json!["pricePerPeriod"]!.GetValue<long>(); p.Days = json["periodDays"]!.GetValue<int>(); p.Revision++; return Task.FromResult(Ok()); }
+                if (action is "shrink" or "expand")
+                {
+                    var cut = json!["cells"]!.AsArray().Select(c => LandMath.Key(c![0]!.GetValue<int>(), c[1]!.GetValue<int>())).ToHashSet();
+                    if (action == "shrink") { if (!cut.IsSubsetOf(p.Cells)) return Task.FromResult(Fail(409, "not_in_parcel")); if (cut.Count >= p.Cells.Count) return Task.FromResult(Fail(409, "whole_parcel")); p.Cells.ExceptWith(cut); }
+                    else { if (Parcels.Any(x => x.Cells.Overlaps(cut))) return Task.FromResult(Fail(409, "overlap")); p.Cells.UnionWith(cut); }
+                    p.Revision++; return Task.FromResult(Ok());
+                }
                 if (action == "split")
                 {
                     var take = json!["cells"]!.AsArray().Select(c => LandMath.Key(c![0]!.GetValue<int>(), c[1]!.GetValue<int>())).ToHashSet(); if (take.Count >= p.Cells.Count) return Task.FromResult(Fail(409, "whole_parcel"));
@@ -184,6 +191,17 @@ public partial class LandManagementSmoke : Node3D
             var half = server.Parcels.First(p => p.Name == "Metade Norte"); window.Map.Select(big.Id); window.Map.Picked.Add(half.Id); await Frames(2);
             await window.MergeForTesting(big.Id); await Frames(3);
             Require(window.Data!.Parcels.Count == 6 && !server.Parcels.Any(p => p.Name == "Metade Norte"), "joining brings them back to one");
+
+            // --- shrinking and expanding ------------------------------------------------------------------------------------------------
+            var before = big.Cells.Count; window.SelectParcelForTesting(big.Id); window.Map.Select(big.Id); window.MarkForTesting((-30, -30), (-27, -23)); await Frames(2);
+            Require(window.ButtonEnabledForTesting("reduzir") && !window.ButtonEnabledForTesting("expandir"), "cells inside an own parcel can be given back, not added");
+            Require(await window.ShrinkForTesting(), "shrinking works"); await Frames(3);
+            Require(big.Cells.Count == before - 32 && server.Calls.Any(c => c.EndsWith($"/parcels/{big.Id}/shrink", StringComparison.Ordinal)) && window.Map.SelectedCells.Count == 0, "the parcel lost the cells and the marking is cleared");
+            window.Map.Select(big.Id); window.MarkForTesting((-30, -30), (-27, -23)); await Frames(2);
+            Require(window.ButtonEnabledForTesting("expandir") && !window.ButtonEnabledForTesting("reduzir"), "free cells can be added to the selected parcel");
+            Require(await window.ExpandForTesting(0), "expanding works"); await Frames(3); Require(big.Cells.Count == before, "the parcel has its cells back");
+            window.Map.Select(big.Id); window.MarkForTesting((-30, -30), (-29, -29)); await Frames(2);
+            Require(!await window.ExpandForTesting(0) && window.ToastForTesting.Length > 0, "cells that already belong to a parcel are refused and the person is told"); window.Map.ClearCells();
 
             // --- not staff -------------------------------------------------------------------------------------------------------------------
             server.Staff = false; await window.LoadAsync(); await Frames(2);

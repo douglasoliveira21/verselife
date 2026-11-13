@@ -19,6 +19,7 @@ public sealed class LandManagementApi(IslandManagementApi inner)
             "outside_island" => "A área passa dos limites da ilha.",
             "too_big" => "A área é grande demais para um terreno.",
             "empty" => "Marque algum quadrado no mapa.",
+            "has_objects" => "Há objetos nessa área. Retire-os antes de devolver o terreno.",
             "budget_exceeded" => "A ilha não tem tantos objetos livres. Use um limite menor.",
             "bad_category" => "Finalidade inválida.",
             "forbidden" => "Você não tem permissão para isso nesta ilha.",
@@ -40,6 +41,10 @@ public sealed class LandManagementApi(IslandManagementApi inner)
         inner.Send("POST", $"{Base(island)}/claim", new { name, description, cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), maxObjects });
     public Task<IslandReply> Split(Guid island, Guid parcel, IEnumerable<long> cells, string name) =>
         inner.Send("POST", $"{Base(island)}/parcels/{parcel}/split", new { cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), name });
+    public Task<IslandReply> Expand(Guid island, Guid parcel, IEnumerable<long> cells, int extraObjects) =>
+        inner.Send("POST", $"{Base(island)}/parcels/{parcel}/expand", new { cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), extraObjects });
+    public Task<IslandReply> Shrink(Guid island, Guid parcel, IEnumerable<long> cells) =>
+        inner.Send("POST", $"{Base(island)}/parcels/{parcel}/shrink", new { cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }) });
     public Task<IslandReply> Merge(Guid island, IEnumerable<Guid> parcels, Guid primary) => inner.Send("POST", $"{Base(island)}/merge", new { parcelIds = parcels, primaryId = primary });
     public Task<IslandReply> OfferSale(Guid island, Guid parcel, long price, bool includeObjects, string description) => inner.Send("POST", $"{Base(island)}/parcels/{parcel}/sale", new { price, includeObjects, description });
     public Task<IslandReply> CancelSale(Guid island, Guid parcel) => inner.Send("DELETE", $"{Base(island)}/parcels/{parcel}/sale");

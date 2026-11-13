@@ -185,7 +185,6 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 
 ### Ainda não feito (e por quê)
 
-- **Expandir/reduzir uma parcela existente**: exige operações novas no servidor (recalcular área, cota e preço de anúncios abertos). Hoje é possível dividir e juntar.
 - **Hospedagem da ilha (plano da plataforma, `economy.rentals`) nas janelas**: o dado existe no servidor, mas não é exibido.
 - **Atualização ao vivo das janelas e "Visitar" até o terreno exato**: as janelas atualizam ao abrir/recarregar; "Visitar" leva à ilha, não ao terreno.
 - **Retenção de snapshots**: apaga dados; precisa de decisão do dono do produto sobre prazos.
@@ -194,3 +193,10 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 - **"Criar objetos" / "Permitir visitantes"**: redundantes com as permissões de construção e o modo de acesso existentes.
 
 Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase80.
+
+## Expandir e reduzir parcela
+
+- `POST /islands/{id}/land/parcels/{parcelId}/expand` (`cells`, `extraObjects`): junta quadrados livres que encostam na parcela; o limite de objetos sobe em `extraObjects` (nunca além do que a ilha tem livre). Erros: `overlap`, `not_contiguous`, `outside_island`, `too_big`, `budget_exceeded`, `bad_limit`, `rented`, `forbidden`.
+- `POST .../parcels/{parcelId}/shrink` (`cells`): devolve quadrados à ilha. A parte que fica precisa ser de uma peça só, não pode ficar vazia e nenhum objeto pode estar nos quadrados devolvidos (`has_objects`). O limite de objetos não muda; o ponto de nascimento é movido se cair fora.
+- Nos dois casos os anúncios de venda/aluguel da parcela são retirados e a mudança entra no histórico (`expand` / `shrink`). Parcelas alugadas não mudam de forma.
+- Cliente: na aba Demarcação, marque os quadrados e use **Expandir** (livres, com a parcela escolhida) ou **Reduzir** (dentro da parcela).

@@ -13,6 +13,7 @@ public sealed record RentOfferRequest(long PricePerPeriod, int PeriodDays = 30, 
 public sealed record RentRequest(int Periods, bool AutoRenew, long ExpectedPrice, string IdempotencyKey);
 public sealed record RenewRequest(int Periods, string IdempotencyKey);
 public sealed record SplitRequest(int[][] Cells, string Name);
+public sealed record ReshapeRequest(int[][] Cells, int? ExtraObjects);
 public sealed record MergeRequest(Guid[] ParcelIds, Guid? PrimaryId);
 public sealed record AccessModeRequest(string Mode);
 public sealed record CategoryRequest(string Category);
@@ -73,6 +74,12 @@ public static class LandEndpoints
         group.MapPost("/parcels/{parcelId:guid}/split", async (Guid islandId, Guid parcelId, SplitRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             r.Cells is null || r.Cells.Length > LandGrid.MaxCellsPerParcel || r.Cells.Any(x => x is not { Length: 2 }) ? Results.BadRequest(new { error = "empty" })
                 : await Run(c, islandId, db, ct, user => LandAdmin.SplitAsync(db, parcelId, user, [.. r.Cells.Select(x => LandGrid.Key(x[0], x[1]))], r.Name, t, ct)));
+        group.MapPost("/parcels/{parcelId:guid}/expand", async (Guid islandId, Guid parcelId, ReshapeRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            r.Cells is null || r.Cells.Length > LandGrid.MaxCellsPerParcel || r.Cells.Any(x => x is not { Length: 2 }) ? Results.BadRequest(new { error = "empty" })
+                : await Run(c, islandId, db, ct, user => LandAdmin.ExpandAsync(db, parcelId, user, [.. r.Cells.Select(x => LandGrid.Key(x[0], x[1]))], r.ExtraObjects ?? 0, t, ct)));
+        group.MapPost("/parcels/{parcelId:guid}/shrink", async (Guid islandId, Guid parcelId, ReshapeRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            r.Cells is null || r.Cells.Length > LandGrid.MaxCellsPerParcel || r.Cells.Any(x => x is not { Length: 2 }) ? Results.BadRequest(new { error = "empty" })
+                : await Run(c, islandId, db, ct, user => LandAdmin.ShrinkAsync(db, parcelId, user, [.. r.Cells.Select(x => LandGrid.Key(x[0], x[1]))], t, ct)));
         group.MapPost("/merge", async (Guid islandId, MergeRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandAdmin.MergeAsync(db, r.ParcelIds ?? [], user, r.PrimaryId, t, ct)));
         group.MapPut("/parcels/{parcelId:guid}/access-mode", async (Guid islandId, Guid parcelId, AccessModeRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>

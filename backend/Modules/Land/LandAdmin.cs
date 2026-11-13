@@ -104,6 +104,71 @@ public static class LandAdmin
         return await SaveAsync(db, ct, new { parcelId, newParcelId = created.Id, newMaxObjects = newMax, remainingMaxObjects = parcel.MaxObjects });
     }
 
+    // ---- expanding and shrinking -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// Adds free cells that touch the parcel. The parcel's object limit grows by <paramref name="extraObjects"/> (0 keeps it), never past what the island still has free.
+    /// Open offers are withdrawn because the thing offered changed.
+    /// </summary>
+    public static async Task<CommerceResult> ExpandAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, IReadOnlyCollection<long> addCells, int extraObjects, TimeProvider clock, CancellationToken ct)
+    {
+        var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (await LiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
+        var add = addCells as HashSet<long> ?? [.. addCells];
+        if (add.Count == 0) return CommerceResult.Fail("empty");
+        if (extraObjects < 0 || (long)parcel.MaxObjects + extraObjects > 100000) return CommerceResult.Fail("bad_limit");
+        var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(i => i.Id == parcel.IslandId, ct); if (island is null) return CommerceResult.Fail("not_found");
+        var own = await CellsAsync(db, parcelId, ct);
+        if (add.Overlaps(own)) return CommerceResult.Fail("overlap");
+        var union = new HashSet<long>(own); union.UnionWith(add);
+        if (union.Count > LandGrid.MaxCellsPerParcel) return CommerceResult.Fail("too_big");
+        foreach (var key in add) { var (cx, cz) = LandGrid.Unkey(key); if (!LandGrid.InsideIsland(cx, cz, island.Size)) return CommerceResult.Fail("outside_island"); }
+        if (!LandGrid.IsContiguous(union)) return CommerceResult.Fail("not_contiguous");
+        var (minX, minZ, maxX, maxZ) = LandGrid.Bounds(add);
+        var (minCx, minCz) = (LandGrid.CellOf(minX), LandGrid.CellOf(minZ)); var (maxCx, maxCz) = (LandGrid.CellOf(maxX) - 1, LandGrid.CellOf(maxZ) - 1);
+        var taken = await db.ParcelCells.AsNoTracking().Where(c => c.IslandId == island.Id && c.Cx >= minCx && c.Cx <= maxCx && c.Cz >= minCz && c.Cz <= maxCz).ToListAsync(ct);
+        if (taken.Any(c => add.Contains(LandGrid.Key(c.Cx, c.Cz)))) return CommerceResult.Fail("overlap");
+        if (extraObjects > 0)
+        {
+            var allocated = await db.IslandParcels.Where(p => p.IslandId == island.Id && p.DeletedAt == null).SumAsync(p => (int?)p.MaxObjects, ct) ?? 0;
+            if (allocated + extraObjects > LandBudget.IslandObjects(island)) return CommerceResult.Fail("budget_exceeded");
+        }
+
+        var now = clock.GetUtcNow();
+        foreach (var key in add) { var (cx, cz) = LandGrid.Unkey(key); db.ParcelCells.Add(new ParcelCell { IslandId = island.Id, Cx = cx, Cz = cz, ParcelId = parcelId }); }
+        parcel.MaxObjects += extraObjects; ClearOffers(parcel); Reshape(parcel, union);
+        Log(db, parcel, actor, "expand", new { added = add.Count, cells = union.Count, extraObjects }, now);
+        return await SaveAsync(db, ct, new { parcelId, cells = union.Count, area = parcel.Area, maxObjects = parcel.MaxObjects });
+    }
+
+    /// <summary>Gives cells back to the island. What is left must stay in one piece and nothing may stand on the cells given up; the object limit stays as it was.</summary>
+    public static async Task<CommerceResult> ShrinkAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, IReadOnlyCollection<long> removeCells, TimeProvider clock, CancellationToken ct)
+    {
+        var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
+        if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (await LiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
+        var remove = removeCells as HashSet<long> ?? [.. removeCells];
+        if (remove.Count == 0) return CommerceResult.Fail("empty");
+        var all = await CellsAsync(db, parcelId, ct);
+        if (!remove.IsSubsetOf(all)) return CommerceResult.Fail("not_in_parcel");
+        var rest = new HashSet<long>(all); rest.ExceptWith(remove);
+        if (rest.Count == 0) return CommerceResult.Fail("whole_parcel");
+        if (!LandGrid.IsContiguous(rest)) return CommerceResult.Fail("not_contiguous");
+        var (minX, minZ, maxX, maxZ) = LandGrid.Bounds(all);
+        var positions = await db.BuildObjects.AsNoTracking().Where(o => o.IslandId == parcel.IslandId && o.DeletedAt == null && o.PositionX >= minX && o.PositionX < maxX && o.PositionZ >= minZ && o.PositionZ < maxZ).Select(o => new { o.PositionX, o.PositionZ }).ToListAsync(ct);
+        if (positions.Any(o => remove.Contains(LandGrid.Key(LandGrid.CellOf(o.PositionX), LandGrid.CellOf(o.PositionZ))))) return CommerceResult.Fail("has_objects");
+
+        var now = clock.GetUtcNow();
+        foreach (var row in await db.ParcelCells.Where(c => c.ParcelId == parcelId).ToListAsync(ct)) if (remove.Contains(LandGrid.Key(row.Cx, row.Cz))) db.ParcelCells.Remove(row);
+        ClearOffers(parcel); Reshape(parcel, rest);
+        var (rMinX, rMinZ, rMaxX, rMaxZ) = LandGrid.Bounds(rest);
+        if (parcel.SpawnX < rMinX || parcel.SpawnX >= rMaxX || parcel.SpawnZ < rMinZ || parcel.SpawnZ >= rMaxZ || !rest.Contains(LandGrid.Key(LandGrid.CellOf(parcel.SpawnX), LandGrid.CellOf(parcel.SpawnZ))))
+        { var first = rest.OrderBy(k => k).First(); var (fx, fz) = LandGrid.Unkey(first); parcel.SpawnX = (float)((fx + .5) * LandGrid.CellSize); parcel.SpawnZ = (float)((fz + .5) * LandGrid.CellSize); }
+        Log(db, parcel, actor, "shrink", new { removed = remove.Count, cells = rest.Count }, now);
+        return await SaveAsync(db, ct, new { parcelId, cells = rest.Count, area = parcel.Area, maxObjects = parcel.MaxObjects });
+    }
+
     // ---- joining ---------------------------------------------------------------------------------------------
 
     /// <summary>Joins parcels of one owner that touch. When their settings differ the owner says which parcel's settings win.</summary>

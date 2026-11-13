@@ -118,6 +118,60 @@ public sealed class LandAdminTests : IDisposable
         Assert.Null(Stored(whole).SalePrice);
     }
 
+    // ---- expanding and shrinking -----------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Expand_TakesFreeCellsThatTouchAndGrowsTheLimit()
+    {
+        var parcel = Claim("Casa", Rect(0, 0, 3, 3), max: 40);
+        _db.IslandParcels.Single(p => p.Id == parcel).SalePrice = 500; await _db.SaveChangesAsync();
+        var result = await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(4, 0, 5, 3), 20, _clock, default);
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal(Rect(0, 0, 5, 3), CellsOf(parcel)); Assert.Equal(24 * 16, Stored(parcel).Area); Assert.Equal(60, Stored(parcel).MaxObjects);
+        Assert.Null(Stored(parcel).SalePrice); // the thing offered changed
+        Assert.Contains(_db.ParcelChanges.AsNoTracking(), c => c.ParcelId == parcel && c.Operation == "expand");
+    }
+
+    [Fact]
+    public async Task Expand_RefusesWhatIsNotFreeOrNotConnected()
+    {
+        var parcel = Claim("Casa", Rect(0, 0, 3, 3)); Claim("Vizinha", Rect(4, 0, 5, 3), _other);
+        Assert.Equal("forbidden", (await LandAdmin.ExpandAsync(_db, parcel, _visitor, Rect(0, 4, 3, 4), 0, _clock, default)).Error);
+        Assert.Equal("empty", (await LandAdmin.ExpandAsync(_db, parcel, _owner, [], 0, _clock, default)).Error);
+        Assert.Equal("overlap", (await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(4, 0, 4, 3), 0, _clock, default)).Error);
+        Assert.Equal("overlap", (await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(3, 0, 3, 0), 0, _clock, default)).Error); // already its own
+        Assert.Equal("not_contiguous", (await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(10, 10, 10, 10), 0, _clock, default)).Error);
+        Assert.Equal("outside_island", (await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(-40, 0, -1, 0), 0, _clock, default)).Error);
+        Assert.Equal("budget_exceeded", (await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(0, 4, 3, 4), 4950, _clock, default)).Error);
+        Assert.Equal("bad_limit", (await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(0, 4, 3, 4), -1, _clock, default)).Error);
+        Assert.Equal(Rect(0, 0, 3, 3), CellsOf(parcel));
+    }
+
+    [Fact]
+    public async Task Shrink_GivesCellsBackButNeverOnesWithObjectsOrThatSplitTheParcel()
+    {
+        var parcel = Claim("Casa", Rect(0, 0, 7, 3));
+        Put(_owner, 2, 2); Put(_owner, 30, 2);
+        Assert.Equal("has_objects", (await LandAdmin.ShrinkAsync(_db, parcel, _owner, Rect(7, 0, 7, 3), _clock, default)).Error);
+        Assert.Equal("not_contiguous", (await LandAdmin.ShrinkAsync(_db, parcel, _owner, Rect(3, 0, 4, 3), _clock, default)).Error);
+        Assert.Equal("whole_parcel", (await LandAdmin.ShrinkAsync(_db, parcel, _owner, Rect(0, 0, 7, 3), _clock, default)).Error);
+        Assert.Equal("not_in_parcel", (await LandAdmin.ShrinkAsync(_db, parcel, _owner, Rect(8, 0, 8, 0), _clock, default)).Error);
+        Assert.Equal("forbidden", (await LandAdmin.ShrinkAsync(_db, parcel, _visitor, Rect(5, 0, 5, 3), _clock, default)).Error);
+        var result = await LandAdmin.ShrinkAsync(_db, parcel, _owner, Rect(0, 3, 7, 3), _clock, default);
+        Assert.True(result.Ok, result.Error);
+        Assert.Equal(Rect(0, 0, 7, 2), CellsOf(parcel)); Assert.Equal(24 * 16, Stored(parcel).Area);
+        Assert.Contains(_db.ParcelChanges.AsNoTracking(), c => c.ParcelId == parcel && c.Operation == "shrink");
+    }
+
+    [Fact]
+    public async Task Shrink_FreedCellsCanBeClaimedAgain()
+    {
+        var parcel = Claim("Casa", Rect(0, 0, 7, 3));
+        Assert.True((await LandAdmin.ShrinkAsync(_db, parcel, _owner, Rect(4, 0, 7, 3), _clock, default)).Ok);
+        Assert.Equal(Rect(0, 0, 3, 3), CellsOf(parcel)); Assert.Equal(16 * 16, Stored(parcel).Area);
+        Assert.Null((await LandService.ClaimAsync(_db, _island, _other, "Nova", "", Rect(4, 0, 7, 3), 10, null, null, null, null, null, _clock, default)).Error);
+    }
+
     // ---- joining ---------------------------------------------------------------------------------------------
 
     [Fact]
