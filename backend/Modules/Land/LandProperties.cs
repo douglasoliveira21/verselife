@@ -69,7 +69,7 @@ public static class LandProperties
             liveLeaseByIsland.TryGetValue(i.Id, out var lease);
             return new { id = i.Id, name = i.Name, coverImageUrl = i.CoverImageUrl, region = IslandCommerce.RegionOf(i), salePrice = i.SalePrice, rentPrice = i.RentPrice, rentPeriodDays = i.RentPeriodDays, tenant = lease is null ? null : Name(lease.TenantUserId), leaseExpiresAt = lease?.ExpiresAt, leaseId = lease?.Id, state, visitors = instance?.PlayerCount ?? 0, maxPlayers = i.MaxPlayers, objects = counts.GetValueOrDefault(i.Id), maxObjects = LandBudget.IslandObjects(i), size = i.Size, isPublic = i.IsPublic, parcels = parcelsPerIsland.GetValueOrDefault(i.Id), createdAt = i.CreatedAt,
                 transfer = IslandCommerce.HasPendingTransfer(i, now) ? new { to = Name(i.TransferToUserId!.Value), expiresAt = i.TransferExpiresAt } : null,
-                hosting = hostingByIsland.TryGetValue(i.Id, out var host) ? new { plan = host.Plan, status = host.ExpiresAt > now ? "active" : "recovery", expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects } : null };
+                hosting = hostingByIsland.TryGetValue(i.Id, out var host) ? new { plan = host.Plan, status = IslandHosting.StatusOf(host.ExpiresAt, host.RecoveryUntil, now), expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects } : null };
         }).ToList();
 
         // objects used per parcel, island by island

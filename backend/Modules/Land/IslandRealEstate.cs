@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LifeVerse.Api.Modules.Land;
 
 public sealed record TransferRequest(string Name);
+public sealed record HostingRequest(Guid PlanId, string? IdempotencyKey);
 
 /// <summary>The real estate of a whole island: what the "Propriedade" tab shows and the calls that sell, rent, hand over and take back an island.</summary>
 public static class IslandRealEstate
@@ -35,6 +36,12 @@ public static class IslandRealEstate
             await Run(c, islandId, db, ct, user => IslandCommerce.AcceptTransferAsync(db, islandId, user, t, ct)));
         group.MapPost("/transfer/decline", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => IslandCommerce.DeclineTransferAsync(db, islandId, user, t, ct)));
+        group.MapGet("/hosting", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => IslandHosting.StateAsync(db, islandId, user, t, ct)));
+        group.MapPost("/hosting/subscribe", async (Guid islandId, HostingRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => IslandHosting.SubscribeAsync(db, islandId, user, r.PlanId, r.IdempotencyKey, t, ct)));
+        group.MapPost("/hosting/renew", async (Guid islandId, HostingRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => IslandHosting.RenewAsync(db, islandId, user, r.IdempotencyKey, t, ct)));
         group.MapPost("/rental-offer", async (Guid islandId, RentOfferRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => IslandCommerce.OfferForRentAsync(db, islandId, user, new RentOffer(r.PricePerPeriod, r.PeriodDays, r.MinPeriods, r.MaxPeriods, r.DepositCoins, r.GraceDays, r.AutoRenewAllowed), t, ct)));
         group.MapDelete("/rental-offer", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
@@ -81,7 +88,7 @@ public static class IslandRealEstate
         {
             transfer = IslandCommerce.HasPendingTransfer(island, now) && (staff || island.TransferToUserId == viewer) ? new { to = Name(island.TransferToUserId!.Value), expiresAt = island.TransferExpiresAt, forMe = island.TransferToUserId == viewer } : null,
             rules = IslandRules.View(IslandRules.Read(island)), canEditRules = staff,
-            hosting = host is null ? null : new { plan = host.Plan, status = host.ExpiresAt > now ? "active" : "recovery", expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects },
+            hosting = host is null ? null : new { plan = host.Plan, status = IslandHosting.StatusOf(host.ExpiresAt, host.RecoveryUntil, now), expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects },
             islandId = island.Id, name = island.Name, size = island.Size, region = IslandCommerce.RegionOf(island), ownerId = island.OwnerUserId, owner = Name(island.OwnerUserId), createdAt = island.CreatedAt, parcels,
             isOwner = island.OwnerUserId == viewer, isTenant = lease?.TenantUserId == viewer, isWelcome = island.IsWelcome,
             sale = island.SalePrice is { } price && forMe ? new { price, exclusive = island.SaleBuyerUserId is not null, includeObjects = island.SaleIncludesObjects, description = island.SaleDescription } : null,

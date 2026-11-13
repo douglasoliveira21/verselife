@@ -203,7 +203,7 @@ Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Pha
 
 - O plano da plataforma que mantém a ilha no ar (`IslandRental` + `IslandRentalPlan`, comprado em `economy.rentals`) aparece como `hosting` (`plan`, `status` = `active` ou `recovery`, `expiresAt`, `recoveryUntil`, `maxPlayers`, `maxObjects`; `null` sem plano) em `GET /properties/mine` (cada ilha) e na visão da ilha de `real-estate` (só para o dono, que é quem paga).
 - **Minhas Propriedades**: o cartão da ilha mostra "Hospedagem: plano, até data" ou "Hospedagem vencida: renove até data". **Propriedade** (gerenciamento da ilha): linha "Hospedagem" com plano, vencimento, pessoas e objetos.
-- Só exibição: comprar e renovar o plano continua no fluxo de economia (`/economy/islands/{id}/rent` e `/economy/rentals/{id}/renew`).
+- A compra e a renovação do plano agora também se fazem na aba Propriedade (veja “Gerenciar Hospedagem”).
 
 ## Atualização ao vivo das janelas
 
@@ -257,3 +257,12 @@ Dar um terreno a outra pessoa segue o mesmo caminho da ilha: uma **oferta que a 
 - **Enquanto a oferta espera**: o terreno não pode ser anunciado, dividido, unido, expandido nem reduzido (`transfer_pending`). Vencida, a oferta deixa de contar sozinha. Se a ilha inteira mudar de dono, as ofertas de terreno do dono antigo caem.
 - O código de mover os objetos passou a ser o mesmo da compra (`MoveObjectsAsync`).
 - **Cliente**: em **Sobre este Terreno**, aba de venda, o cartão **Presente** tem Transferir Terreno, a oferta pendente com Cancelar Transferência e, para quem recebeu, Aceitar Terreno / Recusar. **Minhas Propriedades** mostra "Ofertas de Presente" (ilhas e terrenos juntos) com Aceitar/Recusar e, no cartão do terreno, "Oferecido a … de presente".
+
+## Gerenciar Hospedagem
+
+- **Aba Propriedade → Gerenciar Hospedagem** (dono e administração): mostra o plano da ilha (nome, o que inclui, vencimento ou recuperação), o saldo do dono e, para o dono, **Renovar Plano** ou a lista de planos para **Contratar**. A administração só vê.
+- `GET real-estate/hosting` (estado, planos, saldo), `POST .../hosting/subscribe {planId, idempotencyKey}`, `POST .../hosting/renew {idempotencyKey}` (`IslandHosting`). Só o **dono** paga (quem aluga a ilha não).
+- **Regras do dinheiro**: a mesma chave não cobra duas vezes; um plano por vez (`already_hosted` → renove o que tem); saldo e carteira bloqueada são conferidos; a cobrança vai da carteira do dono para a conta `platform_revenue` numa transação balanceada do livro-razão; não se paga mais de um ano à frente (`too_far`).
+- **Ciclo**: `active` (em vigor), `recovery` (a semana depois do vencimento, ainda dá para renovar) e `ended` (precisa escolher um plano de novo, o que também permite trocar de plano). Renovar soma o período depois do fim (ou a partir de hoje, se já venceu), então renovar antes não perde dias.
+- Os endpoints antigos `economy/islands/{id}/rent` e `economy/rentals/{id}/renew` passaram a usar o mesmo código: antes não conferiam a chave repetida nem se já havia plano, e uma dupla clicada cobrava duas vezes.
+- Não há tarefa que desligue a ilha quando o plano acaba: hoje o estado é informativo (e aparece em Minhas Propriedades).

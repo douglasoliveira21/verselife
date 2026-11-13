@@ -19,6 +19,7 @@ public partial class IslandPropertySmoke : Node3D
         public bool IsOwner = true, IsTenant, Welcome, Gone;
         public bool Down = false;
         public long? Sale, Rent; public int Days = 30; public bool LeaseLive; public string Owner = "AliceVerse"; public string? Pending; public bool ForMe;
+        public string HostStatus = "active"; public static readonly Guid PlanOuro = Guid.NewGuid();
         public readonly List<string> Calls = [];
         public string RulesAccess = "public", RulesBuild = "owner"; public bool RulesScripts, RulesVoice = true, RulesMedia = true; public int? RulesBack; public bool RulesApplied;
         private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
@@ -41,6 +42,9 @@ public partial class IslandPropertySmoke : Node3D
             var json = body is null ? null : JsonNode.Parse(body)!.AsObject();
             (long, string) Ok() => (200, "{}");
             if (method == "GET" && tail == "") return Task.FromResult(Gone ? (404L, "") : (200L, JsonSerializer.Serialize(View(), Web)));
+            if (tail == "/hosting" && method == "GET") return Task.FromResult((200L, JsonSerializer.Serialize(new { isOwner = IsOwner, status = HostStatus, canSubscribe = IsOwner && HostStatus is "none" or "ended", canRenew = IsOwner && HostStatus is "active" or "recovery", balance = IsOwner ? 8000L : (long?)null, current = HostStatus == "none" ? null : new { id = Guid.NewGuid(), plan = new { id = PlanOuro, name = "Plano Ouro", price = 5000L, days = 30, maxSize = 512, maxObjects = 20000, maxPlayers = 80 }, startsAt = DateTimeOffset.UtcNow.AddDays(-20), expiresAt = DateTimeOffset.UtcNow.AddDays(10), recoveryUntil = DateTimeOffset.UtcNow.AddDays(17), status = HostStatus }, plans = new[] { new { id = PlanOuro, name = "Plano Ouro", price = 5000L, days = 30, maxSize = 512, maxObjects = 20000, maxPlayers = 80 } } }, Web)));
+            if (tail == "/hosting/subscribe") { if (HostStatus is not ("none" or "ended")) return Task.FromResult<(long, string)>((409, "{\"error\":\"already_hosted\"}")); HostStatus = "active"; return Task.FromResult(Ok()); }
+            if (tail == "/hosting/renew") { if (HostStatus == "none") return Task.FromResult<(long, string)>((409, "{\"error\":\"no_hosting\"}")); HostStatus = "active"; return Task.FromResult(Ok()); }
             if (tail is "/transfer/accept" or "/transfer/decline") { if (!ForMe) return Task.FromResult<(long, string)>((409, "{\"error\":\"no_transfer\"}")); Pending = null; if (tail.EndsWith("accept", StringComparison.Ordinal)) { IsOwner = true; ForMe = false; Owner = "Você"; } return Task.FromResult(Ok()); }
             if (!IsOwner && !IsTenant) return Task.FromResult<(long, string)>((403, "{\"error\":\"forbidden\"}"));
             if (tail == "/sale") { if (Welcome) return Task.FromResult<(long, string)>((400, "{\"error\":\"welcome_island\"}")); if (method == "DELETE") Sale = null; else { Sale = json!["price"]!.GetValue<long>(); Rent = null; } return Task.FromResult(Ok()); }
@@ -74,6 +78,19 @@ public partial class IslandPropertySmoke : Node3D
             typed[1].Text = "ilha errada"; typed[1].EmitSignal(LineEdit.SignalName.TextChanged, typed[1].Text); Require(giveOk.Disabled, "a wrong name keeps the button off");
             typed[1].Text = "Ilha Tropical"; typed[1].EmitSignal(LineEdit.SignalName.TextChanged, typed[1].Text); Require(!giveOk.Disabled, "typing the name of the island turns it on");
             giveDialog.Hide(); giveDialog.QueueFree(); await Frames(2);
+            // --- hosting ---------------------------------------------------------------------------------------------------------------------------
+            Require(page.HasButtonForTesting("Gerenciar Hospedagem"), "the owner has the hosting button");
+            await page.OpenHostingForTesting(); await Frames(3);
+            var hostingDialog = page.GetChildren().OfType<AcceptDialog>().Single(d => d.Title == "Hospedagem da ilha"); string DialogText() => string.Join("|", hostingDialog.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)); bool DialogHas(string button) => hostingDialog.FindChildren("*", "Button", true, false).OfType<Button>().Any(b => b.Text.Trim() == button);
+            Require(DialogText().Contains("Plano Ouro") && DialogText().Contains("Em vigor até") && DialogText().Contains("L$ 8.000") && DialogHas("Renovar Plano") && !DialogHas("Contratar"), $"a running plan can be renewed, not bought again (got {DialogText()})");
+            hostingDialog.Hide(); hostingDialog.QueueFree(); await Frames(2);
+            Require(await page.RenewHostingForTesting() && server.Calls.Any(c => c.EndsWith("/hosting/renew", StringComparison.Ordinal)), "renewing sends the request");
+            server.HostStatus = "none"; await page.OpenHostingForTesting(); await Frames(3);
+            hostingDialog = page.GetChildren().OfType<AcceptDialog>().Single(d => d.Title == "Hospedagem da ilha");
+            Require(DialogText().Contains("ainda não tem plano") && DialogHas("Contratar") && !DialogHas("Renovar Plano") && DialogText().Contains("até 80 pessoas"), $"an island without a plan lists the plans to buy (got {DialogText()})");
+            hostingDialog.Hide(); hostingDialog.QueueFree(); await Frames(2);
+            Require(await page.SubscribeHostingForTesting(Guid.NewGuid()) && server.HostStatus == "active", "buying a plan works"); server.HostStatus = "active";
+            Require(!await page.SubscribeHostingForTesting(Guid.NewGuid()) && notes.Last().Contains("já tem um plano"), $"a second plan is refused in words (got {notes.Last()})");
             var text = page.TextForTesting; Require(page.IsOwner && text.Contains("AliceVerse") && text.Contains("Full Region") && text.Contains("256 m × 256 m") && text.Contains("Sem anúncio") && text.Contains("Terrenos") && text.Contains("L$ 30.000"), $"owner, region, size, situation and history (got {text})");
             Require(page.HasButtonForTesting("Colocar Ilha à Venda") && page.HasButtonForTesting("Alugar Ilha") && page.ButtonEnabledForTesting("Transferir Propriedade") && !page.HasButtonForTesting("Retirar da Venda"), "the owner can sell, rent out and hand over");
 

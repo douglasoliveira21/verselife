@@ -16,6 +16,9 @@ public sealed class IslandRealEstateApi(IslandManagementApi inner)
     public Task<IslandReply> CancelRent(Guid island) => inner.Send("DELETE", $"{Base(island)}/rental-offer");
     public Task<IslandReply> SetRules(Guid island, string access, string build, bool scripts, bool voice, bool media, int? autoReturnMinutes, bool applyToExisting) =>
         inner.Send("PUT", $"/api/v1/worlds/islands/{island}/land/rules", new { accessMode = access, buildMode = build, allowScripts = scripts, allowVoice = voice, allowMedia = media, autoReturnMinutes, applyToExisting });
+    public Task<IslandReply> Hosting(Guid island) => inner.Send("GET", $"{Base(island)}/hosting");
+    public Task<IslandReply> SubscribeHosting(Guid island, Guid plan) => inner.Send("POST", $"{Base(island)}/hosting/subscribe", new { planId = plan, idempotencyKey = Guid.NewGuid().ToString() });
+    public Task<IslandReply> RenewHosting(Guid island) => inner.Send("POST", $"{Base(island)}/hosting/renew", new { planId = Guid.Empty, idempotencyKey = Guid.NewGuid().ToString() });
     public Task<IslandReply> CancelTransfer(Guid island) => inner.Send("DELETE", $"{Base(island)}/transfer");
     public Task<IslandReply> AcceptTransfer(Guid island) => inner.Send("POST", $"{Base(island)}/transfer/accept", new { });
     public Task<IslandReply> DeclineTransfer(Guid island) => inner.Send("POST", $"{Base(island)}/transfer/decline", new { });
@@ -90,7 +93,7 @@ public partial class IslandPropertyPage : ScrollContainer
         body.AddChild(Line("Classe da região", Str(v, "region") == "homestead" ? "Homestead" : "Full Region")); body.AddChild(Line("Tamanho", $"{Int(v, "size")} m × {Int(v, "size")} m")); body.AddChild(Line("Terrenos", Int(v, "parcels").ToString(Pt)));
         body.AddChild(Line("Criada em", Date(v, "createdAt").ToLocalTime().ToString("dd/MM/yyyy", Pt)));
         if (v.TryGetProperty("hosting", out var hosting) && hosting.ValueKind == System.Text.Json.JsonValueKind.Object)
-            body.AddChild(Line("Hospedagem", Str(hosting, "status") == "active" ? $"{Str(hosting, "plan")}, até {Date(hosting, "expiresAt").ToLocalTime():dd/MM/yyyy} · {Int(hosting, "maxPlayers")} pessoas · {LandMath.Number(Int(hosting, "maxObjects"))} objetos" : $"{Str(hosting, "plan")} vencido: renove até {Date(hosting, "recoveryUntil").ToLocalTime():dd/MM/yyyy}", Str(hosting, "status") == "active" ? IslandUi.TextPrimary : IslandUi.Warning));
+            body.AddChild(Line("Hospedagem", Str(hosting, "status") == "active" ? $"{Str(hosting, "plan")}, até {Date(hosting, "expiresAt").ToLocalTime():dd/MM/yyyy} · {Int(hosting, "maxPlayers")} pessoas · {LandMath.Number(Int(hosting, "maxObjects"))} objetos" : Str(hosting, "status") == "ended" ? $"{Str(hosting, "plan")} encerrado: contrate um plano em Gerenciar Hospedagem" : $"{Str(hosting, "plan")} vencido: renove até {Date(hosting, "recoveryUntil").ToLocalTime():dd/MM/yyyy} em Gerenciar Hospedagem", Str(hosting, "status") == "active" ? IslandUi.TextPrimary : IslandUi.Warning));
         var situation = lease is { } l ? $"Alugada para {Str(l, "tenant")} até {Date(l, "expiresAt").ToLocalTime():dd/MM/yyyy}" + (Str(l, "status") == "grace" ? " (em tolerância)" : "")
             : sale is { } s ? $"À venda por {LandMath.Money(Long(s, "price"))}" + (Flag(s, "exclusive") ? " (exclusiva para uma pessoa)" : "")
             : offer is { } o ? $"Para alugar por {LandMath.Money(Long(o, "price"))} a cada {Int(o, "periodDays")} dias" : "Sem anúncio";
@@ -128,6 +131,8 @@ public partial class IslandPropertyPage : ScrollContainer
             var leave = IslandUi.Action("Sair do Aluguel", null, IslandUi.Kind.Danger, 42); leave.Pressed += () => ConfirmEnd(Str(mine, "id"), true); buttons.AddChild(leave);
         }
         else body.AddChild(IslandUi.Text("Só o proprietário (ou quem aluga a ilha) muda isto. Você pode ver as informações.", 13, IslandUi.TextMuted, false, true));
+        if (Flag(v, "isOwner") || Flag(v, "canEditRules"))
+        { var host = IslandUi.Action("Gerenciar Hospedagem", "settings", IslandUi.Kind.Secondary, 42); host.TooltipText = "O plano da plataforma que mantém a ilha no ar: ver, contratar e renovar."; host.Pressed += () => _ = OpenHostingAsync(); buttons.AddChild(host); }
         if (Flag(v, "canEditRules") && v.TryGetProperty("rules", out var current) && current.ValueKind == JsonValueKind.Object)
         { var editRules = IslandUi.Action("Editar Regras", "settings", IslandUi.Kind.Secondary, 42); editRules.TooltipText = "Como os terrenos novos da ilha começam: entrada, construção, scripts, voz e mídia."; editRules.Pressed += () => OpenRules(current.Clone()); buttons.AddChild(editRules); }
 
@@ -192,6 +197,51 @@ public partial class IslandPropertyPage : ScrollContainer
         var autoRenew = new CheckBox { Text = "Deixar quem aluga renovar sozinho a cada vencimento", FocusMode = FocusModeEnum.None, TooltipText = "Quem aluga escolhe; se escolher, um período a mais é cobrado da carteira dele no vencimento." }; content.AddChild(autoRenew);
         Ask("Alugar ilha", content, async () => await Do(_api!.OfferRent(_island, (long)price.Value, int.Parse(IslandUi.IdOf(period)), (int)min.Value, (int)max.Value, (long)deposit.Value, (int)grace.Value, autoRenew.ButtonPressed), "Ilha oferecida para aluguel."), "Anunciar");
     }
+
+    // ---- hosting --------------------------------------------------------------------------------------------------------------------
+
+    internal static string PlanText(JsonElement p) => $"{LandMath.Money(Long(p, "price"))} a cada {Int(p, "days")} dias · até {Int(p, "maxPlayers")} pessoas · {LandMath.Number(Int(p, "maxObjects"))} objetos · {Int(p, "maxSize")} m";
+
+    /// <summary>The window of the plan that keeps the island running: what it has, what the owner can buy, and renewing. Only the owner pays; the island's staff can look.</summary>
+    private async Task OpenHostingAsync()
+    {
+        var reply = await _api!.Hosting(_island); if (!reply.Ok) { Notify?.Invoke(LandManagementApi.Words(reply)); return; }
+        var h = reply.Body.Clone(); var content = IslandUi.Column(8); content.CustomMinimumSize = new Vector2(580, 0);
+        var status = Str(h, "status"); var owner = Flag(h, "isOwner");
+        if (h.TryGetProperty("current", out var current) && current.ValueKind == JsonValueKind.Object)
+        {
+            var plan = current.GetProperty("plan");
+            content.AddChild(Line("Plano", Str(plan, "name"))); content.AddChild(Line("Inclui", PlanText(plan)));
+            content.AddChild(Line("Situação", status == "active" ? $"Em vigor até {Date(current, "expiresAt").ToLocalTime():dd/MM/yyyy HH:mm}" : status == "recovery" ? $"Venceu em {Date(current, "expiresAt").ToLocalTime():dd/MM/yyyy}: renove até {Date(current, "recoveryUntil").ToLocalTime():dd/MM/yyyy HH:mm}" : $"Encerrado em {Date(current, "recoveryUntil").ToLocalTime():dd/MM/yyyy}: escolha um plano", status == "active" ? IslandUi.Success : IslandUi.Warning));
+        }
+        else content.AddChild(Line("Plano", "Esta ilha ainda não tem plano de hospedagem.", IslandUi.Warning));
+        if (owner && h.TryGetProperty("balance", out var balance) && balance.ValueKind == JsonValueKind.Number) content.AddChild(Line("Seu saldo", LandMath.Money(balance.GetInt64())));
+        if (!owner) content.AddChild(IslandUi.Text("Só o proprietário da ilha paga a hospedagem. Você pode ver como ela está.", 13, IslandUi.TextMuted, false, true));
+
+        var dialog = new AcceptDialog { Title = "Hospedagem da ilha", OkButtonText = "Fechar", Unresizable = true, Theme = ViewerTheme.Create() };
+        if (Flag(h, "canRenew"))
+        {
+            var renew = IslandUi.Action("Renovar Plano", "calendar", IslandUi.Kind.Purple, 40); renew.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+            renew.TooltipText = "Paga mais um período do plano que a ilha tem."; renew.Pressed += () => { dialog.Hide(); dialog.QueueFree(); _ = Do(_api!.RenewHosting(_island), "Hospedagem renovada."); }; content.AddChild(renew);
+        }
+        var plans = h.TryGetProperty("plans", out var list) && list.ValueKind == JsonValueKind.Array ? list.EnumerateArray().ToList() : [];
+        if (Flag(h, "canSubscribe"))
+        {
+            content.AddChild(IslandUi.Text(plans.Count == 0 ? "Não há planos à venda agora." : "Planos disponíveis", 15, IslandUi.TextPrimary, true));
+            foreach (var plan in plans)
+            {
+                var id = Guid.Parse(Str(plan, "id")); var card = new PanelContainer(); card.AddThemeStyleboxOverride("panel", IslandUi.Box(IslandUi.InputBackground, IslandUi.BorderDefault, 8, 1, 10, 6));
+                var row = IslandUi.Row(10); card.AddChild(row); var info = IslandUi.Column(2); info.SizeFlagsHorizontal = SizeFlags.ExpandFill; row.AddChild(info);
+                info.AddChild(IslandUi.Text(Str(plan, "name"), 15, IslandUi.TextPrimary, true)); info.AddChild(IslandUi.Text(PlanText(plan), 13, IslandUi.TextSecondary, false, true));
+                var buy = IslandUi.Action("Contratar", "coins", IslandUi.Kind.Orange, 38); buy.Pressed += () => { dialog.Hide(); dialog.QueueFree(); _ = Do(_api!.SubscribeHosting(_island, id), "Hospedagem contratada."); }; row.AddChild(buy); content.AddChild(card);
+            }
+        }
+        dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); AddChild(dialog); dialog.Confirmed += () => dialog.QueueFree(); dialog.Canceled += () => dialog.QueueFree(); dialog.PopupCentered(new Vector2I(620, 0));
+    }
+
+    public Task OpenHostingForTesting() => OpenHostingAsync();
+    public Task<bool> SubscribeHostingForTesting(Guid plan) => Do(_api!.SubscribeHosting(_island, plan), "Hospedagem contratada.");
+    public Task<bool> RenewHostingForTesting() => Do(_api!.RenewHosting(_island), "Hospedagem renovada.");
 
     private static readonly (string Text, string Id)[] AccessChoices = [("Livre: qualquer pessoa entra", "public"), ("Lista: só quem está na lista", "list"), ("Privado: só o dono", "private")];
     private static readonly (string Text, string Id)[] BuildChoices = [("Só o dono", "owner"), ("Dono e lista", "list"), ("Todos", "everyone"), ("Ninguém", "nobody")];
