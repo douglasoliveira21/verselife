@@ -139,10 +139,10 @@ public partial class IslandPropertyPage : ScrollContainer
         Notify?.Invoke(done); await LoadAsync(); Changed?.Invoke(); return true;
     }
 
-    private void Ask(string title, Control content, Func<Task<bool>> accept, string okText)
+    private void Ask(string title, Control content, Func<Task<bool>> accept, string okText, Action<Button>? withOk = null)
     {
         var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, CancelButtonText = "Cancelar", Exclusive = true, Theme = ViewerTheme.Create() };
-        dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); AddChild(dialog);
+        dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); AddChild(dialog); withOk?.Invoke(dialog.GetOkButton());
         dialog.Confirmed += async () => { await accept(); dialog.QueueFree(); }; dialog.Canceled += () => dialog.QueueFree();
         dialog.PopupCentered(new Vector2I(500, 0));
     }
@@ -204,9 +204,12 @@ public partial class IslandPropertyPage : ScrollContainer
 
     private void OpenTransfer()
     {
-        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text("A ilha, com todos os terrenos e objetos seus, passa para outra pessoa, de graça. Isso não pode ser desfeito por você.", 14, IslandUi.Error, false, true));
+        var islandName = Str(_view, "name"); var parcels = Int(_view, "parcels");
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"A ilha {islandName}, com {parcels} terreno(s) e todos os objetos que são seus, passa para outra pessoa, de graça. O plano de hospedagem vai junto. Isso não pode ser desfeito por você: só a nova pessoa pode devolver.", 14, IslandUi.Error, false, true));
         var name = IslandUi.Input("Nome da pessoa", 60); content.AddChild(name);
-        Ask("Transferir propriedade", content, async () => await Do(_api!.Transfer(_island, name.Text.Trim()), "A ilha foi transferida."), "Transferir");
+        var confirm = IslandUi.Input("Para confirmar, digite o nome da ilha", 120); content.AddChild(confirm);
+        content.AddChild(IslandUi.Text("As duas pessoas recebem um aviso em Minhas Propriedades.", 13, IslandUi.TextMuted, false, true));
+        Ask("Transferir propriedade", content, async () => await Do(_api!.Transfer(_island, name.Text.Trim()), "A ilha foi transferida."), "Transferir", ok => { ok.Disabled = true; confirm.TextChanged += typed => ok.Disabled = typed.Trim() != islandName; });
     }
 
     private void OpenRenew(JsonElement lease)

@@ -65,6 +65,12 @@ public partial class IslandPropertySmoke : Node3D
             Require(await page.SetRulesForTesting("list", "everyone", true, false, true, 45, true), "saving the rules works"); await Frames(2);
             Require(server.RulesAccess == "list" && server.RulesBuild == "everyone" && server.RulesScripts && !server.RulesVoice && server.RulesBack == 45 && server.RulesApplied, "the rules reach the server as chosen");
             Require(page.TextForTesting.Contains("Entrada: Lista") && page.TextForTesting.Contains("Construir: Todos") && page.TextForTesting.Contains("Scripts: sim") && page.TextForTesting.Contains("Voz: não") && page.TextForTesting.Contains("45 min"), $"and the tab shows the new rules (got {page.TextForTesting})");
+            page.FindChildren("*", "Button", true, false).OfType<Button>().First(b => b.Text.Trim() == "Transferir Propriedade").EmitSignal(BaseButton.SignalName.Pressed); await Frames(3);
+            var giveDialog = page.GetChildren().OfType<ConfirmationDialog>().Single(); var giveOk = giveDialog.GetOkButton(); var typed = giveDialog.FindChildren("*", "LineEdit", true, false).OfType<LineEdit>().ToList();
+            Require(typed.Count == 2 && giveOk.Disabled && giveDialog.FindChildren("*", "Label", true, false).OfType<Label>().Any(l => l.Text.Contains("Ilha Tropical") && l.Text.Contains("6 terreno(s)") && l.Text.Contains("hospedagem")), "the transfer dialog says what goes along and starts closed");
+            typed[1].Text = "ilha errada"; typed[1].EmitSignal(LineEdit.SignalName.TextChanged, typed[1].Text); Require(giveOk.Disabled, "a wrong name keeps the button off");
+            typed[1].Text = "Ilha Tropical"; typed[1].EmitSignal(LineEdit.SignalName.TextChanged, typed[1].Text); Require(!giveOk.Disabled, "typing the name of the island turns it on");
+            giveDialog.Hide(); giveDialog.QueueFree(); await Frames(2);
             var text = page.TextForTesting; Require(page.IsOwner && text.Contains("AliceVerse") && text.Contains("Full Region") && text.Contains("256 m × 256 m") && text.Contains("Sem anúncio") && text.Contains("Terrenos") && text.Contains("L$ 30.000"), $"owner, region, size, situation and history (got {text})");
             Require(page.HasButtonForTesting("Colocar Ilha à Venda") && page.HasButtonForTesting("Alugar Ilha") && page.ButtonEnabledForTesting("Transferir Propriedade") && !page.HasButtonForTesting("Retirar da Venda"), "the owner can sell, rent out and hand over");
 

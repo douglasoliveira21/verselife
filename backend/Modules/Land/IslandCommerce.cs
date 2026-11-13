@@ -78,6 +78,8 @@ public static class IslandCommerce
             db.ParcelChanges.Add(new ParcelChange { Id = Guid.NewGuid(), ParcelId = parcel.Id, ActorUserId = to, Operation = "island_transfer", PayloadJson = JsonSerializer.Serialize(new { from, to }), Revision = parcel.Revision, CreatedAt = now });
         }
         foreach (var rental in live) rental.LandlordUserId = to;
+        // the platform plan that keeps the island running goes with it: otherwise the old owner would go on paying (and renewing) for an island that is no longer theirs
+        foreach (var plan in await db.IslandRentals.Where(r => r.IslandId == island.Id && r.Status == "active" && r.UserId == from).ToListAsync(ct)) plan.UserId = to;
         var objects = await db.BuildObjects.Where(o => o.IslandId == island.Id && o.DeletedAt == null && o.OwnerUserId == from).ToListAsync(ct);
         if (includeObjects) { foreach (var item in objects) { item.OwnerUserId = to; item.Revision++; } return (parcels.Count, objects.Count, []); }
         return (parcels.Count, 0, [.. objects.Select(o => o.Id)]);
@@ -130,6 +132,9 @@ public static class IslandCommerce
         var now = clock.GetUtcNow();
         var (parcels, moved, _) = await HandOverAsync(db, island, actor, target, true, now, ct);
         Record(db, islandId, "transfer", actor, target, 0, new { parcels, objectsMoved = moved }, null, now);
+        var giver = await PropertyNotices.NameAsync(db, actor, ct);
+        PropertyNotices.Add(db, target, "island_received", $"Você recebeu a ilha {island.Name}", $"{giver} transferiu a ilha para você, com {parcels} terreno(s) e os objetos dele. Ela já está em Minhas Propriedades.", $"island_received:{islandId}:{now.UtcTicks}", now);
+        PropertyNotices.Add(db, actor, "island_given", $"Você transferiu a ilha {island.Name}", $"Novo proprietário: {await PropertyNotices.NameAsync(db, target, ct)}. A ilha, os terrenos e os objetos seus passaram para ele.", $"island_given:{islandId}:{now.UtcTicks}", now);
         IslandAudit.Add(db, islandId, actor, "administração", "island_transferred", "A propriedade da ilha foi transferida", "Propriedade", new { owner = actor }, new { owner = target, parcels }, now);
         return await SaveAsync(db, ct, new { islandId, parcels });
     }

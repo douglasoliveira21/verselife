@@ -227,3 +227,13 @@ Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Pha
 - **Terrenos novos** (demarcados com "Criar parcela") começam com essas regras, a menos que o pedido traga permissões próprias. **Terrenos que já existem** não mudam sozinhos: marcando "Aplicar também aos terrenos que ainda são do dono da ilha e não estão alugados", as regras são postas só nesses terrenos (cada um ganha uma linha `island_rules` no histórico e a versão da terra sobe). Terrenos de outras pessoas e alugados nunca são mudados por aqui.
 - `GET real-estate` traz `rules` (qualquer pessoa lê) e `canEditRules` (só a administração). Na aba **Propriedade** a linha "Regras da ilha" resume tudo e o botão **Editar Regras** abre o diálogo.
 - O dono de cada terreno continua mudando as regras do seu terreno em "Sobre este Terreno".
+
+## Transferir propriedade da ilha
+
+A transferência (presente: a ilha, os terrenos do dono e os objetos dele passam a outra pessoa, sem dinheiro) já existia; esta fase fechou o que faltava:
+
+- **Hospedagem acompanha a ilha**: o plano da plataforma ativo (`IslandRental`) passa para a nova pessoa, tanto na transferência quanto na venda. Antes o dono antigo continuava como pagante e podia renovar um plano de uma ilha que já não era dele.
+- **Avisos** (Minhas Propriedades): quem recebe vê "Você recebeu a ilha …" e quem entrega vê "Você transferiu a ilha …".
+- **Confirmação mais segura**: o diálogo diz o nome da ilha, quantos terrenos e que a hospedagem vai junto, e só libera "Transferir" depois de digitar o nome da ilha.
+- Continua valendo: só o dono transfere; não com a ilha à venda, alugada, nem a ilha de boas-vindas; a pessoa precisa existir; ficam registros no histórico da ilha e na auditoria.
+- **Decisão em aberto**: a pessoa que recebe não precisa aceitar (é um presente direto, como já era). Se isso virar problema (presentes indesejados), o caminho é uma transferência pendente que o destinatário aceita ou recusa.

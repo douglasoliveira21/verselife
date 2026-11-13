@@ -141,6 +141,20 @@ public sealed class IslandCommerceTests : IDisposable
         Assert.Equal(_buyer, Stored().OwnerUserId); Assert.Equal(_buyer, _db.IslandParcels.AsNoTracking().Single(p => p.Id == parcel.Id).OwnerUserId); Assert.Equal(coins, Coins(_seller)); // no money moves in a gift
     }
 
+    [Fact]
+    public async Task AGiftTellsBothPeople_AndTheHostingPlanGoesWithTheIsland()
+    {
+        var plan = new IslandRentalPlan { Id = Guid.NewGuid(), Name = "Plano Ouro", PriceCoins = 1000, DurationDays = 30, MaxSize = 512, MaxObjects = 20000, MaxPlayers = 80, IsActive = true };
+        _db.IslandRentalPlans.Add(plan);
+        var hosting = new IslandRental { Id = Guid.NewGuid(), IslandId = _island.Id, UserId = _seller, PlanId = plan.Id, StartsAt = _clock.Now, ExpiresAt = _clock.Now.AddDays(20), RecoveryUntil = _clock.Now.AddDays(27), Status = "active" };
+        _db.IslandRentals.Add(hosting); await _db.SaveChangesAsync();
+        Assert.True((await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Ok);
+        Assert.Equal(_buyer, _db.IslandRentals.AsNoTracking().Single(r => r.Id == hosting.Id).UserId); // the new owner pays and renews it from now on
+        var notices = _db.PropertyNotices.AsNoTracking().ToList();
+        Assert.Contains(notices, n => n.UserId == _buyer && n.Kind == "island_received" && n.Title.Contains("Ilha Tropical"));
+        Assert.Contains(notices, n => n.UserId == _seller && n.Kind == "island_given" && n.Title.Contains("Ilha Tropical"));
+    }
+
     // ---- renting ---------------------------------------------------------------------------------------------------------------------
 
     [Fact]
