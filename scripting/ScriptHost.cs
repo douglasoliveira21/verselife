@@ -55,6 +55,8 @@ public interface IScriptWorld
     bool StartPayment(ScriptDefinition script, Guid requestId, Guid avatarId, long amount) => false;
     /// <summary>Starts the delivery of a copy of an item of the object to an avatar who allowed it (the island asks the API, which checks the rights); the result comes through <see cref="ScriptHost.CompleteGiveItem"/>. False when this world cannot.</summary>
     bool StartGiveItem(ScriptDefinition script, Guid avatarId, Guid assetId, string itemName) => false;
+    /// <summary>Sets the sale price of the object of the script (the API decides: it must be for sale and the script owner must own it). False when this world cannot.</summary>
+    bool SetObjectPrice(ScriptDefinition script, int price) => false;
     /// <summary>Pushes the body of the object the physics simulation runs (action: impulse, velocity, angular, gravity). False when the object is not a simulated body.</summary>
     bool ApplyPhysics(ScriptDefinition script, string action, Vec3 value) => false;
     /// <summary>The name of an avatar on the island, or null.</summary>
@@ -135,6 +137,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         public Queue<double> Directs { get; } = new();
         public Queue<double> Pushes { get; } = new();
         public Queue<double> Gives { get; } = new();
+        public Queue<double> Prices { get; } = new();
         public int NextEffectId { get; set; } = 1;
         public List<ScriptLogEntry> Logs { get; } = [];
         public bool InHandler { get; set; }

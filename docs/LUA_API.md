@@ -1185,6 +1185,19 @@ Pede um pagamento a um avatar. Aparece uma janela dizendo quem pede e quanto, e 
 economy.requestPayment(event.avatar.id, 100, 'Entrada')
 ```
 
+### `economy.setObjectPrice(preco)`
+
+Muda o preço do próprio objeto à venda (clique Comprar). O objeto precisa estar à venda e ser do dono do script; a API confere. Quem comprar depois paga o novo preço (quem viu o preço antigo é avisado e nada é cobrado).
+
+- **Retorna:** verdadeiro se o pedido foi enviado
+- **Permissão:** —
+- **Limites:** L$ 0 a 10.000.000; 6 mudanças por minuto por script
+- **Erros possíveis:** preço fora do limite; limite por minuto
+
+```lua
+economy.setObjectPrice(150)
+```
+
 ## Inventário
 
 ### `inventory.list()`

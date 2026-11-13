@@ -484,13 +484,23 @@ public sealed partial class ScriptHost
 
 public sealed partial class ScriptHost
 {
-    public const long MaxPayment = 100_000;
+    public const long MaxPayment = 100_000, MaxObjectPrice = 10_000_000;
+    public const int MaxPriceChangesPerMinute = 6;
     private readonly Dictionary<Guid, (Guid Script, Guid Avatar, long Amount, double Expires, bool Paying)> _payments = [];
 
     private void InstallEconomyApi(Instance instance)
     {
         var script = instance.Sandbox.Script; var economy = new Table(script); script.Globals["economy"] = economy;
         economy["requestPayment"] = DynValue.NewCallback((_, args) => { instance.Metrics.ApiCalls++; return RequestPayment(instance, AvatarId(args, 0), (long)Math.Floor(Number(args, 1)), args.Count > 2 && args[2].Type != DataType.Nil ? Plain(args, 2, "reason") : ""); });
+        // the price of the object itself, when it is for sale (Comprar): the owner's script sets what the next buyer pays
+        economy["setObjectPrice"] = DynValue.NewCallback((_, args) =>
+        {
+            instance.Metrics.ApiCalls++; var price = Math.Floor(Number(args, 0));
+            if (price < 0 || price > MaxObjectPrice) throw new ScriptRuntimeException($"a price is from L$ 0 to L$ {MaxObjectPrice:N0}");
+            var now = world.Now; while (instance.Prices.Count > 0 && now - instance.Prices.Peek() > 60) instance.Prices.Dequeue();
+            if (instance.Prices.Count >= MaxPriceChangesPerMinute) throw new ScriptRuntimeException($"economy.setObjectPrice: at most {MaxPriceChangesPerMinute} a minute"); instance.Prices.Enqueue(now);
+            return DynValue.NewBoolean(world.SetObjectPrice(instance.Definition, (int)price));
+        });
     }
 
     /// <summary>Asks an avatar for money for the owner of the object. The avatar sees who asks and how much and must press Pagar: a script cannot take anything. The money goes to whoever owns the object, which the script cannot choose.</summary>

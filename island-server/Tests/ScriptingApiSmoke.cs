@@ -165,7 +165,7 @@ public partial class ScriptingApiSmoke : Node
 
             // giving: the object carries an item, the avatar allows GIVE_ITEMS, the API makes the copy and the script hears about it
             var giver = Guid.NewGuid(); var giverScript = Guid.NewGuid(); var gift = Guid.NewGuid();
-            var giverSource = "function on_touch(e) permissions.request(e.avatar_id, 'GIVE_ITEMS') end function on_permission_granted(e) inventory.giveItem(e.avatar_id, 'Brinde') end function on_item_given(e) object.setName('deu ' .. e.item) end function on_item_give_failed(e) object.setName('falhou ' .. e.reason) end function on_purchase(e) object.setName('vendido ' .. e.price .. ' ' .. e.sale_type) end";
+            var giverSource = "function on_touch(e) permissions.request(e.avatar_id, 'GIVE_ITEMS') end function on_permission_granted(e) inventory.giveItem(e.avatar_id, 'Brinde') end function on_item_given(e) object.setName('deu ' .. e.item) economy.setObjectPrice(150) end function on_item_give_failed(e) object.setName('falhou ' .. e.reason) end function on_purchase(e) object.setName('vendido ' .. e.price .. ' ' .. e.sale_type) end";
             routes["script-give-item"] = "{\"status\":\"completed\",\"name\":\"Brinde\"}";
             routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(giver, "Doador", 30).Replace("\"contentJson\":\"[]\"", "\"contentJson\":" + JsonSerializer.Serialize(JsonSerializer.Serialize(new[] { new { assetId = gift, name = "Brinde", category = "objects" } }))) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(giverScript, giver, "doador", giverSource) + ",");
             await scripting.RefreshAsync(CancellationToken.None); var donor = new AvatarPresence(2, ana, anaUser, "Ana", 30, 1, 20);
@@ -175,6 +175,7 @@ public partial class ScriptingApiSmoke : Node
             scripting.OnDialogResponse(donor, JsonSerializer.Serialize(new { id = giveAsk.Json.GetProperty("id").GetGuid(), response = "Permitir" })); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); }
             Require(posts.Any(p => p.Contains("script-give-item") && p.Contains(gift.ToString()) && p.Contains(anaUser.ToString())), "the island asked the API to deliver the item to the avatar");
             Require(posts.Any(p => p.Contains("build-operations") && p.Contains("deu Brinde")), "the script heard that the delivery was done");
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("\"operation\":\"properties\"") && p.Contains("\"salePrice\":150") && p.Contains(giver.ToString())), "economy.setObjectPrice asked the API to change the price of the object");
             // a sale that came back through the island reaches the scripts of the object that was sold, and does not make the island forget it
             await scripting.RefreshAsync(CancellationToken.None); posts.Clear();
             scripting.OnObjectApplied(JsonSerializer.Serialize(new { operation = "bought", objectId = giver, saleType = "copy", price = 250, buyerUserId = anaUser, sellerUserId = owner, delivered = Array.Empty<string>(), objects = Array.Empty<object>() }));

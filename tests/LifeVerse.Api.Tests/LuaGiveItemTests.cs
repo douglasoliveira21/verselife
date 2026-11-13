@@ -10,7 +10,8 @@ public sealed class LuaGiveItemTests
 
     private sealed class World : IScriptWorld
     {
-        public double Now { get; set; } = 100; public Dictionary<Guid, ScriptObjectState> Objects { get; } = []; public List<string> Said { get; } = []; public List<(Guid Avatar, Guid Asset, string Name)> Started { get; } = []; public bool CanStart { get; set; } = true;
+        public double Now { get; set; } = 100; public Dictionary<Guid, ScriptObjectState> Objects { get; } = []; public List<string> Said { get; } = []; public List<(Guid Avatar, Guid Asset, string Name)> Started { get; } = []; public bool CanStart { get; set; } = true; public List<int> Prices { get; } = [];
+        public bool SetObjectPrice(ScriptDefinition script, int price) { Prices.Add(price); return true; }
         public ScriptObjectState? GetObject(Guid id) => Objects.GetValueOrDefault(id);
         public void ApplyChange(ScriptDefinition script, ObjectChange change) { }
         public void Say(ScriptDefinition script, string text) => Said.Add(text);
@@ -68,6 +69,20 @@ public sealed class LuaGiveItemTests
         world.Now += 61; reports.Clear(); Touch(host, obj); Assert.Empty(reports); Assert.Equal(ScriptHost.MaxGivesPerMinute + 1, world.Started.Count);
     }
 
+
+    [Fact]
+    public void ThePriceOfTheObjectIsSetWithinLimits()
+    {
+        var (host, world, obj, reports) = Rig("function on_touch() chat.say(tostring(economy.setObjectPrice(150.9))) end");
+        Touch(host, obj); Assert.Empty(reports); Assert.Equal(["true"], world.Said); Assert.Equal([150], world.Prices);                                   // whole lindens
+        foreach (var bad in new[] { "-1", "10000001", "0/0" })
+        {
+            var (host2, world2, obj2, reports2) = Rig($"function on_touch() economy.setObjectPrice({bad}) end"); Touch(host2, obj2); Assert.Single(reports2); Assert.Empty(world2.Prices);
+        }
+        var (host3, world3, obj3, reports3) = Rig("function on_touch() economy.setObjectPrice(5) end");
+        for (var i = 0; i < ScriptHost.MaxPriceChangesPerMinute; i++) Touch(host3, obj3); Assert.Empty(reports3); Touch(host3, obj3); Assert.Contains("at most", Assert.Single(reports3).Message);
+        Assert.Equal(ScriptHost.MaxPriceChangesPerMinute, world3.Prices.Count);
+    }
 
     [Fact]
     public void ThePurchaseOfTheObjectReachesItsScripts()
