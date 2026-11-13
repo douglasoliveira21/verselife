@@ -116,9 +116,16 @@ public partial class MyPropertiesWindow : Node
     }
 
     public override void _ExitTree() { if (IsInsideTree() && GetViewport() is { } viewport) viewport.SizeChanged -= Layout; }
+    private readonly LiveTicker _live = new(30);
+    public int LiveChecksForTesting { get; private set; }
+
+    /// <summary>Reads the properties again, quietly: a sale, a new tenant or a payment shows up while the window is open.</summary>
+    public async Task LiveRefreshAsync() { if (_api is null || _busy) return; LiveChecksForTesting++; await LoadAsync(true); }
+
     public override void _Process(double delta)
     {
         if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; }
+        if (_live.Due(delta, IsOpen) && !LiveTicker.DialogOpen(_panel) && (_transport is not null || GetNodeOrNull<LifeVerse.Client.Autoloads.SessionManager>("/root/SessionManager") is { IsAuthenticated: true })) _ = LiveRefreshAsync();
         if (_api is null) return; _pollIn -= delta; if (_pollIn > 0) return; _pollIn = _pollEvery;
         if (_transport is null && GetNodeOrNull<LifeVerse.Client.Autoloads.SessionManager>("/root/SessionManager") is not { IsAuthenticated: true }) return; // nobody is signed in
         _ = PollNoticesAsync();
@@ -194,10 +201,11 @@ public partial class MyPropertiesWindow : Node
 
     // ---- the data ----------------------------------------------------------------------------------------------------------------------
 
-    public async Task LoadAsync()
+    public async Task LoadAsync(bool quiet = false)
     {
         if (_api is null || _busy) return;
-        _busy = true; _note.Text = "Carregando…"; var reply = await _api.Mine(); _busy = false;
+        _busy = true; if (!quiet) _note.Text = "Carregando…"; var reply = await _api.Mine(); _busy = false;
+        if (!reply.Ok && quiet) return; // a blip on the line must not blank the window
         if (!reply.Ok) { _note.Text = reply.Status == 404 ? "O servidor ainda não tem as suas propriedades. Elas chegam com a próxima publicação da API." : reply.Status == 0 ? "Sem conexão com o servidor." : LandManagementApi.Words(reply); return; }
         var data = PropertiesData.Parse(reply.Body); if (data is null) { _note.Text = "O servidor mandou uma resposta que não entendi."; return; }
         _data = data; _note.Text = ""; Render();

@@ -106,7 +106,16 @@ public partial class RealEstateMarketWindow : Node
     }
 
     public override void _ExitTree() { if (IsInsideTree() && GetViewport() is { } viewport) viewport.SizeChanged -= Layout; }
-    public override void _Process(double delta) { if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; } }
+    private readonly LiveTicker _live = new(30);
+    public int LiveChecksForTesting { get; private set; }
+    public override void _Process(double delta)
+    {
+        if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; }
+        if (_live.Due(delta, IsOpen) && _panel is not null && !LiveTicker.DialogOpen(_panel)) _ = LiveRefreshAsync();
+    }
+
+    /// <summary>Runs the same search again, quietly, so what other people list or take shows up without pressing "Buscar".</summary>
+    public async Task LiveRefreshAsync() { if (_api is null || _busy) return; LiveChecksForTesting++; await SearchAsync(_page, true); }
 
     // ---- structure --------------------------------------------------------------------------------------------------------
 
@@ -251,13 +260,14 @@ public partial class RealEstateMarketWindow : Node
         return new MarketFilters(_query.Text, IslandUi.IdOf(_deal), IslandUi.IdOf(_category), Money(_minPrice.Text), Money(_maxPrice.Text), Metres(_minArea.Text), Metres(_maxArea.Text), _onlyAvailable.ButtonPressed, _withVisit.ButtonPressed, IslandUi.IdOf(_sort), page, 9, type == "all" ? "" : type, region == "all" ? "" : region);
     }
 
-    private async Task SearchAsync(int page)
+    private async Task SearchAsync(int page, bool quiet = false)
     {
         if (_api is null || _busy) return;
-        _busy = true; _page = page; _note.Text = "Buscando…"; var filters = Filters(page); _lastQuery = filters.ToQuery();
+        _busy = true; _page = page; if (!quiet) _note.Text = "Buscando…"; var filters = Filters(page); _lastQuery = filters.ToQuery();
         var reply = await _api.Search(filters); _busy = false;
         if (!reply.Ok)
         {
+            if (quiet) return; // a blip on the line must not empty the list the person is looking at
             _shown.Clear(); _data = new MarketPageData(); Render();
             _note.Text = reply.Status == 404 ? "O servidor ainda não tem o mercado imobiliário. Ele chega com a próxima publicação da API." : reply.Status == 0 ? "Sem conexão com o servidor." : LandManagementApi.Words(reply); return;
         }

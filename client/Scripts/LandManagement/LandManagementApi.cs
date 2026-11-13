@@ -41,6 +41,7 @@ public sealed class LandManagementApi(IslandManagementApi inner)
         inner.Send("POST", $"{Base(island)}/claim", new { name, description, cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), maxObjects });
     public Task<IslandReply> Split(Guid island, Guid parcel, IEnumerable<long> cells, string name) =>
         inner.Send("POST", $"{Base(island)}/parcels/{parcel}/split", new { cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), name });
+    public Task<IslandReply> Version(Guid island) => inner.Send("GET", $"{Base(island)}/version");
     public Task<IslandReply> Expand(Guid island, Guid parcel, IEnumerable<long> cells, int extraObjects) =>
         inner.Send("POST", $"{Base(island)}/parcels/{parcel}/expand", new { cells = cells.Select(k => { var (cx, cz) = LandMath.Unkey(k); return new[] { cx, cz }; }), extraObjects });
     public Task<IslandReply> Shrink(Guid island, Guid parcel, IEnumerable<long> cells) =>

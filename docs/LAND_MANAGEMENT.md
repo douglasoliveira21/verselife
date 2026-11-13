@@ -185,7 +185,6 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 
 ### Ainda não feito (e por quê)
 
-- **Atualização ao vivo das janelas e "Visitar" até o terreno exato**: as janelas atualizam ao abrir/recarregar; "Visitar" leva à ilha, não ao terreno.
 - **Retenção de snapshots**: apaga dados; precisa de decisão do dono do produto sobre prazos.
 - **Pagamento em duas fases (reservar/liquidar)**: deliberadamente não feito; as operações usam chaves idempotentes no livro-razão.
 - **Testes de concorrência em PostgreSQL real**: exigem credenciais; os testes de Postgres ficam ignorados sem elas.
@@ -205,3 +204,11 @@ Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Pha
 - O plano da plataforma que mantém a ilha no ar (`IslandRental` + `IslandRentalPlan`, comprado em `economy.rentals`) aparece como `hosting` (`plan`, `status` = `active` ou `recovery`, `expiresAt`, `recoveryUntil`, `maxPlayers`, `maxObjects`; `null` sem plano) em `GET /properties/mine` (cada ilha) e na visão da ilha de `real-estate` (só para o dono, que é quem paga).
 - **Minhas Propriedades**: o cartão da ilha mostra "Hospedagem: plano, até data" ou "Hospedagem vencida: renove até data". **Propriedade** (gerenciamento da ilha): linha "Hospedagem" com plano, vencimento, pessoas e objetos.
 - Só exibição: comprar e renovar o plano continua no fluxo de economia (`/economy/islands/{id}/rent` e `/economy/rentals/{id}/renew`).
+
+## Atualização ao vivo das janelas
+
+- `LiveTicker` (cliente) é o relógio: só anda com a janela aberta e nunca dispara com um diálogo (venda, aluguel, edição) aberto por cima, para não atrapalhar quem está digitando.
+- **Gerenciamento de Terrenos**: a cada 15 s pergunta só `GET /land/version` (um número, que muda quando uma parcela é criada, removida, oferecida, alugada ou remodelada); se mudou, recarrega a visão geral. Se não mudou, não baixa mais nada.
+- **Mercado Imobiliário** (30 s): repete a busca atual. **Sobre este Terreno** (20 s): relê o terreno. **Minhas Propriedades** (30 s): relê as propriedades e os avisos.
+- A atualização é silenciosa: não mostra "Carregando…" e, se a conexão falhar, a janela fica como estava (sem apagar a lista).
+- Limite conhecido: a versão da terra só acompanha parcelas; mudanças só na ilha (anúncio de venda da ilha, por exemplo) aparecem nas janelas que relêem tudo (Minhas Propriedades, Mercado), não no Gerenciamento de Terrenos.

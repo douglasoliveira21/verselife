@@ -172,6 +172,20 @@ public sealed class LandAdminTests : IDisposable
         Assert.Null((await LandService.ClaimAsync(_db, _island, _other, "Nova", "", Rect(4, 0, 7, 3), 10, null, null, null, null, null, _clock, default)).Error);
     }
 
+    [Fact]
+    public async Task TheLandVersionMovesWhenAParcelIsOfferedOrReshaped()
+    {
+        // the windows only look at this number to know whether to reload
+        var parcel = Claim("Casa", Rect(0, 0, 3, 3));
+        var v0 = await LandService.VersionAsync(_db, _island.Id, default);
+        _clock.Now = _clock.Now.AddMinutes(1);
+        Assert.True((await LandCommerce.OfferForSaleAsync(_db, parcel, _owner, new SaleOffer(1000, null, "", false), _clock, default)).Ok);
+        var v1 = await LandService.VersionAsync(_db, _island.Id, default); Assert.True(v1 > v0, "offering for sale moves the version");
+        _clock.Now = _clock.Now.AddMinutes(1);
+        Assert.True((await LandAdmin.ExpandAsync(_db, parcel, _owner, Rect(4, 0, 4, 3), 0, _clock, default)).Ok);
+        Assert.True(await LandService.VersionAsync(_db, _island.Id, default) > v1, "reshaping moves the version");
+    }
+
     // ---- joining ---------------------------------------------------------------------------------------------
 
     [Fact]

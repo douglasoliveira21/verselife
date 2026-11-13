@@ -126,7 +126,16 @@ public partial class ParcelInfoWindow : Node
     }
 
     public override void _ExitTree() { if (IsInsideTree() && GetViewport() is { } viewport) viewport.SizeChanged -= Layout; }
-    public override void _Process(double delta) { if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; } }
+    private readonly LiveTicker _live = new(20);
+    public int LiveChecksForTesting { get; private set; }
+    public override void _Process(double delta)
+    {
+        if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; }
+        if (_live.Due(delta, IsOpen) && _panel is not null && !LiveTicker.DialogOpen(_panel)) _ = LiveRefreshAsync();
+    }
+
+    /// <summary>Reads the parcel again, quietly: an offer, a sale or a new tenant shows up while the window is open.</summary>
+    public async Task LiveRefreshAsync() { if (_api is null || _busy || !_loaded) return; LiveChecksForTesting++; await LoadAsync(true); }
 
     // ---- structure --------------------------------------------------------------------------------------------------------
 
@@ -199,12 +208,13 @@ public partial class ParcelInfoWindow : Node
         _island = island; _parcel = parcel; _root.Visible = true; Layout(); await LoadAsync();
     }
 
-    public async Task LoadAsync()
+    public async Task LoadAsync(bool quiet = false)
     {
         if (_api is null || _island == Guid.Empty || _parcel == Guid.Empty || _busy) return;
-        _busy = true; _note.Text = "Carregando…"; var reply = await _api.About(_island, _parcel); _busy = false;
+        _busy = true; if (!quiet) _note.Text = "Carregando…"; var reply = await _api.About(_island, _parcel); _busy = false;
         if (!reply.Ok)
         {
+            if (quiet) return; // a blip on the line must not blank the window
             _loaded = false; _note.Text = reply.Status == 404 ? "O servidor ainda não tem os detalhes deste terreno. Eles chegam com a próxima publicação da API." : reply.Status == 0 ? "Sem conexão com o servidor." : LandManagementApi.Words(reply);
             foreach (var child in _content.GetChildren()) child.QueueFree(); return;
         }

@@ -96,7 +96,22 @@ public partial class LandManagementWindow : Node
 
     public override void _ExitTree() { if (IsInsideTree() && GetViewport() is { } viewport) viewport.SizeChanged -= Layout; }
 
-    public override void _Process(double delta) { if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; } }
+    private readonly LiveTicker _live = new(15);
+    public int LiveChecksForTesting { get; private set; }
+    public override void _Process(double delta)
+    {
+        if (_toastLeft > 0) { _toastLeft -= delta; if (_toastLeft <= 0 && _toast is not null) _toast.Visible = false; }
+        if (_live.Due(delta, IsOpen) && _panel is not null && !LiveTicker.DialogOpen(_panel)) _ = LiveCheckAsync();
+    }
+
+    /// <summary>Asks the server only for the land version (a number) and reloads everything when it moved: another person bought, rented or changed a parcel.</summary>
+    public async Task<bool> LiveCheckAsync()
+    {
+        if (_api is null || _island == Guid.Empty || _loadingNow || _data is null) return false;
+        LiveChecksForTesting++;
+        var reply = await _api.Version(_island); if (!reply.Ok || reply.Body.ValueKind != System.Text.Json.JsonValueKind.Object || !reply.Body.TryGetProperty("version", out var v) || !v.TryGetInt64(out var version) || version == _data.Version) return false;
+        await LoadAsync(); return true;
+    }
 
     // ---- structure --------------------------------------------------------------------------------------------------------
 

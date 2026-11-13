@@ -165,6 +165,14 @@ public partial class MyPropertiesSmoke : Node3D
             window.PressNoticesForTesting("Marcar como Lidos"); await Frames(4); await Task.Delay(50); await Frames(2);
             Require(window.UnreadForTesting == 0 && window.NoticeStripForTesting.Length == 0 && server.Notices.All(n => n.Read), "all read, the strip goes away");
 
+            // --- live refresh ---------------------------------------------------------------------------------------------------------------
+            server.Mine.Add(new P { Island = IslandA, Code = "L-77", Name = "Chegou Agora", Sale = 777 });
+            await window.LiveRefreshAsync(); await Frames(2);
+            Require(window.LiveChecksForTesting == 1 && window.Data.Parcels.Any(p => p.Code == "L-77"), "a quiet refresh shows what changed on the server");
+            server.Down = true; var shown = window.Data.Parcels.Count; await window.LiveRefreshAsync(); await Frames(2);
+            Require(window.Data.Parcels.Count == shown && window.NoteForTesting.Length == 0, "a blip on the line leaves the window as it was, with no scary message");
+            server.Down = false;
+
             // --- trouble ---------------------------------------------------------------------------------------------------------------------
             server.Gone = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("ainda não tem as suas propriedades"), $"an old server is told apart (got {window.NoteForTesting})");
             server.Gone = false; server.Down = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("Sem conexão"), "no connection is said");

@@ -60,6 +60,7 @@ public partial class LandManagementSmoke : Node3D
         {
             Calls.Add($"{method} {path}");
             var land = $"/api/v1/worlds/islands/{Island}/land";
+            if (path == $"{land}/version") return Task.FromResult(Ok(new { version = Parcels.Sum(p => (long)p.Revision) }));
             if (path == $"{land}/overview") return Task.FromResult(Staff ? Ok(Overview()) : Fail(403, "forbidden"));
             var json = body is null ? null : JsonNode.Parse(body)!.AsObject();
             P Find(string rest) => Parcels.First(p => p.Id == Guid.Parse(rest.Split('/')[0]));
@@ -202,6 +203,13 @@ public partial class LandManagementSmoke : Node3D
             Require(await window.ExpandForTesting(0), "expanding works"); await Frames(3); Require(big.Cells.Count == before, "the parcel has its cells back");
             window.Map.Select(big.Id); window.MarkForTesting((-30, -30), (-29, -29)); await Frames(2);
             Require(!await window.ExpandForTesting(0) && window.ToastForTesting.Length > 0, "cells that already belong to a parcel are refused and the person is told"); window.Map.ClearCells();
+
+            // --- live refresh ---------------------------------------------------------------------------------------------------------------
+            var overviews = server.Calls.Count(c => c.EndsWith("/overview", StringComparison.Ordinal));
+            Require(!await window.LiveCheckAsync() && server.Calls.Count(c => c.EndsWith("/overview", StringComparison.Ordinal)) == overviews, "nothing changed: only the version is asked, the overview is not loaded again");
+            server.Parcels.First(p => p.Name == "Residencial Sul").Sale = 90000; server.Parcels.First(p => p.Name == "Residencial Sul").Revision++; // somebody else changed the price
+            Require(await window.LiveCheckAsync(), "the version moved, so the window reloads"); await Frames(2);
+            Require(window.Data!.Parcels.First(p => p.Name == "Residencial Sul").SalePrice == 90000, "and shows what the other person did");
 
             // --- not staff -------------------------------------------------------------------------------------------------------------------
             server.Staff = false; await window.LoadAsync(); await Frames(2);
