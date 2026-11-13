@@ -33,7 +33,7 @@ public partial class NotificationClient : Node
                 while (_socket.GetAvailablePacketCount() > 0)
                 {
                     var json = _socket.GetPacket().GetStringFromUtf8(); EmitSignal(SignalName.Raw, json);
-                    if (NotificationFormatter.Describe(json) is { } text) EmitSignal(SignalName.Notified, text);
+                    if (Notifications.NotificationPrefs.AllowsToast(json) && NotificationFormatter.Describe(json) is { } text) EmitSignal(SignalName.Notified, text);
                 }
                 break;
             case WebSocketPeer.State.Closed:

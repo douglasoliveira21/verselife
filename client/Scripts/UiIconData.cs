@@ -53,6 +53,7 @@ public static class UiIconData
         ["redo"] = (false, "<path d=\"M15 14l4 -4l-4 -4\" /> <path d=\"M19 10h-11a4 4 0 1 0 0 8h1\" />"),
         ["chevron-down"] = (false, "<path d=\"M6 9l6 6l6 -6\" />"),
         ["chevron-up"] = (false, "<path d=\"M6 15l6 -6l6 6\" />"),
+        ["bell"] = (false, "<path d=\"M10 5a2 2 0 1 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6\" /> <path d=\"M9 17v1a3 3 0 0 0 6 0v-1\" />"),
         ["chevron-left"] = (false, "<path d=\"M15 6l-6 6l6 6\" />"),
         ["chevron-right"] = (false, "<path d=\"M9 6l6 6l-6 6\" />"),
         ["alert"] = (false, "<path d=\"M12 9v4\" /> <path d=\"M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0\" /> <path d=\"M12 16h.01\" />"),

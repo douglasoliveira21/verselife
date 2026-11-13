@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Groups;
 
-public sealed record AnnouncementRequest(string? Title, string? Body, bool? Pinned);
+public sealed record AnnouncementRequest(string? Title, string? Body, bool? Pinned, DateTimeOffset? ExpiresAt = null, string? AttachmentUrl = null);
 public sealed record GroupEventRequest(string? Name, string? Description, Guid? IslandId, DateTimeOffset? StartsAt, DateTimeOffset? EndsAt, int? Capacity);
 public sealed record ChatRequest(string? Content, string? ClientMessageId);
 public sealed record ReadRequest(Guid[]? Ids, Guid? GroupId);
@@ -17,7 +17,7 @@ public sealed record MutedRequest(bool Muted);
 public static partial class GroupService
 {
     public sealed record ChatItem(Guid Id, Guid UserId, string Username, string Content, DateTimeOffset At);
-    public sealed record AnnouncementItem(Guid Id, string Title, string Body, bool Pinned, Guid AuthorUserId, string Author, DateTimeOffset At, DateTimeOffset? EditedAt);
+    public sealed record AnnouncementItem(Guid Id, string Title, string Body, bool Pinned, Guid AuthorUserId, string Author, DateTimeOffset At, DateTimeOffset? EditedAt, DateTimeOffset? ExpiresAt = null, string AttachmentUrl = "");
     public sealed record EventItem(Guid Id, string Name, string Description, Guid IslandId, string IslandName, DateTimeOffset StartsAt, DateTimeOffset EndsAt, int Capacity, int Attending, bool Joined, Guid OrganizerUserId, string Organizer);
     public sealed record NotificationItem(Guid Id, Guid GroupId, string GroupName, string Type, string Title, string Body, DateTimeOffset At, bool Read);
 
@@ -139,10 +139,10 @@ public static partial class GroupService
 
     public static async Task<GroupResult> AnnouncementsAsync(LifeVerseDbContext db, Guid me, Guid groupId, DateTimeOffset now, CancellationToken ct)
     {
-        var (_, error) = await MemberAsync(db, me, groupId, now, ct); if (error is not null) return error;
-        var list = await db.GroupAnnouncements.AsNoTracking().Where(a => a.GroupId == groupId && a.DeletedAt == null).OrderByDescending(a => a.Pinned).ThenByDescending(a => a.CreatedAt).Take(50).ToListAsync(ct);
+        var (ctx, error) = await MemberAsync(db, me, groupId, now, ct); if (error is not null) return error; var canManage = GroupRules.Has(ctx!.Actor!, GroupPermissions.Announce); // managers still see the expired ones
+        var list = await db.GroupAnnouncements.AsNoTracking().Where(a => a.GroupId == groupId && a.DeletedAt == null && (a.ExpiresAt == null || a.ExpiresAt > now || canManage)).OrderByDescending(a => a.Pinned).ThenByDescending(a => a.CreatedAt).Take(50).ToListAsync(ct);
         var names = await NamesAsync(db, list.Select(a => a.AuthorUserId), ct);
-        return GroupResult.Done(list.Select(a => new AnnouncementItem(a.Id, a.Title, a.Body, a.Pinned, a.AuthorUserId, names.GetValueOrDefault(a.AuthorUserId, "?"), a.CreatedAt, a.EditedAt)).ToList());
+        return GroupResult.Done(list.Select(a => new AnnouncementItem(a.Id, a.Title, a.Body, a.Pinned, a.AuthorUserId, names.GetValueOrDefault(a.AuthorUserId, "?"), a.CreatedAt, a.EditedAt, a.ExpiresAt, a.AttachmentUrl)).ToList());
     }
 
     public static async Task<GroupResult> PostAnnouncementAsync(LifeVerseDbContext db, Guid me, Guid groupId, AnnouncementRequest r, DateTimeOffset now, GroupNotifier? notify, CancellationToken ct)
@@ -150,11 +150,13 @@ public static partial class GroupService
         var (ctx, error) = await WithPermissionAsync(db, me, groupId, GroupPermissions.Announce, now, ct); if (error is not null) return error;
         var title = CleanText(r.Title, false); var body = CleanText(r.Body, true);
         if (!ValidAnnouncement(title, body)) return GroupResult.Fail("bad_announcement");
+        var attachment = (r.AttachmentUrl ?? string.Empty).Trim(); if (attachment.Length > 0 && (attachment.Length > 400 || !Uri.TryCreate(attachment, UriKind.Absolute, out var link) || link.Scheme != Uri.UriSchemeHttps || link.UserInfo.Length > 0)) return GroupResult.Fail("bad_attachment");
+        if (r.ExpiresAt is { } ends && (ends <= now.AddMinutes(1) || ends > now.AddDays(365))) return GroupResult.Fail("bad_expiry");
         var hour = now.AddHours(-1);
         if (await db.GroupAnnouncements.CountAsync(a => a.GroupId == groupId && a.CreatedAt > hour, ct) >= GroupRules.MaxAnnouncementsPerHour) return GroupResult.Fail("rate_limited");
         var pinned = r.Pinned == true;
         if (pinned && await db.GroupAnnouncements.CountAsync(a => a.GroupId == groupId && a.Pinned && a.DeletedAt == null, ct) >= GroupRules.MaxPinned) return GroupResult.Fail("too_many_pinned");
-        var announcement = new GroupAnnouncement { Id = Guid.NewGuid(), GroupId = groupId, AuthorUserId = me, Title = title, Body = body, Pinned = pinned, CreatedAt = now };
+        var announcement = new GroupAnnouncement { Id = Guid.NewGuid(), GroupId = groupId, AuthorUserId = me, Title = title, Body = body, Pinned = pinned, ExpiresAt = r.ExpiresAt, AttachmentUrl = attachment, CreatedAt = now };
         db.GroupAnnouncements.Add(announcement); Log(db, groupId, me, "announcement_posted", null, new { title }, now);
         var users = await AddNotificationsAsync(db, groupId, null, me, "group_announcement", title, body, now, ct);
         var saved = await SaveAsync(db, ct, new { id = announcement.Id }); if (!saved.Ok) return saved;

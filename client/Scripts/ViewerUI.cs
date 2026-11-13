@@ -46,6 +46,7 @@ public partial class ViewerUI : CanvasLayer
     private LineEdit _islandId = null!;
     private Label _joinStatus = null!;
     private VBoxContainer _toasts = null!;
+    private Notifications.NotificationCenterUi? _notificationCenter;
     private HttpRequest _wallet = null!;
     private HttpRequest _islands = null!;
     private HttpRequest _start = null!;
@@ -90,7 +91,7 @@ public partial class ViewerUI : CanvasLayer
         BuildMoveWindow();
         BuildJoinWindow();
         BuildToasts();
-        var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text); notifications.Raw += json => { _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OnLiveEvent(json); };
+        var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text); notifications.Raw += json => { _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OnLiveEvent(json); _notificationCenter?.Poke(); };
         AnnounceUpdate();
         _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += text => Toast(text); _people.ProfileRequested += id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id); _people.ChatRequested += (_, name) => Toast($"Mensagem privada para {name}: abra a aba Conversas.");
         BuildTopBar();
@@ -141,6 +142,14 @@ public partial class ViewerUI : CanvasLayer
         }
         if (_world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow") is null) _world.AddChild(new AppearanceWindow { Name = "AppearanceWindow", Player = _player });
         if (_world.GetNodeOrNull<GroupsWindow>("GroupsWindow") is null) _world.AddChild(new GroupsWindow { Name = "GroupsWindow" });
+        if (_world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow") is null)
+            _world.AddChild(new Groups.GroupProfileWindow { Name = "GroupProfileWindow", Said = text => Toast(text), Visit = JoinIslandById, OpenProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), OpenAdmin = (id, tab) => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OpenAt(id, tab), ManageLand = id => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OpenAt(id, 4), Changed = () => _ = _world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow")?.LoadAsync(true) });
+        if (_world.GetNodeOrNull<Groups.GroupCreateWindow>("GroupCreateWindow") is null)
+            _world.AddChild(new Groups.GroupCreateWindow { Name = "GroupCreateWindow", Said = text => Toast(text), Created = id => { _world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow")?.Open(); if (id != Guid.Empty) _ = _world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow")?.OpenAsync(id); } });
+        if (_world.GetNodeOrNull<Groups.GroupDiscoverWindow>("GroupDiscoverWindow") is null)
+            _world.AddChild(new Groups.GroupDiscoverWindow { Name = "GroupDiscoverWindow", OpenGroup = id => _ = _world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow")?.OpenAsync(id) });
+        if (_world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow") is null)
+            _world.AddChild(new Groups.GroupsHubWindow { Name = "GroupsHubWindow", Said = text => Toast(text), OpenGroup = (id, tab) => _ = _world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow")?.OpenAsync(id, tab == 1 ? "chat" : tab == 2 ? "avisos" : "geral"), CreateGroup = () => _world.GetNodeOrNull<Groups.GroupCreateWindow>("GroupCreateWindow")?.Open(), FindGroups = () => _world.GetNodeOrNull<Groups.GroupDiscoverWindow>("GroupDiscoverWindow")?.Open() });
         if (_world.GetNodeOrNull<ProfileWindow>("ProfileWindow") is null) _world.AddChild(new ProfileWindow { Name = "ProfileWindow" });
         if (_world.GetNodeOrNull<IslandLookService>("IslandLookService") is null) _world.AddChild(new IslandLookService { Name = "IslandLookService" });
         if (_world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow") is null)

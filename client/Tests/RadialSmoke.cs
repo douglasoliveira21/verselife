@@ -58,6 +58,9 @@ public partial class RadialSmoke : Node
             var avatar = InteractionRegistry.Build(new AvatarTarget(2, "Lucas", Vector3.Zero), services);
             Require(avatar.Any(x => x.Label == "Interagir" && x.Children!.Count > 0) && avatar.Any(x => x.Label == "Mensagem") && avatar.Single(x => x.Label == "Mais opções").Children!.Select(x => x.Label).SequenceEqual(["Buscar na lista", "Bloquear", "Denunciar"]), "another avatar offers talking, gestures and moderation");
 
+            var invited = ""; var inviteServices = new ContextServices { InviteToGroup = name => invited = name }; InteractionRegistry.Build(new AvatarTarget(2, "Lucas", Vector3.Zero), inviteServices).Single(x => x.Label == "Convidar").Run!.Invoke();
+            Require(invited == "Lucas", "another avatar can be invited to a group from the menu");
+
             // the actions on a person: find the account by name, then ask the API
             var person = new PersonActions(); AddChild(person);
             var lucas = Guid.NewGuid(); var calls = new List<string>(); var said = new List<string>(); person.Said += said.Add;

@@ -51,6 +51,17 @@ public sealed class SocialGroup
     public string AccentColor { get; set; } = "#12F2E0";
     public string Emblem { get; set; } = "people";
     public int MemberLimit { get; set; } = 500;
+    /// <summary>What the group is about (see GroupRules.Categories).</summary>
+    public string Category { get; set; } = "social";
+    public string Language { get; set; } = "pt-BR";
+    /// <summary>livre, moderado or adulto.</summary>
+    public string ContentRating { get; set; } = "livre";
+    /// <summary>The wide picture on top of the group (an https address), or empty.</summary>
+    public string CoverUrl { get; set; } = string.Empty;
+    /// <summary>The island where the group meets (null: none).</summary>
+    public Guid? HeadquartersIslandId { get; set; }
+    /// <summary>Coins a person pays to join an open group (0: free).</summary>
+    public long JoinFee { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
@@ -70,6 +81,8 @@ public sealed class GroupMember
     public bool NotificationsMuted { get; set; }
     /// <summary>The member lets this group be listed on their profile (only matters for groups others may see).</summary>
     public bool ShowInProfile { get; set; } = true;
+    /// <summary>The group the person wears now: its tag and the title of their cargo show beside their name. At most one group per person is active.</summary>
+    public bool IsActive { get; set; }
     public DateTimeOffset JoinedAt { get; set; }
 }
 
@@ -80,6 +93,10 @@ public sealed class GroupInvite
     public Guid InvitedUserId { get; set; }
     public Guid InvitedByUserId { get; set; }
     public required string Status { get; set; }
+    /// <summary>A few words from who invited.</summary>
+    public string Message { get; set; } = string.Empty;
+    /// <summary>The cargo the person gets when they accept (null: the lowest one).</summary>
+    public Guid? RoleId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
 

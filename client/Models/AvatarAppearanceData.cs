@@ -6,6 +6,8 @@ public sealed class AvatarAppearanceData
 {
     [JsonPropertyName("id")] public Guid Id { get; set; }
     [JsonPropertyName("displayName")] public string DisplayName { get; set; } = "Resident";
+    /// <summary>Set by the server only: the group worn and the title of the cargo, shown under the name. The client never sends it back as a choice.</summary>
+    [JsonPropertyName("groupLabel")] public string GroupLabel { get; set; } = "";
     [JsonPropertyName("baseModel")] public string BaseModel { get; set; } = "human_a";
     [JsonPropertyName("skinColor")] public string SkinColor { get; set; } = "#C98F65";
     [JsonPropertyName("hairColor")] public string HairColor { get; set; } = "#2B1B14";

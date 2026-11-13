@@ -190,7 +190,7 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 - **Testes de concorrência em PostgreSQL real**: exigem credenciais; os testes de Postgres ficam ignorados sem elas.
 - **"Criar objetos" / "Permitir visitantes"**: redundantes com as permissões de construção e o modo de acesso existentes.
 
-Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase84.
+Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase86.
 
 ## Expandir e reduzir parcela
 

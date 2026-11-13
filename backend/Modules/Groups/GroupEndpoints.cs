@@ -7,8 +7,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Groups;
 
-public sealed record JoinRequest(string? Message);
-public sealed record InviteRequest(Guid? UserId, string? Username);
+public sealed record JoinRequest(string? Message, long? ConfirmFee = null);
+public sealed record InviteRequest(Guid? UserId, string? Username, string? Message = null, Guid? RoleId = null);
 public sealed record ReasonRequest(string? Reason);
 public sealed record BanRequest(string? Reason, int? Days);
 public sealed record MuteRequest(int Minutes, string? Reason);
@@ -23,7 +23,7 @@ public static class GroupEndpoints
         var g = endpoints.MapGroup("/api/v1/groups").WithTags("Groups").RequireAuthorization();
         g.MapGet("/permissions", () => Results.Ok(GroupPermissions.All.Select(p => new { key = p.Key, label = p.Label, help = p.Help })));
         g.MapGet("/mine", Run(async (c, db, me, now, hub) => GroupResult.Done(await GroupService.MineAsync(db, me, now, c.RequestAborted))));
-        g.MapGet("/search", async (string? q, int? page, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await GroupService.SearchAsync(db, me, q, page ?? 0, t.GetUtcNow(), ct)));
+        g.MapGet("/search", async (string? q, int? page, string? category, string? language, string? policy, bool? free, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await GroupService.SearchAsync(db, me, q, page ?? 0, t.GetUtcNow(), ct, category, language, policy, free == true)));
         g.MapPost("", async (GroupProfileRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.CreateAsync(db, me, r, t.GetUtcNow(), ct), created: true));
         // A group card is allowed to display the selected inventory image to people
         // who can see the group. The file itself never comes from a caller supplied URL.
@@ -32,7 +32,7 @@ public static class GroupEndpoints
         g.MapPut("/{groupId:guid}", async (Guid groupId, GroupProfileRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.UpdateProfileAsync(db, me, groupId, r, t.GetUtcNow(), ct)));
 
         // coming in
-        g.MapPost("/{groupId:guid}/join", async (Guid groupId, JoinRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.JoinAsync(db, me, groupId, r.Message, t.GetUtcNow(), Push(hub, ct), ct)));
+        g.MapPost("/{groupId:guid}/join", async (Guid groupId, JoinRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.JoinAsync(db, me, groupId, r.Message, t.GetUtcNow(), Push(hub, ct), ct, r.ConfirmFee)));
         g.MapDelete("/{groupId:guid}/join", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.CancelRequestAsync(db, me, groupId, t.GetUtcNow(), ct)));
         g.MapGet("/{groupId:guid}/requests", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.RequestsAsync(db, me, groupId, t.GetUtcNow(), ct)));
         g.MapPost("/{groupId:guid}/requests/{requestId:guid}/approve", async (Guid groupId, Guid requestId, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.DecideRequestAsync(db, me, groupId, requestId, true, t.GetUtcNow(), Push(hub, ct), ct)));
@@ -42,7 +42,7 @@ public static class GroupEndpoints
             if (!Who(c, out var me)) return Results.Unauthorized();
             var target = r.UserId;
             if (target is null && !string.IsNullOrWhiteSpace(r.Username)) { var name = r.Username.Trim().ToLowerInvariant(); target = await db.Users.AsNoTracking().Where(u => u.NormalizedUsername == name.ToUpperInvariant() && u.DeletedAt == null).Select(u => (Guid?)u.Id).FirstOrDefaultAsync(ct); }
-            return target is null ? Results.NotFound(new { error = "not_found" }) : Answer(await GroupService.InviteAsync(db, me, groupId, target.Value, t.GetUtcNow(), Push(hub, ct), ct));
+            return target is null ? Results.NotFound(new { error = "not_found" }) : Answer(await GroupService.InviteAsync(db, me, groupId, target.Value, t.GetUtcNow(), Push(hub, ct), ct, r.Message, r.RoleId));
         });
 
         // members and moderation
@@ -103,6 +103,20 @@ public static class GroupEndpoints
         g.MapGet("/{groupId:guid}/stores", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.StoresAsync(db, me, groupId, t.GetUtcNow(), ct)));
         g.MapPost("/{groupId:guid}/stores", async (Guid groupId, GroupStoreRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.CreateStoreAsync(db, me, groupId, r, t.GetUtcNow(), ct), created: true));
         g.MapDelete("/{groupId:guid}/stores/{storeId:guid}", async (Guid groupId, Guid storeId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.RemoveStoreAsync(db, me, groupId, storeId, t.GetUtcNow(), ct)));
+
+        // the group worn beside the name, and the title of a cargo
+        g.MapGet("/active", async (HttpContext c, LifeVerseDbContext db, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Results.Ok(await GroupService.ActiveOfAsync(db, me, ct)));
+        g.MapDelete("/active", async (HttpContext c, LifeVerseDbContext db, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.DeactivateAsync(db, me, ct)));
+        g.MapPost("/{groupId:guid}/activate", async (Guid groupId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.ActivateAsync(db, me, groupId, t.GetUtcNow(), ct)));
+        g.MapPut("/{groupId:guid}/roles/{roleId:guid}/title", async (Guid groupId, Guid roleId, RoleTitleRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.SetRoleTitleAsync(db, me, groupId, roleId, r.Title, t.GetUtcNow(), ct)));
+
+        // proposals and votes
+        g.MapGet("/{groupId:guid}/proposals", async (Guid groupId, string? status, int? skip, int? take, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.ProposalsAsync(db, me, groupId, status, skip ?? 0, take ?? 20, t.GetUtcNow(), ct)));
+        g.MapPost("/{groupId:guid}/proposals", async (Guid groupId, ProposalRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.CreateProposalAsync(db, me, groupId, r, t.GetUtcNow(), Push(hub, ct), ct), created: true));
+        g.MapGet("/{groupId:guid}/proposals/{proposalId:guid}", async (Guid groupId, Guid proposalId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.ProposalAsync(db, me, groupId, proposalId, t.GetUtcNow(), ct)));
+        g.MapPost("/{groupId:guid}/proposals/{proposalId:guid}/vote", async (Guid groupId, Guid proposalId, VoteRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.VoteAsync(db, me, groupId, proposalId, r.Option, t.GetUtcNow(), Push(hub, ct), ct)));
+        g.MapPost("/{groupId:guid}/proposals/{proposalId:guid}/close", async (Guid groupId, Guid proposalId, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.EndProposalAsync(db, me, groupId, proposalId, false, t.GetUtcNow(), Push(hub, ct), ct)));
+        g.MapDelete("/{groupId:guid}/proposals/{proposalId:guid}", async (Guid groupId, Guid proposalId, HttpContext c, LifeVerseDbContext db, TimeProvider t, NotificationHub hub, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.EndProposalAsync(db, me, groupId, proposalId, true, t.GetUtcNow(), Push(hub, ct), ct)));
 
         // notifications
         g.MapGet("/notifications", async (bool? unread, int? take, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => !Who(c, out var me) ? Results.Unauthorized() : Answer(await GroupService.NotificationsAsync(db, me, unread == true, take ?? 50, t.GetUtcNow(), ct)));

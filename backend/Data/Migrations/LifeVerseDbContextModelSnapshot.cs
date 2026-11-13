@@ -1068,6 +1068,14 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<string>("AttachmentUrl")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasDefaultValue("")
+                        .HasColumnName("attachment_url");
+
                     b.Property<Guid>("AuthorUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("author_user_id");
@@ -1089,6 +1097,10 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Property<DateTimeOffset?>("EditedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("edited_at");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
 
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uuid")
@@ -1219,6 +1231,18 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("invited_user_id");
 
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasDefaultValue("")
+                        .HasColumnName("message");
+
+                    b.Property<Guid?>("RoleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("role_id");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -1347,6 +1371,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("group_id");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("joined_at");
@@ -1439,6 +1467,87 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("group_notifications", "social");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupProposal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AuthorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("author_user_id");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Criterion")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("criterion");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)")
+                        .HasColumnName("description");
+
+                    b.Property<int>("EligibleAtClose")
+                        .HasColumnType("integer")
+                        .HasColumnName("eligible_at_close");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("ends_at");
+
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<int>("MinRank")
+                        .HasColumnType("integer")
+                        .HasColumnName("min_rank");
+
+                    b.Property<string>("OptionsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("options_json");
+
+                    b.Property<int>("QuorumPercent")
+                        .HasColumnType("integer")
+                        .HasColumnName("quorum_percent");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("title");
+
+                    b.Property<int?>("WinningOption")
+                        .HasColumnType("integer")
+                        .HasColumnName("winning_option");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroupId", "Status");
+
+                    b.HasIndex("Status", "EndsAt");
+
+                    b.ToTable("group_proposals", "social");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.GroupRole", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1481,6 +1590,14 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)")
                         .HasColumnName("system_key");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasDefaultValue("")
+                        .HasColumnName("title");
 
                     b.HasKey("Id");
 
@@ -1528,6 +1645,37 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasKey("GroupId");
 
                     b.ToTable("group_treasuries", "social");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.GroupVote", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Option")
+                        .HasColumnType("integer")
+                        .HasColumnName("option");
+
+                    b.Property<Guid>("ProposalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proposal_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProposalId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("group_votes", "social");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.HudDefinition", b =>
@@ -4643,6 +4791,30 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasDefaultValue("#12F2E0")
                         .HasColumnName("accent_color");
 
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasDefaultValue("social")
+                        .HasColumnName("category");
+
+                    b.Property<string>("ContentRating")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasDefaultValue("livre")
+                        .HasColumnName("content_rating");
+
+                    b.Property<string>("CoverUrl")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasDefaultValue("")
+                        .HasColumnName("cover_url");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -4665,10 +4837,20 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasDefaultValue("people")
                         .HasColumnName("emblem");
 
+                    b.Property<Guid?>("HeadquartersIslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("headquarters_island_id");
+
                     b.Property<string>("ImageUrl")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)")
                         .HasColumnName("image_url");
+
+                    b.Property<long>("JoinFee")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(0L)
+                        .HasColumnName("join_fee");
 
                     b.Property<string>("JoinPolicy")
                         .IsRequired()
@@ -4677,6 +4859,14 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(8)")
                         .HasDefaultValue("invite")
                         .HasColumnName("join_policy");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasDefaultValue("pt-BR")
+                        .HasColumnName("language");
 
                     b.Property<int>("MemberLimit")
                         .ValueGeneratedOnAdd()

@@ -216,6 +216,7 @@ public static class AvatarAppearanceJson
             animationOverridesJson = avatar.Appearance?.AnimationOverridesJson ?? "{}",
             animationFilesJson = await AvatarAnimations.FilesInfoAsync(db, avatar, ct),
             customModelId = customModel?.Id, customModelHash = customModel?.ContentHash, customModelTriangles = customModel?.Triangles ?? 0, customModelScale = customModel?.ScaleToStandard ?? 1f, customModelBonesJson = customModel?.BoneMapJson ?? "{}",
+            groupLabel = LifeVerse.Api.Modules.Groups.GroupService.LabelOf(await LifeVerse.Api.Modules.Groups.GroupService.ActiveOfAsync(db, avatar.UserId, ct)),
             id = avatar.Id, displayName = avatar.DisplayName, baseModel = avatar.BaseModel,
             skinColor = avatar.Appearance?.SkinColor ?? "#C98F65", hairColor = avatar.Appearance?.HairColor ?? "#2B1B14",
             hairStyle = avatar.Appearance?.HairStyle ?? "short", eyeColor = avatar.Appearance?.EyeColor ?? "#4A3326",

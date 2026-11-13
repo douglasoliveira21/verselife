@@ -39,7 +39,7 @@ public partial class ViewerUI
             ("Pessoas, amigos e grupos…", () => _people?.Toggle(), false),
             ("Meu perfil…", () => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenSelfAsync(), false),
             ("Minhas propriedades…", () => _world.GetNodeOrNull<RealEstate.MyPropertiesWindow>("MyPropertiesWindow")?.Toggle(), false),
-            ("Grupos e organizações…", () => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.Toggle(), false),
+            ("Grupos e organizações…", () => _world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow")?.Toggle(), false),
             ("Mensagens privadas…", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(), false),
             ("Gestos", ToggleGestures, false),
             ("-", null, false),
@@ -100,6 +100,9 @@ public partial class ViewerUI
         plus.Pressed += () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle();
         row.AddChild(plus);
         row.AddChild(Divider(26));
+        // The bell: the number of unread notifications, the panel below it and the full center.
+        _notificationCenter = new Notifications.NotificationCenterUi { Name = "NotificationCenter", Said = text => Toast(text), Open = OpenNotification }; AddChild(_notificationCenter); _notificationCenter.AttachTo(row, _root);
+        row.AddChild(Divider(26));
 
         // Where you are, and whether you are connected.
         row.AddChild(UiStyle.IconRect("pin-filled", UiStyle.Accent, 22));
@@ -128,6 +131,13 @@ public partial class ViewerUI
     }
 
     private MenuButton _connectionMenu = null!;
+
+    /// <summary>A click on a notification takes the person to the place it talks about.</summary>
+    private void OpenNotification(Notifications.CenterEntry entry)
+    {
+        if (entry.Source == "property") _ = _world.GetNodeOrNull<RealEstate.MyPropertiesWindow>("MyPropertiesWindow")?.OpenAsync();
+        else _world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow")?.Open();
+    }
 
     private static Control Divider(float height) => new ColorRect { Color = new Color(UiStyle.BorderBright, .75f), CustomMinimumSize = new Vector2(1, height), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore };
 
@@ -295,6 +305,7 @@ public partial class ViewerUI
         var people = new PersonActions { Name = "PersonActions" }; AddChild(people); people.Setup(_root); people.Said += text => Toast(text);
         var services = new ContextServices
         {
+            InviteToGroup = name => { var invite = _world.GetNodeOrNull<Groups.GroupInviteWindow>("GroupInviteWindow"); if (invite is null) { invite = new Groups.GroupInviteWindow { Name = "GroupInviteWindow", Said = text => Toast(text) }; _world.AddChild(invite); } _ = invite.OpenAsync(name); },
             AddFriend = people.AddFriend, Message = people.AskMessage, Block = people.Block, Report = people.AskReport,
             ToggleInventory = () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(),
             ToggleGestures = ToggleGestures,
@@ -397,8 +408,12 @@ public partial class ViewerUI
     private void Toast(string text) => Toast(text, ToastKind.Info);
 
     /// A notification at the top of the screen: coloured outline, icon, divider, message and a close button (client/Assets/ui/08).
+    private readonly Queue<(string Text, ToastKind Kind)> _toastQueue = new();
+    private const int MaxVisibleToasts = 3;
+
     private void Toast(string text, ToastKind kind)
     {
+        if (_toasts.GetChildCount() >= MaxVisibleToasts) { _toastQueue.Enqueue((text, kind)); return; } // at most three on the screen: the rest wait their turn
         var (icon, border, fill) = kind switch
         {
             ToastKind.Success => ("ok", new Color("#67F869"), new Color("#0F3A22")),
@@ -420,9 +435,10 @@ public partial class ViewerUI
         close.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); close.AddThemeStyleboxOverride("hover", UiStyle.Box(new Color(1, 1, 1, .12f), new Color(0, 0, 0, 0), 8, 0, 0, 0)); close.AddThemeStyleboxOverride("pressed", new StyleBoxEmpty());
         close.Pressed += panel.QueueFree;
         row.AddChild(close);
+        panel.TreeExited += () => { if (_toastQueue.Count > 0 && IsInsideTree()) { var next = _toastQueue.Dequeue(); Toast(next.Text, next.Kind); } };
         _toasts.AddChild(panel);
         var tween = CreateTween();
-        tween.TweenInterval(4.0); tween.TweenProperty(panel, "modulate:a", 0f, .6); tween.TweenCallback(Callable.From(() => { if (IsInstanceValid(panel)) panel.QueueFree(); }));
+        tween.TweenInterval(kind is ToastKind.Error or ToastKind.Warning ? 10.0 : 4.0); tween.TweenProperty(panel, "modulate:a", 0f, .6); tween.TweenCallback(Callable.From(() => { if (IsInstanceValid(panel)) panel.QueueFree(); }));
     }
 }
 

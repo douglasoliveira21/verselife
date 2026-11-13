@@ -9,7 +9,7 @@ public static class GroupPermissions
         EditProfile = "edit_profile", ManageRoles = "manage_roles", AssignRoles = "assign_roles", ViewAudit = "view_audit",
         Announce = "announce", ManageEvents = "manage_events", ModerateChat = "moderate_chat",
         ManageLand = "manage_land", BuildOnLand = "build_on_land", ReleaseLand = "release_land",
-        ViewTreasury = "view_treasury", ManageTreasury = "manage_treasury", ManageStore = "manage_store";
+        ViewTreasury = "view_treasury", ManageTreasury = "manage_treasury", ManageStore = "manage_store", ManageProposals = "manage_proposals";
 
     /// <summary>Every permission with the name shown to people, in the order the role editor lists them.</summary>
     public static readonly IReadOnlyList<(string Key, string Label, string Help)> All =
@@ -31,7 +31,8 @@ public static class GroupPermissions
         (ReleaseLand, "Devolver terrenos", "Tirar um terreno do grupo e passá-lo a um membro."),
         (ViewTreasury, "Ver o cofre", "Ver o saldo do cofre do grupo e todo o seu extrato."),
         (ManageTreasury, "Retirar do cofre", "Passar moedas do cofre para um membro, com motivo, dentro dos limites diários."),
-        (ManageStore, "Gerenciar lojas e produtos", "Publicar, mudar e retirar produtos do grupo no mercado e montar lojas do grupo.")
+        (ManageStore, "Gerenciar lojas e produtos", "Publicar, mudar e retirar produtos do grupo no mercado e montar lojas do grupo."),
+        (ManageProposals, "Gerenciar propostas", "Criar propostas de votação do grupo e encerrá-las antes do prazo.")
     ];
 
     public static readonly IReadOnlySet<string> Known = All.Select(p => p.Key).ToHashSet();
@@ -52,6 +53,7 @@ public static class GroupRules
     public const int MaxRoles = 20, MaxPendingInvites = 100, MaxPendingRequestsPerUser = 10, MaxGroupsCreated = 5, MaxMemberships = 30, DefaultMemberLimit = 500, MaxMemberLimit = 5_000;
     public const long MaxCoinsPerOperation = 1_000_000_000;
     public const int ContributionsPerHour = 20, MaxWithdrawalsPerDay = 10, WithdrawalDailyShareBps = 2_000, MaxGroupProducts = 100, MaxGroupStores = 50;
+    public const int MaxProposalTitle = 120, MaxProposalBody = 4000, MinProposalOptions = 2, MaxProposalOptions = 8, MaxOptionLength = 80, MaxOpenProposals = 10, MaxProposalDays = 30, MaxRoleTitle = 24;
     public const int MaxGroupParcels = 50, MaxLandReleasesPerDay = 3, MaxGroupAccessPerParcel = 20;
     public const int MaxChatLength = 1000, ChatBurst = 20, MaxAnnouncementTitle = 80, MaxAnnouncementBody = 2000, MaxPinned = 3, MaxAnnouncementsPerHour = 10, MaxUpcomingEvents = 20, MaxEventCapacity = 5_000;
     public static readonly TimeSpan ChatBurstWindow = TimeSpan.FromSeconds(30);
@@ -61,6 +63,10 @@ public static class GroupRules
     public const string Open = "open", Request = "request", InviteOnly = "invite";
     public static readonly string[] JoinPolicies = [Open, Request, InviteOnly];
     public static readonly string[] Privacies = ["public", "private"];
+    public static readonly string[] Categories = ["social", "construcao", "comercio", "jogos", "educacao", "musica", "arte", "eventos", "outros"];
+    public static readonly string[] Ratings = ["livre", "moderado", "adulto"];
+    public const long MaxJoinFee = 1_000_000;
+    public static bool ValidLanguage(string? language) => language is { Length: >= 2 and <= 12 } && Regex.IsMatch(language, "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$");
     public static readonly string[] Emblems = ["people", "star", "hammer", "bag", "coin", "map", "camera", "chat", "bulb", "wing", "cube", "run"];
 
     private static readonly Regex Colour = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
@@ -108,7 +114,7 @@ public static class GroupRules
     public static readonly IReadOnlyList<(string Key, string Name, int Rank, string[] Permissions)> StartingRoles =
     [
         ("owner", "Líder", LeaderRank, [.. GroupPermissions.Known]),
-        ("admin", "Administrador", AdminRank, [GroupPermissions.Invite, GroupPermissions.ApproveRequests, GroupPermissions.Kick, GroupPermissions.Ban, GroupPermissions.Mute, GroupPermissions.EditProfile, GroupPermissions.ManageRoles, GroupPermissions.AssignRoles, GroupPermissions.ViewAudit, GroupPermissions.Announce, GroupPermissions.ManageEvents, GroupPermissions.ModerateChat, GroupPermissions.ManageLand, GroupPermissions.BuildOnLand, GroupPermissions.ViewTreasury, GroupPermissions.ManageStore]),
+        ("admin", "Administrador", AdminRank, [GroupPermissions.Invite, GroupPermissions.ApproveRequests, GroupPermissions.Kick, GroupPermissions.Ban, GroupPermissions.Mute, GroupPermissions.EditProfile, GroupPermissions.ManageRoles, GroupPermissions.AssignRoles, GroupPermissions.ViewAudit, GroupPermissions.Announce, GroupPermissions.ManageEvents, GroupPermissions.ModerateChat, GroupPermissions.ManageLand, GroupPermissions.BuildOnLand, GroupPermissions.ViewTreasury, GroupPermissions.ManageStore, GroupPermissions.ManageProposals]),
         ("moderator", "Moderador", ModeratorRank, [GroupPermissions.Invite, GroupPermissions.ApproveRequests, GroupPermissions.Kick, GroupPermissions.Mute, GroupPermissions.ModerateChat]),
         ("member", "Membro", MemberRank, [])
     ];

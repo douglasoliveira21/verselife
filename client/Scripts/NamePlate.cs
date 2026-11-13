@@ -16,11 +16,13 @@ public partial class NamePlate : Sprite3D
     private PanelContainer _pill = null!;
     private int _state = -1;
 
-    public NamePlate(string name, VoiceIndicator? voice) { _name = name; _voice = voice; }
+    private readonly string _group;
+
+    public NamePlate(string name, VoiceIndicator? voice, string group = "") { _name = name; _voice = voice; _group = group.Trim(); }
 
     public override void _Ready()
     {
-        _viewport = new SubViewport { Size = new Vector2I(ViewWidth, ViewHeight), TransparentBg = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Once, Disable3D = true };
+        _viewport = new SubViewport { Size = new Vector2I(ViewWidth, _group.Length > 0 ? ViewHeight + 44 : ViewHeight), TransparentBg = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Once, Disable3D = true };
         AddChild(_viewport);
         var center = new CenterContainer(); center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _viewport.AddChild(center);
@@ -28,7 +30,8 @@ public partial class NamePlate : Sprite3D
         _pill.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(.106f, .149f, .18f, .88f), new Color(UiStyle.BorderBright, .9f), 34, 2, 22, 8));
         center.AddChild(_pill);
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 12);
-        _pill.AddChild(row);
+        var column = new VBoxContainer(); column.AddThemeConstantOverride("separation", 0); _pill.AddChild(column); column.AddChild(row);
+        if (_group.Length > 0) { var group = new Label { Text = _group, HorizontalAlignment = HorizontalAlignment.Center, ClipText = true, CustomMinimumSize = new Vector2(0, 30) }; group.AddThemeFontOverride("font", UiStyle.Medium); group.AddThemeFontSizeOverride("font_size", 24); group.AddThemeColorOverride("font_color", UiStyle.Accent); column.AddChild(group); }
         _dot = new DotControl(); row.AddChild(_dot);
         var label = new Label { Text = _name };
         label.AddThemeFontOverride("font", UiStyle.Bold); label.AddThemeFontSizeOverride("font_size", 34); label.AddThemeColorOverride("font_color", Colors.White);

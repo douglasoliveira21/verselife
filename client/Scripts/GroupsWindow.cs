@@ -62,6 +62,12 @@ public sealed partial class GroupsWindow : Node
     public void Toggle() { if (_window.Visible) _window.Visible = false; else Open(); }
     public void Open() { _window.Visible = true; _window.MoveToFront(); LoadMine(); LoadNotices(); LoadInvites(); }
 
+    /// <summary>Opens the window on a group and on one of its tabs (0 Painel, 1 Chat, 2 Anúncios…): what "Informações" and "Chat" of the groups window do.</summary>
+    public void OpenAt(Guid groupId, int innerTab = 0) { Open(); _tabs.Select(0); OpenGroup(groupId); _inner.Select(Math.Clamp(innerTab, 0, _innerPages.Count - 1)); }
+
+    /// <summary>Opens the window on one of the outer tabs (0 Meus grupos, 1 Procurar, 2 Criar grupo).</summary>
+    public void OpenTab(int tab) { Open(); _tabs.Select(tab); }
+
     // ---- talking to the API -------------------------------------------------------------------------------------------------------------------------
 
     private void Call(Godot.HttpClient.Method method, string path, object? body, Action<int, string> done)

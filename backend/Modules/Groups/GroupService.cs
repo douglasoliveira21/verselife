@@ -14,8 +14,9 @@ public sealed record GroupResult(bool Ok, string? Error = null, object? Data = n
 /// <summary>Something to tell a person right away (a push to the clients that are connected); the service does not care how.</summary>
 public delegate Task GroupNotifier(Guid userId, string type, object data);
 
-public sealed record GroupProfileRequest(string? Name, string? Description, string? ImageUrl, string? Privacy, string? JoinPolicy, string? AccentColor, string? Emblem, string? Tag, int? MemberLimit);
+public sealed record GroupProfileRequest(string? Name, string? Description, string? ImageUrl, string? Privacy, string? JoinPolicy, string? AccentColor, string? Emblem, string? Tag, int? MemberLimit, string? Category = null, string? Language = null, string? ContentRating = null, string? CoverUrl = null, Guid? HeadquartersIslandId = null, long? JoinFee = null);
 public sealed record RoleRequest(string? Name, int? Rank, string[]? Permissions, string? Color);
+public sealed record RoleTitleRequest(string? Title);
 
 /// <summary>
 /// Groups 2.0: the rules of who may do what in a group. Every operation checks the group, the person's cargo, the hierarchy (nobody acts on or
@@ -108,6 +109,21 @@ public static partial class GroupService
         return await db.GroupAuditEntries.CountAsync(e => e.GroupId == groupId && e.ActorUserId == user && e.CreatedAt > since && ModerationActions.Contains(e.Action), ct) >= GroupRules.ModerationBurstLimit;
     }
 
+    private sealed record Extras(string Category, string Language, string Rating, string Cover, Guid? Headquarters, long Fee);
+
+    /// <summary>The newer fields of the profile, checked: category, language, content rating, cover (https), the island where the group meets (public or the person's own) and the price of joining (only an open group asks one).</summary>
+    private static async Task<(Extras? Extras, string? Error)> ExtrasAsync(LifeVerseDbContext db, Guid me, GroupProfileRequest r, SocialGroup? current, string policy, CancellationToken ct)
+    {
+        var category = r.Category ?? current?.Category ?? "social"; if (!GroupRules.Categories.Contains(category)) return (null, "bad_category");
+        var language = r.Language ?? current?.Language ?? "pt-BR"; if (!GroupRules.ValidLanguage(language)) return (null, "bad_language");
+        var rating = r.ContentRating ?? current?.ContentRating ?? "livre"; if (!GroupRules.Ratings.Contains(rating)) return (null, "bad_rating");
+        var cover = r.CoverUrl ?? current?.CoverUrl ?? string.Empty; if (cover.Length > 0 && (cover.Length > 400 || !Uri.TryCreate(cover, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length > 0)) return (null, "bad_cover");
+        var hq = r.HeadquartersIslandId is { } asked ? (asked == Guid.Empty ? (Guid?)null : asked) : current?.HeadquartersIslandId;
+        if (hq is { } island && !await db.Islands.AsNoTracking().AnyAsync(i => i.Id == island && i.DeletedAt == null && (i.IsPublic || i.OwnerUserId == me), ct)) return (null, "bad_headquarters");
+        var fee = r.JoinFee ?? (policy == GroupRules.Open ? current?.JoinFee ?? 0 : 0); if (fee < 0 || fee > GroupRules.MaxJoinFee || fee > 0 && policy != GroupRules.Open) return (null, "bad_fee");
+        return (new Extras(category, language, rating, cover, hq, fee), null);
+    }
+
     // ---- creating and the profile -----------------------------------------------------------------------------------------------------------
 
     public static async Task<GroupResult> CreateAsync(LifeVerseDbContext db, Guid me, GroupProfileRequest request, DateTimeOffset now, CancellationToken ct)
@@ -120,13 +136,14 @@ public static partial class GroupService
         if (!GroupRules.ValidColour(accent) || !GroupRules.Emblems.Contains(emblem) || !await ValidOwnedImageAsync(db, me, request.ImageUrl, ct)) return GroupResult.Fail("bad_identity");
         if (!GroupRules.ValidTag(request.Tag)) return GroupResult.Fail("bad_tag");
         var limit = Math.Clamp(request.MemberLimit ?? GroupRules.DefaultMemberLimit, 2, GroupRules.MaxMemberLimit);
+        var (extras, extrasError) = await ExtrasAsync(db, me, request, null, policy, ct); if (extras is null) return GroupResult.Fail(extrasError!);
         if (await db.SocialGroups.CountAsync(g => g.OwnerUserId == me && g.DeletedAt == null, ct) >= GroupRules.MaxGroupsCreated) return GroupResult.Fail("too_many_groups_created");
         if (await db.GroupMembers.CountAsync(m => m.UserId == me, ct) >= GroupRules.MaxMemberships) return GroupResult.Fail("too_many_memberships");
         var key = name.ToLowerInvariant();
         if (await db.SocialGroups.AnyAsync(g => g.NameKey == key && g.DeletedAt == null, ct)) return GroupResult.Fail("name_taken");
         var tag = string.IsNullOrEmpty(request.Tag) ? null : request.Tag.ToUpperInvariant();
         if (tag is not null && await db.SocialGroups.AnyAsync(g => g.Tag == tag && g.DeletedAt == null, ct)) return GroupResult.Fail("tag_taken");
-        var group = new SocialGroup { Id = Guid.NewGuid(), OwnerUserId = me, Name = name, NameKey = key, Description = description, ImageUrl = string.IsNullOrEmpty(request.ImageUrl) ? null : request.ImageUrl, Tag = tag, Privacy = privacy, JoinPolicy = policy, AccentColor = accent.ToUpperInvariant(), Emblem = emblem, MemberLimit = limit, CreatedAt = now, UpdatedAt = now };
+        var group = new SocialGroup { Id = Guid.NewGuid(), OwnerUserId = me, Name = name, NameKey = key, Description = description, ImageUrl = string.IsNullOrEmpty(request.ImageUrl) ? null : request.ImageUrl, Tag = tag, Privacy = privacy, JoinPolicy = policy, AccentColor = accent.ToUpperInvariant(), Emblem = emblem, MemberLimit = limit, Category = extras.Category, Language = extras.Language, ContentRating = extras.Rating, CoverUrl = extras.Cover, HeadquartersIslandId = extras.Headquarters, JoinFee = extras.Fee, CreatedAt = now, UpdatedAt = now };
         db.SocialGroups.Add(group);
         var roles = await RolesOfAsync(db, group, now, ct);
         db.GroupMembers.Add(new GroupMember { Id = Guid.NewGuid(), GroupId = group.Id, UserId = me, Role = "owner", RoleId = roles.Values.First(r => r.SystemKey == "owner").Id, JoinedAt = now });
@@ -165,6 +182,9 @@ public static partial class GroupService
             if (limit < Math.Max(2, members) || limit > GroupRules.MaxMemberLimit) return GroupResult.Fail("bad_limit");
             if (limit != g.MemberLimit) { g.MemberLimit = limit; changed.Add("member_limit"); }
         }
+        var (extras, extrasError) = await ExtrasAsync(db, me, r, g, g.JoinPolicy, ct); if (extras is null) return GroupResult.Fail(extrasError!);
+        if (extras.Category != g.Category) { g.Category = extras.Category; changed.Add("category"); } if (extras.Language != g.Language) { g.Language = extras.Language; changed.Add("language"); } if (extras.Rating != g.ContentRating) { g.ContentRating = extras.Rating; changed.Add("content_rating"); }
+        if (extras.Cover != g.CoverUrl) { g.CoverUrl = extras.Cover; changed.Add("cover"); } if (extras.Headquarters != g.HeadquartersIslandId) { g.HeadquartersIslandId = extras.Headquarters; changed.Add("headquarters"); } if (extras.Fee != g.JoinFee) { g.JoinFee = extras.Fee; changed.Add("join_fee"); }
         if (changed.Count == 0) return GroupResult.Done();
         g.UpdatedAt = now; Log(db, g.Id, me, "profile_updated", null, new { fields = changed }, now);
         return await SaveAsync(db, ct);
@@ -172,25 +192,31 @@ public static partial class GroupService
 
     // ---- looking ----------------------------------------------------------------------------------------------------------------------------
 
-    public sealed record GroupCard(Guid Id, string Name, string? Tag, string Description, string? ImageUrl, string AccentColor, string Emblem, string Privacy, string JoinPolicy, int Members, int MemberLimit, bool IsMember, bool RequestPending, bool Invited, bool Banned);
+    public sealed record GroupCard(Guid Id, string Name, string? Tag, string Description, string? ImageUrl, string AccentColor, string Emblem, string Privacy, string JoinPolicy, int Members, int MemberLimit, bool IsMember, bool RequestPending, bool Invited, bool Banned, bool IsActive = false, string Title = "", string Category = "social", string Language = "pt-BR", string ContentRating = "livre", long JoinFee = 0, string CoverUrl = "", Guid? HeadquartersIslandId = null);
 
     private static async Task<List<GroupCard>> CardsAsync(LifeVerseDbContext db, IReadOnlyList<SocialGroup> groups, Guid me, DateTimeOffset now, CancellationToken ct)
     {
         var ids = groups.Select(g => g.Id).ToList();
         var counts = await db.GroupMembers.AsNoTracking().Where(m => ids.Contains(m.GroupId)).GroupBy(m => m.GroupId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key, g => g.Count, ct);
-        var mine = (await db.GroupMembers.AsNoTracking().Where(m => m.UserId == me && ids.Contains(m.GroupId)).Select(m => m.GroupId).ToListAsync(ct)).ToHashSet();
+        var myRows = await db.GroupMembers.AsNoTracking().Where(m => m.UserId == me && ids.Contains(m.GroupId)).ToListAsync(ct); var mine = myRows.Select(m => m.GroupId).ToHashSet();
+        var myRoleIds = myRows.Where(m => m.RoleId != null).Select(m => m.RoleId!.Value).ToList(); var myRoles = await db.GroupRoles.AsNoTracking().Where(r => myRoleIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+        string TitleIn(Guid group) { var row = myRows.FirstOrDefault(m => m.GroupId == group); return row is null ? "" : row.RoleId is { } roleId && myRoles.TryGetValue(roleId, out var role) ? TitleOf(role) : row.Role; }
         var requests = (await db.GroupJoinRequests.AsNoTracking().Where(r => r.UserId == me && r.Status == "pending" && ids.Contains(r.GroupId)).Select(r => r.GroupId).ToListAsync(ct)).ToHashSet();
         var invites = (await db.GroupInvites.AsNoTracking().Where(i => i.InvitedUserId == me && i.Status == "pending" && ids.Contains(i.GroupId)).Select(i => i.GroupId).ToListAsync(ct)).ToHashSet();
         var bans = (await db.GroupBans.AsNoTracking().Where(b => b.UserId == me && b.RevokedAt == null && (b.ExpiresAt == null || b.ExpiresAt > now) && ids.Contains(b.GroupId)).Select(b => b.GroupId).ToListAsync(ct)).ToHashSet();
-        return [.. groups.Select(g => new GroupCard(g.Id, g.Name, g.Tag, g.Description, g.ImageUrl, g.AccentColor, g.Emblem, g.Privacy, g.JoinPolicy, counts.GetValueOrDefault(g.Id), g.MemberLimit, mine.Contains(g.Id), requests.Contains(g.Id), invites.Contains(g.Id), bans.Contains(g.Id)))];
+        return [.. groups.Select(g => new GroupCard(g.Id, g.Name, g.Tag, g.Description, g.ImageUrl, g.AccentColor, g.Emblem, g.Privacy, g.JoinPolicy, counts.GetValueOrDefault(g.Id), g.MemberLimit, mine.Contains(g.Id), requests.Contains(g.Id), invites.Contains(g.Id), bans.Contains(g.Id), myRows.Any(m => m.GroupId == g.Id && m.IsActive), TitleIn(g.Id), g.Category, g.Language, g.ContentRating, g.JoinFee, g.CoverUrl, g.HeadquartersIslandId))];
     }
 
     /// <summary>The groups anybody can find: public ones, by name, tag or description. Private groups never show up.</summary>
-    public static async Task<IReadOnlyList<GroupCard>> SearchAsync(LifeVerseDbContext db, Guid me, string? query, int page, DateTimeOffset now, CancellationToken ct)
+    public static async Task<IReadOnlyList<GroupCard>> SearchAsync(LifeVerseDbContext db, Guid me, string? query, int page, DateTimeOffset now, CancellationToken ct, string? category = null, string? language = null, string? joinPolicy = null, bool freeOnly = false)
     {
         var q = (query ?? string.Empty).Trim().ToLowerInvariant(); page = Math.Max(0, page);
         var groups = db.SocialGroups.AsNoTracking().Where(g => g.DeletedAt == null && g.Privacy == "public");
         if (q.Length > 0) groups = groups.Where(g => g.NameKey.Contains(q) || (g.Tag != null && g.Tag.ToLower() == q) || g.Description.ToLower().Contains(q));
+        if (!string.IsNullOrWhiteSpace(category)) groups = groups.Where(g => g.Category == category);
+        if (!string.IsNullOrWhiteSpace(language)) groups = groups.Where(g => g.Language == language);
+        if (!string.IsNullOrWhiteSpace(joinPolicy)) groups = groups.Where(g => g.JoinPolicy == joinPolicy);
+        if (freeOnly) groups = groups.Where(g => g.JoinFee == 0);
         var list = await groups.OrderBy(g => g.NameKey).Skip(page * 20).Take(20).ToListAsync(ct);
         return await CardsAsync(db, list, me, now, ct);
     }
@@ -240,7 +266,7 @@ public static partial class GroupService
     }
 
     /// <summary>Joins a group (open), or asks to (request). Private groups and invitation-only ones are entered by invitation.</summary>
-    public static async Task<GroupResult> JoinAsync(LifeVerseDbContext db, Guid me, Guid groupId, string? message, DateTimeOffset now, GroupNotifier? notify, CancellationToken ct)
+    public static async Task<GroupResult> JoinAsync(LifeVerseDbContext db, Guid me, Guid groupId, string? message, DateTimeOffset now, GroupNotifier? notify, CancellationToken ct, long? confirmFee = null)
     {
         var ctx = await LoadAsync(db, groupId, me, now, ct); if (ctx is null) return GroupResult.Fail("not_found");
         if (ctx.Member is null && ctx.Group.Privacy == "private") return GroupResult.Fail("not_found"); // it cannot be found, so it cannot be joined
@@ -248,6 +274,15 @@ public static partial class GroupService
         if (ctx.Group.JoinPolicy == GroupRules.InviteOnly) return GroupResult.Fail("invite_only");
         if (ctx.Group.JoinPolicy == GroupRules.Open)
         {
+            var fee = ctx.Group.JoinFee;
+            if (fee > 0)
+            {
+                if (confirmFee != fee) return GroupResult.Fail("fee_required", new { fee }); // the person sees the price and says yes to exactly that
+                var wallet = await WalletOfAsync(db, me, now, ct); if (wallet.IsBlocked) return GroupResult.Fail("wallet_blocked"); if (wallet.AvailableCoins < fee) return GroupResult.Fail("insufficient_balance", new { fee });
+                var treasury = await TreasuryOfAsync(db, groupId, now, ct); wallet.AvailableCoins -= fee; wallet.UpdatedAt = now;
+                var tx = await PostLedgerAsync(db, Key(groupId, $"join:{me}:{Guid.NewGuid():N}"), "group_join_fee", me, fee, me, me, groupId, intoTreasury: true, now, ct);
+                Move(db, treasury, groupId, "join_fee", fee, me, null, "Taxa de entrada", null, tx.Id, now); // the coins and the new member are saved together
+            }
             AddMember(db, ctx, me, now); Log(db, groupId, me, "member_joined", me, new { how = "open" }, now);
             return await SaveAsync(db, ct, new { joined = true });
         }
@@ -294,21 +329,27 @@ public static partial class GroupService
         request.Status = approve ? "approved" : "denied"; request.DecidedAt = now; request.DecidedByUserId = me;
         Log(db, groupId, me, approve ? "request_approved" : "request_denied", request.UserId, new { }, now);
         var saved = await SaveAsync(db, ct); if (!saved.Ok) return saved;
-        await TellAsync(notify, request.UserId, "group_request_decided", new { groupId, groupName = ctx.Group.Name, approved = approve });
+        await TellKeepAsync(db, notify, request.UserId, groupId, "group_request_decided", approve ? $"Você entrou em {ctx.Group.Name}" : $"Seu pedido para {ctx.Group.Name} foi recusado", string.Empty, new { groupId, groupName = ctx.Group.Name, approved = approve }, now, ct);
         return saved;
     }
 
-    public static async Task<GroupResult> InviteAsync(LifeVerseDbContext db, Guid me, Guid groupId, Guid userId, DateTimeOffset now, GroupNotifier? notify, CancellationToken ct)
+    public static async Task<GroupResult> InviteAsync(LifeVerseDbContext db, Guid me, Guid groupId, Guid userId, DateTimeOffset now, GroupNotifier? notify, CancellationToken ct, string? message = null, Guid? roleId = null)
     {
         var ctx = await LoadAsync(db, groupId, me, now, ct); if (ctx?.Actor is null) return GroupResult.Fail(ctx is null ? "not_found" : "forbidden");
         if (!GroupRules.Has(ctx.Actor, GroupPermissions.Invite)) return GroupResult.Fail("forbidden");
         if (userId == me) return GroupResult.Fail("bad_target");
+        var note = CleanText(message, newLines: false); if (note.Length > 200) return GroupResult.Fail("bad_message");
+        if (roleId is { } wanted)
+        {
+            if (!ctx.Roles.TryGetValue(wanted, out var offered) || offered.SystemKey == "owner") return GroupResult.Fail("bad_role");
+            if (offered.SystemKey != "member" && (!GroupRules.Has(ctx.Actor, GroupPermissions.AssignRoles) || !GroupRules.CanManageRank(ctx.Actor, offered.Rank))) return GroupResult.Fail("outranked"); // nobody hands out a cargo they could not give
+        }
         if (!await db.Users.AnyAsync(u => u.Id == userId && u.DeletedAt == null, ct)) return GroupResult.Fail("not_found");
         if (await db.GroupMembers.AnyAsync(m => m.GroupId == groupId && m.UserId == userId, ct)) return GroupResult.Fail("already_member");
         if (await BannedAsync(db, groupId, userId, now, ct)) return GroupResult.Fail("banned");
         if (await db.GroupInvites.AnyAsync(i => i.GroupId == groupId && i.InvitedUserId == userId && i.Status == "pending", ct)) return GroupResult.Done(new { invited = true });
         if (await db.GroupInvites.CountAsync(i => i.GroupId == groupId && i.Status == "pending", ct) >= GroupRules.MaxPendingInvites) return GroupResult.Fail("too_many_invites");
-        db.GroupInvites.Add(new GroupInvite { Id = Guid.NewGuid(), GroupId = groupId, InvitedUserId = userId, InvitedByUserId = me, Status = "pending", CreatedAt = now });
+        db.GroupInvites.Add(new GroupInvite { Id = Guid.NewGuid(), GroupId = groupId, InvitedUserId = userId, InvitedByUserId = me, Status = "pending", Message = note, RoleId = roleId, CreatedAt = now });
         Log(db, groupId, me, "invited", userId, new { }, now);
         var saved = await SaveAsync(db, ct, new { invited = true }); if (!saved.Ok) return saved;
         await TellAsync(notify, userId, "group_invite", new { groupId, groupName = ctx.Group.Name, from = me });
@@ -325,7 +366,8 @@ public static partial class GroupService
             var ctx = await LoadAsync(db, invite.GroupId, me, now, ct);
             if (ctx is null) { await db.SaveChangesAsync(ct); return GroupResult.Fail("not_found"); }
             if (await CannotJoinAsync(db, ctx, me, now, ct) is { } why) { if (why != "already_member") { invite.Status = "pending"; return GroupResult.Fail(why); } await db.SaveChangesAsync(ct); return GroupResult.Done(); }
-            AddMember(db, ctx, me, now); Log(db, invite.GroupId, me, "member_joined", me, new { how = "invite", invitedBy = invite.InvitedByUserId }, now);
+            AddMember(db, ctx, me, now); if (invite.RoleId is { } granted && ctx.Roles.TryGetValue(granted, out var givenRole) && givenRole.SystemKey != "owner") { var added = db.GroupMembers.Local.First(m => m.GroupId == ctx.Group.Id && m.UserId == me); added.Role = givenRole.SystemKey.Length > 0 ? givenRole.SystemKey : givenRole.Name; added.RoleId = givenRole.Id; } // the cargo the invitation promised
+            Log(db, invite.GroupId, me, "member_joined", me, new { how = "invite", invitedBy = invite.InvitedByUserId }, now);
             foreach (var pending in await db.GroupJoinRequests.Where(r => r.GroupId == invite.GroupId && r.UserId == me && r.Status == "pending").ToListAsync(ct)) { pending.Status = "approved"; pending.DecidedAt = now; }
         }
         return await SaveAsync(db, ct, new { groupId = invite.GroupId });
@@ -360,7 +402,7 @@ public static partial class GroupService
     {
         var (ctx, target, _, error) = await ForModerationAsync(db, me, groupId, targetUser, GroupPermissions.Kick, now, ct); if (error is not null) return error;
         db.GroupMembers.Remove(target!); await DropEventPlacesAsync(db, groupId, targetUser, ct); Log(db, groupId, me, "member_kicked", targetUser, new { reason = Clean(reason) }, now);
-        var saved = await SaveAsync(db, ct); if (saved.Ok) await TellAsync(notify, targetUser, "group_kicked", new { groupId, groupName = ctx!.Group.Name }); return saved;
+        var saved = await SaveAsync(db, ct); if (saved.Ok) await TellKeepAsync(db, notify, targetUser, groupId, "group_kicked", $"Você foi removido de {ctx!.Group.Name}", string.Empty, new { groupId, groupName = ctx.Group.Name }, now, ct); return saved;
     }
 
     public static async Task<GroupResult> BanAsync(LifeVerseDbContext db, Guid me, Guid groupId, Guid targetUser, string? reason, int? days, DateTimeOffset now, GroupNotifier? notify, CancellationToken ct)
@@ -370,7 +412,7 @@ public static partial class GroupService
         db.GroupMembers.Remove(target!); await DropEventPlacesAsync(db, groupId, targetUser, ct);
         db.GroupBans.Add(new GroupBan { Id = Guid.NewGuid(), GroupId = groupId, UserId = targetUser, BannedByUserId = me, Reason = Clean(reason), CreatedAt = now, ExpiresAt = days is { } d ? now.AddDays(d) : null });
         Log(db, groupId, me, "member_banned", targetUser, new { reason = Clean(reason), days }, now);
-        var saved = await SaveAsync(db, ct); if (saved.Ok) await TellAsync(notify, targetUser, "group_banned", new { groupId, groupName = ctx!.Group.Name, days }); return saved;
+        var saved = await SaveAsync(db, ct); if (saved.Ok) await TellKeepAsync(db, notify, targetUser, groupId, "group_banned", $"Você foi banido de {ctx!.Group.Name}", days is { } banDays ? $"Por {banDays} dia(s)." : "Sem prazo para voltar.", new { groupId, groupName = ctx.Group.Name, days }, now, ct); return saved;
     }
 
     public static async Task<GroupResult> UnbanAsync(LifeVerseDbContext db, Guid me, Guid groupId, Guid targetUser, DateTimeOffset now, CancellationToken ct)
@@ -411,21 +453,21 @@ public static partial class GroupService
         if (role.Id == targetRole!.Id) return GroupResult.Done();
         target!.RoleId = role.Id; target.Role = role.SystemKey.Length > 0 ? role.SystemKey : role.Name;
         Log(db, groupId, me, "role_assigned", targetUser, new { from = targetRole.Name, to = role.Name }, now);
-        var saved = await SaveAsync(db, ct); if (saved.Ok) await TellAsync(notify, targetUser, "group_role_changed", new { groupId, groupName = ctx.Group.Name, role = role.Name }); return saved;
+        var saved = await SaveAsync(db, ct); if (saved.Ok) await TellKeepAsync(db, notify, targetUser, groupId, "group_role_changed", $"Seu cargo em {ctx.Group.Name} agora é {role.Name}", string.Empty, new { groupId, groupName = ctx.Group.Name, role = role.Name }, now, ct); return saved;
     }
 
     private static string Clean(string? text) { var t = new string((text ?? string.Empty).Where(c => !char.IsControl(c)).ToArray()).Trim(); return t.Length > 300 ? t[..300] : t; }
 
     // ---- cargos -------------------------------------------------------------------------------------------------------------------------------------
 
-    public sealed record RoleItem(Guid Id, string Name, string SystemKey, int Rank, string[] Permissions, string Color, int Members, bool CanEdit);
+    public sealed record RoleItem(Guid Id, string Name, string SystemKey, int Rank, string[] Permissions, string Color, int Members, bool CanEdit, string Title = "");
 
     public static async Task<GroupResult> RolesAsync(LifeVerseDbContext db, Guid me, Guid groupId, DateTimeOffset now, CancellationToken ct)
     {
         var ctx = await LoadAsync(db, groupId, me, now, ct); if (ctx?.Member is null) return GroupResult.Fail(ctx is null ? "not_found" : "forbidden");
         var counts = await db.GroupMembers.AsNoTracking().Where(m => m.GroupId == groupId).GroupBy(m => m.RoleId).Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Key ?? Guid.Empty, g => g.Count, ct);
         var canManage = GroupRules.Has(ctx.Actor!, GroupPermissions.ManageRoles);
-        return GroupResult.Done(ctx.Roles.Values.OrderByDescending(r => r.Rank).Select(r => new RoleItem(r.Id, r.Name, r.SystemKey, r.Rank, [.. GroupRules.SplitPermissions(r.Permissions).Order()], r.Color, counts.GetValueOrDefault(r.Id), canManage && r.SystemKey != "owner" && GroupRules.CanManageRank(ctx.Actor!, r.Rank) || canManage && r.SystemKey == "member")).ToList());
+        return GroupResult.Done(ctx.Roles.Values.OrderByDescending(r => r.Rank).Select(r => new RoleItem(r.Id, r.Name, r.SystemKey, r.Rank, [.. GroupRules.SplitPermissions(r.Permissions).Order()], r.Color, counts.GetValueOrDefault(r.Id), canManage && r.SystemKey != "owner" && GroupRules.CanManageRank(ctx.Actor!, r.Rank) || canManage && r.SystemKey == "member") with { Title = r.Title }).ToList());
     }
 
     public static async Task<GroupResult> CreateRoleAsync(LifeVerseDbContext db, Guid me, Guid groupId, RoleRequest r, DateTimeOffset now, CancellationToken ct)
@@ -533,7 +575,7 @@ public static partial class GroupService
         await PassStewardshipAsync(db, groupId, newLeader, me, now, ct);
         Log(db, groupId, me, "leadership_transferred", newLeader, new { }, now);
         var saved = await SaveAsync(db, ct); if (!saved.Ok) return saved;
-        await TellAsync(notify, newLeader, "group_leader_changed", new { groupId, groupName = ctx.Group.Name, leader = true });
+        await TellKeepAsync(db, notify, newLeader, groupId, "group_leader_changed", $"Você agora é o líder de {ctx.Group.Name}", string.Empty, new { groupId, groupName = ctx.Group.Name, leader = true }, now, ct);
         return saved;
     }
 
@@ -563,7 +605,7 @@ public static partial class GroupService
         ctx.Group.DeletedAt = now; ctx.Group.UpdatedAt = now;
         Log(db, groupId, me, "group_dissolved", null, new { members = members.Count }, now);
         var saved = await SaveAsync(db, ct); if (!saved.Ok) return saved;
-        foreach (var m in members.Where(m => m.UserId != me)) await TellAsync(notify, m.UserId, "group_dissolved", new { groupId, groupName = ctx.Group.Name });
+        foreach (var m in members.Where(m => m.UserId != me)) await TellKeepAsync(db, notify, m.UserId, groupId, "group_dissolved", $"O grupo {ctx.Group.Name} foi dissolvido", string.Empty, new { groupId, groupName = ctx.Group.Name }, now, ct);
         return saved;
     }
 }

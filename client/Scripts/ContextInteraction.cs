@@ -25,6 +25,7 @@ public sealed class ContextServices
     public Action OpenMyProfile { get; init; } = () => { };
     public Action<string> AddFriend { get; init; } = _ => { };
     public Action<string> Message { get; init; } = _ => { };
+    public Action<string> InviteToGroup { get; init; } = _ => { };
     public Action<string> Block { get; init; } = _ => { };
     public Action<string> Report { get; init; } = _ => { };
     public Action<string> Tell { get; init; } = _ => { };
@@ -88,6 +89,7 @@ public static class InteractionRegistry
         new() { Label = "Adicionar amigo", Icon = "user-add", Run = () => s.AddFriend(avatar.Name), Tooltip = "Envia um pedido de amizade" },
         new() { Label = "Perfil", Icon = "user", Run = () => s.OpenProfile(avatar.Name), Tooltip = "Vê o perfil desta pessoa" },
         new() { Label = "Mensagem", Icon = "chat", Run = () => s.Message(avatar.Name), Tooltip = "Escreve uma mensagem privada" },
+        new() { Label = "Convidar", Icon = "people", Run = () => s.InviteToGroup(avatar.Name), Tooltip = "Convida esta pessoa para um dos seus grupos" },
         new() { Label = "Interagir", Icon = "hand", Children = Gestures(s), Tooltip = "Gestos para quem está por perto" },
         new() { Label = "Ir até lá", Icon = "run", Run = () => s.WalkTo(avatar.Position), Tooltip = "Caminha até esta pessoa" },
         new() { Label = "Mais opções", Icon = "dots", Tooltip = "Bloquear ou denunciar", Children =

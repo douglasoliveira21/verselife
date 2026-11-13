@@ -12,6 +12,8 @@ public sealed class GroupRole
     /// <summary>The permissions, as names separated by commas.</summary>
     public string Permissions { get; set; } = string.Empty;
     public string Color { get; set; } = "#A9B3BD";
+    /// <summary>The title shown above the name of a member who has this cargo and the group active (empty: the name of the cargo).</summary>
+    public string Title { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -63,6 +65,10 @@ public sealed class GroupAnnouncement
     public required string Title { get; set; }
     public string Body { get; set; } = string.Empty;
     public bool Pinned { get; set; }
+    /// <summary>After this moment the announcement stops showing to members (null: never).</summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
+    /// <summary>An https link attached to the announcement (a picture, a document), or empty.</summary>
+    public string AttachmentUrl { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? EditedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
@@ -112,5 +118,42 @@ public sealed class GroupLedgerEntry
     /// <summary>What it refers to: the order of a sale.</summary>
     public Guid? RefId { get; set; }
     public Guid? LedgerTransactionId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>A question the group votes on. Options are the answers (2 to 8); the criterion says what makes one of them win.</summary>
+public sealed class GroupProposal
+{
+    public Guid Id { get; set; }
+    public Guid GroupId { get; set; }
+    public Guid AuthorUserId { get; set; }
+    public required string Title { get; set; }
+    public string Description { get; set; } = string.Empty;
+    /// <summary>The answers, as a JSON array of texts.</summary>
+    public string OptionsJson { get; set; } = "[]";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset EndsAt { get; set; }
+    /// <summary>Only members whose cargo ranks at least this high vote (0: every member).</summary>
+    public int MinRank { get; set; }
+    /// <summary>The share of the people who may vote that has to vote for the result to count (0 to 100).</summary>
+    public int QuorumPercent { get; set; }
+    /// <summary>majority (more than half of the votes), two_thirds, unanimous or plurality (the most voted wins).</summary>
+    public string Criterion { get; set; } = "majority";
+    /// <summary>open, approved (an option won), rejected (nobody reached the criterion or the quorum was missed) or cancelled.</summary>
+    public string Status { get; set; } = "open";
+    /// <summary>The winning option (approved only).</summary>
+    public int? WinningOption { get; set; }
+    public DateTimeOffset? ClosedAt { get; set; }
+    /// <summary>How many people could vote when it closed (kept so the quorum stays explainable later).</summary>
+    public int EligibleAtClose { get; set; }
+}
+
+/// <summary>One person's vote on a proposal: one vote each, never changed.</summary>
+public sealed class GroupVote
+{
+    public Guid Id { get; set; }
+    public Guid ProposalId { get; set; }
+    public Guid UserId { get; set; }
+    public int Option { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
