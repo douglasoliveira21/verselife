@@ -14,6 +14,8 @@ public sealed class IslandRealEstateApi(IslandManagementApi inner)
     public Task<IslandReply> CancelSale(Guid island) => inner.Send("DELETE", $"{Base(island)}/sale");
     public Task<IslandReply> OfferRent(Guid island, long price, int days, int min, int max, long deposit, int grace, bool autoRenewAllowed = false) => inner.Send("POST", $"{Base(island)}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = grace, autoRenewAllowed });
     public Task<IslandReply> CancelRent(Guid island) => inner.Send("DELETE", $"{Base(island)}/rental-offer");
+    public Task<IslandReply> SetRules(Guid island, string access, string build, bool scripts, bool voice, bool media, int? autoReturnMinutes, bool applyToExisting) =>
+        inner.Send("PUT", $"/api/v1/worlds/islands/{island}/land/rules", new { accessMode = access, buildMode = build, allowScripts = scripts, allowVoice = voice, allowMedia = media, autoReturnMinutes, applyToExisting });
     public Task<IslandReply> Transfer(Guid island, string name) => inner.Send("POST", $"{Base(island)}/transfer", new { name });
     public Task<IslandReply> Renew(Guid island, Guid lease, int periods) => inner.Send("POST", $"{Base(island)}/leases/{lease}/renew", new { periods, idempotencyKey = Guid.NewGuid().ToString() });
     public Task<IslandReply> End(Guid island, Guid lease) => inner.Send("POST", $"{Base(island)}/leases/{lease}/end", new { });
@@ -92,6 +94,7 @@ public partial class IslandPropertyPage : ScrollContainer
         body.AddChild(Line("Situação", situation, lease is not null ? LandTerritoryMap.Rented : sale is not null ? IslandUi.AccentSecondary : offer is not null ? LandTerritoryMap.Rented : IslandUi.TextPrimary));
         if (lease is { } li) { body.AddChild(Line("Valor do aluguel", $"{LandMath.Money(Long(li, "price"))} a cada {Int(li, "periodDays")} dias")); if (Long(li, "deposit") > 0) body.AddChild(Line("Caução", LandMath.Money(Long(li, "deposit")))); body.AddChild(Line("Renovação", Flag(li, "autoRenew") ? "Automática: um período é cobrado no vencimento" : "Manual")); }
 
+        if (v.TryGetProperty("rules", out var rules) && rules.ValueKind == JsonValueKind.Object) body.AddChild(Line("Regras da ilha", RulesText(rules)));
         var buttons = IslandUi.Row(10); buttons.SizeFlagsHorizontal = SizeFlags.ExpandFill; body.AddChild(buttons);
         if (Flag(v, "isWelcome")) body.AddChild(IslandUi.Text("Esta é a ilha de boas-vindas do jogo: ela não pode ser vendida, alugada nem transferida.", 13, IslandUi.TextMuted, false, true));
         else if (owner && lease is null)
@@ -111,6 +114,8 @@ public partial class IslandPropertyPage : ScrollContainer
             var leave = IslandUi.Action("Sair do Aluguel", null, IslandUi.Kind.Danger, 42); leave.Pressed += () => ConfirmEnd(Str(mine, "id"), true); buttons.AddChild(leave);
         }
         else body.AddChild(IslandUi.Text("Só o proprietário (ou quem aluga a ilha) muda isto. Você pode ver as informações.", 13, IslandUi.TextMuted, false, true));
+        if (Flag(v, "canEditRules") && v.TryGetProperty("rules", out var current) && current.ValueKind == JsonValueKind.Object)
+        { var editRules = IslandUi.Action("Editar Regras", "settings", IslandUi.Kind.Secondary, 42); editRules.TooltipText = "Como os terrenos novos da ilha começam: entrada, construção, scripts, voz e mídia."; editRules.Pressed += () => OpenRules(current.Clone()); buttons.AddChild(editRules); }
 
         if (v.TryGetProperty("history", out var history) && history.ValueKind == JsonValueKind.Array && history.GetArrayLength() > 0)
         {
@@ -170,6 +175,32 @@ public partial class IslandPropertyPage : ScrollContainer
         var autoRenew = new CheckBox { Text = "Deixar quem aluga renovar sozinho a cada vencimento", FocusMode = FocusModeEnum.None, TooltipText = "Quem aluga escolhe; se escolher, um período a mais é cobrado da carteira dele no vencimento." }; content.AddChild(autoRenew);
         Ask("Alugar ilha", content, async () => await Do(_api!.OfferRent(_island, (long)price.Value, int.Parse(IslandUi.IdOf(period)), (int)min.Value, (int)max.Value, (long)deposit.Value, (int)grace.Value, autoRenew.ButtonPressed), "Ilha oferecida para aluguel."), "Anunciar");
     }
+
+    private static readonly (string Text, string Id)[] AccessChoices = [("Livre: qualquer pessoa entra", "public"), ("Lista: só quem está na lista", "list"), ("Privado: só o dono", "private")];
+    private static readonly (string Text, string Id)[] BuildChoices = [("Só o dono", "owner"), ("Dono e lista", "list"), ("Todos", "everyone"), ("Ninguém", "nobody")];
+
+    /// <summary>The rules in one line, as the Propriedade tab shows them.</summary>
+    internal static string RulesText(JsonElement r)
+    {
+        string Pick((string Text, string Id)[] choices, string id) => choices.FirstOrDefault(c => c.Id == id).Text?.Split(':')[0] ?? id;
+        var back = r.TryGetProperty("autoReturnMinutes", out var m) && m.ValueKind == JsonValueKind.Number ? $"{m.GetInt32()} min" : "desligada";
+        return $"Entrada: {Pick(AccessChoices, Str(r, "accessMode"))} · Construir: {Pick(BuildChoices, Str(r, "buildMode"))} · Scripts: {(Flag(r, "allowScripts") ? "sim" : "não")} · Voz: {(Flag(r, "allowVoice") ? "sim" : "não")} · Mídia: {(Flag(r, "allowMedia") ? "sim" : "não")} · Devolução de objetos: {back}";
+    }
+
+    private void OpenRules(JsonElement rules)
+    {
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text("É assim que os terrenos novos da ilha começam. Cada dono de terreno ainda pode mudar o seu em “Sobre este Terreno”.", 14, IslandUi.TextSecondary, false, true));
+        var access = IslandUi.Dropdown(AccessChoices); IslandUi.Select(access, Str(rules, "accessMode")); content.AddChild(access);
+        var build = IslandUi.Dropdown(BuildChoices); IslandUi.Select(build, Str(rules, "buildMode")); content.AddChild(build);
+        CheckBox Box(string text, bool on) { var b = new CheckBox { Text = text, ButtonPressed = on, FocusMode = FocusModeEnum.None }; content.AddChild(b); return b; }
+        var scripts = Box("Permitir scripts", Flag(rules, "allowScripts")); var voice = Box("Permitir voz por proximidade", Flag(rules, "allowVoice")); var media = Box("Permitir mídia nos objetos de quem constrói", Flag(rules, "allowMedia"));
+        var back = IslandUi.Number(0, 10080, 5, " min para devolver objetos de estranhos (0 = não devolver)"); back.Value = rules.TryGetProperty("autoReturnMinutes", out var m) && m.ValueKind == JsonValueKind.Number ? m.GetInt32() : 0; content.AddChild(back);
+        var existing = Box("Aplicar também aos terrenos que ainda são do dono da ilha e não estão alugados", false);
+        content.AddChild(IslandUi.Text("Terrenos de outras pessoas e terrenos alugados nunca são mudados por aqui.", 13, IslandUi.TextMuted, false, true));
+        Ask("Regras da ilha", content, async () => await Do(_api!.SetRules(_island, IslandUi.IdOf(access), IslandUi.IdOf(build), scripts.ButtonPressed, voice.ButtonPressed, media.ButtonPressed, back.Value > 0 ? (int)back.Value : null, existing.ButtonPressed), "Regras da ilha salvas."), "Salvar");
+    }
+
+    public Task<bool> SetRulesForTesting(string access, string build, bool scripts, bool voice, bool media, int? back, bool existing) => Do(_api!.SetRules(_island, access, build, scripts, voice, media, back, existing), "Regras da ilha salvas.");
 
     private void OpenTransfer()
     {

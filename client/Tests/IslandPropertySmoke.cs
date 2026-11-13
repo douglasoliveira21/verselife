@@ -20,11 +20,12 @@ public partial class IslandPropertySmoke : Node3D
         public bool Down = false;
         public long? Sale, Rent; public int Days = 30; public bool LeaseLive; public string Owner = "AliceVerse";
         public readonly List<string> Calls = [];
+        public string RulesAccess = "public", RulesBuild = "owner"; public bool RulesScripts, RulesVoice = true, RulesMedia = true; public int? RulesBack; public bool RulesApplied;
         private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
         private object View() => new
         {
-            islandId = Island, name = "Ilha Tropical", size = 256, region = "full", ownerId = Guid.NewGuid(), owner = Owner, createdAt = DateTimeOffset.UtcNow.AddDays(-30), parcels = 6, hosting = IsOwner ? new { plan = "Plano Ouro", status = "active", expiresAt = DateTimeOffset.UtcNow.AddDays(10), recoveryUntil = DateTimeOffset.UtcNow.AddDays(17), maxPlayers = 80, maxObjects = 20000 } : null, isOwner = IsOwner, isTenant = IsTenant, isWelcome = Welcome,
+            rules = new { accessMode = RulesAccess, buildMode = RulesBuild, allowScripts = RulesScripts, allowVoice = RulesVoice, allowMedia = RulesMedia, autoReturnMinutes = RulesBack }, canEditRules = IsOwner, islandId = Island, name = "Ilha Tropical", size = 256, region = "full", ownerId = Guid.NewGuid(), owner = Owner, createdAt = DateTimeOffset.UtcNow.AddDays(-30), parcels = 6, hosting = IsOwner ? new { plan = "Plano Ouro", status = "active", expiresAt = DateTimeOffset.UtcNow.AddDays(10), recoveryUntil = DateTimeOffset.UtcNow.AddDays(17), maxPlayers = 80, maxObjects = 20000 } : null, isOwner = IsOwner, isTenant = IsTenant, isWelcome = Welcome,
             sale = Sale is { } s ? new { price = s, exclusive = false, includeObjects = true, description = "" } : null,
             rentOffer = Rent is { } r ? new { price = r, periodDays = Days, minPeriods = 1, maxPeriods = 6, deposit = 0L, graceDays = 3 } : null,
             lease = LeaseLive ? new { id = Lease, tenant = "Bruno", landlord = Owner, price = 5000L, periodDays = 30, status = "active", startsAt = DateTimeOffset.UtcNow.AddDays(-5), expiresAt = DateTimeOffset.UtcNow.AddDays(25), deposit = 500L } : null,
@@ -35,6 +36,7 @@ public partial class IslandPropertySmoke : Node3D
         {
             Calls.Add($"{method} {path}");
             if (Down) return Task.FromResult<(long, string)>((0, ""));
+            if (path.EndsWith("/land/rules", StringComparison.Ordinal)) { if (!IsOwner) return Task.FromResult<(long, string)>((403, "{\"error\":\"forbidden\"}")); var rj = JsonNode.Parse(body!)!.AsObject(); RulesAccess = rj["accessMode"]!.GetValue<string>(); RulesBuild = rj["buildMode"]!.GetValue<string>(); RulesScripts = rj["allowScripts"]!.GetValue<bool>(); RulesVoice = rj["allowVoice"]!.GetValue<bool>(); RulesMedia = rj["allowMedia"]!.GetValue<bool>(); RulesBack = rj["autoReturnMinutes"]?.GetValue<int>(); RulesApplied = rj["applyToExisting"]!.GetValue<bool>(); return Task.FromResult<(long, string)>((200, "{}")); }
             var tail = path[(path.IndexOf("/real-estate", StringComparison.Ordinal) + "/real-estate".Length)..];
             var json = body is null ? null : JsonNode.Parse(body)!.AsObject();
             (long, string) Ok() => (200, "{}");
@@ -59,6 +61,10 @@ public partial class IslandPropertySmoke : Node3D
             // --- the owner of an island with no offer --------------------------------------------------------------------------------
             await page.LoadAsync(); await Frames(2);
             Require(page.TextForTesting.Contains("Hospedagem") && page.TextForTesting.Contains("Plano Ouro, até") && page.TextForTesting.Contains("80 pessoas"), $"the owner sees the hosting plan (got {page.TextForTesting})");
+            Require(page.TextForTesting.Contains("Regras da ilha") && page.TextForTesting.Contains("Entrada: Livre") && page.TextForTesting.Contains("Construir: Só o dono") && page.TextForTesting.Contains("Scripts: não") && page.TextForTesting.Contains("Voz: sim") && page.HasButtonForTesting("Editar Regras"), $"the rules are shown and the owner can edit them (got {page.TextForTesting})");
+            Require(await page.SetRulesForTesting("list", "everyone", true, false, true, 45, true), "saving the rules works"); await Frames(2);
+            Require(server.RulesAccess == "list" && server.RulesBuild == "everyone" && server.RulesScripts && !server.RulesVoice && server.RulesBack == 45 && server.RulesApplied, "the rules reach the server as chosen");
+            Require(page.TextForTesting.Contains("Entrada: Lista") && page.TextForTesting.Contains("Construir: Todos") && page.TextForTesting.Contains("Scripts: sim") && page.TextForTesting.Contains("Voz: não") && page.TextForTesting.Contains("45 min"), $"and the tab shows the new rules (got {page.TextForTesting})");
             var text = page.TextForTesting; Require(page.IsOwner && text.Contains("AliceVerse") && text.Contains("Full Region") && text.Contains("256 m × 256 m") && text.Contains("Sem anúncio") && text.Contains("Terrenos") && text.Contains("L$ 30.000"), $"owner, region, size, situation and history (got {text})");
             Require(page.HasButtonForTesting("Colocar Ilha à Venda") && page.HasButtonForTesting("Alugar Ilha") && page.ButtonEnabledForTesting("Transferir Propriedade") && !page.HasButtonForTesting("Retirar da Venda"), "the owner can sell, rent out and hand over");
 
@@ -91,7 +97,7 @@ public partial class IslandPropertySmoke : Node3D
             Require(await page.LeaveForTesting(), "leaving works"); await Frames(2); Require(!server.LeaseLive && !page.IsTenant, "the lease is over");
 
             // --- somebody else, the island of welcome, trouble --------------------------------------------------------------------------------------
-            server.IsOwner = false; server.IsTenant = false; await page.LoadAsync(); await Frames(2); Require(!page.HasButtonForTesting("Colocar Ilha à Venda") && page.TextForTesting.Contains("Só o proprietário"), "an administrator only reads");
+            server.IsOwner = false; server.IsTenant = false; await page.LoadAsync(); await Frames(2); Require(!page.HasButtonForTesting("Colocar Ilha à Venda") && !page.HasButtonForTesting("Editar Regras") && page.TextForTesting.Contains("Só o proprietário"), "an administrator only reads");
             server.IsOwner = true; server.Welcome = true; await page.LoadAsync(); await Frames(2); Require(!page.HasButtonForTesting("Colocar Ilha à Venda") && page.TextForTesting.Contains("ilha de boas-vindas"), "the welcome island has no sale");
             server.Gone = true; await page.LoadAsync(); await Frames(2); Require(page.StatusForTesting.Contains("ainda não tem a propriedade"), $"an old server is told apart (got {page.StatusForTesting})");
 

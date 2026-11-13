@@ -169,7 +169,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.Property(x => x.Description).HasMaxLength(4000);
             b.Property(x => x.CoverImageUrl).HasMaxLength(1024);
             b.Property(x => x.Category).HasMaxLength(32);
-            b.Property(x => x.ContentRating).HasMaxLength(12).HasDefaultValue("livre"); b.Property(x => x.Language).HasMaxLength(12).HasDefaultValue("pt-BR"); b.Property(x => x.ShowInSearch).HasDefaultValue(true); b.Property(x => x.ShowOnMap).HasDefaultValue(true); b.Property(x => x.AccessClosed).HasDefaultValue(false); b.Property(x => x.LookJson).HasColumnType("jsonb").HasDefaultValue("{}"); b.Property(x => x.LookPresetsJson).HasColumnType("jsonb").HasDefaultValue("[]"); b.Property(x => x.MediaJson).HasColumnType("jsonb").HasDefaultValue("{}");
+            b.Property(x => x.ContentRating).HasMaxLength(12).HasDefaultValue("livre"); b.Property(x => x.Language).HasMaxLength(12).HasDefaultValue("pt-BR"); b.Property(x => x.ShowInSearch).HasDefaultValue(true); b.Property(x => x.ShowOnMap).HasDefaultValue(true); b.Property(x => x.AccessClosed).HasDefaultValue(false); b.Property(x => x.LookJson).HasColumnType("jsonb").HasDefaultValue("{}"); b.Property(x => x.LookPresetsJson).HasColumnType("jsonb").HasDefaultValue("[]"); b.Property(x => x.MediaJson).HasColumnType("jsonb").HasDefaultValue("{}"); b.Property(x => x.RulesJson).HasColumnType("jsonb").HasDefaultValue("{}");
             b.Property(x => x.EnvironmentJson).HasColumnType("jsonb");
             b.Property(x => x.ResourceLimitsJson).HasColumnType("jsonb");
             b.Property(x => x.RuntimeState).HasMaxLength(24);

@@ -103,6 +103,7 @@ public static class LandService
             PermissionsJson = ValidObject(permissionsJson, "{\"enter\":true,\"build\":false,\"run_scripts\":false,\"rezzing\":false}"), EnvironmentJson = ValidObject(environmentJson, "{}"),
             SpawnX = spawnX ?? (float)((minX + maxX) / 2), SpawnY = spawnY ?? 1f, SpawnZ = spawnZ ?? (float)((minZ + maxZ) / 2), CreatedAt = now, UpdatedAt = now
         };
+        if (island.RulesJson is { Length: > 2 } && permissionsJson is null) IslandRules.Apply(parcel, IslandRules.Read(island)); // the island's house rules are where new land starts, unless the claim brings its own
         db.IslandParcels.Add(parcel);
         foreach (var key in set) { var (cx, cz) = LandGrid.Unkey(key); db.ParcelCells.Add(new ParcelCell { IslandId = island.Id, Cx = cx, Cz = cz, ParcelId = parcel.Id }); }
         db.ParcelChanges.Add(new ParcelChange { Id = Guid.NewGuid(), ParcelId = parcel.Id, ActorUserId = owner, Operation = "claim", PayloadJson = JsonSerializer.Serialize(new { cells = set.Count, area = parcel.Area }), Revision = parcel.Revision, CreatedAt = now });

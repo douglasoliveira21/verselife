@@ -73,6 +73,7 @@ public static class IslandRealEstate
         var host = island.OwnerUserId == viewer ? await (from r in db.IslandRentals.AsNoTracking() join plan in db.IslandRentalPlans.AsNoTracking() on r.PlanId equals plan.Id where r.IslandId == island.Id && r.Status == "active" orderby r.ExpiresAt descending select new { r.ExpiresAt, r.RecoveryUntil, Plan = plan.Name, plan.MaxPlayers, plan.MaxObjects }).FirstOrDefaultAsync(ct) : null;
         return new
         {
+            rules = IslandRules.View(IslandRules.Read(island)), canEditRules = staff,
             hosting = host is null ? null : new { plan = host.Plan, status = host.ExpiresAt > now ? "active" : "recovery", expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects },
             islandId = island.Id, name = island.Name, size = island.Size, region = IslandCommerce.RegionOf(island), ownerId = island.OwnerUserId, owner = Name(island.OwnerUserId), createdAt = island.CreatedAt, parcels,
             isOwner = island.OwnerUserId == viewer, isTenant = lease?.TenantUserId == viewer, isWelcome = island.IsWelcome,

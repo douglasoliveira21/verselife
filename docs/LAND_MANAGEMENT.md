@@ -190,7 +190,7 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 - **Testes de concorrência em PostgreSQL real**: exigem credenciais; os testes de Postgres ficam ignorados sem elas.
 - **"Criar objetos" / "Permitir visitantes"**: redundantes com as permissões de construção e o modo de acesso existentes.
 
-Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase80.
+Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase81.
 
 ## Expandir e reduzir parcela
 
@@ -219,3 +219,11 @@ Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Pha
 - Na mesma ilha, o avatar pede o teleporte ao terreno na hora (`LandManager.TeleportToParcel`). Em outra ilha, o cliente entra nela e guarda o terreno em `SearchTravel.SetParcel`; quando o avatar aparece lá, pede o teleporte (o mesmo caminho da busca global, que guarda um ponto em vez de um terreno).
 - As regras do servidor da ilha continuam valendo: terreno que não aceita teleporte ou sem acesso responde com a mensagem de sempre ("Você não pode entrar nesse terreno."). Quem pede outra ilha no meio do caminho esquece o terreno guardado.
 - **Sobre este Terreno** tem o botão **Visitar** no cabeçalho (vale para todas as abas). Terreno privado fica desligado para quem não é dono, locatário ou da administração; terreno que não aceita teleporte leva só até a ilha, com um aviso.
+
+## Regras da ilha (Editar Regras)
+
+- São as **regras de casa** da ilha: como um terreno novo começa. Campos: entrada (`accessMode`: livre, lista ou privado), quem constrói (`buildMode`: dono, lista, todos, ninguém), scripts, voz, mídia e devolução automática de objetos de estranhos (minutos, ou desligada). Ficam em `Island.RulesJson` (migração `Phase81IslandRules`); sem nada salvo valem as regras simples (livre, só o dono, sem scripts, com voz e mídia).
+- `PUT /islands/{id}/land/rules` (dono e administradores da ilha). Valores inválidos voltam `bad_mode` / `bad_duration`; quem não é da administração recebe `forbidden`.
+- **Terrenos novos** (demarcados com "Criar parcela") começam com essas regras, a menos que o pedido traga permissões próprias. **Terrenos que já existem** não mudam sozinhos: marcando "Aplicar também aos terrenos que ainda são do dono da ilha e não estão alugados", as regras são postas só nesses terrenos (cada um ganha uma linha `island_rules` no histórico e a versão da terra sobe). Terrenos de outras pessoas e alugados nunca são mudados por aqui.
+- `GET real-estate` traz `rules` (qualquer pessoa lê) e `canEditRules` (só a administração). Na aba **Propriedade** a linha "Regras da ilha" resume tudo e o botão **Editar Regras** abre o diálogo.
+- O dono de cada terreno continua mudando as regras do seu terreno em "Sobre este Terreno".

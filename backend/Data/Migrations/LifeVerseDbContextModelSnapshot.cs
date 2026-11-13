@@ -1867,6 +1867,13 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("resource_limits_json");
 
+                    b.Property<string>("RulesJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasDefaultValue("{}")
+                        .HasColumnName("rules_json");
+
                     b.Property<string>("RuntimeState")
                         .IsRequired()
                         .HasMaxLength(24)

@@ -190,6 +190,8 @@ public sealed class Island
     /// <summary>The music of the whole island where no parcel plays its own: {"musicUrl","volume","autoplay","name"}, or {} for none.</summary>
     public string MediaJson { get; set; } = "{}";
     public string EnvironmentJson { get; set; } = "{}";
+    /// <summary>The house rules new land starts with: {"accessMode","buildMode","allowScripts","allowVoice","allowMedia","autoReturnMinutes"}, or {} for the plain defaults. See IslandRules.</summary>
+    public string RulesJson { get; set; } = "{}";
     public string ResourceLimitsJson { get; set; } = "{}";
     public string RuntimeState { get; set; } = "suspended";
     /// <summary>The island every new avatar arrives on (at most one island is it; see WelcomeIsland).</summary>
