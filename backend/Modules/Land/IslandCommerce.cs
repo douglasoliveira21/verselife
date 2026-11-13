@@ -107,13 +107,14 @@ public static class IslandCommerce
         var buyerWallet = await LandCommerce.WalletOfAsync(db, buyer, now, ct); var sellerWallet = await LandCommerce.WalletOfAsync(db, seller, now, ct);
         if (buyerWallet.IsBlocked || sellerWallet.IsBlocked) return CommerceResult.Fail("wallet_blocked");
         if (buyerWallet.AvailableCoins < price) return CommerceResult.Fail("insufficient_balance");
-        buyerWallet.AvailableCoins -= price; sellerWallet.AvailableCoins += price; buyerWallet.UpdatedAt = sellerWallet.UpdatedAt = now;
-        var ledger = await LandCommerce.LedgerAsync(db, key!, "island_sale", buyer, buyer, [(seller, price)], new { islandId, seller }, now, ct);
+        var (hold, holdError) = await PaymentHolds.ReserveAsync(db, key!, "island_sale", buyer, price, islandId, now, ct); if (hold is null) return CommerceResult.Fail(holdError!);
+        sellerWallet.AvailableCoins += price; sellerWallet.UpdatedAt = now;
+        var ledger = await PaymentHolds.SettleAsync(db, hold, key!, "island_sale", [(seller, price)], new { islandId, seller }, now, ct);
         var (parcels, moved, toReturn) = await HandOverAsync(db, island, seller, buyer, includeObjects, now, ct);
         Record(db, islandId, "sale", buyer, seller, price, new { parcels, objectsMoved = moved, objectsReturned = toReturn.Length }, ledger.Id, now);
         PropertyNotices.Add(db, seller, "sold", $"A sua ilha {island.Name} foi vendida por {LandCommerce.Money(price)}", $"Comprador: {await PropertyNotices.NameAsync(db, buyer, ct)}. O valor já está na sua carteira e a ilha, os terrenos e os objetos incluídos passaram para ele.", $"sold:{islandId}:{ledger.Id}", now);
         IslandAudit.Add(db, islandId, buyer, "administração", "island_sold", "A ilha foi vendida", "Propriedade", new { owner = seller }, new { owner = buyer, price, parcels }, now);
-        var saved = await SaveAsync(db, ct, new { islandId, price, parcels, objectsMoved = moved });
+        var saved = await PaymentHolds.FinishAsync(db, hold, new { islandId, price, parcels, objectsMoved = moved }, now, ct);
         if (!saved.Ok) return saved;
         await ReturnAsync(db, storage, island, seller, toReturn, now, ct); // what the seller keeps goes back to the seller's inventory
         return saved;
@@ -245,8 +246,9 @@ public static class IslandCommerce
         var tenantWallet = await LandCommerce.WalletOfAsync(db, tenant, now, ct); var landlordWallet = await LandCommerce.WalletOfAsync(db, island.OwnerUserId, now, ct);
         if (tenantWallet.IsBlocked || landlordWallet.IsBlocked) return CommerceResult.Fail("wallet_blocked");
         if (tenantWallet.AvailableCoins < total) return CommerceResult.Fail("insufficient_balance");
-        tenantWallet.AvailableCoins -= total; landlordWallet.AvailableCoins += rent; tenantWallet.UpdatedAt = landlordWallet.UpdatedAt = now;
-        var ledger = await LandCommerce.LedgerAsync(db, key!, "island_rental", tenant, tenant, [(island.OwnerUserId, rent), (null, deposit)], new { islandId, periods }, now, ct);
+        var (hold, holdError) = await PaymentHolds.ReserveAsync(db, key!, "island_rental", tenant, total, islandId, now, ct); if (hold is null) return CommerceResult.Fail(holdError!);
+        landlordWallet.AvailableCoins += rent; landlordWallet.UpdatedAt = now;
+        var ledger = await PaymentHolds.SettleAsync(db, hold, key!, "island_rental", [(island.OwnerUserId, rent), (null, deposit)], new { islandId, periods }, now, ct);
         var expires = now.AddDays((double)island.RentPeriodDays * periods);
         var permission = await GrantAdminAsync(db, island, tenant, expires, now, ct);
         var lease = new IslandLease { Id = Guid.NewGuid(), IslandId = islandId, LandlordUserId = island.OwnerUserId, TenantUserId = tenant, PricePerPeriod = price, PeriodDays = island.RentPeriodDays, DepositCoins = deposit, GraceDays = island.RentGraceDays, Periods = periods, AutoRenew = autoRenew && island.RentAutoRenewAllowed, Status = "active", StartsAt = now, ExpiresAt = expires, CreatedAt = now, PermissionId = permission.Id };
@@ -254,7 +256,7 @@ public static class IslandCommerce
         Record(db, islandId, "rent_start", tenant, island.OwnerUserId, rent, new { periods, deposit, leaseId = lease.Id }, ledger.Id, now);
         PropertyNotices.Add(db, island.OwnerUserId, "rented", $"A sua ilha {island.Name} foi alugada", $"Locatário: {await PropertyNotices.NameAsync(db, tenant, ct)}, {periods} período(s), até {expires.ToLocalTime():dd/MM/yyyy}. Você recebeu {LandCommerce.Money(rent)}.", $"rented:{lease.Id}", now);
         IslandAudit.Add(db, islandId, tenant, "administração", "island_rented", "A ilha foi alugada", "Propriedade", null, new { tenant, periods, expires }, now);
-        return await SaveAsync(db, ct, new { leaseId = lease.Id, expiresAt = expires, paid = total });
+        return await PaymentHolds.FinishAsync(db, hold, new { leaseId = lease.Id, expiresAt = expires, paid = total }, now, ct);
     }
 
     public static async Task<CommerceResult> RenewAsync(LifeVerseDbContext db, Guid leaseId, Guid tenant, int periods, string? key, TimeProvider clock, CancellationToken ct)

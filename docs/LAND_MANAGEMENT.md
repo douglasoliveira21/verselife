@@ -190,7 +190,7 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 - **Testes de concorrência em PostgreSQL real**: exigem credenciais; os testes de Postgres ficam ignorados sem elas.
 - **"Criar objetos" / "Permitir visitantes"**: redundantes com as permissões de construção e o modo de acesso existentes.
 
-Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase83.
+Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase84.
 
 ## Expandir e reduzir parcela
 
@@ -266,3 +266,23 @@ Dar um terreno a outra pessoa segue o mesmo caminho da ilha: uma **oferta que a 
 - **Ciclo**: `active` (em vigor), `recovery` (a semana depois do vencimento, ainda dá para renovar) e `ended` (precisa escolher um plano de novo, o que também permite trocar de plano). Renovar soma o período depois do fim (ou a partir de hoje, se já venceu), então renovar antes não perde dias.
 - Os endpoints antigos `economy/islands/{id}/rent` e `economy/rentals/{id}/renew` passaram a usar o mesmo código: antes não conferiam a chave repetida nem se já havia plano, e uma dupla clicada cobrava duas vezes.
 - Não há tarefa que desligue a ilha quando o plano acaba: hoje o estado é informativo (e aparece em Minhas Propriedades).
+
+## Retenção de snapshots
+
+Os salvamentos automáticos da ilha (`IslandSnapshot` sem nome) se acumulavam para sempre. Agora `SnapshotRetentionWorker` limpa, 5 minutos depois de subir e a cada 6 horas (`SnapshotRetention`, configuração `SnapshotRetention` no `appsettings.json`):
+
+- **Fica**: tudo dos últimos **30 dias**; depois, **um por semana até 12 semanas** (o mais novo de cada semana); **os 5 mais recentes** de cada ilha, qualquer que seja a idade; e **todos os backups com nome** (os que o dono salvou à mão — esses só o dono apaga).
+- **Sai**: o resto. Cada limpeza de uma ilha grava uma linha de auditoria (`snapshots_pruned`, com quantos saíram e quantos ficaram).
+- **Segurança**: `Enabled: false` desliga; `DryRun: true` só registra no log quanto apagaria; no máximo 50 ilhas por passada. A política (`SnapshotRetention.ToDelete`) é uma função pura, coberta por testes.
+- Apagar é definitivo: ajuste os prazos em `appsettings` antes de publicar, se os padrões não servirem.
+
+## Pagamento em duas fases
+
+Compras e aluguéis (terreno e ilha) agora pagam em duas fases (`PaymentHolds`, tabela `economy.payment_holds`, migração `Phase84PaymentHolds`):
+
+1. **Reservar**: o valor sai da carteira do comprador para uma *reserva* (conta `land_hold` no livro-razão) e isso é salvo sozinho.
+2. **Liquidar**: na mesma gravação que muda o dono (ou cria o contrato), a reserva é paga ao vendedor/locador (e o depósito vai para a custódia) e fecha como `settled`.
+- **Se a segunda fase falha** (disputa no banco, por exemplo), a reserva é **devolvida** na hora (`released`, com transação `*_release` no livro-razão) e o pedido falha como antes (`conflict`); a mesma chave pode ser tentada de novo.
+- **Se o servidor cai entre as fases**, a reserva fica aberta; o worker devolve as que passam de **10 minutos**. Se o comprador tenta de novo com a mesma chave antes disso, a reserva aberta é aproveitada (não cobra duas vezes). Chave igual com valor ou alvo diferente é recusada (`key_in_use`).
+- O dinheiro nunca chega ao vendedor sem a posse mudar, e nunca fica perdido quando ela não muda. Renovações de aluguel e a hospedagem continuam de uma fase só (não mudam posse nem dependem de nada que possa falhar depois).
+- Limite: uma exceção inesperada entre as fases (que não seja de gravação) deixa a reserva aberta até o worker devolver, em até ~10 minutos.

@@ -51,12 +51,12 @@ public static class LandCommerce
     }
 
     /// <summary>One ledger transaction: the payer is debited the sum of the parts and each receiver credited its part. A null receiver is the land escrow (deposits).</summary>
-    internal static async Task<LedgerTransaction> LedgerAsync(LifeVerseDbContext db, string key, string type, Guid initiator, Guid payer, IReadOnlyList<(Guid? Receiver, long Amount)> parts, object metadata, DateTimeOffset now, CancellationToken ct)
+    internal static async Task<LedgerTransaction> LedgerAsync(LifeVerseDbContext db, string key, string type, Guid initiator, Guid payer, IReadOnlyList<(Guid? Receiver, long Amount)> parts, object metadata, DateTimeOffset now, CancellationToken ct, string? payerHoldAccount = null)
     {
         var total = parts.Sum(p => p.Amount);
         var transaction = new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = type, Status = "completed", Amount = total, InitiatorUserId = initiator, MetadataJson = JsonSerializer.Serialize(metadata), CreatedAt = now, CompletedAt = now };
         db.LedgerTransactions.Add(transaction);
-        var payerAccount = await AccountAsync(db, payer, "user", now, ct);
+        var payerAccount = payerHoldAccount is null ? await AccountAsync(db, payer, "user", now, ct) : await AccountAsync(db, null, payerHoldAccount, now, ct); // a settled purchase is paid from the hold, not from the buyer again
         db.LedgerEntries.Add(new LedgerEntry { Id = Guid.NewGuid(), TransactionId = transaction.Id, AccountId = payerAccount.Id, Debit = total, Credit = 0, CreatedAt = now });
         foreach (var (receiver, amount) in parts.Where(p => p.Amount > 0))
         {
@@ -239,8 +239,9 @@ public static class LandCommerce
         if (buyerWallet.IsBlocked || sellerWallet.IsBlocked) return CommerceResult.Fail("wallet_blocked");
         if (buyerWallet.AvailableCoins < price) return CommerceResult.Fail("insufficient_balance");
 
-        buyerWallet.AvailableCoins -= price; sellerWallet.AvailableCoins += price; buyerWallet.UpdatedAt = sellerWallet.UpdatedAt = now;
-        var ledger = await LedgerAsync(db, key!, "land_sale", buyer, buyer, [(seller, price)], new { parcelId, seller }, now, ct);
+        var (hold, holdError) = await PaymentHolds.ReserveAsync(db, key!, "land_sale", buyer, price, parcelId, now, ct); if (hold is null) return CommerceResult.Fail(holdError!); // phase one: the money is set aside and saved
+        sellerWallet.AvailableCoins += price; sellerWallet.UpdatedAt = now;
+        var ledger = await PaymentHolds.SettleAsync(db, hold, key!, "land_sale", [(seller, price)], new { parcelId, seller }, now, ct); // phase two: paid out in the same save that moves the title
 
         // the objects the seller left on the parcel go with it, when the sale says so
         var moved = parcel.SaleIncludesObjects ? await MoveObjectsAsync(db, parcel, seller, buyer, now, ct) : 0;
@@ -249,7 +250,7 @@ public static class LandCommerce
         Touch(db, parcel, buyer, "sold", new { seller, buyer, price, objectsMoved = moved }, now);
         Record(db, parcelId, "sale", buyer, seller, price, new { objectsMoved = moved }, ledger.Id, now);
         PropertyNotices.Add(db, seller, "sold", $"Seu terreno {Label(parcel)} foi vendido por {Money(price)}", $"Comprador: {await PropertyNotices.NameAsync(db, buyer, ct)}. O valor já está na sua carteira.", $"sold:{parcelId}:{ledger.Id}", now);
-        return await SaveAsync(db, ct, new { parcelId, price, objectsMoved = moved });
+        return await PaymentHolds.FinishAsync(db, hold, new { parcelId, price, objectsMoved = moved }, now, ct);
     }
 
     // ---- renting -----------------------------------------------------------------------------------------------
@@ -299,8 +300,9 @@ public static class LandCommerce
         var tenantWallet = await WalletOfAsync(db, tenant, now, ct); var landlordWallet = await WalletOfAsync(db, parcel.OwnerUserId, now, ct);
         if (tenantWallet.IsBlocked || landlordWallet.IsBlocked) return CommerceResult.Fail("wallet_blocked");
         if (tenantWallet.AvailableCoins < total) return CommerceResult.Fail("insufficient_balance");
-        tenantWallet.AvailableCoins -= total; landlordWallet.AvailableCoins += rent; tenantWallet.UpdatedAt = landlordWallet.UpdatedAt = now;
-        var ledger = await LedgerAsync(db, key!, "land_rental", tenant, tenant, [(parcel.OwnerUserId, rent), (null, deposit)], new { parcelId, periods }, now, ct);
+        var (hold, holdError) = await PaymentHolds.ReserveAsync(db, key!, "land_rental", tenant, total, parcelId, now, ct); if (hold is null) return CommerceResult.Fail(holdError!);
+        landlordWallet.AvailableCoins += rent; landlordWallet.UpdatedAt = now;
+        var ledger = await PaymentHolds.SettleAsync(db, hold, key!, "land_rental", [(parcel.OwnerUserId, rent), (null, deposit)], new { parcelId, periods }, now, ct);
         var rental = new ParcelRental
         {
             Id = Guid.NewGuid(), ParcelId = parcelId, LandlordUserId = parcel.OwnerUserId, TenantUserId = tenant, PricePerPeriod = price, PeriodDays = parcel.RentPeriodDays, DepositCoins = deposit, GraceDays = parcel.RentGraceDays,
@@ -311,7 +313,7 @@ public static class LandCommerce
         Touch(db, parcel, tenant, "rented", new { tenant, periods, rental.ExpiresAt }, now);
         Record(db, parcelId, "rent_start", tenant, parcel.OwnerUserId, rent, new { periods, deposit, rentalId = rental.Id }, ledger.Id, now);
         PropertyNotices.Add(db, parcel.OwnerUserId, "rented", $"Seu terreno {Label(parcel)} foi alugado", $"Locatário: {await PropertyNotices.NameAsync(db, tenant, ct)}, {periods} período(s), até {rental.ExpiresAt.ToLocalTime():dd/MM/yyyy}. Você recebeu {Money(rent)}.", $"rented:{rental.Id}", now);
-        return await SaveAsync(db, ct, new { rentalId = rental.Id, expiresAt = rental.ExpiresAt, paid = total });
+        return await PaymentHolds.FinishAsync(db, hold, new { rentalId = rental.Id, expiresAt = rental.ExpiresAt, paid = total }, now, ct);
     }
 
     public static async Task<CommerceResult> RenewAsync(LifeVerseDbContext db, Guid rentalId, Guid tenant, int periods, string? key, TimeProvider clock, CancellationToken ct)
@@ -430,6 +432,9 @@ public sealed class LandRentalWorker(IServiceScopeFactory scopes, ILogger<LandRe
                 if (said > 0) logger.LogInformation("event=property_notices count={Count}", said);
                 var returned = await LandAutoReturn.RunAsync(db, scope.ServiceProvider.GetService<AssetStorageService>(), DateTimeOffset.UtcNow, stoppingToken);
                 if (returned > 0) logger.LogInformation("event=land_auto_return count={Count}", returned);
+                using var holdScope = scopes.CreateScope(); // its own context: giving a hold back discards whatever else that context was tracking
+                var unheld = await PaymentHolds.ReleaseStaleAsync(holdScope.ServiceProvider.GetRequiredService<LifeVerseDbContext>(), DateTimeOffset.UtcNow, stoppingToken);
+                if (unheld > 0) logger.LogWarning("event=payment_holds_released count={Count}", unheld);
             }
             catch (Exception exception) when (exception is not OperationCanceledException) { logger.LogWarning(exception, "event=land_rentals_failed"); }
         }

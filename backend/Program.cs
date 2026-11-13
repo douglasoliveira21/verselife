@@ -60,6 +60,8 @@ builder.Services.AddHostedService<WorldManagerHostedService>();
 builder.Services.AddHostedService<LifeVerse.Api.Modules.Worlds.IslandRestartWorker>();
 builder.Services.AddHostedService<LifeVerse.Api.Modules.Worlds.TemporaryObjectWorker>();
 builder.Services.AddHostedService<LandRentalWorker>();
+builder.Services.AddSingleton(builder.Configuration.GetSection("SnapshotRetention").Get<LifeVerse.Api.Modules.Worlds.SnapshotRetentionOptions>() ?? new LifeVerse.Api.Modules.Worlds.SnapshotRetentionOptions());
+builder.Services.AddHostedService<LifeVerse.Api.Modules.Worlds.SnapshotRetentionWorker>();
 builder.Services.AddSingleton<LifeVerse.Api.Modules.Discovery.SearchMetrics>();
 builder.Services.AddHostedService<LifeVerse.Api.Modules.Discovery.SearchIndexWorker>();
 builder.Services.AddHostedService<LifeVerse.Api.Modules.Inventory.ItemOfferWorker>();
