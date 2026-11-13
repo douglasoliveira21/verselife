@@ -240,6 +240,7 @@ public partial class IslandPropertyPage : ScrollContainer
     }
 
     public Task OpenHostingForTesting() => OpenHostingAsync();
+    public string RulesLineForTesting => TextForTesting.Split('|').FirstOrDefault(t => t.StartsWith("Entrada:", StringComparison.Ordinal)) ?? "(sem linha de regras)";
     public void OpenRulesForTesting() { if (_view.ValueKind == JsonValueKind.Object && _view.TryGetProperty("rules", out var current) && current.ValueKind == JsonValueKind.Object) OpenRules(current.Clone()); }
     public void OpenTransferForTesting() => OpenTransfer();
     public System.Collections.Generic.IEnumerable<ConfirmationDialog> DialogsForTesting => GetChildren().OfType<ConfirmationDialog>();
@@ -266,13 +267,24 @@ public partial class IslandPropertyPage : ScrollContainer
         var build = IslandUi.Dropdown(BuildChoices); IslandUi.Select(build, Str(rules, "buildMode")); content.AddChild(build);
         CheckBox Box(string text, bool on) { var b = new CheckBox { Text = text, ButtonPressed = on, FocusMode = FocusModeEnum.None }; content.AddChild(b); return b; }
         var scripts = Box("Permitir scripts", Flag(rules, "allowScripts")); var voice = Box("Permitir voz por proximidade", Flag(rules, "allowVoice")); var media = Box("Permitir mídia nos objetos de quem constrói", Flag(rules, "allowMedia"));
-        var back = IslandUi.Number(0, 10080, 5, " min para devolver objetos de estranhos (0 = não devolver)"); back.Value = rules.TryGetProperty("autoReturnMinutes", out var m) && m.ValueKind == JsonValueKind.Number ? m.GetInt32() : 0; content.AddChild(back);
-        var existing = Box("Aplicar também aos terrenos que ainda são do dono da ilha e não estão alugados", false);
-        content.AddChild(IslandUi.Text("Terrenos de outras pessoas e terrenos alugados nunca são mudados por aqui.", 13, IslandUi.TextMuted, false, true));
-        Ask("Regras da ilha", content, async () => await Do(_api!.SetRules(_island, IslandUi.IdOf(access), IslandUi.IdOf(build), scripts.ButtonPressed, voice.ButtonPressed, media.ButtonPressed, back.Value > 0 ? (int)back.Value : null, existing.ButtonPressed), "Regras da ilha salvas."), "Salvar");
+        content.AddChild(IslandUi.Text("Devolver objetos de estranhos depois de (minutos, 0 = não devolver)", 13, IslandUi.TextSecondary));
+        var back = IslandUi.Number(0, 10080, 5, " min"); back.Value = rules.TryGetProperty("autoReturnMinutes", out var m) && m.ValueKind == JsonValueKind.Number ? m.GetInt32() : 0; content.AddChild(back);
+        var existing = Box("Aplicar também aos terrenos que já existem", true);
+        content.AddChild(IslandUi.Text("Sem isso, as regras valem só para terrenos criados daqui para a frente. Aplicar muda os terrenos do dono da ilha que não estão alugados; terrenos de outras pessoas e alugados nunca mudam por aqui.", 13, IslandUi.TextMuted, false, true));
+        Ask("Regras da ilha", content, async () => await SaveRulesAsync(IslandUi.IdOf(access), IslandUi.IdOf(build), scripts.ButtonPressed, voice.ButtonPressed, media.ButtonPressed, back.Value > 0 ? (int)back.Value : null, existing.ButtonPressed), "Salvar");
     }
 
-    public Task<bool> SetRulesForTesting(string access, string build, bool scripts, bool voice, bool media, int? back, bool existing) => Do(_api!.SetRules(_island, access, build, scripts, voice, media, back, existing), "Regras da ilha salvas.");
+    /// <summary>Saves the rules and says what happened to the land that already exists (an offer to apply them reaches only the island owner's parcels that are not rented).</summary>
+    private async Task<bool> SaveRulesAsync(string access, string build, bool scripts, bool voice, bool media, int? back, bool existing)
+    {
+        var reply = await _api!.SetRules(_island, access, build, scripts, voice, media, back, existing);
+        if (!reply.Ok) { Notify?.Invoke(LandManagementApi.Words(reply)); return false; }
+        var applied = reply.Body.ValueKind == JsonValueKind.Object ? Int(reply.Body, "applied") : 0;
+        Notify?.Invoke(!existing ? "Regras salvas para os terrenos novos." : applied > 0 ? $"Regras salvas e aplicadas a {applied} terreno(s)." : "Regras salvas. Nenhum terreno existente mudou: os que há são de outras pessoas ou estão alugados.");
+        await LoadAsync(); Changed?.Invoke(); return true;
+    }
+
+    public Task<bool> SetRulesForTesting(string access, string build, bool scripts, bool voice, bool media, int? back, bool existing) => SaveRulesAsync(access, build, scripts, voice, media, back, existing);
 
     private void OpenTransfer()
     {
