@@ -16,6 +16,9 @@ public sealed class IslandRealEstateApi(IslandManagementApi inner)
     public Task<IslandReply> CancelRent(Guid island) => inner.Send("DELETE", $"{Base(island)}/rental-offer");
     public Task<IslandReply> SetRules(Guid island, string access, string build, bool scripts, bool voice, bool media, int? autoReturnMinutes, bool applyToExisting) =>
         inner.Send("PUT", $"/api/v1/worlds/islands/{island}/land/rules", new { accessMode = access, buildMode = build, allowScripts = scripts, allowVoice = voice, allowMedia = media, autoReturnMinutes, applyToExisting });
+    public Task<IslandReply> CancelTransfer(Guid island) => inner.Send("DELETE", $"{Base(island)}/transfer");
+    public Task<IslandReply> AcceptTransfer(Guid island) => inner.Send("POST", $"{Base(island)}/transfer/accept", new { });
+    public Task<IslandReply> DeclineTransfer(Guid island) => inner.Send("POST", $"{Base(island)}/transfer/decline", new { });
     public Task<IslandReply> Transfer(Guid island, string name) => inner.Send("POST", $"{Base(island)}/transfer", new { name });
     public Task<IslandReply> Renew(Guid island, Guid lease, int periods) => inner.Send("POST", $"{Base(island)}/leases/{lease}/renew", new { periods, idempotencyKey = Guid.NewGuid().ToString() });
     public Task<IslandReply> End(Guid island, Guid lease) => inner.Send("POST", $"{Base(island)}/leases/{lease}/end", new { });
@@ -96,12 +99,23 @@ public partial class IslandPropertyPage : ScrollContainer
 
         if (v.TryGetProperty("rules", out var rules) && rules.ValueKind == JsonValueKind.Object) body.AddChild(Line("Regras da ilha", RulesText(rules)));
         var buttons = IslandUi.Row(10); buttons.SizeFlagsHorizontal = SizeFlags.ExpandFill; body.AddChild(buttons);
+        JsonElement? pending = v.TryGetProperty("transfer", out var transferView) && transferView.ValueKind == JsonValueKind.Object ? transferView.Clone() : null;
         if (Flag(v, "isWelcome")) body.AddChild(IslandUi.Text("Esta é a ilha de boas-vindas do jogo: ela não pode ser vendida, alugada nem transferida.", 13, IslandUi.TextMuted, false, true));
+        else if (pending is { } wait)
+        {
+            body.AddChild(Line("Transferência", Flag(wait, "forMe") ? $"{Str(v, "owner")} quer te dar esta ilha, até {Date(wait, "expiresAt").ToLocalTime():dd/MM/yyyy HH:mm}" : $"Oferecida de presente a {Str(wait, "to")}, até {Date(wait, "expiresAt").ToLocalTime():dd/MM/yyyy HH:mm}", IslandUi.AccentSecondary));
+            if (Flag(wait, "forMe"))
+            {
+                var accept = IslandUi.Action("Aceitar Ilha", "link", IslandUi.Kind.Primary, 42); accept.Pressed += () => Ask("Aceitar ilha", IslandUi.Text($"A ilha {Str(v, "name")}, os terrenos e os objetos de {Str(v, "owner")} passam a ser seus agora.", 14, IslandUi.TextSecondary, false, true), async () => await Do(_api!.AcceptTransfer(_island), "A ilha agora é sua."), "Aceitar"); buttons.AddChild(accept);
+                var decline = IslandUi.Action("Recusar", null, IslandUi.Kind.Danger, 42); decline.Pressed += () => _ = Do(_api!.DeclineTransfer(_island), "Você recusou a ilha."); buttons.AddChild(decline);
+            }
+            else if (owner) { var cancel = IslandUi.Action("Cancelar Transferência", null, IslandUi.Kind.Danger, 42); cancel.Pressed += () => _ = Do(_api!.CancelTransfer(_island), "Transferência cancelada."); buttons.AddChild(cancel); body.AddChild(IslandUi.Text("Enquanto a pessoa não responde, a ilha continua sua e não pode ir ao mercado.", 13, IslandUi.TextMuted, false, true)); }
+        }
         else if (owner && lease is null)
         {
             if (sale is null && offer is null) { var sell = IslandUi.Action("Colocar Ilha à Venda", "coins", IslandUi.Kind.Orange, 42); sell.Pressed += OpenSale; buttons.AddChild(sell); var rent = IslandUi.Action("Alugar Ilha", "calendar", IslandUi.Kind.Purple, 42); rent.Pressed += OpenRent; buttons.AddChild(rent); }
             else { var withdraw = IslandUi.Action(sale is not null ? "Retirar da Venda" : "Retirar Oferta de Aluguel", null, IslandUi.Kind.Danger, 42); withdraw.Pressed += () => _ = Do(sale is not null ? _api!.CancelSale(_island) : _api!.CancelRent(_island), "Anúncio retirado."); buttons.AddChild(withdraw); }
-            var give = IslandUi.Action("Transferir Propriedade", "link", IslandUi.Kind.Secondary, 42); give.Pressed += OpenTransfer; give.Disabled = sale is not null; give.TooltipText = sale is not null ? "Retire a ilha da venda antes." : "Entrega a ilha, com os terrenos e objetos, a outra pessoa, de graça."; buttons.AddChild(give);
+            var give = IslandUi.Action("Transferir Propriedade", "link", IslandUi.Kind.Secondary, 42); give.Pressed += OpenTransfer; give.Disabled = sale is not null; give.TooltipText = sale is not null ? "Retire a ilha da venda antes." : "Oferece a ilha, com os terrenos e objetos, a outra pessoa, de graça. Ela precisa aceitar."; buttons.AddChild(give);
         }
         else if (owner && lease is { } own)
         {
@@ -151,6 +165,9 @@ public partial class IslandPropertyPage : ScrollContainer
     public Task<bool> RentOutForTesting(long price, int days, long deposit) => Do(_api!.OfferRent(_island, price, days, 1, 6, deposit, 3), "Ilha oferecida para aluguel.");
     public Task<bool> WithdrawForTesting() => Do(Obj(_view, "sale") is not null ? _api!.CancelSale(_island) : _api!.CancelRent(_island), "Anúncio retirado.");
     public Task<bool> TransferForTesting(string name) => Do(_api!.Transfer(_island, name), "A ilha foi transferida.");
+    public Task<bool> CancelTransferForTesting() => Do(_api!.CancelTransfer(_island), "Transferência cancelada.");
+    public Task<bool> AcceptTransferForTesting() => Do(_api!.AcceptTransfer(_island), "A ilha agora é sua.");
+    public Task<bool> DeclineTransferForTesting() => Do(_api!.DeclineTransfer(_island), "Você recusou a ilha.");
     public Task<bool> RenewForTesting(int periods) => Obj(_view, "lease") is { } l ? Do(_api!.Renew(_island, Guid.Parse(Str(l, "id")), periods), "Aluguel renovado.") : Task.FromResult(false);
     public Task<bool> LeaveForTesting() => Obj(_view, "lease") is { } l ? Do(_api!.End(_island, Guid.Parse(Str(l, "id"))), "Aluguel encerrado.") : Task.FromResult(false);
 
@@ -205,11 +222,11 @@ public partial class IslandPropertyPage : ScrollContainer
     private void OpenTransfer()
     {
         var islandName = Str(_view, "name"); var parcels = Int(_view, "parcels");
-        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"A ilha {islandName}, com {parcels} terreno(s) e todos os objetos que são seus, passa para outra pessoa, de graça. O plano de hospedagem vai junto. Isso não pode ser desfeito por você: só a nova pessoa pode devolver.", 14, IslandUi.Error, false, true));
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"A ilha {islandName}, com {parcels} terreno(s) e todos os objetos que são seus, é oferecida a outra pessoa, de graça. Nada muda até ela aceitar (ela tem 7 dias; você pode cancelar antes). Se aceitar, o plano de hospedagem vai junto e só ela pode devolver.", 14, IslandUi.Error, false, true));
         var name = IslandUi.Input("Nome da pessoa", 60); content.AddChild(name);
         var confirm = IslandUi.Input("Para confirmar, digite o nome da ilha", 120); content.AddChild(confirm);
-        content.AddChild(IslandUi.Text("As duas pessoas recebem um aviso em Minhas Propriedades.", 13, IslandUi.TextMuted, false, true));
-        Ask("Transferir propriedade", content, async () => await Do(_api!.Transfer(_island, name.Text.Trim()), "A ilha foi transferida."), "Transferir", ok => { ok.Disabled = true; confirm.TextChanged += typed => ok.Disabled = typed.Trim() != islandName; });
+        content.AddChild(IslandUi.Text("A pessoa recebe um aviso em Minhas Propriedades e escolhe se aceita.", 13, IslandUi.TextMuted, false, true));
+        Ask("Transferir propriedade", content, async () => await Do(_api!.Transfer(_island, name.Text.Trim()), "Oferta de transferência enviada."), "Oferecer", ok => { ok.Disabled = true; confirm.TextChanged += typed => ok.Disabled = typed.Trim() != islandName; });
     }
 
     private void OpenRenew(JsonElement lease)

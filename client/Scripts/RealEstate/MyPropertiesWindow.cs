@@ -353,8 +353,29 @@ public partial class MyPropertiesWindow : Node
 
     // ---- the seven tabs ----------------------------------------------------------------------------------------------------------------
 
+    /// <summary>Islands somebody wants to give to the player: they become theirs only when accepted before the deadline.</summary>
+    private void ShowIncoming()
+    {
+        if (_data.Incoming.Count == 0) return;
+        _content.AddChild(Heading($"Ilhas Oferecidas a Você ({_data.Incoming.Count})", "Uma pessoa quer te dar uma ilha. Ela só passa a ser sua se você aceitar antes do prazo."));
+        foreach (var t in _data.Incoming)
+            _content.AddChild(PropertyCard(Picture("", t.IslandId, IslandUi.AccentSecondary, new Vector2(190, 90)), t.Name, $"De {t.From} · {t.Parcels} terreno(s)", ("Aguardando você", IslandUi.AccentSecondary),
+                [$"Vale até {Moment(t.ExpiresAt)}", "Os terrenos e os objetos de quem oferece passam junto, com a hospedagem."],
+                [Small("Aceitar", IslandUi.Kind.Primary, () => OpenAccept(t)), Small("Recusar", IslandUi.Kind.Danger, () => _ = Do(_api!.DeclineTransfer(t.IslandId), "Você recusou a ilha."))]));
+    }
+
+    private void OpenAccept(PropIncomingTransfer t)
+    {
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"Aceitar a ilha {t.Name}? Ela, os {t.Parcels} terreno(s) e os objetos de {t.From} passam a ser seus agora, e você passa a cuidar da hospedagem dela.", 14, IslandUi.TextSecondary, false, true));
+        Ask("Aceitar ilha", content, async () => await Do(_api!.AcceptTransfer(t.IslandId), "A ilha agora é sua."), "Aceitar");
+    }
+
+    public Task<bool> AcceptTransferForTesting(PropIncomingTransfer t) => Do(_api!.AcceptTransfer(t.IslandId), "A ilha agora é sua.");
+    public Task<bool> DeclineTransferForTesting(PropIncomingTransfer t) => Do(_api!.DeclineTransfer(t.IslandId), "Você recusou a ilha.");
+
     private void ShowIslands()
     {
+        ShowIncoming();
         _rows["ilhas"] = _data.Islands.Count; _content.AddChild(Heading($"Minhas Ilhas ({_data.Islands.Count})", "As ilhas que você criou. Pode vender, alugar ou transferir cada uma na aba Propriedade do gerenciamento."));
         if (_data.Islands.Count == 0) { _content.AddChild(IslandUi.Text("Você ainda não tem uma ilha.", 15, IslandUi.TextMuted)); return; }
         foreach (var i in _data.Islands)
@@ -364,7 +385,8 @@ public partial class MyPropertiesWindow : Node
             if (i.SalePrice is { } islandSale) lines.Add($"À venda por {LandMath.Money(islandSale)}"); if (i.RentPrice is { } islandRent && i.Tenant.Length == 0) lines.Add($"Para alugar: {LandMath.Money(islandRent)} ({Period(i.RentPeriodDays)})");
             if (i.Hosting is { } host) lines.Add(host.Status == "active" ? $"Hospedagem: {host.Plan}, até {Day(host.ExpiresAt)}" : $"Hospedagem vencida: renove até {Day(host.RecoveryUntil)} ({host.Plan})");
             if (i.Tenant.Length > 0) lines.Add($"Alugada para {i.Tenant}" + (i.LeaseExpiresAt is { } leaseEnd ? $" até {Day(leaseEnd)}" : ""));
-            var offerButton = i.Tenant.Length > 0 ? Small("Anunciar", IslandUi.Kind.Orange, () => { }, false, "A ilha está alugada: espere o fim do contrato.") : i.SalePrice is not null || i.RentPrice is not null ? Small("Retirar anúncio", IslandUi.Kind.Danger, () => _ = Do(i.SalePrice is not null ? _api!.IslandCancelSale(i.Id) : _api!.IslandCancelRent(i.Id), "Anúncio retirado.")) : Small("Anunciar", IslandUi.Kind.Orange, () => OpenIslandOffer(i));
+            if (i.TransferTo.Length > 0) lines.Add($"Oferecida a {i.TransferTo} de presente" + (i.TransferExpiresAt is { } giveEnd ? $" até {Day(giveEnd)}" : "") + ": espera a resposta");
+            var offerButton = i.TransferTo.Length > 0 ? Small("Anunciar", IslandUi.Kind.Orange, () => { }, false, "A ilha foi oferecida de presente: cancele a transferência na aba Propriedade ou espere a resposta.") : i.Tenant.Length > 0 ? Small("Anunciar", IslandUi.Kind.Orange, () => { }, false, "A ilha está alugada: espere o fim do contrato.") : i.SalePrice is not null || i.RentPrice is not null ? Small("Retirar anúncio", IslandUi.Kind.Danger, () => _ = Do(i.SalePrice is not null ? _api!.IslandCancelSale(i.Id) : _api!.IslandCancelRent(i.Id), "Anúncio retirado.")) : Small("Anunciar", IslandUi.Kind.Orange, () => OpenIslandOffer(i));
             _content.AddChild(PropertyCard(Picture(i.Cover, i.Id, IslandUi.StateColor(i.State), new Vector2(190, 110)), i.Name, $"{(i.Region == "homestead" ? "Homestead" : "Full Region")} · {(i.IsPublic ? "Pública" : "Privada")} · {i.Parcels} terreno(s)", state, [.. lines],
                 [Small("Gerenciar", IslandUi.Kind.Secondary, () => ManageIsland?.Invoke(i.Id)), Small("Visitar", IslandUi.Kind.Secondary, () => { Visit?.Invoke(i.Id); RequestClose(); }), offerButton]));
         }

@@ -138,6 +138,7 @@ public sealed class IslandCommerceTests : IDisposable
         Assert.Equal("person_not_found", (await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "ninguem", _clock, default)).Error); Assert.Equal("bad_buyer", (await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "alice", _clock, default)).Error);
         Assert.True((await Sell()).Ok); Assert.Equal("for_sale", (await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Error); await IslandCommerce.CancelSaleAsync(_db, _island.Id, _seller, _clock, default);
         var coins = Coins(_seller); Assert.True((await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Ok);
+        Assert.Equal(_seller, Stored().OwnerUserId); Assert.True((await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _buyer, _clock, default)).Ok); // nothing moves until the other person says yes
         Assert.Equal(_buyer, Stored().OwnerUserId); Assert.Equal(_buyer, _db.IslandParcels.AsNoTracking().Single(p => p.Id == parcel.Id).OwnerUserId); Assert.Equal(coins, Coins(_seller)); // no money moves in a gift
     }
 
@@ -148,11 +149,52 @@ public sealed class IslandCommerceTests : IDisposable
         _db.IslandRentalPlans.Add(plan);
         var hosting = new IslandRental { Id = Guid.NewGuid(), IslandId = _island.Id, UserId = _seller, PlanId = plan.Id, StartsAt = _clock.Now, ExpiresAt = _clock.Now.AddDays(20), RecoveryUntil = _clock.Now.AddDays(27), Status = "active" };
         _db.IslandRentals.Add(hosting); await _db.SaveChangesAsync();
-        Assert.True((await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Ok);
+        Assert.True((await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Ok); Assert.True((await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _buyer, _clock, default)).Ok);
         Assert.Equal(_buyer, _db.IslandRentals.AsNoTracking().Single(r => r.Id == hosting.Id).UserId); // the new owner pays and renews it from now on
         var notices = _db.PropertyNotices.AsNoTracking().ToList();
         Assert.Contains(notices, n => n.UserId == _buyer && n.Kind == "island_received" && n.Title.Contains("Ilha Tropical"));
         Assert.Contains(notices, n => n.UserId == _seller && n.Kind == "island_given" && n.Title.Contains("Ilha Tropical"));
+    }
+
+    [Fact]
+    public async Task AnOfferedIslandStaysWithItsOwnerUntilTheOtherPersonAccepts()
+    {
+        var parcel = Claim("Minha");
+        var offer = await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default); Assert.True(offer.Ok, offer.Error);
+        Assert.Equal((_seller, _buyer), (Stored().OwnerUserId, Stored().TransferToUserId)); Assert.Equal(_seller, _db.IslandParcels.AsNoTracking().Single(p => p.Id == parcel.Id).OwnerUserId);
+        Assert.Contains(_db.PropertyNotices.AsNoTracking(), n => n.UserId == _buyer && n.Kind == "island_transfer_offer");
+        // while it waits: no second offer, no market, nobody else answers
+        Assert.Equal("transfer_pending", (await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "carla", _clock, default)).Error);
+        Assert.Equal("transfer_pending", (await Sell()).Error);
+        Assert.Equal("transfer_pending", (await IslandCommerce.OfferForRentAsync(_db, _island.Id, _seller, new RentOffer(100, 30, 1, 3, 0, 3, false), _clock, default)).Error);
+        Assert.Equal("no_transfer", (await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _other, _clock, default)).Error);
+        Assert.Equal("no_transfer", (await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _seller, _clock, default)).Error); // the giver cannot accept their own gift
+        Assert.Equal("forbidden", (await IslandCommerce.CancelTransferAsync(_db, _island.Id, _buyer, _clock, default)).Error);
+        var accepted = await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _buyer, _clock, default); Assert.True(accepted.Ok, accepted.Error);
+        Assert.Equal((_buyer, (Guid?)null), (Stored().OwnerUserId, Stored().TransferToUserId)); Assert.Equal(_buyer, _db.IslandParcels.AsNoTracking().Single(p => p.Id == parcel.Id).OwnerUserId);
+        Assert.Contains(_db.PropertyNotices.AsNoTracking(), n => n.UserId == _seller && n.Kind == "island_given");
+        Assert.Equal("no_transfer", (await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _buyer, _clock, default)).Error); // once
+    }
+
+    [Fact]
+    public async Task AnOfferCanBeTakenBackTurnedDownOrRunOut()
+    {
+        Assert.Equal("no_transfer", (await IslandCommerce.CancelTransferAsync(_db, _island.Id, _seller, _clock, default)).Error);
+        Assert.True((await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Ok);
+        Assert.True((await IslandCommerce.CancelTransferAsync(_db, _island.Id, _seller, _clock, default)).Ok);
+        Assert.Null(Stored().TransferToUserId); Assert.Equal("no_transfer", (await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _buyer, _clock, default)).Error);
+        Assert.Contains(_db.PropertyNotices.AsNoTracking(), n => n.UserId == _buyer && n.Kind == "island_transfer_cancelled");
+
+        Assert.True((await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Ok);
+        Assert.Equal("no_transfer", (await IslandCommerce.DeclineTransferAsync(_db, _island.Id, _other, _clock, default)).Error);
+        Assert.True((await IslandCommerce.DeclineTransferAsync(_db, _island.Id, _buyer, _clock, default)).Ok);
+        Assert.Equal((_seller, (Guid?)null), (Stored().OwnerUserId, Stored().TransferToUserId)); Assert.Contains(_db.PropertyNotices.AsNoTracking(), n => n.UserId == _seller && n.Kind == "island_transfer_declined");
+
+        Assert.True((await IslandCommerce.TransferAsync(_db, _island.Id, _seller, "bruno", _clock, default)).Ok);
+        _clock.Now = _clock.Now.Add(IslandCommerce.TransferWindow).AddMinutes(1); // nobody answered
+        Assert.False(IslandCommerce.HasPendingTransfer(Stored(), _clock.Now));
+        Assert.Equal("transfer_expired", (await IslandCommerce.AcceptTransferAsync(_db, _island.Id, _buyer, _clock, default)).Error); Assert.Equal(_seller, Stored().OwnerUserId);
+        Assert.True((await Sell()).Ok, "an old offer does not hold the island back"); // the owner is free again to sell
     }
 
     // ---- renting ---------------------------------------------------------------------------------------------------------------------

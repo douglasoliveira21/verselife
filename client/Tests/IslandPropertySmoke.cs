@@ -18,14 +18,14 @@ public partial class IslandPropertySmoke : Node3D
     {
         public bool IsOwner = true, IsTenant, Welcome, Gone;
         public bool Down = false;
-        public long? Sale, Rent; public int Days = 30; public bool LeaseLive; public string Owner = "AliceVerse";
+        public long? Sale, Rent; public int Days = 30; public bool LeaseLive; public string Owner = "AliceVerse"; public string? Pending; public bool ForMe;
         public readonly List<string> Calls = [];
         public string RulesAccess = "public", RulesBuild = "owner"; public bool RulesScripts, RulesVoice = true, RulesMedia = true; public int? RulesBack; public bool RulesApplied;
         private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
         private object View() => new
         {
-            rules = new { accessMode = RulesAccess, buildMode = RulesBuild, allowScripts = RulesScripts, allowVoice = RulesVoice, allowMedia = RulesMedia, autoReturnMinutes = RulesBack }, canEditRules = IsOwner, islandId = Island, name = "Ilha Tropical", size = 256, region = "full", ownerId = Guid.NewGuid(), owner = Owner, createdAt = DateTimeOffset.UtcNow.AddDays(-30), parcels = 6, hosting = IsOwner ? new { plan = "Plano Ouro", status = "active", expiresAt = DateTimeOffset.UtcNow.AddDays(10), recoveryUntil = DateTimeOffset.UtcNow.AddDays(17), maxPlayers = 80, maxObjects = 20000 } : null, isOwner = IsOwner, isTenant = IsTenant, isWelcome = Welcome,
+            rules = new { accessMode = RulesAccess, buildMode = RulesBuild, allowScripts = RulesScripts, allowVoice = RulesVoice, allowMedia = RulesMedia, autoReturnMinutes = RulesBack }, canEditRules = IsOwner, transfer = Pending is null ? null : new { to = Pending, expiresAt = DateTimeOffset.UtcNow.AddDays(7), forMe = ForMe }, islandId = Island, name = "Ilha Tropical", size = 256, region = "full", ownerId = Guid.NewGuid(), owner = Owner, createdAt = DateTimeOffset.UtcNow.AddDays(-30), parcels = 6, hosting = IsOwner ? new { plan = "Plano Ouro", status = "active", expiresAt = DateTimeOffset.UtcNow.AddDays(10), recoveryUntil = DateTimeOffset.UtcNow.AddDays(17), maxPlayers = 80, maxObjects = 20000 } : null, isOwner = IsOwner, isTenant = IsTenant, isWelcome = Welcome,
             sale = Sale is { } s ? new { price = s, exclusive = false, includeObjects = true, description = "" } : null,
             rentOffer = Rent is { } r ? new { price = r, periodDays = Days, minPeriods = 1, maxPeriods = 6, deposit = 0L, graceDays = 3 } : null,
             lease = LeaseLive ? new { id = Lease, tenant = "Bruno", landlord = Owner, price = 5000L, periodDays = 30, status = "active", startsAt = DateTimeOffset.UtcNow.AddDays(-5), expiresAt = DateTimeOffset.UtcNow.AddDays(25), deposit = 500L } : null,
@@ -41,10 +41,13 @@ public partial class IslandPropertySmoke : Node3D
             var json = body is null ? null : JsonNode.Parse(body)!.AsObject();
             (long, string) Ok() => (200, "{}");
             if (method == "GET" && tail == "") return Task.FromResult(Gone ? (404L, "") : (200L, JsonSerializer.Serialize(View(), Web)));
+            if (tail is "/transfer/accept" or "/transfer/decline") { if (!ForMe) return Task.FromResult<(long, string)>((409, "{\"error\":\"no_transfer\"}")); Pending = null; if (tail.EndsWith("accept", StringComparison.Ordinal)) { IsOwner = true; ForMe = false; Owner = "Você"; } return Task.FromResult(Ok()); }
             if (!IsOwner && !IsTenant) return Task.FromResult<(long, string)>((403, "{\"error\":\"forbidden\"}"));
             if (tail == "/sale") { if (Welcome) return Task.FromResult<(long, string)>((400, "{\"error\":\"welcome_island\"}")); if (method == "DELETE") Sale = null; else { Sale = json!["price"]!.GetValue<long>(); Rent = null; } return Task.FromResult(Ok()); }
             if (tail == "/rental-offer") { if (method == "DELETE") Rent = null; else { Rent = json!["pricePerPeriod"]!.GetValue<long>(); Days = json["periodDays"]!.GetValue<int>(); Sale = null; } return Task.FromResult(Ok()); }
-            if (tail == "/transfer") { var name = json!["name"]!.GetValue<string>(); if (name == "ninguem") return Task.FromResult<(long, string)>((400, "{\"error\":\"person_not_found\"}")); if (Sale is not null) return Task.FromResult<(long, string)>((409, "{\"error\":\"for_sale\"}")); Owner = name; IsOwner = false; return Task.FromResult(Ok()); }
+            if (tail == "/transfer" && method == "DELETE") { Pending = null; return Task.FromResult(Ok()); }
+            if (tail == "/transfer") { var name = json!["name"]!.GetValue<string>(); if (name == "ninguem") return Task.FromResult<(long, string)>((400, "{\"error\":\"person_not_found\"}")); if (Sale is not null) return Task.FromResult<(long, string)>((409, "{\"error\":\"for_sale\"}")); Pending = name; return Task.FromResult(Ok()); }
+            if (tail == "/transfer" && method == "DELETE") { Pending = null; return Task.FromResult(Ok()); }
             if (tail.EndsWith("/renew", StringComparison.Ordinal)) return Task.FromResult(Ok());
             if (tail.EndsWith("/end", StringComparison.Ordinal)) { LeaseLive = false; IsTenant = false; return Task.FromResult(Ok()); }
             return Task.FromResult<(long, string)>((404, "{}"));
@@ -88,8 +91,17 @@ public partial class IslandPropertySmoke : Node3D
 
             // --- handing over -----------------------------------------------------------------------------------------------------------------
             Require(!await page.TransferForTesting("ninguem"), "an unknown person is refused"); Require(notes.Last().Contains("Não encontrei ninguém"), $"in words (got {notes.Last()})");
-            Require(await page.TransferForTesting("carla"), "handing over works"); await Frames(2);
-            Require(!page.IsOwner && page.TextForTesting.Contains("carla") && !page.HasButtonForTesting("Colocar Ilha à Venda") && page.TextForTesting.Contains("Você pode ver as informações"), "after the gift the person only reads");
+            Require(await page.TransferForTesting("carla"), "offering the island works"); await Frames(2);
+            Require(page.IsOwner && page.TextForTesting.Contains("Oferecida de presente a carla") && page.HasButtonForTesting("Cancelar Transferência") && !page.HasButtonForTesting("Colocar Ilha à Venda") && !page.HasButtonForTesting("Transferir Propriedade"), $"the island is still the owner's, waiting for an answer (got {page.TextForTesting})");
+            Require(await page.CancelTransferForTesting(), "the offer can be taken back"); await Frames(2); server.Pending = null;
+            Require(page.HasButtonForTesting("Colocar Ilha à Venda") && page.ButtonEnabledForTesting("Transferir Propriedade") && !page.TextForTesting.Contains("Oferecida de presente"), "and the island is free again");
+            // the other person looks at the same island
+            server.Pending = "AliceVerse"; server.ForMe = true; server.IsOwner = false; await page.LoadAsync(); await Frames(2);
+            Require(page.HasButtonForTesting("Aceitar Ilha") && page.HasButtonForTesting("Recusar") && page.TextForTesting.Contains("quer te dar esta ilha"), $"the person offered the island can accept or turn it down (got {page.TextForTesting})");
+            Require(await page.DeclineTransferForTesting(), "turning it down works"); await Frames(2); server.ForMe = true; server.Pending = "AliceVerse";
+            await page.LoadAsync(); Require(await page.AcceptTransferForTesting(), "accepting works"); await Frames(2);
+            Require(page.IsOwner && !page.TextForTesting.Contains("quer te dar") && server.Pending is null, "after accepting the island is theirs");
+            server.IsOwner = false; server.Owner = "carla"; await page.LoadAsync(); await Frames(2); Require(!page.IsOwner && !page.HasButtonForTesting("Colocar Ilha à Venda"), "somebody else's island is only read");
 
             // --- a rented island ---------------------------------------------------------------------------------------------------------------
             server.IsOwner = true; server.Owner = "AliceVerse"; server.LeaseLive = true; await page.LoadAsync(); await Frames(2);

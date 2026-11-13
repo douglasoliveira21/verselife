@@ -1936,6 +1936,14 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("real")
                         .HasColumnName("spawn_z");
 
+                    b.Property<DateTimeOffset?>("TransferExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("transfer_expires_at");
+
+                    b.Property<Guid?>("TransferToUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transfer_to_user_id");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");

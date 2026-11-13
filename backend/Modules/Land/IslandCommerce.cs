@@ -47,6 +47,7 @@ public static class IslandCommerce
         if (offer.Price is < 1 or > MaxPrice) return CommerceResult.Fail("bad_price");
         if (offer.BuyerUserId == actor) return CommerceResult.Fail("bad_buyer");
         if (await HasLiveLeaseAsync(db, islandId, ct)) return CommerceResult.Fail("rented");
+        if (HasPendingTransfer(island, clock.GetUtcNow())) return CommerceResult.Fail("transfer_pending"); // the island is already promised to somebody
         var now = clock.GetUtcNow(); var description = (offer.Description ?? string.Empty).Trim(); if (description.Length > 2000) description = description[..2000];
         island.SalePrice = offer.Price; island.SaleBuyerUserId = offer.BuyerUserId; island.SaleIncludesObjects = offer.IncludeObjects; island.SaleDescription = description; island.RentPrice = null; Touch(island, now);
         Record(db, islandId, "sale_listed", actor, null, offer.Price, new { exclusive = offer.BuyerUserId is not null, offer.IncludeObjects }, null, now);
@@ -118,7 +119,20 @@ public static class IslandCommerce
         return saved;
     }
 
-    /// <summary>A gift: the owner hands the island, with its parcels and objects, to another person, for nothing. Not while it is rented or for sale.</summary>
+    // ---- handing over (a gift that the other person has to accept) ----------------------------------------------------------------
+
+    /// <summary>How long the other person has to answer.</summary>
+    public static readonly TimeSpan TransferWindow = TimeSpan.FromDays(7);
+
+    /// <summary>Whether the island has a transfer waiting for an answer (one that ran out counts as none).</summary>
+    public static bool HasPendingTransfer(Island island, DateTimeOffset now) => island.TransferToUserId is not null && island.TransferExpiresAt > now;
+
+    private static void ClearTransfer(Island island) { island.TransferToUserId = null; island.TransferExpiresAt = null; }
+
+    /// <summary>
+    /// The owner offers the island, with its parcels and objects, to another person, for nothing. Nothing moves yet: the person has <see cref="TransferWindow"/> to accept or turn it down,
+    /// and the owner can take the offer back. Not while it is rented or for sale, and the island cannot be put on the market while an offer waits.
+    /// </summary>
     public static async Task<CommerceResult> TransferAsync(LifeVerseDbContext db, Guid islandId, Guid actor, string? toName, TimeProvider clock, CancellationToken ct)
     {
         var island = await IslandAsync(db, islandId, ct); if (island is null) return CommerceResult.Fail("not_found");
@@ -130,12 +144,54 @@ public static class IslandCommerce
         if (island.SalePrice is not null) return CommerceResult.Fail("for_sale");
         if (await HasLiveLeaseAsync(db, islandId, ct)) return CommerceResult.Fail("rented");
         var now = clock.GetUtcNow();
-        var (parcels, moved, _) = await HandOverAsync(db, island, actor, target, true, now, ct);
-        Record(db, islandId, "transfer", actor, target, 0, new { parcels, objectsMoved = moved }, null, now);
-        var giver = await PropertyNotices.NameAsync(db, actor, ct);
-        PropertyNotices.Add(db, target, "island_received", $"Você recebeu a ilha {island.Name}", $"{giver} transferiu a ilha para você, com {parcels} terreno(s) e os objetos dele. Ela já está em Minhas Propriedades.", $"island_received:{islandId}:{now.UtcTicks}", now);
-        PropertyNotices.Add(db, actor, "island_given", $"Você transferiu a ilha {island.Name}", $"Novo proprietário: {await PropertyNotices.NameAsync(db, target, ct)}. A ilha, os terrenos e os objetos seus passaram para ele.", $"island_given:{islandId}:{now.UtcTicks}", now);
-        IslandAudit.Add(db, islandId, actor, "administração", "island_transferred", "A propriedade da ilha foi transferida", "Propriedade", new { owner = actor }, new { owner = target, parcels }, now);
+        if (HasPendingTransfer(island, now)) return CommerceResult.Fail("transfer_pending");
+        island.TransferToUserId = target; island.TransferExpiresAt = now + TransferWindow; island.RentPrice = null; Touch(island, now);
+        Record(db, islandId, "transfer_offered", actor, target, 0, new { expiresAt = island.TransferExpiresAt }, null, now);
+        IslandAudit.Add(db, islandId, actor, "administração", "island_transfer_offered", "A ilha foi oferecida em transferência", "Propriedade", null, new { to = target, expiresAt = island.TransferExpiresAt }, now);
+        PropertyNotices.Add(db, target, "island_transfer_offer", $"{await PropertyNotices.NameAsync(db, actor, ct)} quer transferir a ilha {island.Name} para você", $"É um presente: a ilha, os terrenos e os objetos dele passam para você. Aceite ou recuse em Minhas Propriedades até {island.TransferExpiresAt:dd/MM/yyyy HH:mm}.", $"island_transfer_offer:{islandId}:{now.UtcTicks}", now);
+        return await SaveAsync(db, ct, new { islandId, expiresAt = island.TransferExpiresAt });
+    }
+
+    /// <summary>The owner takes the offer back.</summary>
+    public static async Task<CommerceResult> CancelTransferAsync(LifeVerseDbContext db, Guid islandId, Guid actor, TimeProvider clock, CancellationToken ct)
+    {
+        var island = await IslandAsync(db, islandId, ct); if (island is null) return CommerceResult.Fail("not_found");
+        if (island.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        var now = clock.GetUtcNow(); if (island.TransferToUserId is not { } target) return CommerceResult.Fail("no_transfer");
+        var live = HasPendingTransfer(island, now); ClearTransfer(island); Touch(island, now);
+        Record(db, islandId, "transfer_cancelled", actor, target, 0, new { }, null, now);
+        IslandAudit.Add(db, islandId, actor, "administração", "island_transfer_cancelled", "A transferência da ilha foi retirada", "Propriedade", new { to = target }, null, now);
+        if (live) PropertyNotices.Add(db, target, "island_transfer_cancelled", $"A transferência da ilha {island.Name} foi retirada", "O dono desistiu de oferecer a ilha a você.", $"island_transfer_cancelled:{islandId}:{now.UtcTicks}", now);
+        return await SaveAsync(db, ct, new { islandId });
+    }
+
+    /// <summary>The person the island was offered to turns it down.</summary>
+    public static async Task<CommerceResult> DeclineTransferAsync(LifeVerseDbContext db, Guid islandId, Guid actor, TimeProvider clock, CancellationToken ct)
+    {
+        var island = await IslandAsync(db, islandId, ct); if (island is null) return CommerceResult.Fail("not_found");
+        var now = clock.GetUtcNow(); if (island.TransferToUserId != actor) return CommerceResult.Fail("no_transfer");
+        ClearTransfer(island); Touch(island, now);
+        Record(db, islandId, "transfer_declined", actor, island.OwnerUserId, 0, new { }, null, now);
+        IslandAudit.Add(db, islandId, actor, "administração", "island_transfer_declined", "A transferência da ilha foi recusada", "Propriedade", null, new { by = actor }, now);
+        PropertyNotices.Add(db, island.OwnerUserId, "island_transfer_declined", $"{await PropertyNotices.NameAsync(db, actor, ct)} recusou a ilha {island.Name}", "A ilha continua sua.", $"island_transfer_declined:{islandId}:{now.UtcTicks}", now);
+        return await SaveAsync(db, ct, new { islandId });
+    }
+
+    /// <summary>The person the island was offered to accepts: only now does the title move, with the parcels, the objects and the hosting plan.</summary>
+    public static async Task<CommerceResult> AcceptTransferAsync(LifeVerseDbContext db, Guid islandId, Guid actor, TimeProvider clock, CancellationToken ct)
+    {
+        var island = await IslandAsync(db, islandId, ct); if (island is null) return CommerceResult.Fail("not_found");
+        var now = clock.GetUtcNow(); if (island.TransferToUserId != actor) return CommerceResult.Fail("no_transfer");
+        if (!HasPendingTransfer(island, now)) { ClearTransfer(island); await SaveAsync(db, ct); return CommerceResult.Fail("transfer_expired"); }
+        if (island.SalePrice is not null) return CommerceResult.Fail("for_sale");
+        if (await HasLiveLeaseAsync(db, islandId, ct)) return CommerceResult.Fail("rented");
+        var giver = island.OwnerUserId;
+        ClearTransfer(island);
+        var (parcels, moved, _) = await HandOverAsync(db, island, giver, actor, true, now, ct);
+        Record(db, islandId, "transfer", giver, actor, 0, new { parcels, objectsMoved = moved }, null, now);
+        IslandAudit.Add(db, islandId, actor, "administração", "island_transferred", "A propriedade da ilha foi transferida", "Propriedade", new { owner = giver }, new { owner = actor, parcels }, now);
+        PropertyNotices.Add(db, actor, "island_received", $"Você recebeu a ilha {island.Name}", $"{await PropertyNotices.NameAsync(db, giver, ct)} transferiu a ilha para você, com {parcels} terreno(s) e os objetos dele. Ela já está em Minhas Propriedades.", $"island_received:{islandId}:{now.UtcTicks}", now);
+        PropertyNotices.Add(db, giver, "island_given", $"{await PropertyNotices.NameAsync(db, actor, ct)} aceitou a ilha {island.Name}", "A ilha, os terrenos e os objetos seus passaram para ele.", $"island_given:{islandId}:{now.UtcTicks}", now);
         return await SaveAsync(db, ct, new { islandId, parcels });
     }
 
@@ -149,6 +205,7 @@ public static class IslandCommerce
         if (offer.PricePerPeriod is < 1 or > MaxPrice || offer.DepositCoins is < 0 or > MaxPrice) return CommerceResult.Fail("bad_price");
         if (offer.PeriodDays is < 1 or > 365 || offer.MinPeriods < 1 || offer.MaxPeriods < offer.MinPeriods || offer.MaxPeriods > 120 || offer.GraceDays is < 0 or > 60) return CommerceResult.Fail("bad_terms");
         if (await HasLiveLeaseAsync(db, islandId, ct)) return CommerceResult.Fail("rented");
+        if (HasPendingTransfer(island, clock.GetUtcNow())) return CommerceResult.Fail("transfer_pending");
         var now = clock.GetUtcNow();
         island.RentPrice = offer.PricePerPeriod; island.RentPeriodDays = offer.PeriodDays; island.RentMinPeriods = offer.MinPeriods; island.RentMaxPeriods = offer.MaxPeriods; island.RentDeposit = offer.DepositCoins; island.RentGraceDays = offer.GraceDays; island.RentAutoRenewAllowed = offer.AutoRenewAllowed;
         island.SalePrice = null; island.SaleBuyerUserId = null; Touch(island, now);

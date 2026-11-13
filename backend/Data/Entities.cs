@@ -215,6 +215,9 @@ public sealed class Island
     public int RentGraceDays { get; set; } = 3;
     /// <summary>Whether a renter may ask for the contract to renew by itself (charging one more period when it runs out).</summary>
     public bool RentAutoRenewAllowed { get; set; }
+    // ---- a transfer waiting for the other person to say yes (null: none). The title only moves when they accept before it runs out.
+    public Guid? TransferToUserId { get; set; }
+    public DateTimeOffset? TransferExpiresAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }

@@ -102,6 +102,20 @@ public sealed class LandPropertiesTests : IDisposable
     }
 
     [Fact]
+    public async Task AnIslandOfferedAsAGiftShowsToBothSides_UntilItRunsOut()
+    {
+        Assert.Equal(0, (await Mine(_bruno)).GetProperty("incomingTransfers").GetArrayLength());
+        Claim(_mine, _alice, "Casa");
+        Assert.True((await IslandCommerce.TransferAsync(_db, _mine.Id, _alice, "bruno", _clock, default)).Ok);
+        var incoming = (await Mine(_bruno)).GetProperty("incomingTransfers"); Assert.Equal(1, incoming.GetArrayLength());
+        Assert.Equal(("Ilha da Alice", "alice", 1), (incoming[0].GetProperty("name").GetString(), incoming[0].GetProperty("from").GetString(), incoming[0].GetProperty("parcels").GetInt32()));
+        Assert.Equal("bruno", (await Mine(_alice)).GetProperty("islands")[0].GetProperty("transfer").GetProperty("to").GetString()); // the giver sees who it waits for
+        Assert.Equal(0, (await Mine(_carla)).GetProperty("incomingTransfers").GetArrayLength());
+        _clock.Now = _clock.Now.AddDays(8);
+        Assert.Equal(0, (await Mine(_bruno)).GetProperty("incomingTransfers").GetArrayLength()); Assert.Equal(JsonValueKind.Null, (await Mine(_alice)).GetProperty("islands")[0].GetProperty("transfer").ValueKind);
+    }
+
+    [Fact]
     public async Task AnIslandShowsThePlatformPlanThatHostsIt()
     {
         Assert.Equal(JsonValueKind.Null, (await Mine(_alice)).GetProperty("islands")[0].GetProperty("hosting").ValueKind); // no plan: nothing to show

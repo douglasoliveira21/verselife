@@ -29,6 +29,12 @@ public static class IslandRealEstate
             await Run(c, islandId, db, ct, user => IslandCommerce.BuyAsync(db, storage, islandId, user, r.IdempotencyKey, r.ExpectedPrice, t, ct)));
         group.MapPost("/transfer", async (Guid islandId, TransferRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => IslandCommerce.TransferAsync(db, islandId, user, r.Name, t, ct)));
+        group.MapDelete("/transfer", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => IslandCommerce.CancelTransferAsync(db, islandId, user, t, ct)));
+        group.MapPost("/transfer/accept", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => IslandCommerce.AcceptTransferAsync(db, islandId, user, t, ct)));
+        group.MapPost("/transfer/decline", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => IslandCommerce.DeclineTransferAsync(db, islandId, user, t, ct)));
         group.MapPost("/rental-offer", async (Guid islandId, RentOfferRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => IslandCommerce.OfferForRentAsync(db, islandId, user, new RentOffer(r.PricePerPeriod, r.PeriodDays, r.MinPeriods, r.MaxPeriods, r.DepositCoins, r.GraceDays, r.AutoRenewAllowed), t, ct)));
         group.MapDelete("/rental-offer", async (Guid islandId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
@@ -63,7 +69,7 @@ public static class IslandRealEstate
     public static async Task<object> ViewOfAsync(LifeVerseDbContext db, Island island, Guid viewer, bool staff, DateTimeOffset now, CancellationToken ct)
     {
         var lease = await db.IslandLeases.AsNoTracking().Where(l => l.IslandId == island.Id && (l.Status == "active" || l.Status == "grace")).OrderByDescending(l => l.CreatedAt).FirstOrDefaultAsync(ct);
-        var people = new List<Guid> { island.OwnerUserId }; if (lease is not null) people.Add(lease.TenantUserId);
+        var people = new List<Guid> { island.OwnerUserId }; if (lease is not null) people.Add(lease.TenantUserId); if (island.TransferToUserId is { } pendingTo) people.Add(pendingTo);
         var history = staff ? await db.IslandTransactions.AsNoTracking().Where(t => t.IslandId == island.Id).OrderByDescending(t => t.CreatedAt).Take(30).ToListAsync(ct) : [];
         people.AddRange(history.SelectMany(t => new[] { t.FromUserId, t.ToUserId }).Where(g => g is not null).Select(g => g!.Value));
         var names = await LandOverview.NamesAsync(db, people, ct); string Name(Guid id) => names.GetValueOrDefault(id, "—");
@@ -73,6 +79,7 @@ public static class IslandRealEstate
         var host = island.OwnerUserId == viewer ? await (from r in db.IslandRentals.AsNoTracking() join plan in db.IslandRentalPlans.AsNoTracking() on r.PlanId equals plan.Id where r.IslandId == island.Id && r.Status == "active" orderby r.ExpiresAt descending select new { r.ExpiresAt, r.RecoveryUntil, Plan = plan.Name, plan.MaxPlayers, plan.MaxObjects }).FirstOrDefaultAsync(ct) : null;
         return new
         {
+            transfer = IslandCommerce.HasPendingTransfer(island, now) && (staff || island.TransferToUserId == viewer) ? new { to = Name(island.TransferToUserId!.Value), expiresAt = island.TransferExpiresAt, forMe = island.TransferToUserId == viewer } : null,
             rules = IslandRules.View(IslandRules.Read(island)), canEditRules = staff,
             hosting = host is null ? null : new { plan = host.Plan, status = host.ExpiresAt > now ? "active" : "recovery", expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects },
             islandId = island.Id, name = island.Name, size = island.Size, region = IslandCommerce.RegionOf(island), ownerId = island.OwnerUserId, owner = Name(island.OwnerUserId), createdAt = island.CreatedAt, parcels,

@@ -39,9 +39,11 @@ public static class LandProperties
         var islandPayments = await db.IslandTransactions.AsNoTracking().Where(t => (t.FromUserId == me || t.ToUserId == me) && (t.Type == "sale" || t.Type == "rent_start" || t.Type == "rent_payment" || t.Type == "rent_end")).OrderByDescending(t => t.CreatedAt).Take(200).ToListAsync(ct);
         var moreIslandIds = leasesAsTenant.Select(l => l.IslandId).Concat(leasesAsLandlord.Select(l => l.IslandId)).Concat(islandPayments.Select(t => t.IslandId)).Where(id => !islandById.ContainsKey(id)).Distinct().ToList();
         foreach (var extraIsland in await db.Islands.AsNoTracking().Where(i => moreIslandIds.Contains(i.Id)).ToListAsync(ct)) islandById[extraIsland.Id] = extraIsland;
+        var incoming = await db.Islands.AsNoTracking().Where(i => i.TransferToUserId == me && i.TransferExpiresAt > now && i.DeletedAt == null).OrderBy(i => i.Name).ToListAsync(ct);
+        var incomingParcels = incoming.Count == 0 ? [] : await db.IslandParcels.AsNoTracking().Where(p => p.DeletedAt == null && incoming.Select(i => i.Id).Contains(p.IslandId) && p.GroupId == null).GroupBy(p => new { p.IslandId, p.OwnerUserId }).Select(g => new { g.Key.IslandId, g.Key.OwnerUserId, Count = g.Count() }).ToListAsync(ct);
         var people = rentalsAsTenant.SelectMany(r => new[] { r.LandlordUserId, r.TenantUserId }).Concat(rentalsAsLandlord.SelectMany(r => new[] { r.LandlordUserId, r.TenantUserId }))
             .Concat(payments.SelectMany(t => new[] { t.FromUserId, t.ToUserId }).Where(g => g is not null).Select(g => g!.Value)).Concat(islandPayments.SelectMany(t => new[] { t.FromUserId, t.ToUserId }).Where(g => g is not null).Select(g => g!.Value))
-            .Concat(leasesAsTenant.SelectMany(l => new[] { l.LandlordUserId, l.TenantUserId })).Concat(leasesAsLandlord.SelectMany(l => new[] { l.LandlordUserId, l.TenantUserId })).Append(me);
+            .Concat(leasesAsTenant.SelectMany(l => new[] { l.LandlordUserId, l.TenantUserId })).Concat(leasesAsLandlord.SelectMany(l => new[] { l.LandlordUserId, l.TenantUserId })).Concat(incoming.Select(i => i.OwnerUserId)).Concat(islands.Where(i => i.TransferToUserId is not null).Select(i => i.TransferToUserId!.Value)).Append(me);
         var names = await LandOverview.NamesAsync(db, people, ct);
         string Name(Guid id) => names.GetValueOrDefault(id, "—");
         string IslandName(Guid id) => islandById.TryGetValue(id, out var i) ? i.Name : "—";
@@ -63,6 +65,7 @@ public static class LandProperties
             var state = instance is null ? (i.RuntimeState is "starting" or "restarting" ? i.RuntimeState : "offline") : instance.Status == "running" ? "online" : instance.Status;
             liveLeaseByIsland.TryGetValue(i.Id, out var lease);
             return new { id = i.Id, name = i.Name, coverImageUrl = i.CoverImageUrl, region = IslandCommerce.RegionOf(i), salePrice = i.SalePrice, rentPrice = i.RentPrice, rentPeriodDays = i.RentPeriodDays, tenant = lease is null ? null : Name(lease.TenantUserId), leaseExpiresAt = lease?.ExpiresAt, leaseId = lease?.Id, state, visitors = instance?.PlayerCount ?? 0, maxPlayers = i.MaxPlayers, objects = counts.GetValueOrDefault(i.Id), maxObjects = LandBudget.IslandObjects(i), size = i.Size, isPublic = i.IsPublic, parcels = parcelsPerIsland.GetValueOrDefault(i.Id), createdAt = i.CreatedAt,
+                transfer = IslandCommerce.HasPendingTransfer(i, now) ? new { to = Name(i.TransferToUserId!.Value), expiresAt = i.TransferExpiresAt } : null,
                 hosting = hostingByIsland.TryGetValue(i.Id, out var host) ? new { plan = host.Plan, status = host.ExpiresAt > now ? "active" : "recovery", expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects } : null };
         }).ToList();
 
@@ -134,6 +137,7 @@ public static class LandProperties
         return new
         {
             summary = new { total = islandRows.Count + parcelRows.Count + liveTenant.Count + leaseTenant.Count, inUse, rentedOut, monthlyRevenue = monthly, expiringSoon = soon, islands = islandRows.Count, parcels = parcelRows.Count, rentedIn = liveTenant.Count + leaseTenant.Count },
+            incomingTransfers = incoming.Select(i => new { islandId = i.Id, name = i.Name, from = Name(i.OwnerUserId), parcels = incomingParcels.Where(g => g.IslandId == i.Id && g.OwnerUserId == i.OwnerUserId).Sum(g => g.Count), expiresAt = i.TransferExpiresAt }),
             islands = islandRows, parcels = parcelRows, contracts, listings, payments = paymentRows,
         };
     }

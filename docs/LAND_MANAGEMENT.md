@@ -190,7 +190,7 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 - **Testes de concorrência em PostgreSQL real**: exigem credenciais; os testes de Postgres ficam ignorados sem elas.
 - **"Criar objetos" / "Permitir visitantes"**: redundantes com as permissões de construção e o modo de acesso existentes.
 
-Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase81.
+Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase82.
 
 ## Expandir e reduzir parcela
 
@@ -236,4 +236,13 @@ A transferência (presente: a ilha, os terrenos do dono e os objetos dele passam
 - **Avisos** (Minhas Propriedades): quem recebe vê "Você recebeu a ilha …" e quem entrega vê "Você transferiu a ilha …".
 - **Confirmação mais segura**: o diálogo diz o nome da ilha, quantos terrenos e que a hospedagem vai junto, e só libera "Transferir" depois de digitar o nome da ilha.
 - Continua valendo: só o dono transfere; não com a ilha à venda, alugada, nem a ilha de boas-vindas; a pessoa precisa existir; ficam registros no histórico da ilha e na auditoria.
-- **Decisão em aberto**: a pessoa que recebe não precisa aceitar (é um presente direto, como já era). Se isso virar problema (presentes indesejados), o caminho é uma transferência pendente que o destinatário aceita ou recusa.
+
+## Aceitar a transferência da ilha
+
+A transferência deixou de ser imediata: agora é uma **oferta que a outra pessoa precisa aceitar**.
+
+- **Oferecer** (`POST real-estate/transfer {name}`): grava `Island.TransferToUserId` e `TransferExpiresAt` (7 dias; migração `Phase82IslandTransferOffer`). Nada muda de dono ainda. A pessoa recebe um aviso. Vale as mesmas regras de antes (só o dono, não à venda, não alugada, não a ilha de boas-vindas).
+- **Enquanto a oferta espera**: a ilha continua do dono, mas não pode ser anunciada para venda nem aluguel (`transfer_pending`) nem ser oferecida a outra pessoa; o dono pode **cancelar** (`DELETE real-estate/transfer`).
+- **Aceitar** (`POST .../transfer/accept`) só vale para a pessoa escolhida e antes do prazo (`transfer_expired` depois). É só então que a ilha, os terrenos do dono, os objetos e o plano de hospedagem mudam de dono, com registro no histórico e na auditoria e avisos para os dois. **Recusar** (`.../transfer/decline`) devolve a ilha ao estado normal e avisa o dono.
+- Uma oferta vencida deixa de contar sozinha (o dono pode vender de novo); ninguém precisa limpar nada.
+- **Cliente**: Minhas Propriedades ganhou a seção **Ilhas Oferecidas a Você** (Aceitar com confirmação, Recusar) e mostra no cartão da ilha para quem ofereceu "Oferecida a … de presente, espera a resposta". Na aba **Propriedade**, o dono vê o pedido pendente e **Cancelar Transferência**; quem recebeu, se puder abrir a ilha, também vê Aceitar Ilha / Recusar. `GET properties/mine` traz `incomingTransfers`.
