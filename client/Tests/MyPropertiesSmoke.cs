@@ -22,6 +22,7 @@ public partial class MyPropertiesSmoke : Node3D
         public bool Down, Gone; public readonly List<string> Calls = [];
         public readonly List<(Guid Id, string Title, bool Read)> Notices = [];
         public readonly List<(Guid Island, string Name, string From)> Incoming = [];
+        public readonly List<(Guid Island, Guid Parcel, string Name, string From)> IncomingParcels = [];
         public bool TenantRentalLive = true; public Guid TenantRental = Guid.NewGuid(); public Guid TenantParcel = Guid.NewGuid();
         private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
         private static string IslandName(Guid id) => id == IslandA ? "Ilha Tropical" : "Ilha Serenidade";
@@ -41,7 +42,7 @@ public partial class MyPropertiesSmoke : Node3D
             var monthly = Mine.Where(p => p.Tenant is not null).Sum(p => (long)(p.Rent!.Value * 30.0 / p.Days));
             return new
             {
-                incomingTransfers = Incoming.Select(t => new { islandId = t.Island, name = t.Name, from = t.From, parcels = 3, expiresAt = now.AddDays(6) }),
+                incomingTransfers = Incoming.Select(t => (object)new { target = "island", parcelId = Guid.Empty, island = t.Name, code = "", islandId = t.Island, name = t.Name, from = t.From, parcels = 3, expiresAt = now.AddDays(6) }).Concat(IncomingParcels.Select(t => (object)new { target = "parcel", parcelId = t.Parcel, island = IslandName(t.Island), code = "L-55", islandId = t.Island, name = t.Name, from = t.From, parcels = 1, expiresAt = now.AddDays(6) })),
                 summary = new { total = 1 + Mine.Count + (inn is null ? 0 : 1), inUse = 1 + Mine.Count(p => p.Tenant is null) + (inn is null ? 0 : 1), rentedOut = Mine.Count(p => p.Tenant is not null), monthlyRevenue = monthly, expiringSoon = (inn is null ? 0 : 1) },
                 islands = new[] { new { id = IslandA, name = "Ilha Tropical", coverImageUrl = (string?)null, state = "online", visitors = 12, maxPlayers = 60, objects = 12450, maxObjects = 30000, size = 256, region = "full", salePrice = IslandSale, rentPrice = IslandRent, rentPeriodDays = IslandDays, isPublic = true, parcels = Mine.Count(p => p.Island == IslandA), createdAt = now, hosting = new { plan = "Plano Ouro", status = "active", expiresAt = now.AddDays(10), recoveryUntil = now.AddDays(17), maxPlayers = 80, maxObjects = 20000 } } },
                 parcels, contracts, listings,
@@ -59,6 +60,7 @@ public partial class MyPropertiesSmoke : Node3D
             if (path.StartsWith("/api/v1/properties/notices", StringComparison.Ordinal) && method == "GET") return Task.FromResult(Ok(new { unread = Notices.Count(n => !n.Read), items = Notices.Select(n => new { id = n.Id, kind = "rent_grace", title = n.Title, body = "Detalhes", at = DateTimeOffset.UtcNow, read = n.Read }) }));
             if (path == "/api/v1/properties/notices/read") { var ids = JsonNode.Parse(body!)!["ids"]?.AsArray().Select(x => Guid.Parse(x!.GetValue<string>())).ToHashSet(); for (var i = 0; i < Notices.Count; i++) if (ids is null || ids.Contains(Notices[i].Id)) Notices[i] = Notices[i] with { Read = true }; return Task.FromResult(Ok()); }
             var json = body is null ? null : JsonNode.Parse(body)!.AsObject();
+            if ((path.EndsWith("/transfer/accept", StringComparison.Ordinal) || path.EndsWith("/transfer/decline", StringComparison.Ordinal)) && IncomingParcels.FirstOrDefault(t => path.Contains(t.Parcel.ToString())) is { Name: not null } gift) { IncomingParcels.Remove(gift); return Task.FromResult(Ok()); }
             if (path.EndsWith("/transfer/accept", StringComparison.Ordinal) || path.EndsWith("/transfer/decline", StringComparison.Ordinal)) { var from = Incoming.FirstOrDefault(t => path.Contains(t.Island.ToString())); if (from.Name is null) return Task.FromResult<(long, string)>((409, "{\"error\":\"no_transfer\"}")); Incoming.Remove(from); return Task.FromResult(Ok()); }
             if (path.EndsWith("/real-estate/sale", StringComparison.Ordinal)) { if (method == "DELETE") IslandSale = null; else { if (IslandRent is not null) return Task.FromResult<(long, string)>((409, "{\"error\":\"conflict\"}")); IslandSale = json!["price"]!.GetValue<long>(); } return Task.FromResult(Ok()); }
             if (path.EndsWith("/real-estate/rental-offer", StringComparison.Ordinal)) { if (method == "DELETE") IslandRent = null; else { if (IslandSale is not null) return Task.FromResult<(long, string)>((409, "{\"error\":\"conflict\"}")); IslandRent = json!["pricePerPeriod"]!.GetValue<long>(); IslandDays = json["periodDays"]!.GetValue<int>(); } return Task.FromResult(Ok()); }
@@ -159,14 +161,22 @@ public partial class MyPropertiesSmoke : Node3D
             window.SetContractFilterForTesting("live"); await Frames(2); Require(window.RowsForTesting("contratos") == all - window.Data.Contracts.Count(c => !c.Live), "filter: in force");
 
             // --- an island offered as a gift --------------------------------------------------------------------------------------------------
-            window.SelectTabForTesting("ilhas"); await Frames(2); Require(!window.TextForTesting.Contains("Ilhas Oferecidas"), "nothing offered, no section");
+            window.SelectTabForTesting("ilhas"); await Frames(2); Require(!window.TextForTesting.Contains("Ofertas de Presente"), "nothing offered, no section");
             server.Incoming.Add((Guid.NewGuid(), "Ilha dos Sonhos", "Bruno")); await window.LoadAsync(); await Frames(2);
-            Require(window.Data.Incoming.Count == 1 && window.TextForTesting.Contains("Ilhas Oferecidas a Você (1)") && window.TextForTesting.Contains("Ilha dos Sonhos") && window.TextForTesting.Contains("De Bruno") && window.HasButtonForTesting("Aceitar") && window.HasButtonForTesting("Recusar"), $"the island offered to the player is shown with accept and refuse (got {window.TextForTesting})");
+            Require(window.Data.Incoming.Count == 1 && window.TextForTesting.Contains("Ofertas de Presente (1)") && window.TextForTesting.Contains("Ilha dos Sonhos") && window.TextForTesting.Contains("De Bruno") && window.HasButtonForTesting("Aceitar") && window.HasButtonForTesting("Recusar"), $"the island offered to the player is shown with accept and refuse (got {window.TextForTesting})");
             Require(await window.DeclineTransferForTesting(window.Data.Incoming[0]), "turning it down works"); await Frames(2);
-            Require(window.Data.Incoming.Count == 0 && !window.TextForTesting.Contains("Ilhas Oferecidas") && server.Calls.Any(c => c.EndsWith("/transfer/decline", StringComparison.Ordinal)), "and the offer is gone");
+            Require(window.Data.Incoming.Count == 0 && !window.TextForTesting.Contains("Ofertas de Presente") && server.Calls.Any(c => c.EndsWith("/transfer/decline", StringComparison.Ordinal)), "and the offer is gone");
             server.Incoming.Add((Guid.NewGuid(), "Ilha dos Sonhos", "Bruno")); await window.LoadAsync(); await Frames(2);
             Require(await window.AcceptTransferForTesting(window.Data.Incoming[0]), "accepting works"); await Frames(2);
             Require(window.Data.Incoming.Count == 0 && server.Calls.Any(c => c.EndsWith("/transfer/accept", StringComparison.Ordinal)), "the accept request was sent");
+
+            // --- a parcel offered as a gift ---------------------------------------------------------------------------------------------------------
+            var giftParcel = Guid.NewGuid(); server.IncomingParcels.Add((IslandB, giftParcel, "Casa na Praia", "Bruno")); await window.LoadAsync(); await Frames(2);
+            Require(window.Data.Incoming.Count == 1 && window.Data.Incoming[0].IsParcel && window.TextForTesting.Contains("L-55 — Casa na Praia") && window.TextForTesting.Contains("Ilha Serenidade · de Bruno") && window.TextForTesting.Contains("objetos que a pessoa deixou"), $"the parcel offered to the player is shown (got {window.TextForTesting})");
+            Require(await window.AcceptTransferForTesting(window.Data.Incoming[0]), "accepting the parcel works"); await Frames(2);
+            Require(window.Data.Incoming.Count == 0 && server.Calls.Any(c => c.EndsWith($"/parcels/{giftParcel}/transfer/accept", StringComparison.Ordinal)), "the accept request went to the parcel");
+            server.IncomingParcels.Add((IslandB, giftParcel, "Casa na Praia", "Bruno")); await window.LoadAsync(); await Frames(2);
+            Require(await window.DeclineTransferForTesting(window.Data.Incoming[0]) && server.Calls.Any(c => c.EndsWith($"/parcels/{giftParcel}/transfer/decline", StringComparison.Ordinal)), "turning the parcel down works"); await Frames(2);
 
             // --- notices -----------------------------------------------------------------------------------------------------------------------
             Require(window.NoticeStripForTesting.Length == 0 && window.UnreadForTesting == 0, "no notices, no strip");

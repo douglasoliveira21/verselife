@@ -63,6 +63,7 @@ public static class LandAdmin
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
         if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (LandCommerce.HasPendingTransfer(parcel, clock.GetUtcNow())) return CommerceResult.Fail("transfer_pending"); // the parcel is promised as it is
         if (await LiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
         name = (name ?? string.Empty).Trim(); if (name.Length == 0 || name.Length > 120) return CommerceResult.Fail("bad_name");
         if (await db.IslandParcels.AnyAsync(p => p.IslandId == parcel.IslandId && p.Name == name && p.DeletedAt == null, ct)) return CommerceResult.Fail("name_taken");
@@ -114,6 +115,7 @@ public static class LandAdmin
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
         if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (LandCommerce.HasPendingTransfer(parcel, clock.GetUtcNow())) return CommerceResult.Fail("transfer_pending"); // the parcel is promised as it is
         if (await LiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
         var add = addCells as HashSet<long> ?? [.. addCells];
         if (add.Count == 0) return CommerceResult.Fail("empty");
@@ -147,6 +149,7 @@ public static class LandAdmin
     {
         var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
         if (!await LandAuthority.CanManageAsync(db, parcel, actor, ct)) return CommerceResult.Fail("forbidden");
+        if (LandCommerce.HasPendingTransfer(parcel, clock.GetUtcNow())) return CommerceResult.Fail("transfer_pending"); // the parcel is promised as it is
         if (await LiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
         var remove = removeCells as HashSet<long> ?? [.. removeCells];
         if (remove.Count == 0) return CommerceResult.Fail("empty");
@@ -182,6 +185,7 @@ public static class LandAdmin
         foreach (var each in parcels) if (!await LandAuthority.CanManageAsync(db, each, actor, ct)) return CommerceResult.Fail("forbidden");
         if (parcels.Select(p => p.GroupId).Distinct().Count() > 1) return CommerceResult.Fail("mixed_owners"); // a parcel of a group never joins a personal one
         foreach (var parcel in parcels) if (await LiveRentalAsync(db, parcel.Id, ct)) return CommerceResult.Fail("rented");
+        if (parcels.Any(p => LandCommerce.HasPendingTransfer(p, clock.GetUtcNow()))) return CommerceResult.Fail("transfer_pending");
         var union = new HashSet<long>();
         foreach (var parcel in parcels) { var cells = await CellsAsync(db, parcel.Id, ct); if (cells.Count == 0) return CommerceResult.Fail("no_cells"); union.UnionWith(cells); }
         if (!LandGrid.IsContiguous(union)) return CommerceResult.Fail("not_adjacent");

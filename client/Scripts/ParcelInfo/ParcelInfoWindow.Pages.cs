@@ -184,6 +184,41 @@ public partial class ParcelInfoWindow
 
     // ---- Venda e Aluguel --------------------------------------------------------------------------------------------------------
 
+    /// <summary>Giving the parcel to another person: the offer waits for their answer. The owner offers and takes it back; the person offered to accepts or turns it down.</summary>
+    private void ShowGiftCard(JsonElement rights)
+    {
+        var pending = Obj(About, "transfer"); var forMe = pending is { } p0 && Flag(p0, "forMe");
+        if (pending is null && !(Manage && Flag(rights, "canTransfer"))) return;
+        var (card, body) = Card("Presente", "link"); _content.AddChild(card);
+        if (pending is { } wait)
+        {
+            body.AddChild(Line("Transferência:", forMe ? $"{Str(About.GetProperty("owner"), "name")} quer te dar este terreno, até {Date(wait, "expiresAt").ToLocalTime():dd/MM/yyyy HH:mm}" : $"Oferecido de presente a {Str(wait, "to")}, até {Date(wait, "expiresAt").ToLocalTime():dd/MM/yyyy HH:mm}", IslandUi.AccentSecondary));
+            var row = IslandUi.Row(8);
+            if (forMe)
+            {
+                var accept = IslandUi.Action("Aceitar Terreno", "link", IslandUi.Kind.Primary, 38); accept.Pressed += () => Ask("Aceitar terreno", IslandUi.Text("O terreno e os objetos do dono que estão nele passam a ser seus agora.", 14, IslandUi.TextSecondary, false, true), async () => await Do(Api.AcceptTransfer(IslandId, _parcel), "O terreno agora é seu."), "Aceitar"); row.AddChild(accept);
+                var decline = IslandUi.Action("Recusar", null, IslandUi.Kind.Danger, 38); decline.Pressed += () => _ = Do(Api.DeclineTransfer(IslandId, _parcel), "Você recusou o terreno."); row.AddChild(decline);
+            }
+            else if (Manage && Flag(About.GetProperty("me"), "isOwner")) { var cancel = IslandUi.Action("Cancelar Transferência", null, IslandUi.Kind.Danger, 38); cancel.Pressed += () => _ = Do(Api.CancelTransfer(IslandId, _parcel), "Transferência cancelada."); row.AddChild(cancel); }
+            body.AddChild(row); body.AddChild(Note("Enquanto a pessoa não responde, o terreno continua com o dono e não pode ser anunciado nem mudar de forma."));
+            return;
+        }
+        var give = IslandUi.Action("Transferir Terreno", "link", IslandUi.Kind.Secondary, 40); give.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin; give.Pressed += OpenGive; body.AddChild(give);
+        body.AddChild(Note("É um presente: o terreno e os seus objetos nele passam a outra pessoa, se ela aceitar em até 7 dias."));
+    }
+
+    private void OpenGive()
+    {
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text("O terreno, com os objetos seus que estão nele, é oferecido a outra pessoa, de graça. Nada muda até ela aceitar; você pode cancelar antes.", 14, IslandUi.TextSecondary, false, true));
+        var name = IslandUi.Input("Nome da pessoa", 60); content.AddChild(name);
+        Ask("Transferir terreno", content, async () => await Do(Api.Transfer(IslandId, _parcel, name.Text.Trim()), "Oferta de transferência enviada."), "Oferecer");
+    }
+
+    public Task<bool> GiveForTesting(string name) => Do(Api.Transfer(IslandId, _parcel, name), "Oferta de transferência enviada.");
+    public Task<bool> CancelGiveForTesting() => Do(Api.CancelTransfer(IslandId, _parcel), "Transferência cancelada.");
+    public Task<bool> AcceptGiveForTesting() => Do(Api.AcceptTransfer(IslandId, _parcel), "O terreno agora é seu.");
+    public Task<bool> DeclineGiveForTesting() => Do(Api.DeclineTransfer(IslandId, _parcel), "Você recusou o terreno.");
+
     private void ShowTrade()
     {
         var sale = Obj(About, "sale"); var offer = Obj(About, "rentOffer"); var rental = Obj(About, "rental"); var rights = About.GetProperty("rights");
@@ -214,8 +249,10 @@ public partial class ParcelInfoWindow
                 var rent = IslandUi.Action("Habilitar Aluguel", "calendar", IslandUi.Kind.Purple, 40); rent.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin; rent.Disabled = !Flag(rights, "canLease") || sale is not null; rent.Pressed += OpenRent;
                 rent.TooltipText = sale is not null ? "Retire a venda antes." : !Flag(rights, "canLease") ? "Este terreno não pode ser alugado agora." : ""; rBody.AddChild(rent);
             }
+            ShowGiftCard(rights);
             return;
         }
+        ShowGiftCard(rights);
         var (card, body) = Card("Condições", "coins"); _content.AddChild(card);
         if (sale is { } buy)
         {

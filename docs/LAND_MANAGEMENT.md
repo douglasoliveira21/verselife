@@ -190,7 +190,7 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 - **Testes de concorrência em PostgreSQL real**: exigem credenciais; os testes de Postgres ficam ignorados sem elas.
 - **"Criar objetos" / "Permitir visitantes"**: redundantes com as permissões de construção e o modo de acesso existentes.
 
-Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase82.
+Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Phase65–Phase83.
 
 ## Expandir e reduzir parcela
 
@@ -246,3 +246,14 @@ A transferência deixou de ser imediata: agora é uma **oferta que a outra pesso
 - **Aceitar** (`POST .../transfer/accept`) só vale para a pessoa escolhida e antes do prazo (`transfer_expired` depois). É só então que a ilha, os terrenos do dono, os objetos e o plano de hospedagem mudam de dono, com registro no histórico e na auditoria e avisos para os dois. **Recusar** (`.../transfer/decline`) devolve a ilha ao estado normal e avisa o dono.
 - Uma oferta vencida deixa de contar sozinha (o dono pode vender de novo); ninguém precisa limpar nada.
 - **Cliente**: Minhas Propriedades ganhou a seção **Ilhas Oferecidas a Você** (Aceitar com confirmação, Recusar) e mostra no cartão da ilha para quem ofereceu "Oferecida a … de presente, espera a resposta". Na aba **Propriedade**, o dono vê o pedido pendente e **Cancelar Transferência**; quem recebeu, se puder abrir a ilha, também vê Aceitar Ilha / Recusar. `GET properties/mine` traz `incomingTransfers`.
+
+## Transferir terreno entre pessoas
+
+Dar um terreno a outra pessoa segue o mesmo caminho da ilha: uma **oferta que a pessoa precisa aceitar** (migração `Phase83ParcelTransferOffer`: `IslandParcel.TransferToUserId` e `TransferExpiresAt`, 7 dias).
+
+- `POST land/parcels/{id}/transfer {name}` oferece; `DELETE` cancela (dono); `POST .../transfer/accept` e `.../transfer/decline` são da pessoa escolhida. Erros: `transfer_pending`, `no_transfer`, `transfer_expired`, `for_sale`, `rented`, `common_area`, `group_owned`, `person_not_found`, `bad_buyer`.
+- **Só o dono do terreno** oferece (nem o dono da ilha oferece terreno de outra pessoa). Não vale para área comum, terreno de grupo, à venda ou alugado.
+- **Ao aceitar** o terreno muda de dono junto com os **objetos que o dono antigo deixou nele** (os de outras pessoas ficam delas; os de fora do terreno não mudam). As ofertas de venda e aluguel do terreno somem. Os dois recebem aviso; entra no histórico (`transfer_offered`, `transferred`…).
+- **Enquanto a oferta espera**: o terreno não pode ser anunciado, dividido, unido, expandido nem reduzido (`transfer_pending`). Vencida, a oferta deixa de contar sozinha. Se a ilha inteira mudar de dono, as ofertas de terreno do dono antigo caem.
+- O código de mover os objetos passou a ser o mesmo da compra (`MoveObjectsAsync`).
+- **Cliente**: em **Sobre este Terreno**, aba de venda, o cartão **Presente** tem Transferir Terreno, a oferta pendente com Cancelar Transferência e, para quem recebeu, Aceitar Terreno / Recusar. **Minhas Propriedades** mostra "Ofertas de Presente" (ilhas e terrenos juntos) com Aceitar/Recusar e, no cartão do terreno, "Oferecido a … de presente".

@@ -304,6 +304,9 @@ public sealed class IslandParcel
     public string SaleDescription { get; set; } = string.Empty;
     /// <summary>Whether the seller's objects on the parcel go to the buyer with it.</summary>
     public bool SaleIncludesObjects { get; set; } = true;
+    /// <summary>A transfer waiting for the other person to say yes (null: none). The parcel only changes hands when they accept before it runs out.</summary>
+    public Guid? TransferToUserId { get; set; }
+    public DateTimeOffset? TransferExpiresAt { get; set; }
 
     // ---- offered for rent (null price: not offered)
     public long? RentPrice { get; set; }

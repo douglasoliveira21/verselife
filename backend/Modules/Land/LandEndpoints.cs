@@ -13,6 +13,7 @@ public sealed record RentOfferRequest(long PricePerPeriod, int PeriodDays = 30, 
 public sealed record RentRequest(int Periods, bool AutoRenew, long ExpectedPrice, string IdempotencyKey);
 public sealed record RenewRequest(int Periods, string IdempotencyKey);
 public sealed record SplitRequest(int[][] Cells, string Name);
+public sealed record TransferParcelRequest(string Name);
 public sealed record IslandRulesRequest(string? AccessMode, string? BuildMode, bool AllowScripts, bool AllowVoice, bool AllowMedia, int? AutoReturnMinutes, bool ApplyToExisting);
 public sealed record ReshapeRequest(int[][] Cells, int? ExtraObjects);
 public sealed record MergeRequest(Guid[] ParcelIds, Guid? PrimaryId);
@@ -59,6 +60,14 @@ public static class LandEndpoints
             await Run(c, islandId, db, ct, user => LandCommerce.CancelSaleAsync(db, parcelId, user, t, ct)));
         group.MapPost("/parcels/{parcelId:guid}/buy", async (Guid islandId, Guid parcelId, BuyRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandCommerce.BuyAsync(db, parcelId, user, r.IdempotencyKey, r.ExpectedPrice, t, ct)));
+        group.MapPost("/parcels/{parcelId:guid}/transfer", async (Guid islandId, Guid parcelId, TransferParcelRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => LandCommerce.TransferAsync(db, parcelId, user, r.Name, t, ct)));
+        group.MapDelete("/parcels/{parcelId:guid}/transfer", async (Guid islandId, Guid parcelId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => LandCommerce.CancelTransferAsync(db, parcelId, user, t, ct)));
+        group.MapPost("/parcels/{parcelId:guid}/transfer/accept", async (Guid islandId, Guid parcelId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => LandCommerce.AcceptTransferAsync(db, parcelId, user, t, ct)));
+        group.MapPost("/parcels/{parcelId:guid}/transfer/decline", async (Guid islandId, Guid parcelId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
+            await Run(c, islandId, db, ct, user => LandCommerce.DeclineTransferAsync(db, parcelId, user, t, ct)));
         group.MapPost("/parcels/{parcelId:guid}/rental-offer", async (Guid islandId, Guid parcelId, RentOfferRequest r, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
             await Run(c, islandId, db, ct, user => LandCommerce.OfferForRentAsync(db, parcelId, user, new RentOffer(r.PricePerPeriod, r.PeriodDays, r.MinPeriods, r.MaxPeriods, r.DepositCoins, r.GraceDays, r.AutoRenewAllowed), t, ct)));
         group.MapDelete("/parcels/{parcelId:guid}/rental-offer", async (Guid islandId, Guid parcelId, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>

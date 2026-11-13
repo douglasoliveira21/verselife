@@ -357,21 +357,21 @@ public partial class MyPropertiesWindow : Node
     private void ShowIncoming()
     {
         if (_data.Incoming.Count == 0) return;
-        _content.AddChild(Heading($"Ilhas Oferecidas a Você ({_data.Incoming.Count})", "Uma pessoa quer te dar uma ilha. Ela só passa a ser sua se você aceitar antes do prazo."));
+        _content.AddChild(Heading($"Ofertas de Presente ({_data.Incoming.Count})", "Alguém quer te dar uma ilha ou um terreno. Só passa a ser seu se você aceitar antes do prazo."));
         foreach (var t in _data.Incoming)
-            _content.AddChild(PropertyCard(Picture("", t.IslandId, IslandUi.AccentSecondary, new Vector2(190, 90)), t.Name, $"De {t.From} · {t.Parcels} terreno(s)", ("Aguardando você", IslandUi.AccentSecondary),
-                [$"Vale até {Moment(t.ExpiresAt)}", "Os terrenos e os objetos de quem oferece passam junto, com a hospedagem."],
-                [Small("Aceitar", IslandUi.Kind.Primary, () => OpenAccept(t)), Small("Recusar", IslandUi.Kind.Danger, () => _ = Do(_api!.DeclineTransfer(t.IslandId), "Você recusou a ilha."))]));
+            _content.AddChild(PropertyCard(Picture("", t.IslandId, IslandUi.AccentSecondary, new Vector2(190, 90)), t.IsParcel ? t.Title : t.Name, t.IsParcel ? $"{t.IslandName} · de {t.From}" : $"De {t.From} · {t.Parcels} terreno(s)", ("Aguardando você", IslandUi.AccentSecondary),
+                [$"Vale até {Moment(t.ExpiresAt)}", t.IsParcel ? "Os objetos que a pessoa deixou no terreno passam junto." : "Os terrenos e os objetos de quem oferece passam junto, com a hospedagem."],
+                [Small("Aceitar", IslandUi.Kind.Primary, () => OpenAccept(t)), Small("Recusar", IslandUi.Kind.Danger, () => _ = DeclineTransferForTesting(t))]));
     }
 
     private void OpenAccept(PropIncomingTransfer t)
     {
-        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"Aceitar a ilha {t.Name}? Ela, os {t.Parcels} terreno(s) e os objetos de {t.From} passam a ser seus agora, e você passa a cuidar da hospedagem dela.", 14, IslandUi.TextSecondary, false, true));
-        Ask("Aceitar ilha", content, async () => await Do(_api!.AcceptTransfer(t.IslandId), "A ilha agora é sua."), "Aceitar");
+        var content = IslandUi.Column(8); content.AddChild(IslandUi.Text(t.IsParcel ? $"Aceitar o terreno {t.Title}? Ele e os objetos de {t.From} que estão nele passam a ser seus agora." : $"Aceitar a ilha {t.Name}? Ela, os {t.Parcels} terreno(s) e os objetos de {t.From} passam a ser seus agora, e você passa a cuidar da hospedagem dela.", 14, IslandUi.TextSecondary, false, true));
+        Ask(t.IsParcel ? "Aceitar terreno" : "Aceitar ilha", content, async () => await AcceptTransferForTesting(t), "Aceitar");
     }
 
-    public Task<bool> AcceptTransferForTesting(PropIncomingTransfer t) => Do(_api!.AcceptTransfer(t.IslandId), "A ilha agora é sua.");
-    public Task<bool> DeclineTransferForTesting(PropIncomingTransfer t) => Do(_api!.DeclineTransfer(t.IslandId), "Você recusou a ilha.");
+    public Task<bool> AcceptTransferForTesting(PropIncomingTransfer t) => t.IsParcel ? Do(_api!.AcceptParcelTransfer(t.IslandId, t.ParcelId), "O terreno agora é seu.") : Do(_api!.AcceptTransfer(t.IslandId), "A ilha agora é sua.");
+    public Task<bool> DeclineTransferForTesting(PropIncomingTransfer t) => t.IsParcel ? Do(_api!.DeclineParcelTransfer(t.IslandId, t.ParcelId), "Você recusou o terreno.") : Do(_api!.DeclineTransfer(t.IslandId), "Você recusou a ilha.");
 
     private void ShowIslands()
     {
@@ -400,9 +400,10 @@ public partial class MyPropertiesWindow : Node
         {
             var listed = _data.Listings.FirstOrDefault(l => l.ParcelId == p.Id);
             var buttons = new List<Button> { Small("Visitar", IslandUi.Kind.Secondary, () => { GoTo(p.IslandId, p.Id); RequestClose(); }, p.CanVisit, p.CanVisit ? "" : "Este terreno não recebe visitas."), Small("Gerenciar", IslandUi.Kind.Secondary, () => ManageLand?.Invoke(p.IslandId)) };
-            buttons.Add(listed is not null ? Small("Retirar anúncio", IslandUi.Kind.Danger, () => _ = WithdrawAsync(listed)) : Small("Anunciar", IslandUi.Kind.Orange, () => OpenOffer(p), p.Kind is not ("rented" or "common"), p.Kind == "rented" ? "O terreno está alugado." : p.Kind == "common" ? "Área comum não se anuncia." : ""));
+            buttons.Add(listed is not null ? Small("Retirar anúncio", IslandUi.Kind.Danger, () => _ = WithdrawAsync(listed)) : Small("Anunciar", IslandUi.Kind.Orange, () => OpenOffer(p), p.Kind is not ("rented" or "common") && p.TransferTo.Length == 0, p.TransferTo.Length > 0 ? "O terreno foi oferecido de presente: espere a resposta ou cancele em Sobre este Terreno." : p.Kind == "rented" ? "O terreno está alugado." : p.Kind == "common" ? "Área comum não se anuncia." : ""));
             var lines = new List<string> { $"{LandMath.Area(p.Area)} · {LandMath.CategoryText(p.Category)}", $"Prims: {LandMath.Number(p.Objects)} / {LandMath.Number(p.MaxObjects)}" };
             if (p.SalePrice is { } sale) lines.Add($"À venda por {LandMath.Money(sale)}"); if (p.RentPrice is { } rent && p.Kind != "rented") lines.Add($"Para alugar: {LandMath.Money(rent)} ({Period(p.RentPeriodDays)})");
+            if (p.TransferTo.Length > 0) lines.Add($"Oferecido a {p.TransferTo} de presente" + (p.TransferExpiresAt is { } giveEnd ? $" até {Day(giveEnd)}" : "") + ": espera a resposta");
             if (p.Tenant.Length > 0) lines.Add($"Alugado para {p.Tenant}" + (p.RentExpiresAt is { } at ? $" até {Day(at)}" : ""));
             _content.AddChild(PropertyCard(Picture(p.Image, p.IslandId, KindColor(p.Kind), new Vector2(190, 100)), p.Title, p.Island, (KindText(p.Kind), KindColor(p.Kind)), [.. lines], [.. buttons]));
         }

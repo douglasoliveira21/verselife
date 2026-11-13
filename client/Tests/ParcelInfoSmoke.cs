@@ -19,6 +19,7 @@ public partial class ParcelInfoSmoke : Node3D
         public bool Staff = false;
         public string Name = "Centro Comercial", Description = "Terreno ideal para lojas", Category = "comercial", Image = "", AccessMode = "public", BuildMode = "owner", Teleport = "free";
         public bool Voice = true, Media = true;
+        public string? GiveTo; public bool GiveForMe;
         public bool Scripts; public int? AutoReturn; public double? SpawnX, SpawnZ; public double Yaw; public int Revision = 1;
         public long? Sale, Rent; public bool Leased; public string? MusicUrl; public double MusicVolume = .6; public bool Autoplay = true; public string MusicName = "";
         public readonly List<(Guid Id, string Name, string Kind)> Entries = [];
@@ -37,7 +38,8 @@ public partial class ParcelInfoSmoke : Node3D
             owner = new { id = Guid.NewGuid(), name = Owner ? "AliceVerse" : "Bruno", kind = "person", groupId = (Guid?)null, groupName = (string?)null },
             acquiredAt = DateTimeOffset.UtcNow.AddDays(-10),
             history = new object[] { new { at = DateTimeOffset.UtcNow.AddDays(-10), what = "sale", from = "Bruno", to = "AliceVerse", amount = 60000L }, new { at = DateTimeOffset.UtcNow.AddDays(-30), what = "claim", from = (string?)null, to = "Bruno", amount = 0L } },
-            rights = new { canResell = Owner && !Leased, canLease = Owner && !Leased, ownedByIslandOwner = false },
+            transfer = GiveTo is null ? null : new { to = GiveTo, expiresAt = DateTimeOffset.UtcNow.AddDays(7), forMe = GiveForMe },
+            rights = new { canResell = Owner && !Leased, canLease = Owner && !Leased, canTransfer = Owner && !Leased && Sale is null && GiveTo is null, ownedByIslandOwner = false },
             usage = new { objects = 120, maxObjects = 1000, cost = 360, maxCost = 0, others = 1, builders = Entries.Count(e => e.Kind == "build") },
             sale = Sale is { } s ? new { price = s, exclusive = false, includeObjects = true, description = "Boa esquina" } : null,
             rentOffer = Rent is { } r && !Leased ? new { price = r, periodDays = 30, minPeriods = 1, maxPeriods = 6, deposit = 100L, graceDays = 3, autoRenewAllowed = true } : null,
@@ -60,6 +62,9 @@ public partial class ParcelInfoSmoke : Node3D
             if (rentals) { if (path.EndsWith("/end", StringComparison.Ordinal)) { Leased = false; Tenant = false; } return Task.FromResult(Ok()); }
             switch (tail)
             {
+                case "/transfer": if (method == "DELETE") GiveTo = null; else { var who = json!["name"]!.GetValue<string>(); if (who == "ninguem") return Task.FromResult(Fail(404, "person_not_found")); if (GiveTo is not null) return Task.FromResult(Fail(409, "transfer_pending")); GiveTo = who; } return Task.FromResult(Ok());
+                case "/transfer/accept": if (!GiveForMe) return Task.FromResult(Fail(409, "no_transfer")); GiveTo = null; GiveForMe = false; Owner = true; return Task.FromResult(Ok());
+                case "/transfer/decline": if (!GiveForMe) return Task.FromResult(Fail(409, "no_transfer")); GiveTo = null; GiveForMe = false; return Task.FromResult(Ok());
                 case "/category": { var c = json!["category"]!.GetValue<string>(); if (c == "fabrica") return Task.FromResult(Fail(400, "bad_category")); Category = c; Revision++; return Task.FromResult(Ok()); }
                 case "/image": Image = json!["image"]?.GetValue<string>() ?? ""; return Task.FromResult(Ok());
                 case "/arrival": SpawnX = json!["x"]?.GetValue<double>(); SpawnZ = json["z"]?.GetValue<double>(); Yaw = json["yaw"]!.GetValue<double>(); Teleport = json["mode"]!.GetValue<string>(); return Task.FromResult(Ok());
@@ -187,6 +192,20 @@ public partial class ParcelInfoSmoke : Node3D
             window.VisitForTesting(); Require(went is null && islandOnly is null && window.IsOpen, "and pressing does nothing");
             server.Tenant = true; await window.LoadAsync(); await Frames(2); Require(window.VisitEnabledForTesting, "its tenant can");
             server.Tenant = false; server.Owner = true; server.AccessMode = "public"; await window.LoadAsync(); await Frames(2);
+
+            // --- giving the parcel away --------------------------------------------------------------------------------------------------------------------
+            server.Owner = true; server.Tenant = false; server.Leased = false; server.Sale = null; server.Rent = null; await window.LoadAsync(); window.SelectTabForTesting("venda"); await Frames(2);
+            Require(window.HasButtonForTesting("Transferir Terreno"), "the owner can offer the parcel as a gift");
+            Require(!await window.GiveForTesting("ninguem") && window.ToastForTesting.Contains("Não encontrei ninguém"), "an unknown person is refused, in words");
+            Require(await window.GiveForTesting("carla"), "offering works"); await Frames(2);
+            Require(window.TextForTesting.Contains("Oferecido de presente a carla") && window.HasButtonForTesting("Cancelar Transferência") && !window.HasButtonForTesting("Transferir Terreno"), $"the offer waits for an answer (got {window.TextForTesting})");
+            Require(!await window.GiveForTesting("carla") && window.ToastForTesting.Contains("esperando resposta"), "a second offer is refused while one waits");
+            Require(await window.CancelGiveForTesting(), "the owner takes it back"); await Frames(2); Require(window.HasButtonForTesting("Transferir Terreno") && !window.TextForTesting.Contains("Oferecido de presente"), "and the parcel is free again");
+            server.GiveTo = "AliceVerse"; server.GiveForMe = true; server.Owner = false; await window.LoadAsync(); window.SelectTabForTesting("venda"); await Frames(2);
+            Require(window.HasButtonForTesting("Aceitar Terreno") && window.HasButtonForTesting("Recusar") && !window.HasButtonForTesting("Transferir Terreno") && window.TextForTesting.Contains("quer te dar este terreno"), $"the person offered the parcel can accept or turn it down (got {window.TextForTesting})");
+            Require(await window.DeclineGiveForTesting(), "turning it down works"); server.GiveTo = "AliceVerse"; server.GiveForMe = true; await window.LoadAsync();
+            Require(await window.AcceptGiveForTesting() && server.Owner && server.GiveTo is null, "accepting makes it theirs"); await Frames(2);
+            server.Owner = true;
 
             // --- trouble ----------------------------------------------------------------------------------------------------------------------------------
             server.Gone = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("ainda não tem os detalhes"), $"an old server is told apart (got {window.NoteForTesting})");

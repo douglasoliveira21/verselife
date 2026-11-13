@@ -32,7 +32,7 @@ public static class LandAbout
         var isTenant = rental?.TenantUserId == viewer;
         var changes = await db.ParcelChanges.AsNoTracking().Where(c => c.ParcelId == parcelId && TitleOperations.Contains(c.Operation)).OrderByDescending(c => c.CreatedAt).Take(20).ToListAsync(ct);
         var sales = await db.ParcelTransactions.AsNoTracking().Where(t => t.ParcelId == parcelId && t.Type == "sale").OrderByDescending(t => t.CreatedAt).Take(20).ToListAsync(ct);
-        var people = new List<Guid> { parcel.OwnerUserId }; if (rental is not null) people.AddRange([rental.TenantUserId, rental.LandlordUserId]);
+        var people = new List<Guid> { parcel.OwnerUserId }; if (parcel.TransferToUserId is { } pendingTo) people.Add(pendingTo); if (rental is not null) people.AddRange([rental.TenantUserId, rental.LandlordUserId]);
         var parsed = changes.Select(c => (Change: c, Parties: Parties(c.PayloadJson))).ToList();
         people.AddRange(parsed.SelectMany(p => new[] { p.Parties.From, p.Parties.To, (Guid?)p.Change.ActorUserId }).Where(g => g is not null).Select(g => g!.Value));
         people.AddRange(sales.SelectMany(s => new[] { s.FromUserId, s.ToUserId }).Where(g => g is not null).Select(g => g!.Value));
@@ -55,7 +55,8 @@ public static class LandAbout
             island = new { id = island.Id, name = island.Name, size = island.Size, coverImageUrl = island.CoverImageUrl },
             owner = new { id = parcel.OwnerUserId, name = parcel.GroupId is not null ? groupName ?? "Grupo" : Name(parcel.OwnerUserId), kind = parcel.GroupId is null ? "person" : "group", groupId = parcel.GroupId, groupName },
             acquiredAt = acquired, history,
-            rights = new { canResell = canManage && parcel.GroupId is null && rental is null, canLease = canManage && parcel.GroupId is null && rental is null, ownedByIslandOwner = parcel.OwnerUserId == island.OwnerUserId },
+            transfer = LandCommerce.HasPendingTransfer(parcel, now) && (canManage || staff || parcel.TransferToUserId == viewer) ? new { to = Name(parcel.TransferToUserId), expiresAt = parcel.TransferExpiresAt, forMe = parcel.TransferToUserId == viewer } : null,
+            rights = new { canResell = canManage && parcel.GroupId is null && rental is null, canLease = canManage && parcel.GroupId is null && rental is null, canTransfer = parcel.OwnerUserId == viewer && parcel.GroupId is null && parcel.Category != "comum" && rental is null && parcel.SalePrice is null && !LandCommerce.HasPendingTransfer(parcel, now), ownedByIslandOwner = parcel.OwnerUserId == island.OwnerUserId },
             usage = new { objects = view.Objects, maxObjects = view.MaxObjects, cost = view.Cost, maxCost = view.MaxCost, others = view.OthersObjects, builders = view.Builders },
             sale = parcel.SalePrice is { } price && forMe ? new { price, exclusive = parcel.SaleBuyerUserId is not null, includeObjects = parcel.SaleIncludesObjects, description = parcel.SaleDescription } : null,
             rentOffer = parcel.RentPrice is { } rent && rental is null ? new { price = rent, periodDays = parcel.RentPeriodDays, minPeriods = parcel.RentMinPeriods, maxPeriods = parcel.RentMaxPeriods, deposit = parcel.RentDeposit, graceDays = parcel.RentGraceDays, autoRenewAllowed = parcel.RentAutoRenewAllowed } : null,

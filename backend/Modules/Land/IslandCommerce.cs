@@ -75,7 +75,7 @@ public static class IslandCommerce
         foreach (var parcel in parcels)
         {
             var rented = live.Any(r => r.ParcelId == parcel.Id);
-            parcel.OwnerUserId = to; parcel.SalePrice = null; parcel.SaleBuyerUserId = null; if (!rented) parcel.RentPrice = null; parcel.Revision++; parcel.UpdatedAt = now;
+            parcel.OwnerUserId = to; parcel.SalePrice = null; parcel.SaleBuyerUserId = null; parcel.TransferToUserId = null; parcel.TransferExpiresAt = null; if (!rented) parcel.RentPrice = null; parcel.Revision++; parcel.UpdatedAt = now;
             db.ParcelChanges.Add(new ParcelChange { Id = Guid.NewGuid(), ParcelId = parcel.Id, ActorUserId = to, Operation = "island_transfer", PayloadJson = JsonSerializer.Serialize(new { from, to }), Revision = parcel.Revision, CreatedAt = now });
         }
         foreach (var rental in live) rental.LandlordUserId = to;

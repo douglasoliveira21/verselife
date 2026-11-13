@@ -81,7 +81,7 @@ public partial class IslandPropertySmoke : Node3D
             Require(await page.SellForTesting(80000, true), "selling works"); await Frames(2);
             Require(server.Sale == 80000 && page.TextForTesting.Contains("À venda por L$ 80.000") && page.HasButtonForTesting("Retirar da Venda") && !page.HasButtonForTesting("Alugar Ilha"), "the offer is shown and the sale buttons give way to withdrawing");
             Require(!page.ButtonEnabledForTesting("Transferir Propriedade"), "an island for sale cannot be handed over");
-            Require(!await page.TransferForTesting("carla"), "and the server says so"); Require(notes.Last().Contains("Retire a ilha da venda"), $"in words (got {notes.Last()})");
+            Require(!await page.TransferForTesting("carla"), "and the server says so"); Require(notes.Last().Contains("Retire da venda"), $"in words (got {notes.Last()})");
             Require(await page.WithdrawForTesting(), "withdrawing works"); await Frames(2); Require(server.Sale is null && page.TextForTesting.Contains("Sem anúncio"), "the island is off the market");
 
             // --- renting out --------------------------------------------------------------------------------------------------------------

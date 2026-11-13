@@ -21,6 +21,10 @@ public sealed class ParcelInfoApi(IslandManagementApi inner)
     public Task<IslandReply> OfferSale(Guid island, Guid parcel, long price, bool includeObjects, string description) => inner.Send("POST", $"{Parcel(island, parcel)}/sale", new { price, includeObjects, description });
     public Task<IslandReply> CancelSale(Guid island, Guid parcel) => inner.Send("DELETE", $"{Parcel(island, parcel)}/sale");
     public Task<IslandReply> OfferRent(Guid island, Guid parcel, long price, int days, int min, int max, long deposit, int grace) => inner.Send("POST", $"{Parcel(island, parcel)}/rental-offer", new { pricePerPeriod = price, periodDays = days, minPeriods = min, maxPeriods = Math.Max(min, max), depositCoins = deposit, graceDays = grace, autoRenewAllowed = true });
+    public Task<IslandReply> Transfer(Guid island, Guid parcel, string name) => inner.Send("POST", $"{Parcel(island, parcel)}/transfer", new { name });
+    public Task<IslandReply> CancelTransfer(Guid island, Guid parcel) => inner.Send("DELETE", $"{Parcel(island, parcel)}/transfer");
+    public Task<IslandReply> AcceptTransfer(Guid island, Guid parcel) => inner.Send("POST", $"{Parcel(island, parcel)}/transfer/accept", new { });
+    public Task<IslandReply> DeclineTransfer(Guid island, Guid parcel) => inner.Send("POST", $"{Parcel(island, parcel)}/transfer/decline", new { });
     public Task<IslandReply> CancelRent(Guid island, Guid parcel) => inner.Send("DELETE", $"{Parcel(island, parcel)}/rental-offer");
     public Task<IslandReply> Buy(Guid island, Guid parcel, long price) => inner.Send("POST", $"{Parcel(island, parcel)}/buy", new { expectedPrice = price, idempotencyKey = Guid.NewGuid().ToString() });
     public Task<IslandReply> Rent(Guid island, Guid parcel, int periods, long price, bool autoRenew = false) => inner.Send("POST", $"{Parcel(island, parcel)}/rent", new { periods, autoRenew, expectedPrice = price, idempotencyKey = Guid.NewGuid().ToString() });

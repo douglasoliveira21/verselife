@@ -2,6 +2,7 @@ using System.Text.Json;
 using LifeVerse.Api.Data;
 using LifeVerse.Api.Modules.Assets;
 using LifeVerse.Api.Modules.Worlds;
+using LifeVerse.Api.Modules.Users;
 using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Land;
@@ -109,6 +110,7 @@ public static class LandCommerce
         if (offer.Price is < 1 or > MaxPrice) return CommerceResult.Fail("bad_price");
         if (offer.BuyerUserId == actor) return CommerceResult.Fail("bad_buyer");
         if (await HasLiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
+        if (HasPendingTransfer(parcel, clock.GetUtcNow())) return CommerceResult.Fail("transfer_pending"); // already promised to somebody
         var now = clock.GetUtcNow();
         parcel.SalePrice = offer.Price; parcel.SaleBuyerUserId = offer.BuyerUserId; parcel.SaleIncludesObjects = offer.IncludeObjects;
         parcel.SaleDescription = (offer.Description ?? string.Empty).Trim()[..Math.Min(2000, (offer.Description ?? string.Empty).Trim().Length)];
@@ -128,6 +130,96 @@ public static class LandCommerce
         Touch(db, parcel, actor, "cancel_sale", new { }, now);
         Record(db, parcelId, "sale_cancelled", actor, null, 0, new { }, null, now);
         return await SaveAsync(db, ct);
+    }
+
+    /// <summary>Gives the objects the old owner left standing on the parcel to the new owner (what other people built there stays theirs). Returns how many moved.</summary>
+    private static async Task<int> MoveObjectsAsync(LifeVerseDbContext db, IslandParcel parcel, Guid from, Guid to, DateTimeOffset now, CancellationToken ct)
+    {
+        var facts = (await LandService.LoadFactsAsync(db, parcel.IslandId, ct)).FirstOrDefault(f => f.Id == parcel.Id); if (facts is null) return 0;
+        var inBox = await db.BuildObjects.Where(o => o.IslandId == parcel.IslandId && o.DeletedAt == null && o.OwnerUserId == from && o.PositionX >= facts.MinX && o.PositionX < facts.MaxX && o.PositionZ >= facts.MinZ && o.PositionZ < facts.MaxZ).ToListAsync(ct);
+        var moved = 0;
+        foreach (var item in inBox.Where(o => facts.Contains(o.PositionX, o.PositionZ)))
+        {
+            item.OwnerUserId = to; item.Revision++; moved++;
+            db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = parcel.IslandId, ObjectId = item.Id, ActorUserId = to, Operation = "land_transfer", PayloadJson = JsonSerializer.Serialize(new { from, to, parcelId = parcel.Id }), Revision = item.Revision, CreatedAt = now });
+        }
+        return moved;
+    }
+
+    // ---- handing over (a gift the other person has to accept) -------------------------------------------------------------------------
+
+    /// <summary>How long the other person has to answer.</summary>
+    public static readonly TimeSpan TransferWindow = TimeSpan.FromDays(7);
+
+    /// <summary>Whether the parcel has a transfer waiting for an answer (one that ran out counts as none).</summary>
+    public static bool HasPendingTransfer(IslandParcel parcel, DateTimeOffset now) => parcel.TransferToUserId is not null && parcel.TransferExpiresAt > now;
+
+    private static void ClearTransfer(IslandParcel parcel) { parcel.TransferToUserId = null; parcel.TransferExpiresAt = null; }
+
+    /// <summary>
+    /// The owner offers the parcel, with the objects they left on it, to another person, for nothing. Nothing moves yet: the person has <see cref="TransferWindow"/> to accept or turn it down,
+    /// and the owner can take the offer back. Only the owner (not an administrator) can; not a group's parcel, a common area, a rented parcel or one for sale.
+    /// </summary>
+    public static async Task<CommerceResult> TransferAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, string? toName, TimeProvider clock, CancellationToken ct)
+    {
+        var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
+        if (parcel.OwnerUserId != actor || parcel.GroupId is not null) return CommerceResult.Fail(parcel.GroupId is not null && await LandAuthority.CanManageAsync(db, parcel, actor, ct) ? "group_owned" : "forbidden");
+        if (parcel.Category == "comum") return CommerceResult.Fail("common_area");
+        if (string.IsNullOrWhiteSpace(toName)) return CommerceResult.Fail("bad_buyer");
+        if (await ProfileService.FindByNameAsync(db, toName.Trim(), ct) is not { } target) return CommerceResult.Fail("person_not_found");
+        if (target == actor) return CommerceResult.Fail("bad_buyer");
+        if (parcel.SalePrice is not null) return CommerceResult.Fail("for_sale");
+        if (await HasLiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
+        var now = clock.GetUtcNow();
+        if (HasPendingTransfer(parcel, now)) return CommerceResult.Fail("transfer_pending");
+        parcel.TransferToUserId = target; parcel.TransferExpiresAt = now + TransferWindow; parcel.RentPrice = null;
+        Touch(db, parcel, actor, "transfer_offered", new { to = target, expiresAt = parcel.TransferExpiresAt }, now);
+        Record(db, parcelId, "transfer_offered", actor, target, 0, new { expiresAt = parcel.TransferExpiresAt }, null, now);
+        PropertyNotices.Add(db, target, "parcel_transfer_offer", $"{await PropertyNotices.NameAsync(db, actor, ct)} quer te dar o terreno {Label(parcel)}", $"É um presente: o terreno e os objetos dele nele passam para você. Aceite ou recuse em Minhas Propriedades até {parcel.TransferExpiresAt:dd/MM/yyyy HH:mm}.", $"parcel_transfer_offer:{parcelId}:{now.UtcTicks}", now);
+        return await SaveAsync(db, ct, new { parcelId, expiresAt = parcel.TransferExpiresAt });
+    }
+
+    /// <summary>The owner takes the offer back.</summary>
+    public static async Task<CommerceResult> CancelTransferAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, TimeProvider clock, CancellationToken ct)
+    {
+        var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
+        if (parcel.OwnerUserId != actor) return CommerceResult.Fail("forbidden");
+        var now = clock.GetUtcNow(); if (parcel.TransferToUserId is not { } target) return CommerceResult.Fail("no_transfer");
+        var live = HasPendingTransfer(parcel, now); ClearTransfer(parcel);
+        Touch(db, parcel, actor, "transfer_cancelled", new { to = target }, now);
+        Record(db, parcelId, "transfer_cancelled", actor, target, 0, new { }, null, now);
+        if (live) PropertyNotices.Add(db, target, "parcel_transfer_cancelled", $"A oferta do terreno {Label(parcel)} foi retirada", "O dono desistiu de oferecer o terreno a você.", $"parcel_transfer_cancelled:{parcelId}:{now.UtcTicks}", now);
+        return await SaveAsync(db, ct, new { parcelId });
+    }
+
+    /// <summary>The person the parcel was offered to turns it down.</summary>
+    public static async Task<CommerceResult> DeclineTransferAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, TimeProvider clock, CancellationToken ct)
+    {
+        var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
+        var now = clock.GetUtcNow(); if (parcel.TransferToUserId != actor) return CommerceResult.Fail("no_transfer");
+        ClearTransfer(parcel);
+        Touch(db, parcel, actor, "transfer_declined", new { by = actor }, now);
+        Record(db, parcelId, "transfer_declined", actor, parcel.OwnerUserId, 0, new { }, null, now);
+        PropertyNotices.Add(db, parcel.OwnerUserId, "parcel_transfer_declined", $"{await PropertyNotices.NameAsync(db, actor, ct)} recusou o terreno {Label(parcel)}", "O terreno continua seu.", $"parcel_transfer_declined:{parcelId}:{now.UtcTicks}", now);
+        return await SaveAsync(db, ct, new { parcelId });
+    }
+
+    /// <summary>The person the parcel was offered to accepts: only now does the parcel (and the objects the old owner left on it) change hands.</summary>
+    public static async Task<CommerceResult> AcceptTransferAsync(LifeVerseDbContext db, Guid parcelId, Guid actor, TimeProvider clock, CancellationToken ct)
+    {
+        var parcel = await ParcelAsync(db, parcelId, ct); if (parcel is null) return CommerceResult.Fail("not_found");
+        var now = clock.GetUtcNow(); if (parcel.TransferToUserId != actor) return CommerceResult.Fail("no_transfer");
+        if (!HasPendingTransfer(parcel, now)) { ClearTransfer(parcel); await SaveAsync(db, ct); return CommerceResult.Fail("transfer_expired"); }
+        if (parcel.SalePrice is not null) return CommerceResult.Fail("for_sale");
+        if (await HasLiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
+        var giver = parcel.OwnerUserId;
+        var moved = await MoveObjectsAsync(db, parcel, giver, actor, now, ct);
+        parcel.OwnerUserId = actor; parcel.GroupId = null; parcel.SalePrice = null; parcel.SaleBuyerUserId = null; parcel.SaleDescription = string.Empty; parcel.RentPrice = null; ClearTransfer(parcel);
+        Touch(db, parcel, actor, "transferred", new { from = giver, to = actor, objectsMoved = moved }, now);
+        Record(db, parcelId, "transfer", giver, actor, 0, new { objectsMoved = moved }, null, now);
+        PropertyNotices.Add(db, actor, "parcel_received", $"Você recebeu o terreno {Label(parcel)}", $"{await PropertyNotices.NameAsync(db, giver, ct)} transferiu o terreno para você, com {moved} objeto(s). Ele já está em Minhas Propriedades.", $"parcel_received:{parcelId}:{now.UtcTicks}", now);
+        PropertyNotices.Add(db, giver, "parcel_given", $"{await PropertyNotices.NameAsync(db, actor, ct)} aceitou o terreno {Label(parcel)}", "O terreno e os objetos seus que estavam nele passaram para ele.", $"parcel_given:{parcelId}:{now.UtcTicks}", now);
+        return await SaveAsync(db, ct, new { parcelId, objectsMoved = moved });
     }
 
     /// <summary>The purchase. <paramref name="expectedPrice"/> is the price the buyer saw: if it changed since, nothing is charged.</summary>
@@ -151,20 +243,7 @@ public static class LandCommerce
         var ledger = await LedgerAsync(db, key!, "land_sale", buyer, buyer, [(seller, price)], new { parcelId, seller }, now, ct);
 
         // the objects the seller left on the parcel go with it, when the sale says so
-        var moved = 0;
-        if (parcel.SaleIncludesObjects)
-        {
-            var facts = (await LandService.LoadFactsAsync(db, parcel.IslandId, ct)).FirstOrDefault(f => f.Id == parcelId);
-            if (facts is not null)
-            {
-                var inBox = await db.BuildObjects.Where(o => o.IslandId == parcel.IslandId && o.DeletedAt == null && o.OwnerUserId == seller && o.PositionX >= facts.MinX && o.PositionX < facts.MaxX && o.PositionZ >= facts.MinZ && o.PositionZ < facts.MaxZ).ToListAsync(ct);
-                foreach (var item in inBox.Where(o => facts.Contains(o.PositionX, o.PositionZ)))
-                {
-                    item.OwnerUserId = buyer; item.Revision++; moved++;
-                    db.BuildOperations.Add(new BuildOperation { Id = Guid.NewGuid(), IslandId = parcel.IslandId, ObjectId = item.Id, ActorUserId = buyer, Operation = "land_transfer", PayloadJson = JsonSerializer.Serialize(new { from = seller, to = buyer, parcelId }), Revision = item.Revision, CreatedAt = now });
-                }
-            }
-        }
+        var moved = parcel.SaleIncludesObjects ? await MoveObjectsAsync(db, parcel, seller, buyer, now, ct) : 0;
         parcel.OwnerUserId = buyer; parcel.GroupId = null;
         parcel.SalePrice = null; parcel.SaleBuyerUserId = null; parcel.SaleDescription = string.Empty;
         Touch(db, parcel, buyer, "sold", new { seller, buyer, price, objectsMoved = moved }, now);
@@ -184,6 +263,7 @@ public static class LandCommerce
         if (offer.PeriodDays is < 1 or > 365 || offer.MinPeriods < 1 || offer.MaxPeriods < offer.MinPeriods || offer.MaxPeriods > 120 || offer.GraceDays is < 0 or > 60) return CommerceResult.Fail("bad_terms");
         if (await HasLiveRentalAsync(db, parcelId, ct)) return CommerceResult.Fail("rented");
         var now = clock.GetUtcNow();
+        if (HasPendingTransfer(parcel, now)) return CommerceResult.Fail("transfer_pending");
         parcel.RentPrice = offer.PricePerPeriod; parcel.RentPeriodDays = offer.PeriodDays; parcel.RentMinPeriods = offer.MinPeriods; parcel.RentMaxPeriods = offer.MaxPeriods;
         parcel.RentDeposit = offer.DepositCoins; parcel.RentGraceDays = offer.GraceDays; parcel.RentAutoRenewAllowed = offer.AutoRenewAllowed;
         parcel.SalePrice = null; parcel.SaleBuyerUserId = null;
