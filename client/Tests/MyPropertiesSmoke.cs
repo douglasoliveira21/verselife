@@ -178,6 +178,17 @@ public partial class MyPropertiesSmoke : Node3D
             server.IncomingParcels.Add((IslandB, giftParcel, "Casa na Praia", "Bruno")); await window.LoadAsync(); await Frames(2);
             Require(await window.DeclineTransferForTesting(window.Data.Incoming[0]) && server.Calls.Any(c => c.EndsWith($"/parcels/{giftParcel}/transfer/decline", StringComparison.Ordinal)), "turning the parcel down works"); await Frames(2);
 
+            // --- the dialogs fit the screen -------------------------------------------------------------------------------------------------------------------
+            server.IncomingParcels.Add((IslandB, Guid.NewGuid(), "Casa na Praia", "Bruno")); await window.LoadAsync(); await Frames(3); var screen = GetViewport().GetVisibleRect().Size;
+            foreach (var open in new (string Name, Action Show)[] { ("aceitar", () => window.OpenAcceptForTesting(window.Data.Incoming[0])), ("avisos", window.ShowNoticesForTesting) })
+            {
+                open.Show(); await Frames(8); var dlg = window.DialogsForTesting.Last();
+                Require(dlg.Size.Y > 100 && dlg.Position.Y >= 0 && dlg.Position.Y + dlg.Size.Y <= screen.Y && dlg.Size.X <= screen.X, $"the {open.Name} dialog fits the screen (size {dlg.Size}, at {dlg.Position}, screen {screen})");
+                Require(dlg.GetOkButton().Visible && dlg.GetOkButton().GlobalPosition.Y + dlg.GetOkButton().Size.Y <= screen.Y, $"and its confirm button can be reached ({open.Name})");
+                dlg.Hide(); dlg.QueueFree(); await Frames(2);
+            }
+            server.IncomingParcels.Clear(); await window.LoadAsync(); await Frames(2);
+
             // --- notices -----------------------------------------------------------------------------------------------------------------------
             Require(window.NoticeStripForTesting.Length == 0 && window.UnreadForTesting == 0, "no notices, no strip");
             var told = new List<string>(); window.NoticeArrived = told.Add;

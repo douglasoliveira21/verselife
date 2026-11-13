@@ -303,6 +303,6 @@ public partial class ParcelInfoWindow : Node
         var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, CancelButtonText = "Cancelar", Exclusive = true, Theme = ViewerTheme.Create() };
         dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); _panel.AddChild(dialog);
         dialog.Confirmed += async () => { await accept(); dialog.QueueFree(); }; dialog.Canceled += () => dialog.QueueFree();
-        dialog.PopupCentered(new Vector2I(500, 0));
+        IslandUi.Fit(dialog, 500);
     }
 }

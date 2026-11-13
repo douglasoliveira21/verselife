@@ -363,6 +363,6 @@ public partial class LandManagementWindow
         var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, CancelButtonText = "Cancelar", Exclusive = true, Theme = ViewerTheme.Create() };
         var margin = IslandUi.Padded(content, 6, 6, 6, 6); dialog.AddChild(margin); _panel.AddChild(dialog);
         dialog.Confirmed += async () => { await accept(); dialog.QueueFree(); }; dialog.Canceled += () => dialog.QueueFree();
-        dialog.PopupCentered(new Vector2I(480, 0));
+        IslandUi.Fit(dialog, 480);
     }
 }

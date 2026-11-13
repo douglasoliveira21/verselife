@@ -50,6 +50,22 @@ public static class IslandUi
     public static VBoxContainer Column(int gap = 8) { var column = new VBoxContainer(); column.AddThemeConstantOverride("separation", gap); return column; }
     public static Control Spacer() => new() { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
 
+    /// <summary>
+    /// Opens a dialog at the given width and then fits its height to what is really inside. A wrapping label has no width yet when the dialog first asks how tall it must be, so it answers as if it were
+    /// one letter wide and the dialog opens thousands of pixels tall, with its buttons far off the screen. A few frames later the labels have their width: the dialog is put back to the size of its content
+    /// (never taller than the screen) and centred.
+    /// </summary>
+    public static async void Fit(Window dialog, int width)
+    {
+        dialog.PopupCentered(new Vector2I(width, 120));
+        var tree = dialog.GetTree();
+        for (var i = 0; i < 3; i++) { await dialog.ToSignal(tree, SceneTree.SignalName.ProcessFrame); if (!GodotObject.IsInstanceValid(dialog)) return; }
+        var view = dialog.GetParent() is Node parent && parent.GetViewport() is { } viewport ? viewport.GetVisibleRect().Size : new Vector2(1280, 720);
+        dialog.Size = new Vector2I(width, 10); // the window grows back to the least its content needs
+        var most = Mathf.Max(240, (int)(view.Y * 0.9f)); if (dialog.Size.Y > most) dialog.Size = new Vector2I(width, most);
+        dialog.MoveToCenter();
+    }
+
     public static MarginContainer Padded(Control child, int left, int top, int right, int bottom)
     {
         var margin = new MarginContainer(); margin.AddThemeConstantOverride("margin_left", left); margin.AddThemeConstantOverride("margin_top", top); margin.AddThemeConstantOverride("margin_right", right); margin.AddThemeConstantOverride("margin_bottom", bottom);

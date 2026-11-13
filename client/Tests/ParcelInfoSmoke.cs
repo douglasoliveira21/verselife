@@ -207,6 +207,17 @@ public partial class ParcelInfoSmoke : Node3D
             Require(await window.AcceptGiveForTesting() && server.Owner && server.GiveTo is null, "accepting makes it theirs"); await Frames(2);
             server.Owner = true;
 
+            // --- the dialogs fit the screen (a dialog thousands of pixels tall hides its confirm button) -----------------------------------------------------------
+            server.Owner = true; server.GiveTo = null; server.GiveForMe = false; server.Sale = null; server.Rent = null; server.Leased = false; await window.LoadAsync(); window.SelectTabForTesting("venda"); await Frames(3);
+            var screen = GetViewport().GetVisibleRect().Size;
+            foreach (var open in new (string Name, Action Show)[] { ("transferir", window.OpenGiveForTesting), ("vender", window.OpenSaleForTesting), ("alugar", window.OpenRentForTesting) })
+            {
+                open.Show(); await Frames(8); var shown = window.DialogsForTesting.Last();
+                Require(shown.Size.Y > 100 && shown.Position.Y >= 0 && shown.Position.Y + shown.Size.Y <= screen.Y && shown.Size.X <= screen.X, $"the {open.Name} dialog fits the screen (size {shown.Size}, at {shown.Position}, screen {screen})");
+                Require(shown.GetOkButton().Visible && shown.GetOkButton().GlobalPosition.Y + shown.GetOkButton().Size.Y <= screen.Y, $"and its confirm button can be reached ({open.Name})");
+                shown.Hide(); shown.QueueFree(); await Frames(2);
+            }
+
             // --- trouble ----------------------------------------------------------------------------------------------------------------------------------
             server.Gone = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("ainda não tem os detalhes"), $"an old server is told apart (got {window.NoteForTesting})");
             server.Gone = false; server.Down = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("Sem conexão"), "no connection is said");

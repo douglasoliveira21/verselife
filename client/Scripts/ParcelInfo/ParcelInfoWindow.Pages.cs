@@ -214,6 +214,10 @@ public partial class ParcelInfoWindow
         Ask("Transferir terreno", content, async () => await Do(Api.Transfer(IslandId, _parcel, name.Text.Trim()), "Oferta de transferência enviada."), "Oferecer");
     }
 
+    public void OpenSaleForTesting() => OpenSale(1000, true);
+    public void OpenRentForTesting() => OpenRent();
+    public void OpenGiveForTesting() => OpenGive();
+    public System.Collections.Generic.IEnumerable<ConfirmationDialog> DialogsForTesting => _panel.GetChildren().OfType<ConfirmationDialog>();
     public Task<bool> GiveForTesting(string name) => Do(Api.Transfer(IslandId, _parcel, name), "Oferta de transferência enviada.");
     public Task<bool> CancelGiveForTesting() => Do(Api.CancelTransfer(IslandId, _parcel), "Transferência cancelada.");
     public Task<bool> AcceptGiveForTesting() => Do(Api.AcceptTransfer(IslandId, _parcel), "O terreno agora é seu.");
@@ -273,7 +277,7 @@ public partial class ParcelInfoWindow
         var sale = Obj(About, "sale"); var offer = Obj(About, "rentOffer"); var lines = new List<string>();
         if (sale is { } s) { lines.Add($"VENDA — {LandMath.Money(Long(s, "price"))}"); lines.Add(Flag(s, "includeObjects") ? "Os objetos do vendedor neste terreno vão junto." : "Os objetos do vendedor não vão junto: voltam para o inventário dele."); if (Str(s, "description").Length > 0) lines.Add(Str(s, "description")); }
         if (offer is { } o) { if (lines.Count > 0) lines.Add(""); lines.Add($"ALUGUEL — {LandMath.Money(Long(o, "price"))} a cada {Int(o, "periodDays")} dias"); lines.Add($"De {Int(o, "minPeriods")} a {Int(o, "maxPeriods")} períodos. Caução de {LandMath.Money(Long(o, "deposit"))}, devolvida no fim."); lines.Add($"Tolerância de {Int(o, "graceDays")} dia(s) depois do vencimento."); lines.Add("Quem aluga pode construir enquanto o contrato valer; os objetos dele voltam ao inventário dele no fim."); }
-        var dialog = new AcceptDialog { Title = "Condições", OkButtonText = "Fechar", DialogText = string.Join("\n", lines), Theme = ViewerTheme.Create(), Unresizable = true }; dialog.Confirmed += () => dialog.QueueFree(); dialog.Canceled += () => dialog.QueueFree(); _panel.AddChild(dialog); dialog.PopupCentered(new Vector2I(520, 0));
+        var dialog = new AcceptDialog { Title = "Condições", OkButtonText = "Fechar", DialogText = string.Join("\n", lines), Theme = ViewerTheme.Create(), Unresizable = true }; dialog.Confirmed += () => dialog.QueueFree(); dialog.Canceled += () => dialog.QueueFree(); _panel.AddChild(dialog); IslandUi.Fit(dialog, 520);
     }
 
     private void OpenSale(long price, bool objects)

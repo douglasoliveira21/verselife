@@ -370,6 +370,9 @@ public partial class MyPropertiesWindow : Node
         Ask(t.IsParcel ? "Aceitar terreno" : "Aceitar ilha", content, async () => await AcceptTransferForTesting(t), "Aceitar");
     }
 
+    public void OpenAcceptForTesting(PropIncomingTransfer t) => OpenAccept(t);
+    public void ShowNoticesForTesting() => ShowNotices();
+    public System.Collections.Generic.IEnumerable<ConfirmationDialog> DialogsForTesting => _panel.GetChildren().OfType<ConfirmationDialog>();
     public Task<bool> AcceptTransferForTesting(PropIncomingTransfer t) => t.IsParcel ? Do(_api!.AcceptParcelTransfer(t.IslandId, t.ParcelId), "O terreno agora é seu.") : Do(_api!.AcceptTransfer(t.IslandId), "A ilha agora é sua.");
     public Task<bool> DeclineTransferForTesting(PropIncomingTransfer t) => t.IsParcel ? Do(_api!.DeclineParcelTransfer(t.IslandId, t.ParcelId), "Você recusou o terreno.") : Do(_api!.DeclineTransfer(t.IslandId), "Você recusou a ilha.");
 
@@ -466,7 +469,7 @@ public partial class MyPropertiesWindow : Node
         var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, CancelButtonText = "Cancelar", Exclusive = true, Theme = ViewerTheme.Create() };
         dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); _panel.AddChild(dialog);
         dialog.Confirmed += async () => { await accept(); dialog.QueueFree(); }; dialog.Canceled += () => dialog.QueueFree();
-        dialog.PopupCentered(new Vector2I(480, 0));
+        IslandUi.Fit(dialog, 480);
     }
 
     private async Task<bool> WithdrawAsync(PropListing l) => await Do(l.Target == "island" ? (l.Kind == "sale" ? _api!.IslandCancelSale(l.IslandId) : _api!.IslandCancelRent(l.IslandId)) : l.Kind == "sale" ? _api!.CancelSale(l.IslandId, l.ParcelId) : _api!.CancelRent(l.IslandId, l.ParcelId), "Anúncio retirado.");
@@ -536,6 +539,6 @@ public partial class MyPropertiesWindow : Node
     {
         var text = ReceiptText(p); var dialog = new AcceptDialog { Title = "Recibo", OkButtonText = "Fechar", DialogText = text, Theme = ViewerTheme.Create(), Unresizable = true };
         dialog.AddButton("Copiar", false, "copy"); dialog.CustomAction += action => { if (action == "copy") { DisplayServer.ClipboardSet(text); Notify("Recibo copiado."); } };
-        dialog.Confirmed += () => dialog.QueueFree(); dialog.Canceled += () => dialog.QueueFree(); _panel.AddChild(dialog); dialog.PopupCentered(new Vector2I(460, 0));
+        dialog.Confirmed += () => dialog.QueueFree(); dialog.Canceled += () => dialog.QueueFree(); _panel.AddChild(dialog); IslandUi.Fit(dialog, 460);
     }
 }

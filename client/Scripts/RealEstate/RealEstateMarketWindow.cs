@@ -363,7 +363,7 @@ public partial class RealEstateMarketWindow : Node
         var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, CancelButtonText = "Cancelar", Exclusive = true, Theme = ViewerTheme.Create() };
         dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); _panel.AddChild(dialog);
         dialog.Confirmed += async () => { await accept(); dialog.QueueFree(); }; dialog.Canceled += () => dialog.QueueFree();
-        dialog.PopupCentered(new Vector2I(480, 0));
+        IslandUi.Fit(dialog, 480);
     }
 
     private void OpenBuy(MarketListing l)

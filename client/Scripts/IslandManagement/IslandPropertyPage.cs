@@ -163,7 +163,7 @@ public partial class IslandPropertyPage : ScrollContainer
         var dialog = new ConfirmationDialog { Title = title, OkButtonText = okText, CancelButtonText = "Cancelar", Exclusive = true, Theme = ViewerTheme.Create() };
         dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); AddChild(dialog); withOk?.Invoke(dialog.GetOkButton());
         dialog.Confirmed += async () => { await accept(); dialog.QueueFree(); }; dialog.Canceled += () => dialog.QueueFree();
-        dialog.PopupCentered(new Vector2I(500, 0));
+        IslandUi.Fit(dialog, 500);
     }
 
     public Task<bool> SellForTesting(long price, bool objects) => Do(_api!.OfferSale(_island, price, objects, ""), "Ilha anunciada à venda.");
@@ -236,10 +236,13 @@ public partial class IslandPropertyPage : ScrollContainer
                 var buy = IslandUi.Action("Contratar", "coins", IslandUi.Kind.Orange, 38); buy.Pressed += () => { dialog.Hide(); dialog.QueueFree(); _ = Do(_api!.SubscribeHosting(_island, id), "Hospedagem contratada."); }; row.AddChild(buy); content.AddChild(card);
             }
         }
-        dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); AddChild(dialog); dialog.Confirmed += () => dialog.QueueFree(); dialog.Canceled += () => dialog.QueueFree(); dialog.PopupCentered(new Vector2I(620, 0));
+        dialog.AddChild(IslandUi.Padded(content, 6, 6, 6, 6)); AddChild(dialog); dialog.Confirmed += () => dialog.QueueFree(); dialog.Canceled += () => dialog.QueueFree(); IslandUi.Fit(dialog, 620);
     }
 
     public Task OpenHostingForTesting() => OpenHostingAsync();
+    public void OpenRulesForTesting() { if (_view.ValueKind == JsonValueKind.Object && _view.TryGetProperty("rules", out var current) && current.ValueKind == JsonValueKind.Object) OpenRules(current.Clone()); }
+    public void OpenTransferForTesting() => OpenTransfer();
+    public System.Collections.Generic.IEnumerable<ConfirmationDialog> DialogsForTesting => GetChildren().OfType<ConfirmationDialog>();
     public Task<bool> SubscribeHostingForTesting(Guid plan) => Do(_api!.SubscribeHosting(_island, plan), "Hospedagem contratada.");
     public Task<bool> RenewHostingForTesting() => Do(_api!.RenewHosting(_island), "Hospedagem renovada.");
 
@@ -257,7 +260,9 @@ public partial class IslandPropertyPage : ScrollContainer
     private void OpenRules(JsonElement rules)
     {
         var content = IslandUi.Column(8); content.AddChild(IslandUi.Text("É assim que os terrenos novos da ilha começam. Cada dono de terreno ainda pode mudar o seu em “Sobre este Terreno”.", 14, IslandUi.TextSecondary, false, true));
+        content.AddChild(IslandUi.Text("Quem pode entrar nos terrenos novos", 13, IslandUi.TextSecondary));
         var access = IslandUi.Dropdown(AccessChoices); IslandUi.Select(access, Str(rules, "accessMode")); content.AddChild(access);
+        content.AddChild(IslandUi.Text("Quem pode construir", 13, IslandUi.TextSecondary));
         var build = IslandUi.Dropdown(BuildChoices); IslandUi.Select(build, Str(rules, "buildMode")); content.AddChild(build);
         CheckBox Box(string text, bool on) { var b = new CheckBox { Text = text, ButtonPressed = on, FocusMode = FocusModeEnum.None }; content.AddChild(b); return b; }
         var scripts = Box("Permitir scripts", Flag(rules, "allowScripts")); var voice = Box("Permitir voz por proximidade", Flag(rules, "allowVoice")); var media = Box("Permitir mídia nos objetos de quem constrói", Flag(rules, "allowMedia"));

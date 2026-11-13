@@ -136,6 +136,24 @@ public partial class IslandPropertySmoke : Node3D
             server.IsOwner = true; server.Welcome = true; await page.LoadAsync(); await Frames(2); Require(!page.HasButtonForTesting("Colocar Ilha à Venda") && page.TextForTesting.Contains("ilha de boas-vindas"), "the welcome island has no sale");
             server.Gone = true; await page.LoadAsync(); await Frames(2); Require(page.StatusForTesting.Contains("ainda não tem a propriedade"), $"an old server is told apart (got {page.StatusForTesting})");
 
+            // --- the dialogs fit the screen: a dialog that opens thousands of pixels tall hides its Salvar button and nothing can be saved ---------------------------
+            server.IsOwner = true; server.Welcome = false; server.Gone = false; server.Pending = null; server.ForMe = false; await page.LoadAsync(); await Frames(3);
+            var screen = GetViewport().GetVisibleRect().Size;
+            foreach (var open in new (string Name, Action Show)[] { ("regras", page.OpenRulesForTesting), ("transferir", page.OpenTransferForTesting) })
+            {
+                open.Show(); await Frames(8); var shown = page.DialogsForTesting.Last();
+                Require(shown.Size.Y > 100 && shown.Position.Y >= 0 && shown.Position.Y + shown.Size.Y <= screen.Y && shown.Size.X <= screen.X, $"the {open.Name} dialog fits the screen with its buttons in sight (size {shown.Size}, at {shown.Position}, screen {screen})");
+                Require(shown.GetOkButton().Visible && shown.GetOkButton().GlobalPosition.Y + shown.GetOkButton().Size.Y <= screen.Y, $"and its confirm button can be reached ({open.Name})");
+                shown.Hide(); shown.QueueFree(); await Frames(2);
+            }
+            if (OS.GetEnvironment("LIFEVERSE_SHOT") is { Length: > 0 } shot)
+            {
+                // a picture of the dialogs the way a player sees them (LIFEVERSE_SECTION: rules or transfer)
+                GetWindow().Size = new Vector2I(1536, 1024); server.IsOwner = true; server.Welcome = false; server.Gone = false; await page.LoadAsync(); await Frames(6);
+                if (OS.GetEnvironment("LIFEVERSE_SECTION") == "transfer") page.OpenTransferForTesting(); else page.OpenRulesForTesting();
+                await Frames(10); GetViewport().GetTexture().GetImage().SavePng(shot);
+                var dialog = page.DialogsForTesting.LastOrDefault(); GD.Print($"dialog_size={dialog?.Size} view={GetViewport().GetVisibleRect().Size}");
+            }
             GD.Print("event=island_property_smoke result=passed");
             GetTree().Quit();
         }
