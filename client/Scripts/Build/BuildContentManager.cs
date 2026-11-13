@@ -125,6 +125,16 @@ public partial class BuildContentManager : Node
         var result = await Api.SaveAsync(view.State.Id, script, name, detail.Source); return result.Ok ? new ScriptResult(true, "Script renomeado.", script) : result;
     }
 
+    /// <summary>DUPLICAR: a new script in the same object with the code of the chosen one (the state it kept is not copied). The copy is named after the original.</summary>
+    public async Task<ScriptResult> DuplicateScriptAsync(Guid script)
+    {
+        if (Target is not { } view) return new ScriptResult(false, "Selecione um só objeto.");
+        if (!BuildPermissionManager.CanEditContents(view.State)) return new ScriptResult(false, "Este objeto não pode ser modificado: não recebe scripts.");
+        var detail = await Api.GetAsync(view.State.Id, script); if (detail is null) return new ScriptResult(false, "Não foi possível ler o script.");
+        var name = detail.Name.Length > 110 ? detail.Name[..110] : detail.Name;
+        return await Api.CreateAsync(view.State.Id, name + " (cópia)", detail.Source, "on_start");
+    }
+
     public async Task<ScriptResult> DeleteScriptAsync(Guid script) => Target is { } view ? await Api.DeleteAsync(view.State.Id, script) : new ScriptResult(false, "Selecione um só objeto.");
 
     /// <summary>RESETAR SCRIPTS: restarts every script of the object (the server ends the old runs and starts clean ones from the saved source).</summary>

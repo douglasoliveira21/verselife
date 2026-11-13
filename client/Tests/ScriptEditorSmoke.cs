@@ -43,6 +43,10 @@ public partial class ScriptEditorSmoke : Control
                 if (path.EndsWith("/pause", StringComparison.Ordinal)) { paused = true; return Task.FromResult<(long, string)>((200, "{\"status\":\"paused\"}")); }
                 if (path.EndsWith("/resume", StringComparison.Ordinal)) { paused = false; return Task.FromResult<(long, string)>((200, "{\"status\":\"active\"}")); }
                 if (method == "PUT" && path.Contains("/permissions/", StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, "{}"));
+                if (method == "DELETE" && path.Contains("/avatar-permissions/", StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, "{\"revoked\":true}"));
+                if (method == "GET" && path.EndsWith("/versions", StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { current = 3, versions = new[] { new { version = 2, name = "porta", lines = 4, bytes = 80, savedAt = "2026-11-13T12:00:00Z" }, new { version = 1, name = "porta", lines = 2, bytes = 40, savedAt = "2026-11-13T11:00:00Z" } } })));
+                if (method == "GET" && path.EndsWith("/versions/1", StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { version = 1, name = "porta", source = "-- versao um" })));
+                if (method == "POST" && path.EndsWith("/versions/1/restore", StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, "{\"version\":4,\"restoredFrom\":1}"));
                 if (path.EndsWith("/stop", StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, "{}"));
                 if (path.EndsWith("/reset", StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, "{\"reset\":1}"));
                 if (method == "GET" && path.EndsWith(script.ToString(), StringComparison.Ordinal)) return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { id = script, name = "porta", source = "function on_touch(event)\n  chat.say('oi')\nend\n", version = 3, status = "active" })));
@@ -60,6 +64,10 @@ public partial class ScriptEditorSmoke : Control
             Require(editor.PerformanceForTesting.Contains("Eventos tratados: 12") && editor.PerformanceForTesting.Contains("CPU: 4,5 ms") && editor.PerformanceForTesting.Contains("Último erro (linha 7): attempt to index nil") && editor.PerformanceForTesting.Contains("temporizadores ativos: 1"), $"performance (got {editor.PerformanceForTesting})");
             Require(editor.PermissionsForTesting.Contains("CONTROL_ANIMATION — dada pelo avatar") && !editor.PermissionsForTesting.Contains("CONTROL_PHYSICS") && editor.OwnerPermissionsForTesting["CONTROL_PHYSICS"] && !editor.OwnerPermissionsForTesting["HTTP_REQUESTS"], $"the permissions of the owner are boxes, those of avatars a list (got {editor.PermissionsForTesting})");
             calls.Clear(); editor.ToggleOwnerPermissionForTesting("HTTP_REQUESTS"); await Frames(6); Require(calls.Contains($"PUT /api/v1/worlds/{island}/objects/{obj}/scripts/{script}/permissions/HTTP_REQUESTS") && editor.InfoForTesting.Contains("HTTP_REQUESTS concedida"), $"a box gives the permission (calls {string.Join(",", calls)}, info {editor.InfoForTesting})");
+            // Revogar: takes back a permission an avatar gave
+            Require(editor.RevocableForTesting == 1 && editor.RevokeEnabledForTesting, "the permission an avatar gave can be revoked");
+            calls.Clear(); await editor.RevokeSelectedAsync(); await Frames(4);
+            Require(calls.Any(c => c.StartsWith("DELETE", StringComparison.Ordinal) && c.Contains("/avatar-permissions/") && c.EndsWith("/CONTROL_ANIMATION", StringComparison.Ordinal)) && editor.InfoForTesting.Contains("revogada"), $"Revogar asks the server ({string.Join(", ", calls)})");
             Require(editor.PauseTextForTesting == "Pausar" && new[] { "Salvar (Ctrl+S)", "Validar", "Reiniciar", "Parar", "Pausar", "Atualizar", "Documentação" }.All(editor.HasButtonForTesting), "every button of the toolbar is there");
             var size = editor.SizeForTesting; Require(size.X <= screen.X && size.Y <= screen.Y, $"the window fits the screen (size {size}, screen {screen})");
 
@@ -90,6 +98,13 @@ public partial class ScriptEditorSmoke : Control
             editor.PressForTesting("Continuar"); await Frames(6); Require(calls.Any(c => c.EndsWith("/resume", StringComparison.Ordinal)) && editor.PauseTextForTesting == "Pausar", "Continuar resumes");
             editor.PressForTesting("Parar"); await Frames(6); Require(calls.Any(c => c.EndsWith("/stop", StringComparison.Ordinal)) && editor.InfoForTesting.Contains("parado"), "Parar stops");
             editor.PressForTesting("Reiniciar"); await Frames(6); Require(calls.Any(c => c.EndsWith("/reset", StringComparison.Ordinal)) && editor.InfoForTesting.Contains("reiniciado"), "Reiniciar restarts");
+
+            // ---- Histórico: the versions kept, the code of one, and going back to it ----
+            calls.Clear(); editor.PressForTesting("Histórico"); await Frames(8); var history = editor.HistoryForTesting!;
+            Require(history.IsOpen && history.VersionCountForTesting == 2 && history.NoteForTesting.Contains("Versão atual: 3") && !history.CanRestoreForTesting, $"the history lists the kept versions (got {history.NoteForTesting})");
+            await history.PickForTesting(1); await Frames(4); Require(history.PreviewForTesting == "-- versao um" && history.CanRestoreForTesting, "picking a version shows its code and allows going back to it");
+            calls.Clear(); await history.PressRestoreForTesting(); await Frames(6);
+            Require(calls.Any(c => c.StartsWith("POST", StringComparison.Ordinal) && c.EndsWith("/versions/1/restore", StringComparison.Ordinal)) && calls.Any(c => c.StartsWith("GET", StringComparison.Ordinal) && c.EndsWith($"/scripts/{script}", StringComparison.Ordinal)) && history.NoteForTesting.Contains("restaurada"), $"restoring asks the server and reloads the script ({string.Join(", ", calls)})");
 
             // ---- the island has not reported yet ----
             reported = false; await editor.RefreshConsoleAsync(); Require(editor.StateForTesting == "● aguardando a ilha" && editor.PerformanceForTesting.Contains("ainda não informou") && editor.ConsoleForTesting.Contains("sem execuções"), $"before the first report the editor says so (got {editor.StateForTesting} / {editor.ConsoleForTesting})");

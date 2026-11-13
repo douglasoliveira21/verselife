@@ -199,6 +199,30 @@ public sealed partial class IslandScripting
         return true;
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(Guid Script, Guid Avatar, string Item, string? Error)> _givesDone = new();
+
+    /// <summary>The script asked to give an item of its object to an avatar who allowed it: the API checks the rights of the owner and makes the copy. The result is handed to the script on the next tick.</summary>
+    public bool StartGiveItem(ScriptDefinition script, Guid avatarId, Guid assetId, string itemName)
+    {
+        if (_avatars.FirstOrDefault(a => a.AvatarId == avatarId) is not { } receiver) return false;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/script-give-item", new { scriptId = script.Id, recipientUserId = receiver.UserId, recipientAvatarId = avatarId, assetId }, cancel.Token);
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancel.Token)); var root = document.RootElement;
+                var status = root.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                if (response.IsSuccessStatusCode && status == "completed") _givesDone.Enqueue((script.Id, avatarId, itemName, null));
+                else _givesDone.Enqueue((script.Id, avatarId, itemName, root.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : "failed"));
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) { _givesDone.Enqueue((script.Id, avatarId, itemName, "unavailable")); }
+        });
+        return true;
+    }
+
+    private void DrainGives() { while (_givesDone.TryDequeue(out var done)) _host.CompleteGiveItem(done.Script, done.Avatar, done.Item, done.Error); }
+
     private void DrainPayments() { while (_paymentsDone.TryDequeue(out var done)) _host.CompletePayment(done.Script, done.Request, done.Transaction, done.Error); }
 }
 

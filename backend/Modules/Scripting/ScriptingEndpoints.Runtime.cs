@@ -42,6 +42,10 @@ public static partial class ScriptingEndpoints
         {
             var stored = await db.ScriptGrants.Where(x => reported.Contains(x.ScriptId) && x.SubjectId != Guid.Empty).ToListAsync(ct);   // the owner's grants are set only from the editor
             var wanted = grants.Where(g => reported.Contains(g.ScriptId) && g.SubjectId != Guid.Empty && g.Permission.Length is > 0 and <= 32).Select(g => (g.ScriptId, g.SubjectId, g.Permission)).ToHashSet();
+            // what the owner took back stays gone while the island still reports it; once a report no longer has it the island has read the revocation
+            var revoked = await db.ScriptGrantRevocations.Where(x => reported.Contains(x.ScriptId)).ToListAsync(ct);
+            db.ScriptGrantRevocations.RemoveRange(revoked.Where(r => !wanted.Contains((r.ScriptId, r.SubjectId, r.Permission))));
+            wanted.ExceptWith(revoked.Select(r => (r.ScriptId, r.SubjectId, r.Permission)));
             db.ScriptGrants.RemoveRange(stored.Where(g => !wanted.Contains((g.ScriptId, g.SubjectId, g.Permission))));
             var have = stored.Select(g => (g.ScriptId, g.SubjectId, g.Permission)).ToHashSet();
             foreach (var grant in wanted.Where(g => !have.Contains(g))) db.ScriptGrants.Add(new ScriptGrant { ScriptId = grant.ScriptId, SubjectId = grant.SubjectId, Permission = grant.Permission, GrantedAt = now });
@@ -125,6 +129,22 @@ public sealed record OwnerPermissionRequest(bool Granted);
 public static partial class ScriptingEndpoints
 {
     /// <summary>The owner gives a script a permission over the object (or takes it back): physics, media, outside addresses, NPCs. The island applies it the next time it reads its scripts (within about 15 seconds).</summary>
+    /// <summary>The owner takes back a permission an avatar gave the script: it ends at once here and the island server drops it the next time it reads its content.</summary>
+    internal static async Task<IResult> RevokeAvatarPermissionAsync(Guid islandId, Guid objectId, Guid scriptId, Guid subjectId, string permission, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!TryUser(context, out var user)) return Results.Unauthorized();
+        if (!await CanEditAsync(db, islandId, user, ct)) return Results.Forbid();
+        permission = permission.ToUpperInvariant();
+        if (subjectId == Guid.Empty || !LifeVerse.Scripting.ScriptPermission.OfAvatars.Contains(permission)) return Results.Json(new { error = "bad_permission", allowed = LifeVerse.Scripting.ScriptPermission.OfAvatars }, statusCode: StatusCodes.Status400BadRequest);
+        if (!await db.ObjectScripts.AsNoTracking().AnyAsync(x => x.Id == scriptId && x.ObjectId == objectId, ct)) return Results.NotFound();
+        var row = await db.ScriptGrants.SingleOrDefaultAsync(x => x.ScriptId == scriptId && x.SubjectId == subjectId && x.Permission == permission, ct);
+        if (row is null) return Results.NotFound();
+        db.ScriptGrants.Remove(row);
+        if (!await db.ScriptGrantRevocations.AnyAsync(x => x.ScriptId == scriptId && x.SubjectId == subjectId && x.Permission == permission, ct)) db.ScriptGrantRevocations.Add(new ScriptGrantRevocation { ScriptId = scriptId, SubjectId = subjectId, Permission = permission, RevokedAt = clock.GetUtcNow() });
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(new { permission, subjectId, revoked = true });
+    }
+
     internal static async Task<IResult> SetOwnerPermissionAsync(Guid islandId, Guid objectId, Guid scriptId, string permission, OwnerPermissionRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {
         if (!TryUser(context, out var user)) return Results.Unauthorized();

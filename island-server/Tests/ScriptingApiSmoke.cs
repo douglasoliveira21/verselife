@@ -35,7 +35,7 @@ public partial class ScriptingApiSmoke : Node
             var rootSource = "function on_touch(e) chat.whisper('psiu') chat.shout('ei') object.setLinkPosition(2, 5, 1, 20) storage.set('toques', (storage.get('toques') or 0) + 1) print('tocado por ' .. e.avatar.name) "
                 + "dialog.show(e.avatar_id, {title = 'Porta', message = 'Abrir?', buttons = {'Sim', 'Não'}}) permissions.request(e.avatar_id, 'CONTROL_ANIMATION') end "
                 + "function on_dialog_response(e) chat.say('resposta ' .. e.response) end function on_permission_granted(e) chat.say('permitido ' .. e.permission) end function on_region_shutdown() chat.say('desligando') end function on_link_message(e) chat.say('link ' .. e.message) end";
-            var childSource = "function on_link_message(e) chat.say('filho ouviu ' .. e.message) end function on_collision_enter(e) chat.say('bateu ' .. e.entity.type .. ' ' .. e.entity.name) end function on_land_collision(e) chat.say('pousou ' .. e.speed) end function on_collision_exit(e) chat.say('saiu ' .. e.entity.name) end function on_touch_end(e) chat.say(\"soltou \" .. e.avatar.name) end function on_double_click(e) chat.say(\"duplo \" .. e.avatar.name) end";
+            var childSource = "function on_link_message(e) chat.say('filho ouviu ' .. e.message) end function on_collision_enter(e) chat.say('bateu ' .. e.entity.type .. ' ' .. e.entity.name) end function on_land_collision(e) chat.say('pousou ' .. e.speed) end function on_collision_exit(e) chat.say('saiu ' .. e.entity.name) end function on_touch_end(e) chat.say(\"soltou \" .. e.avatar.name) end function on_double_click(e) chat.say(\"duplo \" .. e.avatar.name) end function on_velocity_changed(e) if e.speed < 10 then object.setName(\"corre \" .. math.floor(e.speed)) end end function on_physics_update(e) if e.speed >= 10 then object.setPosition(e.position.x, 7.5, e.position.z) end end function on_trigger_enter(e) object.setName(\"dentro \" .. e.avatar.name) end function on_trigger_exit(e) object.setName(\"fora \" .. e.avatar.name) end";
             var ana = Guid.NewGuid(); var bruno = Guid.NewGuid();
             var accepted = JsonSerializer.Serialize(new { operation = "update", objectId = child, revision = 2 });
             var posts = new List<string>();
@@ -124,6 +124,12 @@ public partial class ScriptingApiSmoke : Node
             scripting.OnContact(child, root, true, .1f); scripting.OnContact(child, root, true, 4f); scripting.OnContact(child, null, true, 5f); scripting.OnContact(child, root, false, 0f); await Run(8); await Task.Delay(300); await Run(8);
             Require(said.Any(s => s.Text == "bateu object Casa") && said.Any(s => s.Text == "bateu ground Terreno") && said.Any(s => s.Text == "pousou 5") && said.Any(s => s.Text == "saiu Casa") && said.Count(s => s.Text == "bateu object Casa") == 1, $"collisions reached the script (told [{string.Join(" // ", told)}] scripts {string.Join(",", scripting.Scripts.Select(s => s.Name + ":" + s.Quarantined + ":" + s.Reason))})");
 
+
+            // the owner took back SHOW_HUD from the editor: the island drops it when it reads its content again
+            async Task<JsonElement> LastReport() { await scripting.FlushStateAsync(CancellationToken.None); var r = posts.Last(p => p.Contains("script-runtime")); return JsonDocument.Parse(r[r.IndexOf((char)123)..]).RootElement; }
+            var before = await LastReport(); Require(before.GetProperty("grants").EnumerateArray().Any(g => g.GetProperty("permission").GetString() == "SHOW_HUD" && g.GetProperty("subjectId").GetGuid() == ana), "the island reports the permission the avatar gave");
+            routes["island-content"] = routes["island-content"].Replace("\"state\":{}", "\"state\":{},\"revoked\":[{\"scriptId\":\"" + scriptClock + "\",\"subjectId\":\"" + ana + "\",\"permission\":\"SHOW_HUD\"}]"); await scripting.RefreshAsync(CancellationToken.None); await Run(4);
+            var after = await LastReport(); Require(!after.GetProperty("grants").EnumerateArray().Any(g => g.GetProperty("permission").GetString() == "SHOW_HUD" && g.GetProperty("subjectId").GetGuid() == ana), "a permission the owner took back is gone from the island");
             // letting go of the button, and two touches in a row (the window script may chat only five times in ten seconds: let it pass)
             await Task.Delay(10500);
             said.Clear();
@@ -136,6 +142,47 @@ public partial class ScriptingApiSmoke : Node
             scripting.Touch(anaPresence, child); scripting.Touch(anaPresence, child); await Run(8); await Task.Delay(300); await Run(8);
             Require(said.Count(s => s.Text == "duplo Ana") == 1, $"two quick touches are one double click ([{string.Join("|", said.Select(s => s.Text))}] told [{string.Join(" // ", told)}])");
 
+
+            // simulated bodies: on_physics_update while it moves (and once when it stops) and on_velocity_changed when the velocity changes enough
+            var speedNow = new LifeVerse.Scripting.Vec3(0, 0, 0); scripting.VelocityOf = id => id == child ? speedNow : null;
+            await Run(8); posts.Clear();
+            speedNow = new LifeVerse.Scripting.Vec3(3, 0, 4); await Run(8); await Task.Delay(300); await Run(8);
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("corre 5")), $"on_velocity_changed told the speed ({string.Join(" // ", posts.Select(p => p.Length > 520 ? p[200..520] : p))})");
+            Require(!posts.Any(p => p.Contains("7.5")), "a slow body does not trigger the fast branch"); posts.Clear(); await scripting.RefreshAsync(CancellationToken.None); await Run(4); speedNow = new LifeVerse.Scripting.Vec3(12, 0, 0); await Run(8); await Task.Delay(300); await Run(8);
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("7.5")), $"on_physics_update ran while the body moved (posts {posts.Count}, told [{string.Join(" // ", told)}] said {string.Join("|", said.Select(s => s.Text))})");
+            scripting.VelocityOf = null; await Run(4);
+
+            // trigger volumes: the box of the object (2 x 3 x 0.2 at 11, 1, 20), not a circle around it
+            Require(IslandScripting.InsideVolume(new(11, 1, 20), new(0, 0, 0), new(2, 3, .2f), 11, 1, 20) && !IslandScripting.InsideVolume(new(11, 1, 20), new(0, 0, 0), new(2, 3, .2f), 11, 1, 22), "the volume is the box of the object");
+            Require(IslandScripting.InsideVolume(new(0, 0, 0), new(0, 90, 0), new(10, 1, 1), 0, 0, 4) && !IslandScripting.InsideVolume(new(0, 0, 0), new(0, 90, 0), new(10, 1, 1), 4, 0, 0), "the volume turns with the object");
+            var guest = new AvatarPresence(2, ana, anaUser, "Ana", 11, 1, 20);
+            await scripting.RefreshAsync(CancellationToken.None); posts.Clear();
+            for (var i = 0; i < 12; i++) { scripting.Update([guest]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 8; i++) { scripting.Update([guest]); await Task.Delay(60); }
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("dentro Ana")), "stepping into the volume was announced");
+            await scripting.RefreshAsync(CancellationToken.None); posts.Clear();
+            for (var i = 0; i < 12; i++) { scripting.Update([anaPresence]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 8; i++) { scripting.Update([anaPresence]); await Task.Delay(60); }
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("fora Ana")), "stepping out of the volume was announced");
+
+            // giving: the object carries an item, the avatar allows GIVE_ITEMS, the API makes the copy and the script hears about it
+            var giver = Guid.NewGuid(); var giverScript = Guid.NewGuid(); var gift = Guid.NewGuid();
+            var giverSource = "function on_touch(e) permissions.request(e.avatar_id, 'GIVE_ITEMS') end function on_permission_granted(e) inventory.giveItem(e.avatar_id, 'Brinde') end function on_item_given(e) object.setName('deu ' .. e.item) end function on_item_give_failed(e) object.setName('falhou ' .. e.reason) end function on_purchase(e) object.setName('vendido ' .. e.price .. ' ' .. e.sale_type) end";
+            routes["script-give-item"] = "{\"status\":\"completed\",\"name\":\"Brinde\"}";
+            routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(giver, "Doador", 30).Replace("\"contentJson\":\"[]\"", "\"contentJson\":" + JsonSerializer.Serialize(JsonSerializer.Serialize(new[] { new { assetId = gift, name = "Brinde", category = "objects" } }))) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(giverScript, giver, "doador", giverSource) + ",");
+            await scripting.RefreshAsync(CancellationToken.None); var donor = new AvatarPresence(2, ana, anaUser, "Ana", 30, 1, 20);
+            for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            sent.Clear(); posts.Clear(); scripting.Touch(donor, giver); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            var giveAsk = sent.LastOrDefault(s => s.Json.GetProperty("kind").GetString() == "permission"); Require(giveAsk.Json.ValueKind == JsonValueKind.Object && giveAsk.Json.GetProperty("message").GetString()!.Contains("entregar itens"), "the avatar is asked to allow GIVE_ITEMS");
+            scripting.OnDialogResponse(donor, JsonSerializer.Serialize(new { id = giveAsk.Json.GetProperty("id").GetGuid(), response = "Permitir" })); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(posts.Any(p => p.Contains("script-give-item") && p.Contains(gift.ToString()) && p.Contains(anaUser.ToString())), "the island asked the API to deliver the item to the avatar");
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("deu Brinde")), "the script heard that the delivery was done");
+            // a sale that came back through the island reaches the scripts of the object that was sold, and does not make the island forget it
+            await scripting.RefreshAsync(CancellationToken.None); posts.Clear();
+            scripting.OnObjectApplied(JsonSerializer.Serialize(new { operation = "bought", objectId = giver, saleType = "copy", price = 250, buyerUserId = anaUser, sellerUserId = owner, delivered = Array.Empty<string>(), objects = Array.Empty<object>() }));
+            Require(scripting.GetObject(giver) is not null, "a sale does not remove the object from the island");
+            for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("vendido 250 copy")), "on_purchase told the price and the kind of sale");
+            posts.Clear(); scripting.OnObjectApplied(JsonSerializer.Serialize(new { operation = "bought", objectId = giver, buyerUserId = anaUser, replay = true, objects = Array.Empty<object>() })); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(!posts.Any(p => p.Contains("vendido")), "a replayed purchase is not a new sale");
             // shutdown
             said.Clear(); await scripting.ShutdownAsync(); await Run(2); Require(said.Any(s => s.Text == "desligando") && posts.Any(p => p.Contains("script-state") || p.Contains("script-runtime")), "scripts hear the shutdown and the state is saved");
 

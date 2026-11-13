@@ -545,6 +545,29 @@ public sealed partial class ScriptHost
         inventory["hasItem"] = Fn(args => DynValue.NewBoolean(Find(args) is not null));
         inventory["getItemType"] = Fn(args => Find(args) is { } item ? DynValue.NewString(item.Type) : DynValue.Nil);
         inventory["count"] = Fn(_ => DynValue.NewNumber(Items().Count));
+        // giving: a copy of an item of the object to an avatar who allowed it. Starts the delivery; the result comes as on_item_given or on_item_give_failed.
+        inventory["giveItem"] = Fn(args =>
+        {
+            var who = AvatarId(args, 0);
+            if (!_permissions.Has(instance.Definition.Id, who, ScriptPermission.GiveItems)) throw new ScriptRuntimeException("this avatar has not allowed GIVE_ITEMS: ask with permissions.request(avatarId, 'GIVE_ITEMS') and wait for on_permission_granted");
+            var wanted = Plain(args, 1, "item name"); var item = Items().FirstOrDefault(i => string.Equals(i.Name, wanted, StringComparison.OrdinalIgnoreCase)) ?? throw new ScriptRuntimeException("the object does not carry an item with that name (see inventory.list)");
+            if (item.AssetId is not { } asset) throw new ScriptRuntimeException("that item cannot be given");
+            if (item.Type is "scripts" or "notecards") throw new ScriptRuntimeException($"items of type '{item.Type}' cannot be given by scripts");
+            var now = world.Now; while (instance.Gives.Count > 0 && now - instance.Gives.Peek() > 60) instance.Gives.Dequeue();
+            if (instance.Gives.Count >= MaxGivesPerMinute) throw new ScriptRuntimeException($"inventory.giveItem: at most {MaxGivesPerMinute} a minute"); instance.Gives.Enqueue(now);
+            return DynValue.NewBoolean(world.StartGiveItem(instance.Definition, who, asset, item.Name));
+        });
+    }
+
+    public const int MaxGivesPerMinute = 6;
+
+    /// <summary>The result of a delivery as the API reported it: <c>on_item_given</c> when the avatar now has the item, <c>on_item_give_failed</c> (with the reason) otherwise.</summary>
+    public void CompleteGiveItem(Guid scriptId, Guid avatarId, string itemName, string? error)
+    {
+        if (Find(scriptId) is not { } instance) return;
+        var data = new Dictionary<string, object?> { ["avatar_id"] = avatarId, ["item"] = itemName, ["avatar"] = new Dictionary<string, object?> { ["id"] = avatarId, ["name"] = AvatarName(avatarId) } };
+        if (error is null) Enqueue(new ScriptEvent(instance.Definition.ObjectId, "item_given", data, scriptId));
+        else { data["reason"] = error; Enqueue(new ScriptEvent(instance.Definition.ObjectId, "item_give_failed", data, scriptId)); }
     }
 
     /// <summary>The Conteúdo of the object changed: its scripts hear <c>on_inventory_changed</c> and, for each item, <c>on_item_added</c> or <c>on_item_removed</c> (at most ten items per change).</summary>

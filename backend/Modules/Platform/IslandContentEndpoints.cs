@@ -23,6 +23,7 @@ public static class IslandContentEndpoints
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/script-runtime", Scripting.ScriptingEndpoints.SaveRuntimeAsync).WithTags("Platform");
         endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-http", Scripting.ScriptingEndpoints.ScriptHttpAsync).WithTags("Platform");
         endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-payment", Scripting.ScriptingEndpoints.ScriptPaymentAsync).WithTags("Platform");
+        endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-give-item", Scripting.ScriptingEndpoints.ScriptGiveItemAsync).WithTags("Platform");
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/vehicles", VehiclesAsync).WithTags("Platform");
         return endpoints;
     }
@@ -47,8 +48,9 @@ public static class IslandContentEndpoints
         var state = (await db.ScriptStates.AsNoTracking().Where(x => scriptIds.Contains(x.ScriptId)).Select(x => new { x.ScriptId, x.Key, x.ValueJson }).ToListAsync(ct))
             .GroupBy(x => x.ScriptId).ToDictionary(group => group.Key, group => group.ToDictionary(x => x.Key, x => x.ValueJson));
         var grants = await db.ScriptGrants.AsNoTracking().Where(x => scriptIds.Contains(x.ScriptId)).Select(x => new { x.ScriptId, x.SubjectId, x.Permission }).ToListAsync(ct);
+        var revoked = await db.ScriptGrantRevocations.AsNoTracking().Where(x => scriptIds.Contains(x.ScriptId)).Select(x => new { x.ScriptId, x.SubjectId, x.Permission }).ToListAsync(ct);
         var islandName = await db.Islands.AsNoTracking().Where(x => x.Id == server.IslandId).Select(x => x.Name).SingleOrDefaultAsync(ct) ?? "Ilha";
-        return Results.Ok(new { islandId = server.IslandId, islandName, objects, scripts, state, grants });
+        return Results.Ok(new { islandId = server.IslandId, islandName, objects, scripts, state, grants, revoked });
     }
 
     /// The vehicles that belong on this island; the island server simulates them and adds new ones as they appear.

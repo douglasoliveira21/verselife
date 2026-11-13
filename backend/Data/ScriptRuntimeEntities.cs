@@ -46,3 +46,24 @@ public sealed class ScriptGrant
     public required string Permission { get; set; }
     public DateTimeOffset GrantedAt { get; set; }
 }
+
+/// <summary>An earlier saved version of a script's code: what it was before a save replaced it. The most recent ones are kept so a person can go back.</summary>
+public sealed class ScriptRevision
+{
+    public Guid Id { get; set; }
+    public Guid ScriptId { get; set; }
+    public int Version { get; set; }
+    public required string Name { get; set; }
+    public required string Source { get; set; }
+    public Guid SavedByUserId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>A permission that its owner took back from the editor. The island server still holds it until it reads this; the row keeps the island's next report from bringing the permission back, and goes when a report no longer has it.</summary>
+public sealed class ScriptGrantRevocation
+{
+    public Guid ScriptId { get; set; }
+    public Guid SubjectId { get; set; }
+    public required string Permission { get; set; }
+    public DateTimeOffset RevokedAt { get; set; }
+}

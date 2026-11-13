@@ -84,7 +84,7 @@ public partial class BuildContentTab : VBoxContainer
         Small(row1, "Inserir do inventário…", "Escolhe um item do seu inventário (ou arraste-o para a lista)", OpenPicker); Small(row1, "Abrir", "Abre o script no editor ou o item no inventário", OpenSelected); Small(row1, "Remover", "Tira o item (ou apaga o script) do objeto", () => { if (_pickedKey.Length > 0) _confirmRemove.PopupCentered(); else Said?.Invoke("Escolha um item da lista para remover."); });
         _name = new LineEdit { PlaceholderText = "Novo nome", MaxLength = 120, SizeFlagsHorizontal = SizeFlags.ExpandFill }; AddChild(_name);
         var row2 = new HBoxContainer(); row2.AddThemeConstantOverride("separation", 6); AddChild(row2);
-        Small(row2, "Renomear", "Muda o nome do item escolhido", Rename); Small(row2, "Copiar", "Pede uma cópia do item ao inventário (precisa do direito de copiar)", () => ItemAction("copy")); Small(row2, "Propriedades", "Abre as propriedades do item no inventário", () => ItemAction("properties"));
+        Small(row2, "Renomear", "Muda o nome do item escolhido", Rename); Small(row2, "Duplicar", "Cria uma cópia do script escolhido neste objeto (o código, sem o estado guardado)", () => _ = DuplicateScriptAsync()); Small(row2, "Copiar", "Pede uma cópia do item ao inventário (precisa do direito de copiar)", () => ItemAction("copy")); Small(row2, "Propriedades", "Abre as propriedades do item no inventário", () => ItemAction("properties"));
         var row3 = new HBoxContainer(); row3.AddThemeConstantOverride("separation", 6); AddChild(row3);
         _folder = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, FocusMode = FocusModeEnum.None, TooltipText = "Pasta de destino" }; foreach (var folder in BuildContentManager.Folders) _folder.AddItem(folder); row3.AddChild(_folder);
         Small(row3, "Mover para a pasta", "Muda o item de pasta", MoveSelected);
@@ -138,6 +138,18 @@ public partial class BuildContentTab : VBoxContainer
     private (bool Script, Guid Id)? Picked() { var parts = _pickedKey.Split(':'); return parts.Length == 2 && Guid.TryParse(parts[1], out var id) ? (parts[0] == "script", id) : null; }
 
     // ---- actions -----------------------------------------------------------------------------------------------------------
+
+    public Task DuplicateScriptForTesting() => DuplicateScriptAsync();
+
+    /// <summary>DUPLICAR: copies the chosen script (its code, not its saved state) into the same object and opens the copy.</summary>
+    private async Task DuplicateScriptAsync()
+    {
+        if (Picked() is not { Script: true } picked) { Said?.Invoke("Escolha um script da lista para duplicar (para itens, use Copiar)."); return; }
+        var result = await _content.DuplicateScriptAsync(picked.Id);
+        if (!result.Ok) { Said?.Invoke(result.Message); _info.Text = result.Message; return; }
+        Said?.Invoke("Script duplicado."); await RefreshAsync(); SelectKey(Key(true, result.Id));
+        if (_content.Target is { } view) await _editor.OpenAsync(view.State.Id, result.Id);
+    }
 
     public async Task NewScriptAsync()
     {

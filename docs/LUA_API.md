@@ -21,6 +21,10 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_click` | O mesmo que on_touch. | os mesmos de on_touch |
 | `on_touch_end` | O avatar solta o botão depois de tocar no objeto (só chega para quem tocou, até 60 s depois). | os mesmos de on_touch, mais duration (segundos com o botão apertado) |
 | `on_double_click` | O mesmo avatar toca duas vezes seguidas no objeto (até 0,5 s entre os toques); on_touch também dispara em cada toque. | os mesmos de on_touch |
+| `on_physics_update` | O objeto simulado se move (4 vezes por segundo; uma última vez quando para). Só para corpos físicos. | velocity {x, y, z}, speed, position {x, y, z} |
+| `on_velocity_changed` | A velocidade do objeto simulado mudou pelo menos 0,5 m/s desde o último aviso (também ao parar). | os mesmos de on_physics_update |
+| `on_trigger_enter` | Um avatar entra no volume do objeto (a caixa do próprio objeto, com o tamanho e a direção dele; esferas e cilindros contam como a caixa em volta). Útil para tapetes, portais e zonas. | os mesmos de on_touch |
+| `on_trigger_exit` | Um avatar sai do volume do objeto. | os mesmos de on_touch |
 | `on_enter` | Um avatar entra na área do objeto. | os mesmos de on_touch |
 | `on_avatar_enter` | O mesmo que on_enter. | os mesmos de on_touch |
 | `on_leave` | Um avatar sai da área do objeto. | os mesmos de on_touch |
@@ -36,9 +40,12 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_http_response` | A resposta de uma http.request chegou (ou ela falhou). | request_id, status, body, error, ok |
 | `on_payment` | Um pagamento pedido com economy.requestPayment foi concluído: o dinheiro já está na carteira do dono. | request_id, avatar_id, avatar.id, avatar.name, amount, transaction_id |
 | `on_payment_failed` | O pagamento foi recusado pelo avatar ou não pôde ser feito. | request_id, avatar_id, amount, reason (declined, insufficient_balance, wallet_blocked, own_object, unavailable) |
+| `on_purchase` | O objeto foi comprado no mercado do mundo (clique Comprar): o evento chega aos scripts do objeto vendido, depois que o pagamento foi aprovado pela API. | price (L$), sale_type (original, copy ou contents), avatar_id, avatar_name, avatar.id, avatar.name, user_id |
 | `on_inventory_changed` | O Conteúdo do objeto mudou (item posto ou tirado). | added, removed (quantos) |
 | `on_item_added` | Um item foi posto no Conteúdo do objeto. | item.name, item.type, item.id |
 | `on_item_removed` | Um item saiu do Conteúdo do objeto. | item.name, item.type, item.id |
+| `on_item_given` | A entrega pedida com inventory.giveItem terminou: o avatar tem o item. | avatar_id, avatar.name, item (nome) |
+| `on_item_give_failed` | A entrega pedida com inventory.giveItem não aconteceu. | avatar_id, avatar.name, item, reason (not_copyable, item_unavailable, unavailable...) |
 | `on_animation_finished` | Uma animação de avatar começada por avatar.playAnimation terminou. | avatar_id, avatar.id, avatar.name, name, reason (finished, interrupted, stopped, replaced) |
 | `on_hud_click` | O jogador clicou num botão do HUD do script. | avatar_id, avatar.id, avatar.name, element |
 | `on_hud_input` | O jogador confirmou um campo de texto do HUD. | avatar_id, avatar.id, avatar.name, element, text |
@@ -1243,6 +1250,19 @@ Quantos itens o objeto carrega.
 
 ```lua
 chat.say(inventory.count())
+```
+
+### `inventory.giveItem(avatarId, nomeDoItem)`
+
+Entrega ao avatar uma CÓPIA de um item que o objeto carrega (Conteúdo). Depende do dono do objeto ter o item com direito de copiar e transferir; o avatar recebe com os direitos de próximo dono. O resultado chega em on_item_given ou on_item_give_failed.
+
+- **Retorna:** verdadeiro se a entrega começou
+- **Permissão:** GIVE_ITEMS (o avatar precisa permitir)
+- **Limites:** 6 por minuto por script; scripts e notecards não podem ser entregues
+- **Erros possíveis:** sem permissão do avatar; item que o objeto não carrega; limite
+
+```lua
+permissions.request(event.avatar.id, 'GIVE_ITEMS')  -- depois, em on_permission_granted: inventory.giveItem(event.avatar_id, 'Brinde')
 ```
 
 ## Animações

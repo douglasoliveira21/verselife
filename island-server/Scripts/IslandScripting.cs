@@ -98,6 +98,11 @@ public sealed partial class IslandScripting : IScriptWorld
                     if (grantSubject == Guid.Empty) ownerGrants.Add((grantScript, permission)); else if (!_grantsLoaded) _host.Permissions.Grant(grantScript, grantSubject, permission);   // what avatars allowed is kept by the island itself after the first read; what the owner allows comes from the editor every time
                 }
                 _host.Permissions.ReplaceOwnerGrants(ownerGrants); _grantsLoaded = true;
+                // permissions the owner took back from the editor end here as well
+                if (root.TryGetProperty("revoked", out var revoked) && revoked.ValueKind == JsonValueKind.Array)
+                    foreach (var one in revoked.EnumerateArray())
+                        if (one.TryGetProperty("scriptId", out var rs) && Guid.TryParse(rs.GetString(), out var revokedScript) && one.TryGetProperty("subjectId", out var rj) && Guid.TryParse(rj.GetString(), out var revokedSubject) && revokedSubject != Guid.Empty && one.TryGetProperty("permission", out var rp) && rp.GetString() is { } revokedPermission)
+                            _host.Permissions.Revoke(revokedScript, revokedSubject, revokedPermission);
             }
             var state = new Dictionary<Guid, Dictionary<string, string>>();
             if (root.TryGetProperty("state", out var states))
@@ -129,8 +134,10 @@ public sealed partial class IslandScripting : IScriptWorld
         {
             using var document = JsonDocument.Parse(acceptedJson);
             var root = document.RootElement;
+            var bought = root.TryGetProperty("operation", out var operation) && operation.ValueKind == JsonValueKind.String && operation.GetString() == "bought";
+            if (bought) NotePurchase(root);      // a sale does not remove the object it sold: the objects that changed hands come in the list below
             if (root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object) { var cached = Parse(state); _objects[cached.Id] = cached; UpdateObstacle(cached); FollowEffects(cached.Id); }
-            else if (root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) { _objects.Remove(removed); Obstacles.Remove(removed); ObjectsVersion++; }
+            else if (!bought && root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) { _objects.Remove(removed); Obstacles.Remove(removed); ObjectsVersion++; }
             foreach (var listName in new[] { "objects", "healed" }) if (root.TryGetProperty(listName, out var placed) && placed.ValueKind == JsonValueKind.Array) foreach (var one in placed.EnumerateArray()) { var cached = Parse(one); _objects[cached.Id] = cached; UpdateObstacle(cached); } // constructions placed, linksets changed, objects protected or re-hung: every object it carries
         }
         catch (Exception exception) when (exception is JsonException or KeyNotFoundException or InvalidOperationException) { }
@@ -222,9 +229,9 @@ public sealed partial class IslandScripting : IScriptWorld
     /// Called every server tick: timers, walking into or out of objects, queued events and the changes scripts made.
     public void Update(IReadOnlyList<AvatarPresence> avatars)
     {
-        var now = Now; _avatars = avatars; DrainHttp(); DrainPayments(); RestoreHuds(avatars);
+        var now = Now; _avatars = avatars; DrainHttp(); DrainPayments(); DrainGives(); RestoreHuds(avatars);
         _host.Tick(now);
-        if (now - _lastProximity >= .25) { _lastProximity = now; Proximity(avatars); WatchParcels(avatars); }
+        if (now - _lastProximity >= .25) { _lastProximity = now; Proximity(avatars); WatchParcels(avatars); WatchMotion(); WatchTriggers(avatars); }
         _host.Process(6);
         DrainChanges();
     }

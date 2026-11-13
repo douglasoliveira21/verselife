@@ -4354,6 +4354,30 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("script_grants", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptGrantRevocation", b =>
+                {
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("Permission")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("permission");
+
+                    b.Property<DateTimeOffset>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.HasKey("ScriptId", "SubjectId", "Permission");
+
+                    b.ToTable("script_grant_revocations", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ScriptLogLine", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4404,6 +4428,48 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("ScriptId", "CreatedAt");
 
                     b.ToTable("script_logs", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptRevision", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("SavedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("saved_by_user_id");
+
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("source");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScriptId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("script_revisions", "world");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.ScriptRuntimeStatus", b =>
@@ -6511,7 +6577,25 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptGrantRevocation", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
+                        .WithMany()
+                        .HasForeignKey("ScriptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ScriptLogLine", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
+                        .WithMany()
+                        .HasForeignKey("ScriptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptRevision", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
                         .WithMany()

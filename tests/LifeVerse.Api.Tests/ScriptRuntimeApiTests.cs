@@ -126,6 +126,29 @@ public sealed class ScriptRuntimeApiTests : IDisposable
     }
 
     [Fact]
+    public async Task TheOwnerTakesBackWhatAnAvatarAllowed_AndTheIslandReportDoesNotBringItBack()
+    {
+        var avatar = Guid.NewGuid(); var other = Guid.NewGuid();
+        Task<IResult> Revoke(Guid who, string permission, HttpContext? as_ = null, Guid? script = null) => ScriptingEndpoints.RevokeAvatarPermissionAsync(_island.Id, _object, script ?? _script, who, permission, as_ ?? As(_owner), _db, new FixedClock(_now), default);
+        await ScriptingEndpoints.SaveRuntimeAsync(_server.Id, new ScriptRuntimeReport([Item(_script)], [], [new ScriptGrantItem(_script, avatar, "SHOW_HUD"), new ScriptGrantItem(_script, other, "SHOW_HUD")]), Island(), _config, _db, TimeProvider.System, default);
+        Assert.Equal(403, Status(await Revoke(avatar, "SHOW_HUD", As(_stranger)))); Assert.Equal(2, await _db.ScriptGrants.CountAsync());
+        Assert.Equal(400, Status(await Revoke(avatar, "CONTROL_PHYSICS"))); Assert.Equal(400, Status(await Revoke(Guid.Empty, "SHOW_HUD")));                    // only what avatars give can be taken back this way
+        Assert.Equal(404, Status(await Revoke(avatar, "SHOW_HUD", null, Guid.NewGuid()))); Assert.Equal(404, Status(await Revoke(Guid.NewGuid(), "SHOW_HUD")));
+        Assert.Equal(200, Status(await Revoke(avatar, "show_hud")));
+        Assert.Equal([other], (await _db.ScriptGrants.AsNoTracking().ToListAsync()).Select(g => g.SubjectId).ToList());
+        // the island has not read the revocation yet and still reports the permission: it does not come back
+        await ScriptingEndpoints.SaveRuntimeAsync(_server.Id, new ScriptRuntimeReport([Item(_script)], [], [new ScriptGrantItem(_script, avatar, "SHOW_HUD"), new ScriptGrantItem(_script, other, "SHOW_HUD")]), Island(), _config, _db, TimeProvider.System, default);
+        Assert.Equal([other], (await _db.ScriptGrants.AsNoTracking().ToListAsync()).Select(g => g.SubjectId).ToList()); Assert.Single(await _db.ScriptGrantRevocations.ToListAsync());
+        // a report without it means the island dropped it: the revocation is done, and a new grant of the same avatar later is welcome
+        await ScriptingEndpoints.SaveRuntimeAsync(_server.Id, new ScriptRuntimeReport([Item(_script)], [], [new ScriptGrantItem(_script, other, "SHOW_HUD")]), Island(), _config, _db, TimeProvider.System, default);
+        Assert.Empty(await _db.ScriptGrantRevocations.ToListAsync());
+        await ScriptingEndpoints.SaveRuntimeAsync(_server.Id, new ScriptRuntimeReport([Item(_script)], [], [new ScriptGrantItem(_script, avatar, "SHOW_HUD"), new ScriptGrantItem(_script, other, "SHOW_HUD")]), Island(), _config, _db, TimeProvider.System, default);
+        Assert.Equal(2, await _db.ScriptGrants.CountAsync());
+    }
+
+    private sealed class FixedClock(DateTimeOffset now) : TimeProvider { public override DateTimeOffset GetUtcNow() => now; }
+
+    [Fact]
     public async Task TheOwnerGivesAndTakesBackPermissions_AndTheIslandReportNeverEatsThem()
     {
         Assert.Equal(200, Status(await ScriptingEndpoints.SetOwnerPermissionAsync(_island.Id, _object, _script, "control_physics", new OwnerPermissionRequest(true), As(_owner), _db, TimeProvider.System, default)));

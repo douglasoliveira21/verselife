@@ -33,7 +33,7 @@ public partial class BuildContentSmoke : Node3D
                 if (method == "GET" && path.EndsWith("/scripts")) return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(scripts.Select(s => new { id = s.Id, name = s.Name, version = s.Version, status = "active" }))));
                 if (method == "GET" && path.EndsWith("/api/v1/scripting/templates")) return Task.FromResult<(long, string)>((200, "[]"));
                 if (method == "GET" && (path.EndsWith("/runtime") || path.EndsWith("/api/v1/scripting/reference"))) return Task.FromResult<(long, string)>((404, "{}"));   // the island has not reported yet; no reference in this pretend server
-                if (method == "POST" && path.EndsWith("/scripts")) { var made = (Guid.NewGuid(), JsonDocument.Parse(body!).RootElement.GetProperty("name").GetString()!, "function on_touch(event) end", 1); scripts.Add(made); return Task.FromResult<(long, string)>((201, JsonSerializer.Serialize(new { id = made.Item1 }))); }
+                if (method == "POST" && path.EndsWith("/scripts")) { var made = (Guid.NewGuid(), JsonDocument.Parse(body!).RootElement.GetProperty("name").GetString()!, JsonDocument.Parse(body!).RootElement.TryGetProperty("source", out var given) ? given.GetString()! : "function on_touch(event) end", 1); scripts.Add(made); return Task.FromResult<(long, string)>((201, JsonSerializer.Serialize(new { id = made.Item1 }))); }
                 if (method == "GET" && path.EndsWith("/executions")) return Task.FromResult<(long, string)>((200, "[]"));
                 if (method == "GET") { var s = scripts.First(x => path.EndsWith(x.Id.ToString())); return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { id = s.Id, name = s.Name, source = s.Source, version = s.Version, status = "active" }))); }
                 if (method == "PUT") { var i = scripts.FindIndex(x => path.EndsWith(x.Id.ToString())); var doc = JsonDocument.Parse(body!).RootElement; scripts[i] = (scripts[i].Id, doc.GetProperty("name").GetString()!, doc.GetProperty("source").GetString()!, scripts[i].Version + 1); return Task.FromResult<(long, string)>((200, "{}")); }
@@ -57,6 +57,12 @@ public partial class BuildContentSmoke : Node3D
             Require(await tab.EditorForTesting.ValidateAsync(), "a valid script passes");
             tab.EditorForTesting.NameForTesting = "Porta"; await tab.EditorForTesting.SaveAsync(); await tab.RefreshForTesting();
             Require(scripts[0].Name == "Porta" && scripts[0].Version == 2, "saving writes name and source");
+
+            // --- DUPLICAR ---------------------------------------------------------------------------------------------------
+            tab.SelectForTesting(tab.Key(true, scripts[0].Id)); await tab.DuplicateScriptForTesting(); await Frames(3);
+            Require(scripts.Count == 2 && scripts[1].Name == "Porta (cópia)" && scripts[1].Source == scripts[0].Source && scripts[1].Id != scripts[0].Id, $"DUPLICAR creates a copy with the code of the script (got {scripts.Count} scripts, {(scripts.Count > 1 ? scripts[1].Name : "-")})");
+            Require(tab.EditorForTesting.ScriptIdForTesting == scripts[1].Id, "and opens the copy");
+            await tab.RemoveScriptForTesting(); await Frames(3); Require(scripts.Count == 1, "the copy can be removed on its own");
 
             // --- items in folders -----------------------------------------------------------------------------------------
             var sound = Guid.NewGuid(); var picture = Guid.NewGuid();

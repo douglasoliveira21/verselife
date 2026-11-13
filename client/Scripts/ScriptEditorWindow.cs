@@ -59,7 +59,7 @@ public partial class ScriptEditorWindow : Node
     public bool HasButtonForTesting(string text) => _window.FindChildren("*", "Button", true, false).OfType<Button>().Any(b => b.Text.Trim() == text && b.Visible);
 
     public void Initialize(ScriptApi api) { _api = api; BuildWindow(); }
-    public void UseApi(ScriptApi api) { _api = api; _docs?.UseApi(api); }
+    public void UseApi(ScriptApi api) { _api = api; _docs?.UseApi(api); _history?.UseApi(api); }
 
     private void BuildWindow()
     {
@@ -91,6 +91,7 @@ public partial class ScriptEditorWindow : Node
         _pause = Make("Pausar", "Pausa o script: ele não recebe eventos e os temporizadores param", UiStyle.ButtonKind.Secondary, () => _ = PauseAsync());
         Make("Atualizar", "Lê de novo o console, o desempenho e as permissões", UiStyle.ButtonKind.Secondary, () => _ = RefreshConsoleAsync());
         Make("Documentação", "Abre a referência da linguagem: funções, eventos, limites e exemplos", UiStyle.ButtonKind.Secondary, OpenDocs);
+        Make("Histórico", "Versões anteriores do código: veja uma e volte a ela", UiStyle.ButtonKind.Secondary, OpenHistory);
 
         _tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 170), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; content.AddChild(_tabs);
         _console = TextTab("Console", "Console: sem execuções ainda.");
@@ -112,7 +113,36 @@ public partial class ScriptEditorWindow : Node
             var permission = name; var box = new CheckBox { Text = $" {text}", FocusMode = Control.FocusModeEnum.None, Name = name }; box.AddThemeFontSizeOverride("font_size", 14);
             box.Toggled += on => { if (_script != Guid.Empty && !_syncingOwnerBoxes) _ = SetOwnerPermissionAsync(permission, on); }; column.AddChild(box); _ownerBoxes[name] = box;
         }
-        var label = new Label { Text = "Este script não recebeu nenhuma permissão de avatar.", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; label.AddThemeFontSizeOverride("font_size", 14); column.AddChild(label); return label;
+        var label = new Label { Text = "Este script não recebeu nenhuma permissão de avatar.", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; label.AddThemeFontSizeOverride("font_size", 14); column.AddChild(label);
+        var revoke = new HBoxContainer(); revoke.AddThemeConstantOverride("separation", 6); column.AddChild(revoke);
+        _revokePick = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None, TooltipText = "Permissões que avatares deram a este script" }; revoke.AddChild(_revokePick);
+        _revokeButton = new Button { Text = "Revogar", FocusMode = Control.FocusModeEnum.None, Disabled = true, TooltipText = "Tira do script a permissão escolhida: a ilha deixa de aceitá-la em até 15 segundos (o script pode pedir de novo)" }; UiStyle.StyleButton(_revokeButton, UiStyle.ButtonKind.Secondary, 14, 6, 14); _revokeButton.Pressed += () => _ = RevokeSelectedAsync(); revoke.AddChild(_revokeButton);
+        return label;
+    }
+
+    private OptionButton _revokePick = null!;
+    private Button _revokeButton = null!;
+    private List<ScriptGrantView> _avatarGrants = [];
+    public int RevocableForTesting => _avatarGrants.Count;
+    public bool RevokeEnabledForTesting => !_revokeButton.Disabled;
+    public void PickRevocableForTesting(int index) { if (index >= 0 && index < _revokePick.ItemCount) _revokePick.Select(index); }
+
+    /// <summary>Revogar: takes back the permission picked in the list of those avatars gave the script.</summary>
+    public async Task RevokeSelectedAsync()
+    {
+        var index = _revokePick.Selected; if (_script == Guid.Empty || index < 0 || index >= _avatarGrants.Count) return;
+        var grant = _avatarGrants[index]; if (!Guid.TryParse(grant.Subject, out var subject)) return;
+        var result = await _api.RevokeAvatarPermissionAsync(_object, _script, subject, grant.Permission); _info.Text = result.Message;
+        if (result.Ok) await RefreshConsoleAsync();
+    }
+
+    private void ShowRevocable(IReadOnlyList<ScriptGrantView> grants)
+    {
+        var keep = _revokePick.Selected >= 0 && _revokePick.Selected < _avatarGrants.Count ? _avatarGrants[_revokePick.Selected] : null;
+        _avatarGrants = [.. grants]; _revokePick.Clear();
+        foreach (var g in _avatarGrants) _revokePick.AddItem($"{g.Permission} — avatar {g.Subject[..Math.Min(8, g.Subject.Length)]}…");
+        if (keep is not null) { var again = _avatarGrants.FindIndex(g => g.Subject == keep.Subject && g.Permission == keep.Permission); if (again >= 0) _revokePick.Select(again); }
+        _revokeButton.Disabled = _avatarGrants.Count == 0;
     }
 
     private bool _syncingOwnerBoxes;
@@ -264,6 +294,16 @@ public partial class ScriptEditorWindow : Node
         var pause = _pause.Text == "Pausar"; var result = await _api.PauseAsync(_object, _script, pause); _info.Text = result.Message; if (result.Ok) ShowPauseState(pause ? "paused" : "active");
     }
 
+    private ScriptHistoryWindow? _history;
+    public ScriptHistoryWindow? HistoryForTesting => _history;
+
+    private void OpenHistory()
+    {
+        if (_script == Guid.Empty) return;
+        if (_history is null) { _history = new ScriptHistoryWindow { Name = "ScriptHistory" }; _history.UseApi(_api); _history.Restored = () => OpenAsync(_object, _script); AddChild(_history); }
+        _ = _history.OpenAsync(_object, _script);
+    }
+
     private void OpenDocs()
     {
         if (_docs is null) { _docs = new ScriptDocsWindow { Name = "ScriptDocs" }; _docs.UseApi(_api); _docs.InsertExample = text => { if (IsOpen) { _code.InsertTextAtCaret(text); MarkDirty(); } }; AddChild(_docs); }
@@ -310,6 +350,7 @@ public partial class ScriptEditorWindow : Node
             $"Erros: {runtime.Errors} · estouros de limite: {runtime.Violations} · suspensões: {runtime.Suspensions}", runtime.LastError.Length > 0 ? $"Último erro{(runtime.LastErrorLine > 0 ? $" (linha {runtime.LastErrorLine})" : "")}: {runtime.LastError}" : "Nenhum erro até agora.");
         _syncingOwnerBoxes = true; foreach (var (name, box) in _ownerBoxes) box.ButtonPressed = runtime.Grants.Any(g => g.Permission == name && Guid.TryParse(g.Subject, out var subject) && subject == Guid.Empty); _syncingOwnerBoxes = false;
         var fromAvatars = runtime.Grants.Where(g => !(Guid.TryParse(g.Subject, out var one) && one == Guid.Empty)).ToList();
+        ShowRevocable(fromAvatars);
         _permissions.Text = fromAvatars.Count == 0 ? "Este script não recebeu nenhuma permissão de avatar." : "Permissões dadas por avatares:\n" + string.Join("\n", fromAvatars.Select(g => $"• {g.Permission} — dada pelo avatar {g.Subject[..Math.Min(8, g.Subject.Length)]}…"));
     }
 

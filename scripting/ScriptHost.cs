@@ -53,6 +53,8 @@ public interface IScriptWorld
     bool StartHttp(ScriptDefinition script, Guid requestId, HttpSpec spec) => false;
     /// <summary>Starts the payment of an avatar who agreed to pay the owner of the object (the island asks the API, which moves the money). False when this world cannot; the result comes through <see cref="ScriptHost.CompletePayment"/>.</summary>
     bool StartPayment(ScriptDefinition script, Guid requestId, Guid avatarId, long amount) => false;
+    /// <summary>Starts the delivery of a copy of an item of the object to an avatar who allowed it (the island asks the API, which checks the rights); the result comes through <see cref="ScriptHost.CompleteGiveItem"/>. False when this world cannot.</summary>
+    bool StartGiveItem(ScriptDefinition script, Guid avatarId, Guid assetId, string itemName) => false;
     /// <summary>Pushes the body of the object the physics simulation runs (action: impulse, velocity, angular, gravity). False when the object is not a simulated body.</summary>
     bool ApplyPhysics(ScriptDefinition script, string action, Vec3 value) => false;
     /// <summary>The name of an avatar on the island, or null.</summary>
@@ -89,11 +91,11 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
 {
     private static readonly Dictionary<string, string[]> Handlers = new()
     {
-        ["start"] = ["on_start"], ["touch"] = ["on_touch", "on_touch_start", "on_click"], ["touch_end"] = ["on_touch_end"], ["double_click"] = ["on_double_click"], ["enter"] = ["on_enter", "on_avatar_enter"], ["leave"] = ["on_leave", "on_avatar_leave"],
+        ["start"] = ["on_start"], ["touch"] = ["on_touch", "on_touch_start", "on_click"], ["touch_end"] = ["on_touch_end"], ["physics_update"] = ["on_physics_update"], ["trigger_enter"] = ["on_trigger_enter"], ["trigger_exit"] = ["on_trigger_exit"], ["velocity_changed"] = ["on_velocity_changed"], ["double_click"] = ["on_double_click"], ["enter"] = ["on_enter", "on_avatar_enter"], ["leave"] = ["on_leave", "on_avatar_leave"],
         ["timer"] = ["on_timer"], ["chat"] = ["on_chat"], ["message"] = ["on_message", "on_object_message"], ["region_restart"] = ["on_region_restart", "on_region_start"],
         ["reset"] = ["on_reset"], ["destroy"] = ["on_destroy"], ["enable"] = ["on_enable"], ["disable"] = ["on_disable"], ["owner_changed"] = ["on_owner_changed"], ["region_shutdown"] = ["on_region_shutdown"],
         ["interval"] = ["on_interval"], ["delay_complete"] = ["on_delay_complete"], ["link_message"] = ["on_link_message"], ["script_error"] = ["on_script_error"], ["dialog_response"] = ["on_dialog_response"],
-        ["http_response"] = ["on_http_response"], ["payment"] = ["on_payment"], ["parcel_enter"] = ["on_parcel_enter"], ["parcel_leave"] = ["on_parcel_leave"], ["collision_enter"] = ["on_collision_enter", "on_collision"], ["collision_exit"] = ["on_collision_exit"], ["land_collision"] = ["on_land_collision"], ["hud_click"] = ["on_hud_click"], ["hud_input"] = ["on_hud_input"], ["hud_closed"] = ["on_hud_closed"], ["animation_finished"] = ["on_animation_finished"], ["inventory_changed"] = ["on_inventory_changed"], ["item_added"] = ["on_item_added"], ["item_removed"] = ["on_item_removed"], ["payment_failed"] = ["on_payment_failed"], ["permission_granted"] = ["on_permission_granted"], ["permission_denied"] = ["on_permission_denied"]
+        ["http_response"] = ["on_http_response"], ["payment"] = ["on_payment"], ["purchase"] = ["on_purchase"], ["item_given"] = ["on_item_given"], ["item_give_failed"] = ["on_item_give_failed"], ["parcel_enter"] = ["on_parcel_enter"], ["parcel_leave"] = ["on_parcel_leave"], ["collision_enter"] = ["on_collision_enter", "on_collision"], ["collision_exit"] = ["on_collision_exit"], ["land_collision"] = ["on_land_collision"], ["hud_click"] = ["on_hud_click"], ["hud_input"] = ["on_hud_input"], ["hud_closed"] = ["on_hud_closed"], ["animation_finished"] = ["on_animation_finished"], ["inventory_changed"] = ["on_inventory_changed"], ["item_added"] = ["on_item_added"], ["item_removed"] = ["on_item_removed"], ["payment_failed"] = ["on_payment_failed"], ["permission_granted"] = ["on_permission_granted"], ["permission_denied"] = ["on_permission_denied"]
     };
     /// <summary>The names of every function the host calls when something happens (what a script can define).</summary>
     public static IReadOnlyCollection<string> KnownHandlers { get; } = Handlers.Values.SelectMany(x => x).ToHashSet();
@@ -132,6 +134,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         public Queue<double> LinkMessages { get; } = new();
         public Queue<double> Directs { get; } = new();
         public Queue<double> Pushes { get; } = new();
+        public Queue<double> Gives { get; } = new();
         public int NextEffectId { get; set; } = 1;
         public List<ScriptLogEntry> Logs { get; } = [];
         public bool InHandler { get; set; }
