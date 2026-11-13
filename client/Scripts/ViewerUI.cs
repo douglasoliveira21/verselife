@@ -146,9 +146,9 @@ public partial class ViewerUI : CanvasLayer
         if (_world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow") is null)
             _world.AddChild(new IslandManagement.IslandManagementWindow { Name = "IslandManagementWindow", OpenLandManagement = (island, section, offer) => _ = _world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow")?.OpenSectionAsync(island, section, offer), ViewInSearch = (_, name) => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.OpenWithQuery(name), ViewProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), CurrentPosition = () => _player is null ? null : (_player.GlobalPosition.X, _player.GlobalPosition.Z) });
         if (_world.GetNodeOrNull<RealEstate.MyPropertiesWindow>("MyPropertiesWindow") is null)
-            _world.AddChild(new RealEstate.MyPropertiesWindow { Name = "MyPropertiesWindow", Visit = JoinIslandById, NoticeArrived = text => Toast(text), ManageIsland = id => _ = _world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow")?.OpenAsync(id), ManageLand = id => _ = _world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow")?.OpenAsync(id) });
+            _world.AddChild(new RealEstate.MyPropertiesWindow { Name = "MyPropertiesWindow", Visit = JoinIslandById, VisitParcel = JoinParcel, NoticeArrived = text => Toast(text), ManageIsland = id => _ = _world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow")?.OpenAsync(id), ManageLand = id => _ = _world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow")?.OpenAsync(id) });
         if (_world.GetNodeOrNull<RealEstate.RealEstateMarketWindow>("RealEstateMarketWindow") is null)
-            _world.AddChild(new RealEstate.RealEstateMarketWindow { Name = "RealEstateMarketWindow", Visit = JoinIslandById });
+            _world.AddChild(new RealEstate.RealEstateMarketWindow { Name = "RealEstateMarketWindow", Visit = JoinIslandById, VisitParcel = JoinParcel });
         if (_world.GetNodeOrNull<ParcelInfo.ParcelInfoWindow>("ParcelInfoWindow") is null)
             _world.AddChild(new ParcelInfo.ParcelInfoWindow { Name = "ParcelInfoWindow", Visit = JoinIslandById, Position = () => _player is null ? null : (_player.GlobalPosition.X, _player.GlobalPosition.Z, Mathf.PosMod(Mathf.RadToDeg(_player.Rotation.Y), 360.0)) });
         if (_world.GetNodeOrNull<LandManager>("LandManager") is { } landForAbout) landForAbout.ParcelAbout = id => _ = _world.GetNodeOrNull<ParcelInfo.ParcelInfoWindow>("ParcelInfoWindow")?.OpenAsync(_network.CurrentIslandId, id);
@@ -466,11 +466,27 @@ public partial class ViewerUI : CanvasLayer
             GetTree().CreateTimer(1.5).Timeout += () => land?.TeleportToPoint(spot.X, spot.Z);
             return;
         }
+        if (SearchTravel.TakeParcelFor(_arrivedAt) is { } parcel) // "Visitar" on a parcel of this island: once the avatar is standing here, ask to be taken to it
+        {
+            var land = _world.GetNodeOrNull<LandManager>("LandManager");
+            GetTree().CreateTimer(1.5).Timeout += () => land?.TeleportToParcel(parcel);
+            return;
+        }
         if (StartPlace.FacingOn(GetNode<SessionManager>("/root/SessionManager").UserId, _network.CurrentIslandId) is { } yaw) _player.FaceYaw(yaw);
     }
 
     /// Joins an island by its id (from the property search).
     private void JoinIslandById(Guid islandId) { _islandId.Text = islandId.ToString(); Join(); }
+
+    /// <summary>
+    /// "Visitar" on a parcel: on the same island the avatar is taken to the parcel at once; on another island it joins first and, once there,
+    /// asks to be taken to the parcel (the island's rules for that parcel still decide).
+    /// </summary>
+    private void JoinParcel(Guid islandId, Guid parcelId)
+    {
+        if (_network.IsAuthenticated && islandId == _network.CurrentIslandId) { _world.GetNodeOrNull<LandManager>("LandManager")?.TeleportToParcel(parcelId); return; }
+        SearchTravel.SetParcel(islandId, parcelId); JoinIslandById(islandId);
+    }
 
     private void Join()
     {

@@ -71,6 +71,10 @@ public partial class SearchSmoke : Node
             window.GoToResult(); Require(_joined == _there && SearchTravel.HasPending, "joins the island and keeps the spot for when it arrives");
             Require(SearchTravel.TakeFor(Guid.NewGuid()) is null && !SearchTravel.HasPending, "arriving somewhere else forgets the spot");
             window.GoToResult(); Require(SearchTravel.TakeFor(_there) is { X: 30, Z: 40 }, "arriving at the island gives the spot back");
+            var parcelTarget = Guid.NewGuid(); SearchTravel.SetParcel(_there, parcelTarget);
+            Require(SearchTravel.HasPending && SearchTravel.TakeParcelFor(Guid.NewGuid()) is null && !SearchTravel.HasPending, "arriving somewhere else forgets the parcel");
+            SearchTravel.SetParcel(_there, parcelTarget); Require(SearchTravel.TakeParcelFor(_there) == parcelTarget && SearchTravel.TakeParcelFor(_there) is null, "arriving at the island gives the parcel back, once");
+            SearchTravel.SetParcel(_there, parcelTarget); SearchTravel.Set(_there, 1, 2); Require(SearchTravel.TakeParcelFor(_there) is null && SearchTravel.TakeFor(_there) is { X: 1, Z: 2 }, "a newer spot replaces the parcel");
             window.SelectForTesting(2); Require(!window.GoEnabledForTesting && window.GoTextForTesting == "Sem lugar para visitar", "a person has no place to go");
             Require(_calls.Any(c => c == "POST /api/v1/search/events"), "opening and going are counted");
 

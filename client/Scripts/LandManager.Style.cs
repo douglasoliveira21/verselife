@@ -214,6 +214,13 @@ public partial class LandManager
         _network.RequestTeleport(parcel.Id.ToString(), 0, 0);
     }
 
+    /// Asks the island to take us to a parcel by its id (the windows know the id even when this map has not loaded the parcel); the island's rules still decide.
+    public void TeleportToParcel(Guid parcel)
+    {
+        if (TeleportTransport is not null) { TeleportTransport(parcel.ToString(), 0, 0); return; }
+        _network.RequestTeleport(parcel.ToString(), 0, 0);
+    }
+
     /// Asks the island to take us to a spot of the ground (a parcel that forces its arrival point sends us there instead).
     public void TeleportToPoint(double x, double z)
     {

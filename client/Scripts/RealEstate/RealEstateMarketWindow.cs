@@ -43,6 +43,8 @@ public partial class RealEstateMarketWindow : Node
 
     /// <summary>Goes to an island (set by the main UI).</summary>
     public Action<Guid>? Visit { get; set; }
+    /// <summary>Goes to a parcel (island, parcel); without it "Visitar" only goes to the island.</summary>
+    public Action<Guid, Guid>? VisitParcel { get; set; }
 
     public bool IsOpen => _root is not null && _root.Visible;
     public MarketPageData Data => _data;
@@ -354,7 +356,7 @@ public partial class RealEstateMarketWindow : Node
 
     // ---- buying, renting, visiting ----------------------------------------------------------------------------------------------
 
-    private void VisitListing(MarketListing l) { if (!l.CanVisit) return; Visit?.Invoke(l.IslandId); RequestClose(); }
+    private void VisitListing(MarketListing l) { if (!l.CanVisit) return; if (l.ParcelId != Guid.Empty && VisitParcel is { } go) go(l.IslandId, l.ParcelId); else Visit?.Invoke(l.IslandId); RequestClose(); }
 
     private void Ask(string title, Control content, Func<Task<bool>> accept, string okText)
     {

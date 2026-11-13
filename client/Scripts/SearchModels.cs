@@ -105,9 +105,22 @@ public static class SearchTravel
 {
     private static (Guid Island, float X, float Z)? _pending;
 
-    public static void Set(Guid island, float x, float z) => _pending = (island, x, z);
-    public static void Clear() => _pending = null;
-    public static bool HasPending => _pending is not null;
+    public static void Set(Guid island, float x, float z) { _parcel = null; _pending = (island, x, z); }
+    public static void Clear() { _pending = null; _parcel = null; }
+    public static bool HasPending => _pending is not null || _parcel is not null;
+
+    private static (Guid Island, Guid Parcel)? _parcel;
+
+    /// <summary>The same two steps, but the place is a parcel: once on the island, ask it to take the avatar to that parcel.</summary>
+    public static void SetParcel(Guid island, Guid parcel) { _pending = null; _parcel = (island, parcel); }
+
+    /// <summary>The parcel to go to if the person has just arrived at that island; asking for another island forgets it.</summary>
+    public static Guid? TakeParcelFor(Guid island)
+    {
+        if (_parcel is not { } p) return null;
+        _parcel = null;
+        return p.Island == island ? p.Parcel : null;
+    }
 
     /// <summary>The spot to go to if the person has just arrived at that island; asking for another island forgets it (they went somewhere else).</summary>
     public static (float X, float Z)? TakeFor(Guid island)

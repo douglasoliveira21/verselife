@@ -52,12 +52,12 @@ Abre em **Mundo → Mercado imobiliário…**. Mostra terrenos à venda ou para 
 - **Filtros:** busca (nome, código ou ilha), negociação (venda/aluguel), categoria, área e preço mínimos e máximos, “Somente disponíveis” (desligado, lista também o que já está alugado, marcado “Alugado”) e “Com visitação” (só terrenos de acesso público e com teleporte).
 - **Ordenar por:** mais recentes, menor preço, maior preço, maior área, mais prims. **Grade ou lista**, com **páginas** de 9.
 - **Cada card:** imagem (capa da ilha quando existe), código e nome, tipo, ilha, selo (À Venda, Para Alugar, Alugado), área, prims e preço (aluguel mostra “/ mensal”, “/ semanal” ou “/ N dias”).
-- **Visitar** leva até a ilha do terreno. **Comprar** e **Alugar** pedem confirmação, mandam o preço que a pessoa viu (se mudou, nada é cobrado) e usam o mesmo caminho de dinheiro do resto dos terrenos. Aluguel mostra o total e a caução.
+- **Visitar** leva até o terreno (entra na ilha e teleporta). **Comprar** e **Alugar** pedem confirmação, mandam o preço que a pessoa viu (se mudou, nada é cobrado) e usam o mesmo caminho de dinheiro do resto dos terrenos. Aluguel mostra o total e a caução.
 - **Fica de fora da lista:** terreno seu, venda exclusiva para outra pessoa e qualquer coisa em ilha privada.
 
 API: `GET /api/v1/discovery/market` devolve `{ total, page, pageSize, items }` (o `/discovery/properties` antigo continua igual). Código novo: `LandMarket` (servidor) e `RealEstateMarketWindow` (cliente). Testes: `LandMarketTests`, `RealEstateMarketSmoke`.
 
-Limites: “Visitar” entra na ilha, não teleporta até o terreno. Ilhas aparecem aqui só se forem públicas.
+Limites: “Visitar” em terreno teleporta até ele (veja “Visitar até o terreno”). Ilhas aparecem aqui só se forem públicas.
 
 ---
 
@@ -81,7 +81,7 @@ Só entram em Pagamentos os registros de dinheiro (compra e venda, início e pag
 
 Código: `LandProperties` (servidor), `MyPropertiesWindow` e `PropertiesData` (cliente). Testes: `LandPropertiesTests`, `MyPropertiesSmoke`. Sem migração nova.
 
-Limites: o plano de hospedagem da plataforma (`economy.rentals`) não é mostrado aqui; “Visitar” entra na ilha, não teleporta até o terreno.
+Limites: “Visitar” em terreno teleporta até ele; o plano de hospedagem aparece no cartão da ilha.
 
 ---
 
@@ -212,3 +212,10 @@ Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Pha
 - **Mercado Imobiliário** (30 s): repete a busca atual. **Sobre este Terreno** (20 s): relê o terreno. **Minhas Propriedades** (30 s): relê as propriedades e os avisos.
 - A atualização é silenciosa: não mostra "Carregando…" e, se a conexão falhar, a janela fica como estava (sem apagar a lista).
 - Limite conhecido: a versão da terra só acompanha parcelas; mudanças só na ilha (anúncio de venda da ilha, por exemplo) aparecem nas janelas que relêem tudo (Minhas Propriedades, Mercado), não no Gerenciamento de Terrenos.
+
+## Visitar até o terreno
+
+- "Visitar" em um terreno (Minhas Propriedades: terrenos e contratos de terreno; Mercado Imobiliário: anúncios de terreno) leva ao **terreno**, não só à ilha. Ilhas continuam indo para a ilha.
+- Na mesma ilha, o avatar pede o teleporte ao terreno na hora (`LandManager.TeleportToParcel`). Em outra ilha, o cliente entra nela e guarda o terreno em `SearchTravel.SetParcel`; quando o avatar aparece lá, pede o teleporte (o mesmo caminho da busca global, que guarda um ponto em vez de um terreno).
+- As regras do servidor da ilha continuam valendo: terreno que não aceita teleporte ou sem acesso responde com a mensagem de sempre ("Você não pode entrar nesse terreno."). Quem pede outra ilha no meio do caminho esquece o terreno guardado.
+- "Sobre este Terreno" ainda não tem botão Visitar.

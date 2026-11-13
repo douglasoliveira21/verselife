@@ -133,6 +133,9 @@ public partial class MyPropertiesSmoke : Node3D
             // --- rentals in -------------------------------------------------------------------------------------------------------------
             window.SelectTabForTesting("alugadas"); await Frames(2); Require(window.RowsForTesting("alugadas") == 1 && window.TextForTesting.Contains("Loja da Praia") && window.TextForTesting.Contains("Bruno"), "the one parcel she rents, from Bruno");
             Require(window.ButtonEnabledForTesting("Renovar") && window.ButtonEnabledForTesting("Sair") && window.ButtonEnabledForTesting("Visitar"), "renew, leave and visit are there");
+            (Guid Island, Guid Parcel)? went = null; window.VisitParcel = (i, p) => went = (i, p); visited = null;
+            window.PressForTesting("Visitar"); Require(went == (IslandB, server.TenantParcel) && visited is null && !window.IsOpen, $"Visitar on a rented parcel goes to that parcel (got {went})");
+            await window.OpenAsync(); window.SelectTabForTesting("alugadas"); await Frames(3); window.VisitParcel = null;
             var tenant = window.Data.Contracts.First(c => c.Role == "tenant" && c.Live);
             Require(await window.RenewForTesting(tenant, 2), "renewing works"); await Frames(2); Require(server.Calls.Any(c => c.EndsWith($"/rentals/{tenant.Id}/renew", StringComparison.Ordinal)) && window.ToastForTesting.Contains("renovado"), "the renew request was sent and the person is told");
             Require(await window.EndForTesting(tenant), "leaving works"); await Frames(3); Require(window.RowsForTesting("alugadas") == 0 && window.ToastForTesting.Contains("saiu"), "the rental is gone from the list");

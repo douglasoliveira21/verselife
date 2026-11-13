@@ -150,6 +150,9 @@ public partial class RealEstateMarketSmoke : Node3D
             // --- visiting -------------------------------------------------------------------------------------------------------------------
             window.VisitForTesting(0); Require(visited == server.All[0].Island && !window.IsOpen, "visiting goes to the island and closes the market");
             await window.OpenAsync(); await Frames(3);
+            (Guid Island, Guid Parcel)? went = null; window.VisitParcel = (i, p) => went = (i, p); visited = null;
+            window.VisitForTesting(0); Require(went == (server.All[0].Island, server.All[0].Parcel) && visited is null && !window.IsOpen, "with a way to go to a parcel, visiting goes to the parcel, not only the island");
+            await window.OpenAsync(); await Frames(3);
 
             // --- buying ---------------------------------------------------------------------------------------------------------------------
             var firstSale = server.All.First(l => l.Offer == "sale" && l.State == "sale"); var before = server.All.Count;

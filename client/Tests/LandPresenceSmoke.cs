@@ -153,6 +153,8 @@ public partial class LandPresenceSmoke : Node
             Require(teleports.Count == 0 && said.Count == 1, "a disabled parcel is not even asked");
             land.TeleportTo(praca);
             Require(teleports.Count == 1 && teleports[0].StartsWith(mine.ToString()), "teleporting asks for the parcel");
+            var elsewhere = Guid.NewGuid(); teleports.Clear(); land.TeleportToParcel(elsewhere);
+            Require(teleports.Count == 1 && teleports[0] == $"{elsewhere}|0|0", "going to a parcel by its id asks the island, even for a parcel this map has not loaded");
             land.TeleportToPoint(100, -20);
             Require(teleports[^1] == "|100|-20", "teleporting to a spot sends the spot");
 

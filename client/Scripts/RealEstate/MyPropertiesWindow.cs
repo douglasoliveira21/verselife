@@ -51,6 +51,9 @@ public partial class MyPropertiesWindow : Node
     public Action<Guid>? ManageIsland { get; set; }
     public Action<Guid>? ManageLand { get; set; }
     public Action<Guid>? Visit { get; set; }
+    /// <summary>Goes to a parcel (island, parcel); without it "Visitar" only goes to the island.</summary>
+    public Action<Guid, Guid>? VisitParcel { get; set; }
+    private void GoTo(Guid island, Guid parcel) { if (parcel != Guid.Empty && VisitParcel is { } go) go(island, parcel); else Visit?.Invoke(island); }
 
     public bool IsOpen => _root is not null && _root.Visible;
     public PropertiesData Data => _data;
@@ -374,7 +377,7 @@ public partial class MyPropertiesWindow : Node
         foreach (var p in _data.Parcels)
         {
             var listed = _data.Listings.FirstOrDefault(l => l.ParcelId == p.Id);
-            var buttons = new List<Button> { Small("Visitar", IslandUi.Kind.Secondary, () => { Visit?.Invoke(p.IslandId); RequestClose(); }, p.CanVisit, p.CanVisit ? "" : "Este terreno não recebe visitas."), Small("Gerenciar", IslandUi.Kind.Secondary, () => ManageLand?.Invoke(p.IslandId)) };
+            var buttons = new List<Button> { Small("Visitar", IslandUi.Kind.Secondary, () => { GoTo(p.IslandId, p.Id); RequestClose(); }, p.CanVisit, p.CanVisit ? "" : "Este terreno não recebe visitas."), Small("Gerenciar", IslandUi.Kind.Secondary, () => ManageLand?.Invoke(p.IslandId)) };
             buttons.Add(listed is not null ? Small("Retirar anúncio", IslandUi.Kind.Danger, () => _ = WithdrawAsync(listed)) : Small("Anunciar", IslandUi.Kind.Orange, () => OpenOffer(p), p.Kind is not ("rented" or "common"), p.Kind == "rented" ? "O terreno está alugado." : p.Kind == "common" ? "Área comum não se anuncia." : ""));
             var lines = new List<string> { $"{LandMath.Area(p.Area)} · {LandMath.CategoryText(p.Category)}", $"Prims: {LandMath.Number(p.Objects)} / {LandMath.Number(p.MaxObjects)}" };
             if (p.SalePrice is { } sale) lines.Add($"À venda por {LandMath.Money(sale)}"); if (p.RentPrice is { } rent && p.Kind != "rented") lines.Add($"Para alugar: {LandMath.Money(rent)} ({Period(p.RentPeriodDays)})");
@@ -397,7 +400,7 @@ public partial class MyPropertiesWindow : Node
         var rows = _data.Contracts.Where(c => c.Role == "tenant" && c.Live).ToList(); _content.AddChild(Heading("Propriedades Alugadas", "Terrenos que você aluga de outras pessoas."));
         _content.AddChild(Table("alugadas", ["Imóvel", "Ilha", "Proprietário", "Valor", "Vencimento", "Resta"], [1.5f, 1.1f, 1.1f, 1.1f, 1f, .9f],
             [.. rows.Select(c => new Control[] { Cell(c.Title, null, true, 1.5f), Cell(c.Island, null, false, 1.1f), Cell(c.Landlord, null, false, 1.1f), Cell($"{LandMath.Money(c.Price)} / {Period(c.PeriodDays)}", LandTerritoryMap.Rented, true, 1.1f), Cell(Day(c.ExpiresAt), null, false, 1f), Cell(Left(c.ExpiresAt), c.Status == "grace" ? IslandUi.Warning : IslandUi.TextPrimary, true, .9f),
-                Actions(430, Small("Visitar", IslandUi.Kind.Secondary, () => { Visit?.Invoke(c.IslandId); RequestClose(); }, c.CanVisit), Small("Renovar", IslandUi.Kind.Purple, () => OpenRenew(c)), Small("Ver Contrato", IslandUi.Kind.Secondary, () => SelectTab("contratos")), Small("Sair", IslandUi.Kind.Danger, () => ConfirmEnd(c)))
+                Actions(430, Small("Visitar", IslandUi.Kind.Secondary, () => { GoTo(c.IslandId, c.Target == "island" ? Guid.Empty : c.ParcelId); RequestClose(); }, c.CanVisit), Small("Renovar", IslandUi.Kind.Purple, () => OpenRenew(c)), Small("Ver Contrato", IslandUi.Kind.Secondary, () => SelectTab("contratos")), Small("Sair", IslandUi.Kind.Danger, () => ConfirmEnd(c)))
             })], "Você não aluga nenhum terreno.", 436));
     }
 
