@@ -23,7 +23,7 @@ public partial class ObjectInteraction : Node3D
 
     public override void _UnhandledInput(InputEvent input)
     {
-        if (ToolsActive || input is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true, DoubleClick: false }) return;
+        if (ToolsActive || input is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } click) return;
         var actions = GetParent().GetNodeOrNull<BuildClickActions>("BuildClickActions");
         var exclude = new Godot.Collections.Array<Rid>();
         // an object that ignores clicks lets them through to whatever is behind it
@@ -31,7 +31,8 @@ public partial class ObjectInteraction : Node3D
         {
             if (ViewUnderMouse(exclude) is not { } view) return;
             if (BuildClickActions.Ignores(view)) { foreach (var body in view.FindChildren("*", "CollisionObject3D", true, false).OfType<CollisionObject3D>()) exclude.Add(body.GetRid()); continue; }
-            if (actions is not null) actions.Perform(view); else _network.TouchObject(view.State.Id);
+            if (click.DoubleClick) { if (view.State.ClickAction == "touch") _network.TouchObject(view.State.Id); }      // the second click of a double click is one more touch (on_double_click), never a second sit or purchase
+            else if (actions is not null) actions.Perform(view); else _network.TouchObject(view.State.Id);
             return;
         }
     }

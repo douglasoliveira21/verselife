@@ -11,7 +11,7 @@ namespace LifeVerse.Api.Modules.Land;
 /// </summary>
 public static class LandSync
 {
-    public sealed record SyncAnswer(object Access, IReadOnlyList<JsonElement> Events, long Cursor, object? Terrain = null, object? Teleport = null, object? Rules = null);
+    public sealed record SyncAnswer(object Access, IReadOnlyList<JsonElement> Events, long Cursor, object? Terrain = null, object? Teleport = null, object? Rules = null, object? Info = null);
 
     public static async Task<SyncAnswer?> BuildAsync(LifeVerseDbContext db, Guid instanceId, long sinceTicks, TimeProvider clock, CancellationToken ct)
     {
@@ -76,7 +76,9 @@ public static class LandSync
         {
             parcels = parcels.Where(p => !p.AllowVoice && allCells.ContainsKey(p.Id)).Select(p => new { id = p.Id, voice = false, runs = LandGrid.Runs(allCells[p.Id]) }).ToList()
         };
-        return new SyncAnswer(access, events, now.UtcTicks, terrain, teleport, rules);
+        // what scripts may ask about the land: every parcel with its name, owner and the settings that anybody can already see
+        var info = new { parcels = parcels.Where(p => allCells.ContainsKey(p.Id)).Select(p => new { id = p.Id, name = p.Name, owner = p.OwnerUserId, group = p.GroupId, access = p.AccessMode, build = p.BuildMode, forSale = p.SalePrice != null, runs = LandGrid.Runs(allCells[p.Id]) }).ToList() };
+        return new SyncAnswer(access, events, now.UtcTicks, terrain, teleport, rules, info);
     }
 
     private static JsonElement Element(object value) => JsonSerializer.SerializeToElement(value, new JsonSerializerOptions(JsonSerializerDefaults.Web));

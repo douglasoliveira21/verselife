@@ -35,7 +35,7 @@ public partial class ScriptingApiSmoke : Node
             var rootSource = "function on_touch(e) chat.whisper('psiu') chat.shout('ei') object.setLinkPosition(2, 5, 1, 20) storage.set('toques', (storage.get('toques') or 0) + 1) print('tocado por ' .. e.avatar.name) "
                 + "dialog.show(e.avatar_id, {title = 'Porta', message = 'Abrir?', buttons = {'Sim', 'Não'}}) permissions.request(e.avatar_id, 'CONTROL_ANIMATION') end "
                 + "function on_dialog_response(e) chat.say('resposta ' .. e.response) end function on_permission_granted(e) chat.say('permitido ' .. e.permission) end function on_region_shutdown() chat.say('desligando') end function on_link_message(e) chat.say('link ' .. e.message) end";
-            var childSource = "function on_link_message(e) chat.say('filho ouviu ' .. e.message) end function on_collision_enter(e) chat.say('bateu ' .. e.entity.type .. ' ' .. e.entity.name) end function on_land_collision(e) chat.say('pousou ' .. e.speed) end function on_collision_exit(e) chat.say('saiu ' .. e.entity.name) end";
+            var childSource = "function on_link_message(e) chat.say('filho ouviu ' .. e.message) end function on_collision_enter(e) chat.say('bateu ' .. e.entity.type .. ' ' .. e.entity.name) end function on_land_collision(e) chat.say('pousou ' .. e.speed) end function on_collision_exit(e) chat.say('saiu ' .. e.entity.name) end function on_touch_end(e) chat.say(\"soltou \" .. e.avatar.name) end function on_double_click(e) chat.say(\"duplo \" .. e.avatar.name) end";
             var ana = Guid.NewGuid(); var bruno = Guid.NewGuid();
             var accepted = JsonSerializer.Serialize(new { operation = "update", objectId = child, revision = 2 });
             var posts = new List<string>();
@@ -123,6 +123,18 @@ public partial class ScriptingApiSmoke : Node
             // the physics simulation reports contacts of a body: hits, landings and leaving, never resting contact, and not too many
             scripting.OnContact(child, root, true, .1f); scripting.OnContact(child, root, true, 4f); scripting.OnContact(child, null, true, 5f); scripting.OnContact(child, root, false, 0f); await Run(8); await Task.Delay(300); await Run(8);
             Require(said.Any(s => s.Text == "bateu object Casa") && said.Any(s => s.Text == "bateu ground Terreno") && said.Any(s => s.Text == "pousou 5") && said.Any(s => s.Text == "saiu Casa") && said.Count(s => s.Text == "bateu object Casa") == 1, $"collisions reached the script (told [{string.Join(" // ", told)}] scripts {string.Join(",", scripting.Scripts.Select(s => s.Name + ":" + s.Quarantined + ":" + s.Reason))})");
+
+            // letting go of the button, and two touches in a row (the window script may chat only five times in ten seconds: let it pass)
+            await Task.Delay(10500);
+            said.Clear();
+            scripting.OnDialogResponse(anaPresence, JsonSerializer.Serialize(new { touch_end = true, objectId = child })); await Run(6);
+            Require(!said.Any(s => s.Text.StartsWith("soltou", StringComparison.Ordinal)), "letting go without having touched is no event");
+            scripting.Touch(anaPresence, child); scripting.OnDialogResponse(brunoPresence, JsonSerializer.Serialize(new { touch_end = true, objectId = child })); await Run(6);
+            Require(!said.Any(s => s.Text.StartsWith("soltou", StringComparison.Ordinal)), "somebody else letting go does not end Ana's touch");
+            scripting.OnDialogResponse(anaPresence, JsonSerializer.Serialize(new { touch_end = true, objectId = child })); scripting.OnDialogResponse(anaPresence, JsonSerializer.Serialize(new { touch_end = true, objectId = child })); await Run(8); await Task.Delay(300); await Run(8);
+            Require(said.Count(s => s.Text == "soltou Ana") == 1 && !said.Any(s => s.Text.StartsWith("duplo", StringComparison.Ordinal)), $"on_touch_end arrives once, and one touch is no double click ([{string.Join("|", said.Select(s => s.Text))}])");
+            scripting.Touch(anaPresence, child); scripting.Touch(anaPresence, child); await Run(8); await Task.Delay(300); await Run(8);
+            Require(said.Count(s => s.Text == "duplo Ana") == 1, $"two quick touches are one double click ([{string.Join("|", said.Select(s => s.Text))}] told [{string.Join(" // ", told)}])");
 
             // shutdown
             said.Clear(); await scripting.ShutdownAsync(); await Run(2); Require(said.Any(s => s.Text == "desligando") && posts.Any(p => p.Contains("script-state") || p.Contains("script-runtime")), "scripts hear the shutdown and the state is saved");

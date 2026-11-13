@@ -182,9 +182,20 @@ public sealed partial class IslandScripting : IScriptWorld
     private string TextOp(Guid id, string text, string color) { var o = _objects[id]; return JsonSerializer.Serialize(new { operation = "text", objectId = id, text, color, x = o.Position.X, y = o.Position.Y + o.Scale.Y / 2, z = o.Position.Z }); }
     // ---- events from the world -------------------------------------------------------------------------------
 
+    private readonly Dictionary<(Guid Avatar, Guid Object), double> _pressed = [], _lastTouch = [];
+    public const double DoubleClickSeconds = .5, MaxPressSeconds = 60;
+
+    /// <summary>The player let go of the button after touching an object: on_touch_end, with how long it was held.</summary>
+    public void TouchEnd(AvatarPresence who, Guid objectId)
+    {
+        if (!_objects.TryGetValue(objectId, out var target) || !_pressed.Remove((who.AvatarId, objectId), out var since) || Now - since > MaxPressSeconds || !_host.Wants(objectId, "touch_end")) return;
+        var data = Describe(who, Distance(who, target)); data["duration"] = Math.Round(Now - since, 2);
+        _host.Enqueue(new ScriptEvent(objectId, "touch_end", data));
+    }
+
     public void Touch(AvatarPresence who, Guid objectId)
     {
-        if (!_objects.TryGetValue(objectId, out var target) || !_host.Wants(objectId, "touch")) return;
+        if (!_objects.TryGetValue(objectId, out var target) || !(_host.Wants(objectId, "touch") || _host.Wants(objectId, "touch_end") || _host.Wants(objectId, "double_click"))) return;
         var now = Now;
         var times = _touches.TryGetValue(who.AvatarId, out var queue) ? queue : _touches[who.AvatarId] = new Queue<double>();
         while (times.Count > 0 && now - times.Peek() > 1) times.Dequeue();
@@ -192,7 +203,13 @@ public sealed partial class IslandScripting : IScriptWorld
         var distance = Distance(who, target);
         if (distance > 12 + Radius(target)) return;
         times.Enqueue(now);
+        var key = (who.AvatarId, objectId);
+        if (_pressed.Count > 2000) _pressed.Clear(); if (_lastTouch.Count > 2000) _lastTouch.Clear();
+        _pressed[key] = now;
+        var second = _lastTouch.TryGetValue(key, out var before) && now - before <= DoubleClickSeconds;      // two clicks in a row on the same object
+        _lastTouch[key] = second ? 0 : now;
         _host.Enqueue(new ScriptEvent(objectId, "touch", Describe(who, distance)));
+        if (second) _host.Enqueue(new ScriptEvent(objectId, "double_click", Describe(who, distance)));
     }
 
     public void OnChat(AvatarPresence speaker, string message)
@@ -207,7 +224,7 @@ public sealed partial class IslandScripting : IScriptWorld
     {
         var now = Now; _avatars = avatars; DrainHttp(); DrainPayments(); RestoreHuds(avatars);
         _host.Tick(now);
-        if (now - _lastProximity >= .25) { _lastProximity = now; Proximity(avatars); }
+        if (now - _lastProximity >= .25) { _lastProximity = now; Proximity(avatars); WatchParcels(avatars); }
         _host.Process(6);
         DrainChanges();
     }

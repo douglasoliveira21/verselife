@@ -144,6 +144,13 @@ public static class ScriptCatalog
         F("Efeitos", "light", "set", "light.set({color=, radius=, energy=, flicker=})", "Põe uma luz no objeto (uma por script); chamar de novo a muda.", "nada", "—", "radius 0,5 a 30 m; energy 0 a 8", "número inválido", "light.set({color='#FFC46B', radius=10, energy=2, flicker=true})"),
         F("Efeitos", "light", "off", "light.off()", "Apaga a luz do script.", "nada", "—", "—", "—", "light.off()"),
         F("Áudio", "audio", "playAtPosition", "audio.playAtPosition(nome, x, y, z, volume, repetir)", "Toca um som que está no Conteúdo do objeto num ponto da ilha (som 3D: some com a distância).", "verdadeiro se o objeto tem esse som", "—", "5 chamadas a cada 10 s; ±5000 m", "—", "audio.playAtPosition('Alarme', 10, 1, 20, 0.8)"),
+        // ---- Terrenos ----
+        F("Terrenos", "parcel", "getAt", "parcel.getAt(x, z)", "Os dados públicos do terreno que cobre um ponto da ilha.", "tabela {id, name, owner, access, build, forSale} ou nada onde não há terreno", "—", "só o que qualquer visitante vê no mapa de terrenos", "—", "local p = parcel.getAt(10, 20)"),
+        F("Terrenos", "parcel", "getId", "parcel.getId()", "O identificador do terreno onde o objeto está.", "texto (UUID) ou nada", "—", "—", "—", "local id = parcel.getId()"),
+        F("Terrenos", "parcel", "getName", "parcel.getName()", "O nome do terreno onde o objeto está.", "texto ou nada", "—", "—", "—", "chat.say(parcel.getName())"),
+        F("Terrenos", "parcel", "getOwner", "parcel.getOwner()", "O dono do terreno onde o objeto está.", "texto (UUID) ou nada", "—", "—", "—", "local dono = parcel.getOwner()"),
+        F("Terrenos", "parcel", "getPermissions", "parcel.getPermissions()", "Como o terreno é aberto: entrada, construção e se está à venda.", "tabela {access, build, forSale} ou nada", "—", "access: public, list ou private; build: owner, list ou everyone", "—", "local p = parcel.getPermissions()"),
+        F("Terrenos", "object", "getParcel", "object.getParcel()", "O identificador do terreno onde o objeto está.", "texto (UUID) ou nada", "—", "—", "—", "local id = object.getParcel()"),
         // ---- Tempo ----
         F("Tempo", "lv", "time", "lv.time()", "O relógio da ilha, em segundos.", "número", "—", "—", "—", "local agora = lv.time()"),
     ];
@@ -161,6 +168,8 @@ public static class ScriptCatalog
         new("on_touch", "Um avatar clica no objeto (a até 12 m).", "avatar_id, avatar_name, avatar.id, avatar.name, user_id, distance, position", "function on_touch(event) chat.say('Oi, ' .. event.avatar.name) end"),
         new("on_touch_start", "O mesmo que on_touch.", "os mesmos de on_touch", "function on_touch_start(event) end"),
         new("on_click", "O mesmo que on_touch.", "os mesmos de on_touch", "function on_click(event) end"),
+        new("on_touch_end", "O avatar solta o botão depois de tocar no objeto (só chega para quem tocou, até 60 s depois).", "os mesmos de on_touch, mais duration (segundos com o botão apertado)", "function on_touch_end(event) chat.say('Segurou por ' .. event.duration .. ' s') end"),
+        new("on_double_click", "O mesmo avatar toca duas vezes seguidas no objeto (até 0,5 s entre os toques); on_touch também dispara em cada toque.", "os mesmos de on_touch", "function on_double_click(event) chat.say('Duplo clique de ' .. event.avatar.name) end"),
         new("on_enter", "Um avatar entra na área do objeto.", "os mesmos de on_touch", "function on_enter(event) chat.say('Bem-vindo, ' .. event.avatar.name) end"),
         new("on_avatar_enter", "O mesmo que on_enter.", "os mesmos de on_touch", "function on_avatar_enter(event) end"),
         new("on_leave", "Um avatar sai da área do objeto.", "os mesmos de on_touch", "function on_leave(event) end"),
@@ -187,6 +196,8 @@ public static class ScriptCatalog
         new("on_collision", "O mesmo que on_collision_enter.", "os mesmos de on_collision_enter", "function on_collision(event) end"),
         new("on_collision_exit", "O corpo físico do objeto deixou de tocar em algo.", "entity.type, entity.id, entity.name, speed", "function on_collision_exit(event) end"),
         new("on_land_collision", "O corpo físico do objeto bateu no terreno.", "entity (type ground), speed", "function on_land_collision(event) chat.say('pousou') end"),
+        new("on_parcel_enter", "Um avatar entrou no terreno onde o objeto está.", "avatar_id, avatar.id, avatar.name, parcel.id, parcel.name, parcel.owner, parcel.access, parcel.build, parcel.forSale", "function on_parcel_enter(event) chat.say('Bem-vindo a ' .. event.parcel.name) end"),
+        new("on_parcel_leave", "Um avatar saiu do terreno onde o objeto está.", "os mesmos de on_parcel_enter (do terreno que ele deixou)", "function on_parcel_leave(event) end"),
         new("on_dialog_response", "Um avatar respondeu a um diálogo.", "avatar_id, response, input, request_id", "function on_dialog_response(event) chat.say(event.response) end"),
         new("on_permission_granted", "Um avatar concedeu (ou já tinha concedido) uma permissão.", "avatar_id, permission", "function on_permission_granted(event) end"),
         new("on_permission_denied", "Um avatar negou uma permissão.", "avatar_id, permission", "function on_permission_denied(event) end"),

@@ -19,6 +19,8 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_touch` | Um avatar clica no objeto (a até 12 m). | avatar_id, avatar_name, avatar.id, avatar.name, user_id, distance, position |
 | `on_touch_start` | O mesmo que on_touch. | os mesmos de on_touch |
 | `on_click` | O mesmo que on_touch. | os mesmos de on_touch |
+| `on_touch_end` | O avatar solta o botão depois de tocar no objeto (só chega para quem tocou, até 60 s depois). | os mesmos de on_touch, mais duration (segundos com o botão apertado) |
+| `on_double_click` | O mesmo avatar toca duas vezes seguidas no objeto (até 0,5 s entre os toques); on_touch também dispara em cada toque. | os mesmos de on_touch |
 | `on_enter` | Um avatar entra na área do objeto. | os mesmos de on_touch |
 | `on_avatar_enter` | O mesmo que on_enter. | os mesmos de on_touch |
 | `on_leave` | Um avatar sai da área do objeto. | os mesmos de on_touch |
@@ -45,6 +47,8 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_collision` | O mesmo que on_collision_enter. | os mesmos de on_collision_enter |
 | `on_collision_exit` | O corpo físico do objeto deixou de tocar em algo. | entity.type, entity.id, entity.name, speed |
 | `on_land_collision` | O corpo físico do objeto bateu no terreno. | entity (type ground), speed |
+| `on_parcel_enter` | Um avatar entrou no terreno onde o objeto está. | avatar_id, avatar.id, avatar.name, parcel.id, parcel.name, parcel.owner, parcel.access, parcel.build, parcel.forSale |
+| `on_parcel_leave` | Um avatar saiu do terreno onde o objeto está. | os mesmos de on_parcel_enter (do terreno que ele deixou) |
 | `on_dialog_response` | Um avatar respondeu a um diálogo. | avatar_id, response, input, request_id |
 | `on_permission_granted` | Um avatar concedeu (ou já tinha concedido) uma permissão. | avatar_id, permission |
 | `on_permission_denied` | Um avatar negou uma permissão. | avatar_id, permission |
@@ -1479,6 +1483,86 @@ Apaga a luz do script.
 
 ```lua
 light.off()
+```
+
+## Terrenos
+
+### `parcel.getAt(x, z)`
+
+Os dados públicos do terreno que cobre um ponto da ilha.
+
+- **Retorna:** tabela {id, name, owner, access, build, forSale} ou nada onde não há terreno
+- **Permissão:** —
+- **Limites:** só o que qualquer visitante vê no mapa de terrenos
+- **Erros possíveis:** —
+
+```lua
+local p = parcel.getAt(10, 20)
+```
+
+### `parcel.getId()`
+
+O identificador do terreno onde o objeto está.
+
+- **Retorna:** texto (UUID) ou nada
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+local id = parcel.getId()
+```
+
+### `parcel.getName()`
+
+O nome do terreno onde o objeto está.
+
+- **Retorna:** texto ou nada
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+chat.say(parcel.getName())
+```
+
+### `parcel.getOwner()`
+
+O dono do terreno onde o objeto está.
+
+- **Retorna:** texto (UUID) ou nada
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+local dono = parcel.getOwner()
+```
+
+### `parcel.getPermissions()`
+
+Como o terreno é aberto: entrada, construção e se está à venda.
+
+- **Retorna:** tabela {access, build, forSale} ou nada
+- **Permissão:** —
+- **Limites:** access: public, list ou private; build: owner, list ou everyone
+- **Erros possíveis:** —
+
+```lua
+local p = parcel.getPermissions()
+```
+
+### `object.getParcel()`
+
+O identificador do terreno onde o objeto está.
+
+- **Retorna:** texto (UUID) ou nada
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+local id = object.getParcel()
 ```
 
 ## Tempo

@@ -265,7 +265,16 @@ public partial class NetworkManager : Node
         EmitSignal(SignalName.TeleportResult, ok, code, x, z, yaw);
     }
     public void OnTerrainEditRejected(string code) => EmitSignal(SignalName.TerrainEditRejected, code);
-    public void TouchObject(Guid objectId) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.TouchObject, objectId.ToString()); }
+    private Guid _touching;
+    public void TouchObject(Guid objectId) { if (!IsAuthenticated) return; _touching = objectId; _bridge.RpcId(1, NetworkBridge.MethodName.TouchObject, objectId.ToString()); }
+
+    /// <summary>Letting go of the mouse button ends the touch: the object's scripts hear on_touch_end.</summary>
+    public override void _Input(InputEvent input)
+    {
+        if (_touching == Guid.Empty || input is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }) return;
+        var id = _touching; _touching = Guid.Empty;
+        SendScriptDialogResponse(System.Text.Json.JsonSerializer.Serialize(new { touch_end = true, objectId = id }));
+    }
     /// <summary>The answer of the player to a dialog or permission request a script showed (the island checks it).</summary>
     public void SendScriptDialogResponse(string json) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.ScriptDialogResponse, json); }
     public void SubmitSeaLevel(float level) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitSeaLevel, level); }

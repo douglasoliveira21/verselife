@@ -143,7 +143,7 @@ public static class LandEndpoints
 
         // what the island servers ask for (internal, like the other platform routes)
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/land-sync", async (Guid instanceId, long? since, HttpContext context, IConfiguration config, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            !Modules.Platform.PlatformEndpoints.HasValidServiceKey(context, config) ? Results.Unauthorized() : await LandSync.BuildAsync(db, instanceId, since ?? 0, t, ct) is { } answer ? Results.Ok(new { access = answer.Access, events = answer.Events, cursor = answer.Cursor, terrain = answer.Terrain, teleport = answer.Teleport, rules = answer.Rules }) : Results.NotFound()).WithTags("Platform");
+            !Modules.Platform.PlatformEndpoints.HasValidServiceKey(context, config) ? Results.Unauthorized() : await LandSync.BuildAsync(db, instanceId, since ?? 0, t, ct) is { } answer ? Results.Ok(new { access = answer.Access, events = answer.Events, cursor = answer.Cursor, terrain = answer.Terrain, teleport = answer.Teleport, rules = answer.Rules, info = answer.Info }) : Results.NotFound()).WithTags("Platform");
         return endpoints;
     }
 

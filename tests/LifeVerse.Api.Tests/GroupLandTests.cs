@@ -209,6 +209,9 @@ public sealed class GroupLandTests : IDisposable
         Assert.Contains(_member, allowed); Assert.Contains(_leader, allowed); Assert.DoesNotContain(_outsider, allowed);
         var editors = JsonSerializer.SerializeToElement(answer.Terrain, Web).GetProperty("parcels").EnumerateArray().Single(p => p.GetProperty("id").GetGuid() == id).GetProperty("editors").EnumerateArray().Select(x => x.GetGuid()).ToHashSet();
         Assert.Contains(_admin, editors); Assert.DoesNotContain(_member, editors);
+        // scripts may know the name, the owner and how the parcel is opened (and nothing private: no list of who is allowed)
+        var info = JsonSerializer.SerializeToElement(answer.Info, Web).GetProperty("parcels").EnumerateArray().Single(p => p.GetProperty("id").GetGuid() == id);
+        Assert.Equal(("Praça do Grupo", "private", "owner"), (info.GetProperty("name").GetString(), info.GetProperty("access").GetString(), info.GetProperty("build").GetString())); Assert.Equal(_group, info.GetProperty("group").GetGuid()); Assert.False(info.TryGetProperty("allow", out _)); Assert.False(info.TryGetProperty("bans", out _)); Assert.True(info.GetProperty("runs").GetArrayLength() > 0);
     }
 
     // ---- opening a parcel to a whole group ---------------------------------------------------------------------------------------------------------------------
