@@ -244,6 +244,26 @@ public partial class ScriptingApiSmoke : Node
             Require(!posts.Any(p => p.Contains("som acabou")), "a sound end told from far away is not believed");
             scripting.OnDialogResponse(donor, JsonSerializer.Serialize(new { sound_finished = true, objectId = radio })); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
             Require(posts.Any(p => p.Contains("build-operations") && p.Contains("som acabou")), "the script heard that a sound ended");
+
+            // the debugger: only the owner drives it, a script stops at its breakpoint without freezing the island, and what it asked for waits for the end of the handler
+            var dbgObject = Guid.NewGuid(); var dbgScript = Guid.NewGuid(); var dono = new AvatarPresence(7, Guid.NewGuid(), owner, "Dono", 30, 1, 20);
+            var dbgSource = "function on_touch(e)\n  local a = 5\n  object.setName('dbg ' .. a)\n  local b = a + 1\nend\n";
+            routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(dbgObject, "Depurar", 30) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(dbgScript, dbgObject, "depurar", dbgSource) + ",");
+            await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([dono, donor]); await Task.Delay(40); }
+            string Debug(string action, int[]? lines = null) => JsonSerializer.Serialize(new { debug = true, script = dbgScript, action, breakpoints = lines ?? [] });
+            async Task Spin(int rounds = 8) { for (var i = 0; i < rounds; i++) { scripting.Update([dono, donor]); await Task.Delay(50); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([dono, donor]); await Task.Delay(50); } }
+            sent.Clear(); scripting.OnDialogResponse(donor, Debug("start", [3])); await Spin(3);
+            Require(!sent.Any(s => s.Json.TryGetProperty("operation", out var op) && op.GetString() == "script_debug"), "somebody who is not the owner cannot debug the script");
+            scripting.OnDialogResponse(dono, Debug("start", [3])); await Spin(3);
+            Require(sent.Any(s => s.Avatar == dono.AvatarId && s.Json.GetProperty("operation").GetString() == "script_debug" && s.Json.GetProperty("event").GetString() == "started"), "the owner started debugging");
+            posts.Clear(); sent.Clear(); scripting.Touch(dono, dbgObject); await Spin();
+            var stopped = sent.LastOrDefault(s => s.Json.TryGetProperty("operation", out var op) && op.GetString() == "script_debug" && s.Json.GetProperty("event").GetString() == "stopped");
+            Require(stopped.Json.ValueKind == JsonValueKind.Object && stopped.Avatar == dono.AvatarId && stopped.Json.GetProperty("line").GetInt32() == 3 && stopped.Json.GetProperty("locals").EnumerateArray().Any(v => v.GetProperty("name").GetString() == "a" && v.GetProperty("value").GetString() == "5"), "the script stopped at the breakpoint and the owner was shown its variables");
+            Require(!posts.Any(p => p.Contains("dbg 5")), "what the script asked for waits while it is stopped");
+            scripting.OnDialogResponse(donor, Debug("continue")); await Spin(3); Require(!posts.Any(p => p.Contains("dbg 5")), "somebody else cannot resume it");
+            scripting.OnDialogResponse(dono, Debug("continue")); await Spin(); Require(posts.Any(p => p.Contains("build-operations") && p.Contains("dbg 5")), "the owner resumed it and it finished");
+            sent.Clear(); scripting.OnDialogResponse(dono, Debug("stop")); await Spin(3);
+            Require(sent.Any(s => s.Json.TryGetProperty("operation", out var op) && op.GetString() == "script_debug" && s.Json.GetProperty("event").GetString() == "ended"), "the owner ended debugging");
             // shutdown
             said.Clear(); await scripting.ShutdownAsync(); await Run(2); Require(said.Any(s => s.Text == "desligando") && posts.Any(p => p.Contains("script-state") || p.Contains("script-runtime")), "scripts hear the shutdown and the state is saved");
 

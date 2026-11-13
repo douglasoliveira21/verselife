@@ -92,12 +92,13 @@ public partial class ScriptEditorWindow : Node
         Make("Atualizar", "Lê de novo o console, o desempenho e as permissões", UiStyle.ButtonKind.Secondary, () => _ = RefreshConsoleAsync());
         Make("Documentação", "Abre a referência da linguagem: funções, eventos, limites e exemplos", UiStyle.ButtonKind.Secondary, OpenDocs);
         Make("Histórico", "Versões anteriores do código: veja uma e volte a ela", UiStyle.ButtonKind.Secondary, OpenHistory);
+        _debugButton = Make("Depurar", "Para o script em linhas marcadas (clique na margem do código) e mostra o que ele guarda", UiStyle.ButtonKind.Secondary, ToggleDebugging);
 
         _tabs = new TabContainer { CustomMinimumSize = new Vector2(0, 170), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; content.AddChild(_tabs);
         _console = TextTab("Console", "Console: sem execuções ainda.");
         _problems = new ItemList { Name = "Problemas", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, SizeFlagsVertical = Control.SizeFlags.ExpandFill }; _problems.ItemSelected += index => OnProblem((int)index); _tabs.AddChild(_problems);
         _performance = TextTab("Desempenho", "Sem dados ainda: a ilha informa o uso a cada 30 segundos."); _permissions = PermissionsTab();
-        _tabs.SetTabTitle(1, "Problemas");
+        _tabs.SetTabTitle(1, "Problemas"); BuildDebug(); HookDebugNetwork();
     }
 
     private static readonly (string Name, string Text)[] OwnerPermissions = [("CONTROL_PHYSICS", "Controlar a física do objeto (physics.*)"), ("HTTP_REQUESTS", "Acessar endereços externos (http.*)"), ("CONTROL_MEDIA", "Controlar a mídia do objeto"), ("CREATE_NPCS", "Criar NPCs (npc.*)"), ("CONTROL_VEHICLES", "Dirigir os seus veículos parados (vehicle.*)")];

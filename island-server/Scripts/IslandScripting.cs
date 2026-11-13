@@ -56,7 +56,7 @@ public sealed partial class IslandScripting : IScriptWorld
     public IslandScripting(System.Net.Http.HttpClient api, ServerConfiguration config, Action<string> broadcastApplied, Action<string, Vec3, string, float> say, Action<Guid, string> tellUser, Action<string, object> log)
     {
         _api = api; _config = config; _broadcastApplied = broadcastApplied; _say = say; _tellUser = tellUser; _log = log;
-        _host = new ScriptHost(this); _host.Request += OnScriptRequest;
+        _host = new ScriptHost(this); _host.Request += OnScriptRequest; WireDebug();
         _host.Report += report => _tellUser(report.Script.OwnerUserId, $"[{report.Script.Name}] {report.Message}");
         _host.Log += text => _log("script_log", new { text });
     }

@@ -59,7 +59,7 @@ public partial class ScriptEditorSmoke : Control
 
             // ---- what the island reported ----
             Require(editor.IsOpen && editor.StateForTesting == "● aguardando evento", $"the header shows the state of the script (got {editor.StateForTesting})");
-            Require(editor.TabTitlesForTesting.SequenceEqual(["Console", "Problemas", "Desempenho", "Permissões"]), "four tabs under the code");
+            Require(editor.TabTitlesForTesting.SequenceEqual(["Console", "Problemas", "Desempenho", "Permissões", "Depuração"]), "five tabs under the code");
             Require(editor.ConsoleForTesting.Contains("12:00:01") && editor.ConsoleForTesting.Contains("info") && editor.ConsoleForTesting.Contains("touch: tocado por Ana") && editor.ConsoleForTesting.Contains("ERRO") && editor.ConsoleForTesting.Contains("porta:7 in touch"), $"the console shows what the script wrote and its errors with where they happened (got {editor.ConsoleForTesting})");
             Require(editor.PerformanceForTesting.Contains("Eventos tratados: 12") && editor.PerformanceForTesting.Contains("CPU: 4,5 ms") && editor.PerformanceForTesting.Contains("Último erro (linha 7): attempt to index nil") && editor.PerformanceForTesting.Contains("temporizadores ativos: 1"), $"performance (got {editor.PerformanceForTesting})");
             Require(editor.PermissionsForTesting.Contains("CONTROL_ANIMATION — dada pelo avatar") && !editor.PermissionsForTesting.Contains("CONTROL_PHYSICS") && editor.OwnerPermissionsForTesting["CONTROL_PHYSICS"] && !editor.OwnerPermissionsForTesting["HTTP_REQUESTS"], $"the permissions of the owner are boxes, those of avatars a list (got {editor.PermissionsForTesting})");
@@ -106,6 +106,28 @@ public partial class ScriptEditorSmoke : Control
             calls.Clear(); await history.PressRestoreForTesting(); await Frames(6);
             Require(calls.Any(c => c.StartsWith("POST", StringComparison.Ordinal) && c.EndsWith("/versions/1/restore", StringComparison.Ordinal)) && calls.Any(c => c.StartsWith("GET", StringComparison.Ordinal) && c.EndsWith($"/scripts/{script}", StringComparison.Ordinal)) && history.NoteForTesting.Contains("restaurada"), $"restoring asks the server and reloads the script ({string.Join(", ", calls)})");
 
+
+            // ---- Depurar: breakpoints in the margin, commands to the island, the stop shown with its variables ----
+            var sentDebug = new List<JsonElement>(); editor.DebugSender = json => sentDebug.Add(JsonDocument.Parse(json).RootElement.Clone());
+            editor.SourceForTesting = "function on_touch(event)\n  local a = 5\n  chat.say('x')\nend"; await editor.SaveAsync(); await Frames(2);
+            editor.ToggleBreakpointForTesting(2); editor.ToggleBreakpointForTesting(3); editor.ToggleBreakpointForTesting(3); Require(editor.BreakpointsForTesting.SequenceEqual([2]), "a click on the margin toggles a breakpoint of that line");
+            editor.TypeForTesting(" "); editor.PressForTesting("Depurar"); await Frames(2);
+            Require(sentDebug.Count == 0 && editor.InfoForTesting.Contains("Salve"), $"an unsaved script is not debugged: the island debugs the saved code (sent {sentDebug.Count}, dirty {editor.DirtyForTesting}, info {editor.InfoForTesting})");
+            editor.MarkSavedForTesting(); editor.PressForTesting("Depurar"); await Frames(2);
+            Require(sentDebug.Count == 1 && sentDebug[0].GetProperty("action").GetString() == "start" && sentDebug[0].GetProperty("debug").GetBoolean() && sentDebug[0].GetProperty("breakpoints")[0].GetInt32() == 2 && sentDebug[0].GetProperty("script").GetGuid() == script, $"Depurar asks the island to start with the breakpoints ({string.Join(" | ", sentDebug)} info {editor.InfoForTesting})");
+            editor.ReceiveDebugForTesting(JsonSerializer.Serialize(new { operation = "script_debug", script = Guid.NewGuid(), @event = "stopped", stopped = true, line = 9 })); Require(!editor.StoppedForTesting, "a message about another script is ignored");
+            editor.ReceiveDebugForTesting(JsonSerializer.Serialize(new { operation = "script_debug", script, @event = "started", debugging = true, stopped = false, breakpoints = new[] { 2 } })); await Frames(2);
+            Require(editor.DebuggingForTesting && editor.HasButtonForTesting("Parar depuração") && !editor.StoppedForTesting && !editor.DebugControlEnabledForTesting("Continuar"), "the editor is in debug mode, waiting for the script to stop");
+            editor.ReceiveDebugForTesting(JsonSerializer.Serialize(new { operation = "script_debug", script, @event = "stopped", stopped = true, debugging = true, line = 2, reason = "breakpoint", handler = "touch", depth = 2, breakpoints = new[] { 2 }, locals = new[] { new { name = "a", type = "number", value = "6" } }, globals = new[] { new { name = "total", type = "number", value = "31" } } })); await Frames(2);
+            Require(editor.StoppedForTesting && editor.StoppedLineForTesting == 2 && editor.CaretLineForTesting == 2 && editor.DebugTextForTesting.Contains("linha 2") && editor.DebugTextForTesting.Contains("a = 6") && editor.DebugTextForTesting.Contains("total = 31") && editor.TabForTesting == "Depuração", $"the stop is shown with the variables ({editor.DebugTextForTesting})");
+            Require(editor.DebugControlEnabledForTesting("Continuar") && editor.DebugControlEnabledForTesting("Passo") && editor.DebugControlEnabledForTesting("Por cima") && editor.DebugControlEnabledForTesting("Sair"), "the stepping buttons are on while the script is stopped");
+            sentDebug.Clear(); editor.PressForTesting("Por cima"); editor.PressForTesting("Passo"); editor.PressForTesting("Sair"); editor.PressForTesting("Continuar"); await Frames(2);
+            Require(sentDebug.Select(m => m.GetProperty("action").GetString()).SequenceEqual(["stepover", "stepin", "stepout", "continue"]), "each button sends its command");
+            sentDebug.Clear(); editor.ToggleBreakpointForTesting(1); await Frames(1); Require(sentDebug.Count == 1 && sentDebug[0].GetProperty("action").GetString() == "breakpoints", "changing a breakpoint while debugging tells the island");
+            editor.ReceiveDebugForTesting(JsonSerializer.Serialize(new { operation = "script_debug", script, @event = "running", debugging = true, stopped = false })); Require(!editor.StoppedForTesting && !editor.DebugControlEnabledForTesting("Continuar"), "while the script runs the stepping buttons are off");
+            sentDebug.Clear(); editor.PressForTesting("Parar depuração"); Require(sentDebug.Count == 1 && sentDebug[0].GetProperty("action").GetString() == "stop", "Parar depuração asks the island to stop");
+            editor.ReceiveDebugForTesting(JsonSerializer.Serialize(new { operation = "script_debug", script, @event = "ended", reason = "timeout" })); await Frames(2);
+            Require(!editor.DebuggingForTesting && editor.HasButtonForTesting("Depurar") && editor.InfoForTesting.Contains("2 minutos"), "a script left stopped for too long is let go and the editor says so");
             // ---- the island has not reported yet ----
             reported = false; await editor.RefreshConsoleAsync(); Require(editor.StateForTesting == "● aguardando a ilha" && editor.PerformanceForTesting.Contains("ainda não informou") && editor.ConsoleForTesting.Contains("sem execuções"), $"before the first report the editor says so (got {editor.StateForTesting} / {editor.ConsoleForTesting})");
 

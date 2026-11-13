@@ -16,7 +16,7 @@ public sealed record LuaLimits(
     int MaxUnpack = 256,
     int MaxSortElements = 2_000);
 
-public enum LuaStatus { Completed, NoHandler, Error, InstructionLimit, TimeLimit, MemoryLimit, Rejected }
+public enum LuaStatus { Completed, NoHandler, Error, InstructionLimit, TimeLimit, MemoryLimit, Rejected, Paused }
 
 public sealed record LuaRunResult(LuaStatus Status, string? Error, long Instructions, double Milliseconds, long AllocatedBytes)
 {
@@ -93,11 +93,14 @@ end";
     public Script Script { get; }
     public LuaLimits Limits => _limits;
 
-    public LuaSandbox(LuaLimits? limits = null, Action<string>? log = null)
+    public LuaDebugger? Debugger { get; private set; }
+
+    public LuaSandbox(LuaLimits? limits = null, Action<string>? log = null, bool debug = false)
     {
         _limits = limits ?? new LuaLimits();
         Script = new Script(CoreModules.Preset_HardSandbox);
         foreach (var name in RemovedGlobals) Script.Globals[name] = DynValue.Nil;
+        if (debug) { Debugger = new LuaDebugger(Script, _limits.SliceInstructions); Script.AttachDebugger(Debugger); }
         Script.Globals["log"] = DynValue.NewCallback((_, args) =>
         {
             var text = string.Join(" ", args.GetArray().Select(arg => arg.ToPrintString()));
@@ -114,6 +117,7 @@ end";
         DynValue chunk;
         try { chunk = Script.LoadString(source, null, "script"); }
         catch (InterpreterException exception) { return new(LuaStatus.Rejected, exception.DecoratedMessage ?? exception.Message, 0, 0, 0); }
+        Debugger?.MarkBaseline();
         return Run(chunk, []);
     }
 
@@ -126,6 +130,8 @@ end";
     }
 
     /// <summary>Runs a function value (a callback a script stored, for instance) under the same budgets as a handler.</summary>
+    public LuaRunResult CallFunction(string label, DynValue function, params DynValue[] arguments) => function.Type == DataType.Function ? Run(function, arguments, label) : new(LuaStatus.NoHandler, null, 0, 0, 0);
+
     public LuaRunResult CallFunction(DynValue function, params DynValue[] arguments) => function.Type == DataType.Function ? Run(function, arguments) : new(LuaStatus.NoHandler, null, 0, 0, 0);
 
     public Table NewTable() => new(Script);
@@ -148,23 +154,38 @@ end";
     {
         if (_worker is null || _worker.State is CoroutineState.Dead or CoroutineState.ForceSuspended or CoroutineState.Running)
         {
-            var thread = Script.CreateCoroutine(Dispatcher()); MoonSharpStacks.Shrink(thread.Coroutine); thread.Coroutine.AutoYieldCounter = _limits.SliceInstructions; _worker = thread.Coroutine;
+            var thread = Script.CreateCoroutine(Dispatcher()); MoonSharpStacks.Shrink(thread.Coroutine); thread.Coroutine.AutoYieldCounter = _limits.SliceInstructions; _worker = thread.Coroutine; if (Debugger is not null) Debugger.Coroutine = _worker;
         }
         return _worker;
     }
 
-    private LuaRunResult Run(DynValue function, DynValue[] arguments)
+    private LuaRunResult Run(DynValue function, DynValue[] arguments, string? label = null)
     {
-        var worker = Worker(); var watch = Stopwatch.StartNew();
+        var worker = Worker(); if (Debugger is not null) Debugger.Handler = label ?? "";
+        var argument = arguments.Length > 0 ? arguments[0] : DynValue.Nil;
+        return Drive(worker, () => worker.Resume(function, argument));
+    }
+
+    /// <summary>Lets a script that stopped at a breakpoint go on (until the next breakpoint, one line, one line without going into calls, or out of the function). The budgets of the event start again from this moment.</summary>
+    public LuaRunResult ContinueDebug(DebugCommand command)
+    {
+        if (_worker is not { } worker || Debugger is not { PausedNow: true } debugger) return new(LuaStatus.NoHandler, null, 0, 0, 0);
+        debugger.Resume(command);
+        return Drive(worker, () => worker.Resume());
+    }
+
+    private LuaRunResult Drive(Coroutine worker, Action start)
+    {
+        var watch = Stopwatch.StartNew();
         long baseline = 0;
         long instructions = 0;
         LuaRunResult Result(LuaStatus status, string? error = null) => new(status, error, instructions, watch.Elapsed.TotalMilliseconds, GC.GetAllocatedBytesForCurrentThread() - baseline);
         try
         {
-            var argument = arguments.Length > 0 ? arguments[0] : DynValue.Nil;
-            worker.Resume(function, argument);
+            start();
             // The interpreter's own start-up cost is not the script's: budget what is allocated after the first slice.
             baseline = GC.GetAllocatedBytesForCurrentThread();
+            if (Debugger is { PausedNow: true }) return Result(LuaStatus.Paused);
             while (worker.State == CoroutineState.ForceSuspended)
             {
                 instructions += _limits.SliceInstructions;
@@ -172,6 +193,7 @@ end";
                 if (watch.Elapsed.TotalMilliseconds > _limits.MillisecondsPerEvent) { _worker = null; return Result(LuaStatus.TimeLimit, "Time budget exceeded."); }
                 if (GC.GetAllocatedBytesForCurrentThread() - baseline > _limits.AllocatedBytesPerEvent) { _worker = null; return Result(LuaStatus.MemoryLimit, "Memory budget exceeded."); }
                 worker.Resume();
+                if (Debugger is { PausedNow: true }) return Result(LuaStatus.Paused);        // stopped at a line: the worker stays as it is until somebody continues
             }
             if (worker.State == CoroutineState.Dead) _worker = null;
             // A single library call cannot be interrupted, so overruns are caught afterwards and count as violations.

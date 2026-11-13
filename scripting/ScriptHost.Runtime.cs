@@ -60,7 +60,8 @@ public sealed partial class ScriptHost
     {
         var limits = new LuaLimits(InstructionsPerEvent: Math.Clamp(definition.InstructionBudget, 1_000, 100_000), MillisecondsPerEvent: _options.MillisecondsPerEvent);
         Instance? self = null;
-        var sandbox = new LuaSandbox(limits, text => { Log?.Invoke($"[{definition.Name}] {text}"); if (self is not null) AddLog(self, ScriptLogLevel.Info, "log", text); });
+        _debug.TryGetValue(definition.Id, out var debugging);
+        var sandbox = new LuaSandbox(limits, text => { Log?.Invoke($"[{definition.Name}] {text}"); if (self is not null) AddLog(self, ScriptLogLevel.Info, "log", text); }, debug: debugging is not null);
         var instance = new Instance(definition, sandbox); self = instance; instance.Lifecycle = ScriptLifecycle.Created;
         if (saved is not null) foreach (var (key, value) in saved.Take(_options.MaxStateKeys)) instance.State[key] = value;
         InstallApi(instance); instance.Lifecycle = ScriptLifecycle.Loaded;
@@ -70,7 +71,7 @@ public sealed partial class ScriptHost
             var reason = result.Status == LuaStatus.Rejected ? $"does not load: {result.Error}" : $"top-level code failed: {result.Error ?? result.Status.ToString()}";
             Quarantine(instance, reason, ScriptLifecycle.Faulted); RecordError(instance, "load", result.Error ?? reason, result); Notify(instance, "load", result); return instance;
         }
-        instance.Lifecycle = ScriptLifecycle.Validated;
+        instance.Lifecycle = ScriptLifecycle.Validated; if (debugging is not null) sandbox.Debugger?.SetBreakpoints(debugging.Breakpoints);
         foreach (var name in Handlers.Values.SelectMany(x => x)) if (sandbox.HasHandler(name)) instance.HandlerNames.Add(name);
         instance.Lifecycle = ScriptLifecycle.Waiting;
         return instance;
@@ -78,11 +79,12 @@ public sealed partial class ScriptHost
 
     // ---- the clock and the queue -----------------------------------------------------------------------------
 
-    private static bool Live(Instance i) => !i.Quarantined && i.Enabled && i.Lifecycle is ScriptLifecycle.Waiting or ScriptLifecycle.Running;
+    private static bool Live(Instance i) => !i.Quarantined && i.Enabled && i.Lifecycle is ScriptLifecycle.Waiting or ScriptLifecycle.Running && !(i.Sandbox.Debugger?.PausedNow ?? false);
 
     /// <summary>Starts due timers and moves objects that are travelling. Call regularly with the world clock.</summary>
     public void Tick(double now)
     {
+        if (_debug.Count > 0) ExpireDebugPauses(now);
         foreach (var instance in _instances.Values)
         {
             if (!Live(instance)) continue;
@@ -159,8 +161,15 @@ public sealed partial class ScriptHost
     {
         instance.Pending = new ObjectChange(); instance.PendingLinks = []; instance.Lifecycle = ScriptLifecycle.Running; instance.CurrentEvent = eventName;
         var argument = DynValue.NewTable(ToTable(instance.Sandbox.Script, data));
-        var result = instance.Sandbox.CallFunction(function, argument);
-        instance.Events++; instance.CurrentEvent = null;
+        var result = instance.Sandbox.CallFunction(eventName, function, argument);
+        FinishRun(instance, eventName, result);
+    }
+
+    /// <summary>What follows a handler (or the part of one that ran): metrics, the changes it asked for, limits and errors. A handler stopped by the debugger waits for the rest.</summary>
+    private void FinishRun(Instance instance, string eventName, LuaRunResult result)
+    {
+        if (result.Status == LuaStatus.Paused) { instance.DebugEvent = eventName; instance.DebugPausedAt = world.Now; instance.Metrics.CpuMilliseconds += result.Milliseconds; if (instance.Sandbox.Debugger?.Snapshot is { } stop) DebugStopped?.Invoke(instance.Definition, eventName, stop); return; }      // stopped at a line: nothing is applied until it ends
+        instance.DebugEvent = null; instance.Events++; instance.CurrentEvent = null;
         var metrics = instance.Metrics; metrics.Events++; metrics.CpuMilliseconds += result.Milliseconds; metrics.Instructions += result.Instructions; metrics.AllocatedBytes += result.AllocatedBytes; metrics.WorstEventMilliseconds = Math.Max(metrics.WorstEventMilliseconds, result.Milliseconds);
         if (_ownerCpu.TryGetValue(instance.Definition.OwnerUserId, out var window)) _ownerCpu[instance.Definition.OwnerUserId] = (window.Start, window.Cpu + result.Milliseconds);
         if (instance.Pending is { IsEmpty: false } change) world.ApplyChange(instance.Definition, change);

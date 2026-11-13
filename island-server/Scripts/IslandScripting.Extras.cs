@@ -68,7 +68,7 @@ public sealed partial class IslandScripting
         try
         {
             using var document = JsonDocument.Parse(json); var root = document.RootElement;
-            if (TryHudAction(who, root) || TryMediaFinished(who, root) || TrySoundFinished(who, root)) return;
+            if (TryHudAction(who, root) || TryMediaFinished(who, root) || TrySoundFinished(who, root) || TryDebugCommand(who, root)) return;
             if (root.TryGetProperty("touch_end", out var end) && end.ValueKind == JsonValueKind.True) { if (root.TryGetProperty("objectId", out var o) && Guid.TryParse(o.GetString(), out var touched)) TouchEnd(who, touched); return; }
             if (!root.TryGetProperty("id", out var idElement) || !Guid.TryParse(idElement.GetString(), out var id)) return;
             var response = root.TryGetProperty("response", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() ?? "" : "";

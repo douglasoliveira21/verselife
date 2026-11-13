@@ -163,6 +163,8 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         public Queue<double> MediaPlays { get; } = new();
         public MediaSpec? Media { get; set; }
         public ObjectAnimationState? ObjectAnimation { get; set; }
+        public string? DebugEvent { get; set; }
+        public double DebugPausedAt { get; set; }
         public int NextEffectId { get; set; } = 1;
         public List<ScriptLogEntry> Logs { get; } = [];
         public bool InHandler { get; set; }
