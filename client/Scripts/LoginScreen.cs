@@ -1,48 +1,58 @@
 using Godot;
 using LifeVerse.Client.Autoloads;
+using LifeVerse.Client.Scripts.LoginUi;
 
 namespace LifeVerse.Client.Scripts;
 
-/// The login screen in the game's glass style: user and password are all that is needed, with an option to remember them.
-/// "Criar conta" reveals the email field that only registration needs.
+/// <summary>
+/// The login screen, in three independent layers: the background picture (<see cref="LoginBackground"/>), the login interface (logo and the card with the form, the registration and the recovery notice)
+/// and the overlay (window controls, server status, news and version). Signing in goes through the existing <see cref="AuthManager"/>, so the session, the token and the entry into the world are the ones the game already has.
+/// </summary>
 public partial class LoginScreen : Control
 {
-    private LineEdit _login = null!;
-    private LineEdit _email = null!;
-    private LineEdit _password = null!;
-    private Label _message = null!;
-    private Button _loginButton = null!;
-    private Button _registerButton = null!;
-    private CheckBox _remember = null!;
+    public LoginBackground Background { get; } = new();
+    public LoginLightShow Lights { get; } = new();
+    public LoginMusic Music { get; } = new();
+    public LoginLogo Logo { get; } = new();
+    public LoginPanel Panel { get; } = new();
+    public ServerStatus Status { get; } = new();
+    public NewsTicker News { get; } = new();
+    public WindowControls Controls { get; } = new();
+    public Label VersionLabel { get; private set; } = null!;
+    public Button? DownloadButton { get; private set; }
+    /// <summary>Tests only: replaces the change of scene after a successful login or registration (argument: a new account).</summary>
+    public Action<bool>? EnterOverride { get; set; }
+
     private AuthManager _auth = null!;
     private UpdateChecker? _updates;
-    private Button? _download;
-    private bool _registerMode;
+    private bool _registering;
     private bool UpdateRequired => _updates?.Status == LifeVerse.Shared.Updates.UpdateStatus.Required;
 
     public override void _Ready()
     {
-        Theme = ViewerTheme.Create();
-        _login = GetNode<LineEdit>("Panel/Margin/Content/Login");
-        _email = GetNode<LineEdit>("Panel/Margin/Content/Email");
-        _password = GetNode<LineEdit>("Panel/Margin/Content/Password");
-        _message = GetNode<Label>("Panel/Margin/Content/Message");
-        _loginButton = GetNode<Button>("Panel/Margin/Content/Buttons/LoginButton");
-        _registerButton = GetNode<Button>("Panel/Margin/Content/Buttons/RegisterButton");
-        GetNode<Label>("Panel/Margin/Content/Version").Text = $"Versão {AppManager.Version}";
-        Style();
-        _auth = GetNode<AuthManager>("/root/AuthManager");
-        _auth.RequestFinished += OnRequestFinished;
-        _loginButton.Pressed += Login;
-        _registerButton.Pressed += Register;
-        _login.TextSubmitted += _ => _password.GrabFocus();
-        _password.TextSubmitted += _ => { if (_registerMode) Register(); else Login(); };
-        _email.TextSubmitted += _ => Register();
-        _updates = GetNode<AppManager>("/root/AppManager").Updates;
-        _updates.Checked += ShowUpdate; ShowUpdate();
-        if (SavedLogin.Load() is { } saved) { _login.Text = saved.Login; _password.Text = saved.Password; _remember.ButtonPressed = true; _loginButton.GrabFocus(); }
-        else _login.GrabFocus();
+        Theme = ViewerTheme.Create(); SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        // layer 1: the picture
+        AddChild(Background);
+        Lights.Name = "LightShow"; AddChild(Lights); // light beams and drifting sparks over the picture, under the interface
+        Music.Name = "Music"; AddChild(Music);
+        // layer 2: the login interface
+        var centre = new CenterContainer { MouseFilter = MouseFilterEnum.Pass }; centre.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect); AddChild(centre);
+        var column = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center }; column.AddThemeConstantOverride("separation", 22); centre.AddChild(column);
+        column.AddChild(Logo); column.AddChild(Panel);
+        // layer 3: the overlay
+        BuildOverlay();
+
+        _auth = GetNode<AuthManager>("/root/AuthManager"); _auth.RequestFinished += OnRequestFinished;
+        Panel.Form.Submitted += (login, password, remember) => { _remember = remember; _password = password; _login = login; Begin(false, () => _auth.Login(login, password)); };
+        Panel.Register.Submitted += (user, email, password) => { _remember = false; _login = user; _password = password; Begin(true, () => _auth.Register(user, email, password)); };
+        Status.Start(GetNode<AppManager>("/root/AppManager").ApiBaseUrl);
+        _updates = GetNode<AppManager>("/root/AppManager").Updates; _updates.Checked += ShowUpdate; ShowUpdate();
+        if (SavedLogin.Load() is { } saved) { Panel.Form.User.Text = saved.Login; Panel.Form.Password.Text = saved.Password; Panel.Form.Remember.ButtonPressed = true; Panel.Form.Enter.GrabFocus(); }
+        else Panel.Form.User.Focus();
+        Intro();
     }
+
+    private string _login = "", _password = ""; private bool _remember;
 
     public override void _ExitTree()
     {
@@ -50,102 +60,83 @@ public partial class LoginScreen : Control
         if (_updates is not null && IsInstanceValid(_updates)) _updates.Checked -= ShowUpdate;
     }
 
-    /// Glass card, neon title, flat fields with icons' worth of spacing, and the remember-me switch.
-    private void Style()
+    private void BuildOverlay()
     {
-        GetNode<Panel>("Background").AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = new Color("#0B1118") });
-        var card = GetNode<PanelContainer>("Panel");
-        card.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.PanelFillSolid, .94f), UiStyle.BorderSoft, UiStyle.RadiusLarge, 1, 0, 0, shadow: 24));
-        card.OffsetLeft = -230; card.OffsetRight = 230; card.OffsetTop = -330; card.OffsetBottom = 330;
-        var content = GetNode<VBoxContainer>("Panel/Margin/Content");
-        content.AddThemeConstantOverride("separation", 14);
+        Controls.Music = Music;
+        var top = new MarginContainer { MouseFilter = MouseFilterEnum.Ignore }; top.SetAnchorsPreset(LayoutPreset.TopWide); top.AddThemeConstantOverride("margin_top", 24); top.AddThemeConstantOverride("margin_right", 28); AddChild(top);
+        var right = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.End, MouseFilter = MouseFilterEnum.Ignore }; top.AddChild(right); right.AddChild(Controls);
 
-        var title = GetNode<Label>("Panel/Margin/Content/Title");
-        var logo = UiStyle.Brand(true, 170); logo.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter; content.AddChild(logo); content.MoveChild(logo, title.GetIndex()); title.Visible = false;
-        title.Text = "LIFEVERSE"; title.AddThemeFontOverride("font", UiStyle.Bold); title.AddThemeFontSizeOverride("font_size", 38); title.AddThemeColorOverride("font_color", UiStyle.Accent);
-        var subtitle = GetNode<Label>("Panel/Margin/Content/Subtitle");
-        subtitle.Text = "Entre no seu mundo"; subtitle.AddThemeColorOverride("font_color", UiStyle.TextMuted); subtitle.AddThemeFontSizeOverride("font_size", 18);
-
-        _login.PlaceholderText = "Nome de usuário"; _login.CustomMinimumSize = new Vector2(0, 50); _login.AddThemeFontSizeOverride("font_size", 19);
-        _password.PlaceholderText = "Senha"; _password.CustomMinimumSize = new Vector2(0, 50); _password.AddThemeFontSizeOverride("font_size", 19);
-        _email.PlaceholderText = "E-mail (só para criar a conta)"; _email.CustomMinimumSize = new Vector2(0, 50); _email.AddThemeFontSizeOverride("font_size", 19); _email.Visible = false;
-        content.MoveChild(_email, _password.GetIndex());
-
-        _remember = new CheckBox { Text = " Lembrar usuário e senha", TooltipText = "Guarda o login neste computador (criptografado) para entrar direto da próxima vez." };
-        _remember.AddThemeFontSizeOverride("font_size", 17);
-        content.AddChild(_remember); content.MoveChild(_remember, _password.GetIndex() + 1);
-
-        _loginButton.Text = "Entrar"; _loginButton.CustomMinimumSize = new Vector2(0, 52); UiStyle.StyleButton(_loginButton, UiStyle.ButtonKind.Primary, 12, 8); _loginButton.AddThemeFontSizeOverride("font_size", 20);
-        _registerButton.Text = "Criar conta"; _registerButton.CustomMinimumSize = new Vector2(0, 52); UiStyle.StyleButton(_registerButton, UiStyle.ButtonKind.Secondary, 12, 8); _registerButton.AddThemeFontSizeOverride("font_size", 20);
-        var recovery = GetNode<Button>("Panel/Margin/Content/Recovery");
-        recovery.Text = "Recuperar senha — indisponível"; recovery.AddThemeFontSizeOverride("font_size", 15);
-        recovery.TooltipText = "Indisponível até que um provedor de e-mail seja configurado.";
-        _message.AddThemeColorOverride("font_color", UiStyle.Orange); _message.AddThemeFontSizeOverride("font_size", 16);
-        GetNode<Label>("Panel/Margin/Content/Version").AddThemeColorOverride("font_color", UiStyle.TextDisabled);
+        var bar = new PanelContainer { MouseFilter = MouseFilterEnum.Stop, CustomMinimumSize = new Vector2(0, 58) }; bar.SetAnchorsPreset(LayoutPreset.BottomWide); bar.GrowVertical = GrowDirection.Begin; AddChild(bar);
+        bar.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(.05f, .08f, .1f, .8f), new Color(UiStyle.BorderSoft, .35f), 0, 1, 32, 0));
+        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 20); bar.AddChild(row);
+        Status.CustomMinimumSize = new Vector2(250, 0); row.AddChild(Status);
+        var middle = new CenterContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, MouseFilter = MouseFilterEnum.Ignore }; row.AddChild(middle); middle.AddChild(News);
+        VersionLabel = new Label { Text = $"Versão {AppManager.Version}  •  Build {Build()}", HorizontalAlignment = HorizontalAlignment.Right, CustomMinimumSize = new Vector2(250, 0) }; VersionLabel.AddThemeFontSizeOverride("font_size", 14); VersionLabel.AddThemeColorOverride("font_color", UiStyle.TextMuted); row.AddChild(VersionLabel);
     }
 
-    private void Login()
+    /// <summary>The build number: the one stamped into the project by the release script, or "dev" when running from the editor.</summary>
+    private static string Build()
     {
-        if (string.IsNullOrWhiteSpace(_login.Text) || _password.Text.Length == 0) { _message.Text = "Digite o usuário e a senha."; return; }
-        SetBusy(true);
-        var error = _auth.Login(_login.Text.Trim(), _password.Text);
-        if (error != Error.Ok) OnRequestFinished(false, false, $"Não foi possível iniciar o pedido: {error}");
+        var value = ProjectSettings.GetSetting("application/config/build_number", "").AsString();
+        return value.Length > 0 ? value : OS.HasFeature("editor") ? "dev" : "release";
     }
 
-    private void Register()
+    /// <summary>The logo fades in, then the card rises in. Nothing blocks the input while it plays.</summary>
+    private void Intro()
     {
-        if (!_registerMode)
-        {
-            _registerMode = true; _email.Visible = true; _email.GrabFocus();
-            _registerButton.Text = "Confirmar cadastro"; _loginButton.Text = "Voltar";
-            _loginButton.Pressed -= Login; _loginButton.Pressed += LeaveRegister;
-            _message.Text = "Informe o e-mail e confirme para criar a conta.";
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_email.Text)) { _message.Text = "O e-mail é obrigatório para criar a conta."; return; }
-        if (string.IsNullOrWhiteSpace(_login.Text) || _password.Text.Length == 0) { _message.Text = "Digite o usuário e a senha."; return; }
-        SetBusy(true);
-        var error = _auth.Register(_login.Text.Trim(), _email.Text.Trim(), _password.Text);
-        if (error != Error.Ok) OnRequestFinished(false, true, $"Não foi possível iniciar o pedido: {error}");
+        Logo.Modulate = new Color(1, 1, 1, 0); Panel.Modulate = new Color(1, 1, 1, 0); Panel.Scale = new Vector2(.97f, .97f);
+        Panel.Resized += () => Panel.PivotOffset = Panel.Size / 2; Panel.PivotOffset = Panel.Size / 2;
+        var tween = CreateTween().SetParallel(); tween.TweenProperty(Logo, "modulate:a", 1f, .7f).SetTrans(Tween.TransitionType.Sine);
+        tween.TweenProperty(Panel, "modulate:a", 1f, .55f).SetDelay(.25f).SetTrans(Tween.TransitionType.Sine); tween.TweenProperty(Panel, "scale", Vector2.One, .55f).SetDelay(.25f).SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        tween.Finished += () => { Logo.Modulate = Colors.White; Panel.Modulate = Colors.White; Panel.Scale = Vector2.One; };
     }
 
-    private void LeaveRegister()
+    private void Begin(bool registering, Func<Error> send)
     {
-        _registerMode = false; _email.Visible = false;
-        _registerButton.Text = "Criar conta"; _loginButton.Text = "Entrar";
-        _loginButton.Pressed -= LeaveRegister; _loginButton.Pressed += Login;
-        _message.Text = string.Empty;
+        if (UpdateRequired) return;
+        _registering = registering; Panel.SetBusy(true); Say(registering ? "Criando a conta…" : "Conectando…", false);
+        var error = send();
+        if (error != Error.Ok) OnRequestFinished(false, registering, error == Error.Busy ? "Aguarde: outro pedido ainda está em andamento." : $"Não foi possível iniciar o pedido: {error}");
     }
+
+    private void Say(string text, bool error) { if (_registering) Panel.Register.Say(text, error); else Panel.Form.Say(text, error); }
+
+    /// <summary>The server speaks English in its error titles; the player reads Portuguese.</summary>
+    public static string Translate(string message) => message switch
+    {
+        "Invalid credentials." => "Usuário ou senha incorretos.",
+        "Username or email is already registered." => "Esse nome de usuário ou e-mail já está em uso.",
+        "Authentication failed." => "Não foi possível entrar. Tente de novo.",
+        "The server returned an invalid response." => "O servidor respondeu algo que não consegui entender.",
+        _ when message.Contains("password:", StringComparison.OrdinalIgnoreCase) => "A senha precisa ter de 12 a 128 caracteres, com maiúscula, minúscula e número.",
+        _ => message
+    };
 
     private void OnRequestFinished(bool success, bool newAccount, string message)
     {
-        SetBusy(false);
-        _message.Text = success ? string.Empty : message;
-        if (!success) return;
-        if (_remember.ButtonPressed) SavedLogin.Save(_login.Text.Trim(), _password.Text); else SavedLogin.Clear();
+        Panel.SetBusy(false); _registering = newAccount;
+        if (!success) { Say(Translate(message), true); if (UpdateRequired) ShowUpdate(); return; }
+        if (_remember && !newAccount) SavedLogin.Save(_login, _password); else if (!newAccount) SavedLogin.Clear();
+        _password = string.Empty;
+        Say(newAccount ? "Conta criada! Preparando o seu personagem…" : "Pronto! Entrando no mundo…", false);
+        Panel.SetBusy(true); // stays blocked while the next screen loads
+        Music.FadeOutAndFree();
+        if (EnterOverride is not null) { EnterOverride(newAccount); return; }
         var ui = GetNode<UIManager>("/root/UIManager");
-        if (newAccount) ui.ShowCharacterCreator();
-        else ui.ShowWorld();
+        if (newAccount) ui.ShowCharacterCreator(); else ui.ShowWorld();
     }
 
-    private void SetBusy(bool busy)
-    {
-        _loginButton.Disabled = busy || (UpdateRequired && !_registerMode);
-        _registerButton.Disabled = busy || UpdateRequired;
-        if (busy) _message.Text = "Conectando…";
-        else if (UpdateRequired) _message.Text = _updates!.Describe();
-    }
-
-    /// A newer client is only mentioned; one below the minimum blocks login until it is updated.
+    /// <summary>A newer client is announced in the news strip and under the form; one below the minimum blocks the login until it is updated.</summary>
     private void ShowUpdate()
     {
-        if (_updates is null || _updates.Status is not (LifeVerse.Shared.Updates.UpdateStatus.Available or LifeVerse.Shared.Updates.UpdateStatus.Required)) return;
-        _message.Text = _updates.Describe();
-        _loginButton.Disabled = _registerButton.Disabled = UpdateRequired;
-        if (_download is not null || _updates.Release is not { HasSafeDownloadLink: true }) return;
-        _download = new Button { Text = "Baixar atualização" };
-        UiStyle.StyleButton(_download, UiStyle.ButtonKind.Primary);
-        _download.Pressed += _updates.OpenDownload;
-        _message.GetParent().AddChild(_download);
+        if (_updates is null) return;
+        var items = new List<string>(); if (_updates.Status is LifeVerse.Shared.Updates.UpdateStatus.Available or LifeVerse.Shared.Updates.UpdateStatus.Required) items.Add(_updates.Describe());
+        News.SetItems(items);
+        var blocked = UpdateRequired; Panel.Form.Enter.Disabled = Panel.Register.Create.Disabled = blocked;
+        if (items.Count == 0) return;
+        Panel.Form.Say(_updates.Describe(), blocked);
+        if (DownloadButton is not null || _updates.Release is not { HasSafeDownloadLink: true }) return;
+        DownloadButton = new Button { Text = "Baixar atualização", FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 46) }; UiStyle.StyleButton(DownloadButton, UiStyle.ButtonKind.Secondary, 12, 8);
+        DownloadButton.Pressed += _updates.OpenDownload; Panel.Footer.AddChild(DownloadButton);
     }
 }

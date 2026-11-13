@@ -11,10 +11,11 @@ public partial class UiCapture : Node
     {
         try
         {
-            if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") == "login")
+            if (OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW") is "login" or "login-register" or "login-recovery")
             {
-                AddChild(GD.Load<PackedScene>("res://Scenes/Login.tscn").Instantiate<Control>());
-                for (var i = 0; i < 30; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+                var loginScreen = GD.Load<PackedScene>("res://Scenes/Login.tscn").Instantiate<LoginScreen>(); AddChild(loginScreen); var captureView = OS.GetEnvironment("LIFEVERSE_CAPTURE_VIEW");
+                if (captureView == "login-register") loginScreen.Panel.Show(LifeVerse.Client.Scripts.LoginUi.LoginMode.Register); else if (captureView == "login-recovery") loginScreen.Panel.Show(LifeVerse.Client.Scripts.LoginUi.LoginMode.Recovery);
+                for (var i = 0; i < 120; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
                 GetViewport().GetTexture().GetImage().SavePng($"{OS.GetEnvironment("LIFEVERSE_CAPTURE_PATH")}-ui.png");
                 GetTree().Quit();
                 return;

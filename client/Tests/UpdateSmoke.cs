@@ -20,24 +20,24 @@ public partial class UpdateSmoke : Node
             SavedLogin.Clear();
             Require(!SavedLogin.Exists, "clearing removes the file");
             var updates = GetNode<AppManager>("/root/AppManager").Updates;
-            var login = GD.Load<PackedScene>("res://Scenes/Login.tscn").Instantiate<Control>();
+            var login = GD.Load<PackedScene>("res://Scenes/Login.tscn").Instantiate<LifeVerse.Client.Scripts.LoginScreen>();
             AddChild(login);
             await Frames(3);
-            var loginButton = login.GetNode<Button>("Panel/Margin/Content/Buttons/LoginButton");
-            var message = login.GetNode<Label>("Panel/Margin/Content/Message");
-            Require(!loginButton.Disabled && message.Text.Length == 0, "a fresh login screen has no update message");
+            var loginButton = login.Panel.Form.Enter;
+            var message = login.Panel.Form.Message;
+            Require(!loginButton.Disabled && message.Text.Length == 0 && login.News.TextNow == LifeVerse.Client.Scripts.LoginUi.NewsTicker.Empty, "a fresh login screen has no update message");
 
             updates.Apply(200, "not json");
             Require(updates.Status == UpdateStatus.Unknown && !loginButton.Disabled, "a broken answer must change nothing");
 
             updates.Apply(200, $"{{\"latest\":\"99.0.0\",\"minimum\":\"{AppManager.Version}\",\"downloadUrl\":\"https://example.com/lifeverse.zip\"}}");
             Require(updates.Status == UpdateStatus.Available, $"expected Available, got {updates.Status}");
-            Require(message.Text.Contains("99.0.0") && !loginButton.Disabled, $"a newer version is announced without blocking: '{message.Text}'");
+            Require(message.Text.Contains("99.0.0") && !loginButton.Disabled && login.News.TextNow.Contains("99.0.0"), $"a newer version is announced (under the form and in the news) without blocking: {message.Text}");
             Require(login.FindChild("*", true, false) is not null && FindButton(login, "Baixar atualização") is not null, "a download button should appear");
 
             updates.Apply(200, "{\"latest\":\"99.0.0\",\"minimum\":\"98.0.0\"}");
             Require(updates.Status == UpdateStatus.Required, $"expected Required, got {updates.Status}");
-            Require(loginButton.Disabled && login.GetNode<Button>("Panel/Margin/Content/Buttons/RegisterButton").Disabled, "login and register must be blocked");
+            Require(loginButton.Disabled && login.Panel.Register.Create.Disabled, "login and register must be blocked");
             Require(message.Text.Contains("obrigatória"), $"the message should explain: '{message.Text}'");
 
             updates.Apply(200, $"{{\"latest\":\"{AppManager.Version}\",\"minimum\":\"{AppManager.Version}\"}}");
