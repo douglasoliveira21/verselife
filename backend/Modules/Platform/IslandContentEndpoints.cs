@@ -14,12 +14,15 @@ public static class IslandContentEndpoints
 {
     private const int MaxKeysPerScript = 32;
     private const int MaxKeyLength = 64;
-    private const int MaxValueLength = 1024;
+    private const int MaxValueLength = 2100;
 
     public static IEndpointRouteBuilder MapIslandContentEndpoints(this IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/island-content", ContentAsync).WithTags("Platform");
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/script-state", SaveStateAsync).WithTags("Platform");
+        endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/script-runtime", Scripting.ScriptingEndpoints.SaveRuntimeAsync).WithTags("Platform");
+        endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-http", Scripting.ScriptingEndpoints.ScriptHttpAsync).WithTags("Platform");
+        endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-payment", Scripting.ScriptingEndpoints.ScriptPaymentAsync).WithTags("Platform");
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/vehicles", VehiclesAsync).WithTags("Platform");
         return endpoints;
     }
@@ -37,13 +40,15 @@ public static class IslandContentEndpoints
                 x.MaterialJson, x.GeometryJson, x.PhysicsJson, x.ContentJson, x.Revision
             }).ToListAsync(ct);
         var scripts = await db.ObjectScripts.AsNoTracking()
-            .Where(script => script.Status == "active" && db.BuildObjects.Any(o => o.Id == script.ObjectId && o.IslandId == server.IslandId && o.DeletedAt == null))
-            .Select(script => new { script.Id, script.ObjectId, script.OwnerUserId, script.Name, script.Source, script.Version, script.InstructionBudget })
+            .Where(script => (script.Status == "active" || script.Status == "paused") && db.BuildObjects.Any(o => o.Id == script.ObjectId && o.IslandId == server.IslandId && o.DeletedAt == null))
+            .Select(script => new { script.Id, script.ObjectId, script.OwnerUserId, script.Name, script.Source, script.Version, script.InstructionBudget, paused = script.Status == "paused" })
             .ToListAsync(ct);
         var scriptIds = scripts.Select(s => s.Id).ToList();
         var state = (await db.ScriptStates.AsNoTracking().Where(x => scriptIds.Contains(x.ScriptId)).Select(x => new { x.ScriptId, x.Key, x.ValueJson }).ToListAsync(ct))
             .GroupBy(x => x.ScriptId).ToDictionary(group => group.Key, group => group.ToDictionary(x => x.Key, x => x.ValueJson));
-        return Results.Ok(new { islandId = server.IslandId, objects, scripts, state });
+        var grants = await db.ScriptGrants.AsNoTracking().Where(x => scriptIds.Contains(x.ScriptId)).Select(x => new { x.ScriptId, x.SubjectId, x.Permission }).ToListAsync(ct);
+        var islandName = await db.Islands.AsNoTracking().Where(x => x.Id == server.IslandId).Select(x => x.Name).SingleOrDefaultAsync(ct) ?? "Ilha";
+        return Results.Ok(new { islandId = server.IslandId, islandName, objects, scripts, state, grants });
     }
 
     /// The vehicles that belong on this island; the island server simulates them and adds new ones as they appear.

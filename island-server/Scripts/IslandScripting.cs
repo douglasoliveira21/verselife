@@ -14,7 +14,7 @@ public sealed record AvatarPresence(int PeerId, Guid AvatarId, Guid UserId, stri
 /// Connects the Lua script host to this island: loads its objects and scripts from the API, turns avatar actions
 /// (touch, walking into an object, chatting) into script events, and applies what scripts ask for through the same
 /// authoritative build-operation path players use, so permissions, revisions and replication all still apply.
-public sealed class IslandScripting : IScriptWorld
+public sealed partial class IslandScripting : IScriptWorld
 {
     private sealed class CachedObject
     {
@@ -26,7 +26,7 @@ public sealed class IslandScripting : IScriptWorld
     private readonly System.Net.Http.HttpClient _api;
     private readonly ServerConfiguration _config;
     private readonly Action<string> _broadcastApplied;
-    private readonly Action<string, Vec3, string> _say;
+    private readonly Action<string, Vec3, string, float> _say;
     private readonly Action<Guid, string> _tellUser;
     private readonly Action<string, object> _log;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -53,16 +53,17 @@ public sealed class IslandScripting : IScriptWorld
     private double _lastProximity;
     private bool _refreshing;
 
-    public IslandScripting(System.Net.Http.HttpClient api, ServerConfiguration config, Action<string> broadcastApplied, Action<string, Vec3, string> say, Action<Guid, string> tellUser, Action<string, object> log)
+    public IslandScripting(System.Net.Http.HttpClient api, ServerConfiguration config, Action<string> broadcastApplied, Action<string, Vec3, string, float> say, Action<Guid, string> tellUser, Action<string, object> log)
     {
         _api = api; _config = config; _broadcastApplied = broadcastApplied; _say = say; _tellUser = tellUser; _log = log;
-        _host = new ScriptHost(this);
+        _host = new ScriptHost(this); _host.Request += OnScriptRequest;
         _host.Report += report => _tellUser(report.Script.OwnerUserId, $"[{report.Script.Name}] {report.Message}");
         _host.Log += text => _log("script_log", new { text });
     }
 
     public double Now => _clock.Elapsed.TotalSeconds;
     public IReadOnlyList<ScriptInfo> Scripts => _host.Scripts;
+    public ScriptLifecycle? StateOf(Guid scriptId) => _host.StateOf(scriptId);
 
     public ScriptObjectState? GetObject(Guid id) => _objects.TryGetValue(id, out var o) ? new ScriptObjectState(o.Id, o.OwnerUserId, o.Name, o.Position, o.Rotation, o.Scale) : null;
 
@@ -84,12 +85,28 @@ public sealed class IslandScripting : IScriptWorld
             foreach (var id in _inFlight) if (_objects.TryGetValue(id, out var local)) fresh[id] = local;
             // objects the server removed by itself (a temporary one whose time is up, a return by the land) vanish for everybody on the island
             foreach (var gone in _objects.Keys.Where(id => !fresh.ContainsKey(id)).ToList()) { _texts.Remove(gone); _broadcastApplied(JsonSerializer.Serialize(new { operation = "delete", objectId = gone })); }
+            var previousOwners = _objects.ToDictionary(pair => pair.Key, pair => pair.Value.OwnerUserId); var previousContents = _objects.ToDictionary(pair => pair.Key, pair => pair.Value.ContentJson);
             _objects.Clear(); Obstacles.Clear(); ObjectsVersion++; foreach (var (id, cached) in fresh) { _objects[id] = cached; UpdateObstacle(cached); }
-            var definitions = root.GetProperty("scripts").EnumerateArray().Select(s => new ScriptDefinition(s.GetProperty("id").GetGuid(), s.GetProperty("objectId").GetGuid(), s.GetProperty("ownerUserId").GetGuid(), s.GetProperty("name").GetString() ?? "script", s.GetProperty("source").GetString() ?? "", s.GetProperty("version").GetInt32(), s.GetProperty("instructionBudget").GetInt32())).ToList();
+            var definitions = root.GetProperty("scripts").EnumerateArray().Select(s => new ScriptDefinition(s.GetProperty("id").GetGuid(), s.GetProperty("objectId").GetGuid(), s.GetProperty("ownerUserId").GetGuid(), s.GetProperty("name").GetString() ?? "script", s.GetProperty("source").GetString() ?? "", s.GetProperty("version").GetInt32(), s.GetProperty("instructionBudget").GetInt32(), s.TryGetProperty("paused", out var paused) && paused.ValueKind == JsonValueKind.True)).ToList();
+            if (root.TryGetProperty("grants", out var savedGrants) && savedGrants.ValueKind == JsonValueKind.Array)
+            {
+                var ownerGrants = new List<(Guid, string)>();
+                foreach (var grant in savedGrants.EnumerateArray())
+                {
+                    if (!Guid.TryParse(grant.GetProperty("scriptId").GetString(), out var grantScript) || !Guid.TryParse(grant.GetProperty("subjectId").GetString(), out var grantSubject)) continue;
+                    var permission = grant.GetProperty("permission").GetString() ?? "";
+                    if (grantSubject == Guid.Empty) ownerGrants.Add((grantScript, permission)); else if (!_grantsLoaded) _host.Permissions.Grant(grantScript, grantSubject, permission);   // what avatars allowed is kept by the island itself after the first read; what the owner allows comes from the editor every time
+                }
+                _host.Permissions.ReplaceOwnerGrants(ownerGrants); _grantsLoaded = true;
+            }
             var state = new Dictionary<Guid, Dictionary<string, string>>();
             if (root.TryGetProperty("state", out var states))
                 foreach (var scriptState in states.EnumerateObject()) state[Guid.Parse(scriptState.Name)] = scriptState.Value.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? "null");
+            if (root.TryGetProperty("islandName", out var islandName) && islandName.ValueKind == JsonValueKind.String) _regionName = islandName.GetString() ?? _regionName;
+            foreach (var (id, fresher) in fresh) if (previousOwners.TryGetValue(id, out var before) && before != fresher.OwnerUserId) _host.OwnerChanged(id, fresher.OwnerUserId);
             _host.Sync(definitions, id => state.GetValueOrDefault(id));
+            NoteContents(previousContents);
+            if (!_regionStarted) { _regionStarted = true; _host.RegionStarted(); }
             _log("scripts_loaded", new { objects = _objects.Count, scripts = definitions.Count });
         }
         finally { _refreshing = false; }
@@ -98,10 +115,11 @@ public sealed class IslandScripting : IScriptWorld
     public async Task FlushStateAsync(CancellationToken ct)
     {
         foreach (var (id, values) in _host.TakeDirtyState()) _unsentState[id] = values;
-        if (_unsentState.Count == 0) return;
+        if (_unsentState.Count == 0) { await ReportRuntimeAsync(ct); return; }
         var batch = new { states = _unsentState.Select(pair => new { scriptId = pair.Key, values = pair.Value }).ToArray() };
         using var response = await _api.PutAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/script-state", batch, ct);
         if (response.IsSuccessStatusCode) _unsentState.Clear(); else _log("script_state_save_failed", new { status = (int)response.StatusCode });
+        await ReportRuntimeAsync(ct);
     }
 
     /// Keeps the object cache in step with build operations the server accepted (players' or scripts').
@@ -181,13 +199,13 @@ public sealed class IslandScripting : IScriptWorld
     {
         foreach (var objectId in _host.ObjectsWanting("chat").ToList())
             if (_objects.TryGetValue(objectId, out var target) && Distance(speaker, target) <= 20)
-                _host.Enqueue(new ScriptEvent(objectId, "chat", new Dictionary<string, object?> { ["avatar_id"] = speaker.AvatarId, ["avatar_name"] = speaker.Name, ["message"] = message }));
+                _host.Enqueue(new ScriptEvent(objectId, "chat", new Dictionary<string, object?> { ["channel"] = 0, ["avatar_id"] = speaker.AvatarId, ["avatar_name"] = speaker.Name, ["sender"] = speaker.Name, ["avatar"] = new Dictionary<string, object?> { ["id"] = speaker.AvatarId, ["name"] = speaker.Name }, ["message"] = message }));
     }
 
     /// Called every server tick: timers, walking into or out of objects, queued events and the changes scripts made.
     public void Update(IReadOnlyList<AvatarPresence> avatars)
     {
-        var now = Now;
+        var now = Now; _avatars = avatars; DrainHttp(); DrainPayments(); RestoreHuds(avatars);
         _host.Tick(now);
         if (now - _lastProximity >= .25) { _lastProximity = now; Proximity(avatars); }
         _host.Process(6);
@@ -229,7 +247,7 @@ public sealed class IslandScripting : IScriptWorld
 
     public void Say(ScriptDefinition script, string text)
     {
-        if (_objects.TryGetValue(script.ObjectId, out var source)) _say(source.Name, source.Position, text);
+        if (_objects.TryGetValue(script.ObjectId, out var source)) _say(source.Name, source.Position, text, 30f);
     }
 
     private void DrainChanges()
@@ -237,7 +255,7 @@ public sealed class IslandScripting : IScriptWorld
         for (var count = _changes.Count; count > 0; count--)
         {
             var (script, change) = _changes.Dequeue();
-            if (!_inFlight.Add(script.ObjectId)) { _changes.Enqueue((script, change)); continue; }
+            if (!_inFlight.Add(change.TargetId ?? script.ObjectId)) { _changes.Enqueue((script, change)); continue; }
             _ = SendChangeAsync(script, change);
         }
     }
@@ -246,7 +264,8 @@ public sealed class IslandScripting : IScriptWorld
     {
         try
         {
-            if (!_objects.TryGetValue(script.ObjectId, out var obj)) return;
+            var targetId = change.TargetId ?? script.ObjectId;
+            if (!_objects.TryGetValue(targetId, out var obj) || (change.TargetId is not null && obj.OwnerUserId != script.OwnerUserId)) return; // another part of the linkset must belong to the owner of the script
             var material = JsonSerializer.Deserialize<Dictionary<string, object?>>(obj.MaterialJson) ?? [];
             foreach (var (key, value) in change.Material) material[key] = value;
             var position = change.Position ?? obj.Position; var rotation = change.Rotation ?? obj.Rotation; var scale = change.Scale ?? obj.Scale;
@@ -256,8 +275,8 @@ public sealed class IslandScripting : IScriptWorld
                 @object = new
                 {
                     primitiveType = obj.PrimitiveType, positionX = position.X, positionY = position.Y, positionZ = position.Z, rotationX = rotation.X, rotationY = rotation.Y, rotationZ = rotation.Z,
-                    scaleX = scale.X, scaleY = scale.Y, scaleZ = scale.Z, materialJson = JsonSerializer.Serialize(material), geometryJson = obj.GeometryJson, physicsJson = obj.PhysicsJson,
-                    groupId = obj.GroupId, parentObjectId = obj.ParentObjectId, name = obj.Name, expectedRevision = obj.Revision
+                    scaleX = scale.X, scaleY = scale.Y, scaleZ = scale.Z, materialJson = JsonSerializer.Serialize(material), geometryJson = obj.GeometryJson, physicsJson = PhysicsAfter(obj.PhysicsJson, change.Physics, script),
+                    groupId = obj.GroupId, parentObjectId = obj.ParentObjectId, name = change.Name ?? obj.Name, expectedRevision = obj.Revision
                 }
             };
             using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/build-operations", body);
@@ -267,7 +286,7 @@ public sealed class IslandScripting : IScriptWorld
             _broadcastApplied(accepted);
         }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) { _log("script_change_failed", new { script = script.Name, error = exception.Message }); }
-        finally { _inFlight.Remove(script.ObjectId); }
+        finally { _inFlight.Remove(change.TargetId ?? script.ObjectId); }
     }
 
     // ---- helpers ---------------------------------------------------------------------------------------------
@@ -277,7 +296,7 @@ public sealed class IslandScripting : IScriptWorld
 
     private static Dictionary<string, object?> Describe(AvatarPresence who, float distance) => new()
     {
-        ["avatar_id"] = who.AvatarId, ["avatar_name"] = who.Name, ["user_id"] = who.UserId, ["distance"] = distance, ["position"] = new Vec3(who.X, who.Y, who.Z)
+        ["avatar_id"] = who.AvatarId, ["avatar_name"] = who.Name, ["user_id"] = who.UserId, ["distance"] = distance, ["position"] = new Vec3(who.X, who.Y, who.Z), ["avatar"] = new Dictionary<string, object?> { ["id"] = who.AvatarId, ["name"] = who.Name }
     };
 
     private static CachedObject Parse(JsonElement e)

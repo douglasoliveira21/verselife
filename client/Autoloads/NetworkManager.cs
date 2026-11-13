@@ -266,6 +266,8 @@ public partial class NetworkManager : Node
     }
     public void OnTerrainEditRejected(string code) => EmitSignal(SignalName.TerrainEditRejected, code);
     public void TouchObject(Guid objectId) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.TouchObject, objectId.ToString()); }
+    /// <summary>The answer of the player to a dialog or permission request a script showed (the island checks it).</summary>
+    public void SendScriptDialogResponse(string json) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.ScriptDialogResponse, json); }
     public void SubmitSeaLevel(float level) { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.SubmitSeaLevel, level); }
     public void UndoTerrain() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.UndoTerrain); }
     public void RedoTerrain() { if (IsAuthenticated) _bridge.RpcId(1, NetworkBridge.MethodName.RedoTerrain); }

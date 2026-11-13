@@ -139,7 +139,7 @@ public sealed class ScriptHostTests
 
         var (host2, world2, reports2, _) = Setup("function on_start() object.create_timer(0.01) end");
         Assert.Single(reports2); Assert.Empty(world2.Changes); _ = host2;
-        var (_, _, reports3, _) = Setup("function on_start() for i = 1, 6 do object.create_timer(5) end end");
+        var (_, _, reports3, _) = Setup("function on_start() for i = 1, 20 do object.create_timer(5) end end");
         Assert.Contains("timers", Assert.Single(reports3).Message);
         _ = id;
     }
@@ -162,7 +162,7 @@ public sealed class ScriptHostTests
         Fire(reloaded, objectId, "touch");
         Assert.Equal("3", Assert.Single(reloaded.TakeDirtyState()).Value["score"]);
 
-        var (bad, _, reports, id) = Setup("function on_touch() object.state_set('t', {}) end");
+        var (bad, _, reports, id) = Setup("function on_touch() object.state_set('t', {f = function() end}) end");
         Fire(bad, id, "touch");
         Assert.Contains("state values", Assert.Single(reports).Message);
     }

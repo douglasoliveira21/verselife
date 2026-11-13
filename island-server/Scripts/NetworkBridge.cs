@@ -27,6 +27,7 @@ public partial class NetworkBridge : Node
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
     public void RequestTerrain() => Server.RequestTerrain(Multiplayer.GetRemoteSenderId());
 [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]    public void TouchObject(string objectId) => Server.TouchObject(Multiplayer.GetRemoteSenderId(), objectId);
+[Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]    public void ScriptDialogResponse(string json) => Server.ScriptDialogResponse(Multiplayer.GetRemoteSenderId(), json);
 
     [Rpc(MultiplayerApi.RpcMode.AnyPeer, CallLocal = false, TransferMode = MultiplayerPeer.TransferModeEnum.Reliable, TransferChannel = 0)]
     public void SubmitSeaLevel(float level) => Server.SubmitSeaLevel(Multiplayer.GetRemoteSenderId(), level);

@@ -4330,6 +4330,181 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("script_executions", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptGrant", b =>
+                {
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("Permission")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("permission");
+
+                    b.Property<DateTimeOffset>("GrantedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("granted_at");
+
+                    b.HasKey("ScriptId", "SubjectId", "Permission");
+
+                    b.ToTable("script_grants", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptLogLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventName")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("event_name");
+
+                    b.Property<string>("Level")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("level");
+
+                    b.Property<double>("Milliseconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("milliseconds");
+
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<string>("StackTrace")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasDefaultValue("")
+                        .HasColumnName("stack_trace");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScriptId", "CreatedAt");
+
+                    b.ToTable("script_logs", "world");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptRuntimeStatus", b =>
+                {
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.Property<int>("ActiveTimers")
+                        .HasColumnType("integer")
+                        .HasColumnName("active_timers");
+
+                    b.Property<long>("AllocatedBytes")
+                        .HasColumnType("bigint")
+                        .HasColumnName("allocated_bytes");
+
+                    b.Property<long>("ApiCalls")
+                        .HasColumnType("bigint")
+                        .HasColumnName("api_calls");
+
+                    b.Property<double>("CpuMilliseconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("cpu_milliseconds");
+
+                    b.Property<long>("Errors")
+                        .HasColumnType("bigint")
+                        .HasColumnName("errors");
+
+                    b.Property<long>("Events")
+                        .HasColumnType("bigint")
+                        .HasColumnName("events");
+
+                    b.Property<long>("EventsDropped")
+                        .HasColumnType("bigint")
+                        .HasColumnName("events_dropped");
+
+                    b.Property<long>("Instructions")
+                        .HasColumnType("bigint")
+                        .HasColumnName("instructions");
+
+                    b.Property<string>("LastError")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasDefaultValue("")
+                        .HasColumnName("last_error");
+
+                    b.Property<int>("LastErrorLine")
+                        .HasColumnType("integer")
+                        .HasColumnName("last_error_line");
+
+                    b.Property<long>("MessagesSent")
+                        .HasColumnType("bigint")
+                        .HasColumnName("messages_sent");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("state");
+
+                    b.Property<int>("StateKeys")
+                        .HasColumnType("integer")
+                        .HasColumnName("state_keys");
+
+                    b.Property<string>("StateText")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("state_text");
+
+                    b.Property<string>("SuspendedReason")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasDefaultValue("")
+                        .HasColumnName("suspended_reason");
+
+                    b.Property<long>("Suspensions")
+                        .HasColumnType("bigint")
+                        .HasColumnName("suspensions");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Violations")
+                        .HasColumnType("bigint")
+                        .HasColumnName("violations");
+
+                    b.Property<double>("WorstEventMilliseconds")
+                        .HasColumnType("double precision")
+                        .HasColumnName("worst_event_milliseconds");
+
+                    b.HasKey("ScriptId");
+
+                    b.ToTable("script_runtime", "world");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ScriptState", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6319,6 +6494,33 @@ namespace LifeVerse.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.ScriptExecution", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
+                        .WithMany()
+                        .HasForeignKey("ScriptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptGrant", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
+                        .WithMany()
+                        .HasForeignKey("ScriptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptLogLine", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
+                        .WithMany()
+                        .HasForeignKey("ScriptId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptRuntimeStatus", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.ObjectScript", null)
                         .WithMany()

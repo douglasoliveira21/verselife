@@ -21,10 +21,8 @@ public static partial class ScriptingEndpoints
     {
         if (!TryUser(context, out var user)) return Results.Unauthorized();
         if (!await CanEditAsync(db, islandId, user, ct)) return Results.Forbid();
-        var safety = LuaSafetyValidator.Validate(request.Source ?? string.Empty, options);
-        if (!safety.Valid) return Results.Ok(new { valid = false, errors = new[] { new { line = 0, message = safety.Error } } });
-        var syntax = LuaSyntax.Check(request.Source!);
-        return Results.Ok(new { valid = syntax is null, errors = syntax is null ? [] : new[] { new { line = syntax.Line, message = (string?)syntax.Message } } });
+        var compiled = LifeVerse.Scripting.ScriptCompiler.Compile(request.Source ?? string.Empty);
+        return Results.Ok(new { valid = compiled.Valid, errors = compiled.Diagnostics.Where(d => d.Severity == "error").Select(d => new { line = d.Line, message = d.Message }), warnings = compiled.Diagnostics.Where(d => d.Severity == "warning").Select(d => new { line = d.Line, message = d.Message }), handlers = compiled.Handlers });
     }
 
     /// <summary>Restarts one script: the island server starts it again from its saved source, its stored state is cleared and a line goes in its log. The source is never touched.</summary>

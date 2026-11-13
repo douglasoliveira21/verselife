@@ -71,3 +71,5 @@ end
 - Não há som nem teleporte por script ainda; objetos não ganham animações próprias nem física dinâmica.
 - A área de entrada é uma aproximação por distância, não uma colisão física.
 - Verificado por testes unitários (ataques de laço infinito, bombas de memória e de texto, tentativas de fuga, limites do host) e por um teste do servidor com uma API de mentira; não testado com jogadores reais nem contra o banco real.
+
+> **Atualização:** esta página descreve a primeira camada da API (`snake_case`), que continua funcionando. A API atual (camelCase, `chat`, `timer`, `storage`, `dialog`, `permissions`, linksets, ciclo de vida, métricas e editor) está em [LUA_SCRIPTING.md](LUA_SCRIPTING.md) e a referência completa em [LUA_API.md](LUA_API.md). O limite de 4 temporizadores passou a 16 e o estado aceita tabelas pequenas.

@@ -110,6 +110,7 @@ public partial class ServerMain : Node
         {
             if (PinDriver(player)) continue;
             player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin, _scripting?.Obstacles);
+            ApplyScriptGesture(player);
             if (_access.HasZones) KeepOutOfClosedLand(player);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with
@@ -222,6 +223,33 @@ public partial class ServerMain : Node
         player.State.VelocityY = Math.Max(player.State.VelocityY, 2f);
     }
 
+    // ---- gestures that scripts make avatars play (wave and dance: the two the network protocol carries) ----
+
+    private static double NowSeconds => Time.GetTicksMsec() / 1000.0;
+
+    /// <summary>Plays wave or dance on an avatar for a few seconds (only while they stand still: moving, flying or sitting ends it). False for any other name or an avatar that is not here.</summary>
+    private bool PlayScriptGesture(Guid avatarId, string name, double seconds)
+    {
+        var state = name switch { "wave" => NetworkMotionState.Wave, "dance" => NetworkMotionState.Dance, _ => (NetworkMotionState?)null };
+        if (state is null || _players.Values.FirstOrDefault(p => p.Authenticated && p.AvatarId == avatarId) is not { } player) return false;
+        if (player.ScriptGesture is { } running) _scripting?.AnimationEnded(avatarId, running.Name, "replaced");
+        player.ScriptGesture = (state.Value, name, NowSeconds + Math.Clamp(seconds, 1, 15)); return true;
+    }
+
+    private void StopScriptGesture(Guid avatarId)
+    {
+        if (_players.Values.FirstOrDefault(p => p.Authenticated && p.AvatarId == avatarId) is not { ScriptGesture: { } running } player) return;
+        player.ScriptGesture = null; _scripting?.AnimationEnded(avatarId, running.Name, "stopped");
+    }
+
+    private void ApplyScriptGesture(ConnectedPlayer player)
+    {
+        if (player.ScriptGesture is not { } gesture) return;
+        if (player.Motion != NetworkMotionState.Idle && player.Motion != gesture.State) { player.ScriptGesture = null; _scripting?.AnimationEnded(player.AvatarId, gesture.Name, "interrupted"); return; }
+        if (NowSeconds >= gesture.Until) { player.ScriptGesture = null; _scripting?.AnimationEnded(player.AvatarId, gesture.Name, "finished"); return; }
+        player.Motion = gesture.State;
+    }
+
     private static AvatarPresence PresenceOf(ConnectedPlayer player) => new(player.PeerId, player.AvatarId, player.UserId, player.DisplayName, player.State.X, player.State.Y, player.State.Z);
 
     /// Loads this island's objects and Lua scripts. A failure here must not keep the island from starting.
@@ -229,10 +257,10 @@ public partial class ServerMain : Node
     {
         _scripting = new IslandScripting(_api, _config,
             accepted => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, accepted); },
-            (name, position, text) =>
+            (name, position, text, range) =>
             {
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                foreach (var target in _players.Values.Where(x => x.Authenticated && MathF.Abs(x.State.X - position.X) <= 30f && MathF.Abs(x.State.Z - position.Z) <= 30f))
+                foreach (var target in _players.Values.Where(x => x.Authenticated && MathF.Abs(x.State.X - position.X) <= range && MathF.Abs(x.State.Z - position.Z) <= range))
                     _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, 0, name, text, now);
             },
             (userId, text) =>
@@ -241,8 +269,12 @@ public partial class ServerMain : Node
                     _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.ReceiveChat, 0, "Script", text, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             },
             Log);
+        _scripting.SendToAvatar = (avatarId, json) => { foreach (var target in _players.Values.Where(x => x.Authenticated && x.AvatarId == avatarId)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, json); };
         _physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(_physics);
         _physics.Initialize(message => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message); });
+        _scripting.AnimationPlayer = PlayScriptGesture; _scripting.AnimationStopper = StopScriptGesture;
+        _scripting.PhysicsAction = (id, action, v) => { if (_physics.BodyOf(id) is not { } body) return false; var vector = new Vector3(v.X, v.Y, v.Z); switch (action) { case "impulse": body.ApplyCentralImpulse(vector); break; case "velocity": body.LinearVelocity = vector; break; case "angular": body.AngularVelocity = vector; break; case "gravity": body.GravityScale = v.X; break; default: return false; } body.Sleeping = false; return true; };
+        _scripting.VelocityOf = id => _physics.BodyOf(id) is { } body ? new LifeVerse.Scripting.Vec3(body.LinearVelocity.X, body.LinearVelocity.Y, body.LinearVelocity.Z) : null;
         try { await _scripting.RefreshAsync(ct); }
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { Log("scripts_load_failed", new { error = exception.Message }); }
         _ = ScriptSyncLoopAsync(ct);
@@ -266,6 +298,12 @@ public partial class ServerMain : Node
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    public void ScriptDialogResponse(int peerId, string json)
+    {
+        if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated || json.Length > 2048) return;
+        _scripting?.OnDialogResponse(PresenceOf(player), json);
     }
 
     public void TouchObject(int peerId, string objectId)
@@ -642,7 +680,7 @@ public partial class ServerMain : Node
         if (_stopping) return;
         _stopping = true;
         _shutdown.Cancel();
-        try { if (_scripting is not null) await _scripting.FlushStateAsync(CancellationToken.None); } catch (Exception exception) { Log("script_state_flush_failed", new { error = exception.Message }); }
+        try { if (_scripting is not null) await _scripting.ShutdownAsync(); } catch (Exception exception) { Log("script_state_flush_failed", new { error = exception.Message }); }
         await SaveWorldSnapshotAsync(CancellationToken.None);
         await SaveLocationsAsync([.. _players.Values.Where(x => x.Authenticated)], CancellationToken.None);
         Multiplayer.MultiplayerPeer?.Close();
@@ -674,6 +712,8 @@ public partial class ServerMain : Node
         public MovementInput LatestInput { get; set; }
         public uint LastProcessedInput { get; set; }
         public NetworkMotionState Motion { get; set; }
+        /// <summary>A gesture a script made this avatar play (only while they stand still): the state, the name and when it ends.</summary>
+        public (NetworkMotionState State, string Name, double Until)? ScriptGesture { get; set; }
         public Queue<DateTimeOffset> ChatTimes { get; } = new();
         public Queue<DateTimeOffset> BuildTimes { get; } = new();
         public Queue<DateTimeOffset> TerrainTimes { get; } = new();

@@ -15,7 +15,7 @@ public sealed record ScriptResult(bool Ok, string Message, Guid Id = default);
 /// The scripts that live inside an object (Lua, run by the island server on that object): list, read with the source, create, save, delete and the last runs. Every
 /// call goes through one transport, so tests can answer for the server; the real one is <see cref="HttpTransport"/>.
 /// </summary>
-public sealed class ScriptApi(Func<string, string, string?, Task<(long Status, string Body)>> transport, Func<Guid> island)
+public sealed partial class ScriptApi(Func<string, string, string?, Task<(long Status, string Body)>> transport, Func<Guid> island)
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
     private string Base(Guid objectId) => $"/api/v1/worlds/{island()}/objects/{objectId}/scripts";

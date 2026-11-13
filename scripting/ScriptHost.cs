@@ -14,11 +14,21 @@ public sealed class ObjectChange
     public Vec3? Rotation { get; set; }
     public Vec3? Scale { get; set; }
     public Dictionary<string, object?> Material { get; } = [];
-    public bool IsEmpty => Position is null && Rotation is null && Scale is null && Material.Count == 0;
+    /// <summary>The object this change is for when it is not the script's own (another part of its linkset).</summary>
+    public Guid? TargetId { get; set; }
+    public string? Name { get; set; }
+    /// <summary>Settings of the physics of the object (a null field is left as it is).</summary>
+    public PhysicsChange? Physics { get; set; }
+    public bool IsEmpty => Position is null && Rotation is null && Scale is null && Material.Count == 0 && Name is null && Physics is null;
 }
 
-public sealed record ScriptObjectState(Guid Id, Guid OwnerUserId, string Name, Vec3 Position, Vec3 Rotation, Vec3 Scale);
-public sealed record ScriptDefinition(Guid Id, Guid ObjectId, Guid OwnerUserId, string Name, string Source, int Version, int InstructionBudget = 10_000);
+public sealed record ScriptObjectState(Guid Id, Guid OwnerUserId, string Name, Vec3 Position, Vec3 Rotation, Vec3 Scale, Guid? ParentId = null);
+public sealed record PhysicsChange(bool? Collision = null, bool? Physical = null, float? Mass = null);
+public sealed record ScriptItem(string Name, string Type, Guid? AssetId);
+public sealed record HudElement(string Id, string Type, string Text, string Color, double Value, double Max, string Placeholder);
+public sealed record HudSnapshot(bool Visible, string Title, float X, float Y, int Width, IReadOnlyList<HudElement> Elements);
+public sealed record HttpSpec(string Url, string Method, IReadOnlyDictionary<string, string> Headers, string? Body);
+public sealed record ScriptDefinition(Guid Id, Guid ObjectId, Guid OwnerUserId, string Name, string Source, int Version, int InstructionBudget = 10_000, bool Paused = false);
 public sealed record ScriptEvent(Guid ObjectId, string Name, IReadOnlyDictionary<string, object?>? Data = null, Guid? OnlyScript = null);
 public sealed record ScriptReport(ScriptDefinition Script, string EventName, LuaStatus Status, string Message);
 
@@ -34,9 +44,33 @@ public interface IScriptWorld
     void StopSound(ScriptDefinition script) { }
     /// <summary>Floating text above the object (empty text removes it).</summary>
     void SetText(ScriptDefinition script, string text, string color) { }
+    /// <summary>Speaks in the local chat with the range of the kind (say, whisper, shout).</summary>
+    void Chat(ScriptDefinition script, ChatKind kind, string text) => Say(script, text);
+    /// <summary>A private line to one avatar on the island; false when that avatar is not here or too far to be told.</summary>
+    bool TellAvatar(ScriptDefinition script, Guid avatarId, string text) => false;
+    RegionInfo? GetRegion() => null;
+    /// <summary>Starts a request to the outside on behalf of a script (the island asks the API, which checks and makes it). False when this world cannot; the answer comes later through <see cref="ScriptHost.CompleteHttp"/>.</summary>
+    bool StartHttp(ScriptDefinition script, Guid requestId, HttpSpec spec) => false;
+    /// <summary>Starts the payment of an avatar who agreed to pay the owner of the object (the island asks the API, which moves the money). False when this world cannot; the result comes through <see cref="ScriptHost.CompletePayment"/>.</summary>
+    bool StartPayment(ScriptDefinition script, Guid requestId, Guid avatarId, long amount) => false;
+    /// <summary>Pushes the body of the object the physics simulation runs (action: impulse, velocity, angular, gravity). False when the object is not a simulated body.</summary>
+    bool ApplyPhysics(ScriptDefinition script, string action, Vec3 value) => false;
+    /// <summary>The name of an avatar on the island, or null.</summary>
+    string? AvatarName(Guid avatarId) => null;
+    /// <summary>Plays a gesture (wave, dance) on an avatar for some seconds. False when it cannot (unknown gesture, avatar not here).</summary>
+    bool PlayAnimation(ScriptDefinition script, Guid avatarId, string name, double seconds) => false;
+    void StopAnimation(ScriptDefinition script, Guid avatarId) { }
+    /// <summary>Shows, updates or hides the HUD of a script on the screen of an avatar (the whole picture each time; a hidden one is removed).</summary>
+    void ShowHud(ScriptDefinition script, Guid avatarId, HudSnapshot hud) { }
+    /// <summary>What the object carries in its Conteúdo (sounds, textures, notes...), read only.</summary>
+    IReadOnlyList<ScriptItem> GetContents(Guid objectId) => [];
+    /// <summary>The velocity of the simulated body of the object, or null when it is not simulated.</summary>
+    Vec3? GetVelocity(Guid objectId) => null;
+    /// <summary>Every object of the linkset of the object, root first, then the others in a stable order. Empty when the object is unknown.</summary>
+    IReadOnlyList<ScriptObjectState> GetLinkset(Guid objectId) => GetObject(objectId) is { } one ? [one] : [];
 }
 
-public sealed record ScriptHostOptions(int MaxEventsPerSecond = 20, int MaxQueuedEvents = 400, int MaxTimersPerScript = 4, double MinTimerSeconds = .25, int MaxStateKeys = 32, int MaxStateValueLength = 1024, int ViolationsBeforeQuarantine = 3, double ViolationWindowSeconds = 60, double ReportIntervalSeconds = 5, int StoredEntriesLimit = 20_000, double MaxCoordinate = 5000, double MillisecondsPerEvent = 12);
+public sealed record ScriptHostOptions(int MaxEventsPerSecond = 20, int MaxQueuedEvents = 400, int MaxTimersPerScript = 16, double MinTimerSeconds = .25, int MaxStateKeys = 32, int MaxStateValueLength = 1024, int ViolationsBeforeQuarantine = 3, double ViolationWindowSeconds = 60, double ReportIntervalSeconds = 5, int StoredEntriesLimit = 20_000, double MaxCoordinate = 5000, double MillisecondsPerEvent = 12);
 
 public sealed record ScriptInfo(Guid ScriptId, Guid ObjectId, string Name, int Version, bool Quarantined, string? Reason, int Events, int Violations);
 
@@ -45,20 +79,28 @@ public sealed record ScriptInfo(Guid ScriptId, Guid ObjectId, string Name, int V
 /// events (touch, enter, leave, chat, timer, message, start), runs handlers under hard limits, and quarantines
 /// scripts that repeatedly break them. Single threaded: the caller drives <see cref="Tick"/> and <see cref="Process"/>.
 /// </summary>
-public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = null)
+public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? options = null, bool warm = true)
 {
     private static readonly Dictionary<string, string[]> Handlers = new()
     {
-        ["start"] = ["on_start"], ["touch"] = ["on_touch", "on_touch_start"], ["enter"] = ["on_enter", "on_avatar_enter"], ["leave"] = ["on_leave", "on_avatar_leave"],
-        ["timer"] = ["on_timer"], ["chat"] = ["on_chat"], ["message"] = ["on_message", "on_object_message"], ["region_restart"] = ["on_region_restart"]
+        ["start"] = ["on_start"], ["touch"] = ["on_touch", "on_touch_start", "on_click"], ["enter"] = ["on_enter", "on_avatar_enter"], ["leave"] = ["on_leave", "on_avatar_leave"],
+        ["timer"] = ["on_timer"], ["chat"] = ["on_chat"], ["message"] = ["on_message", "on_object_message"], ["region_restart"] = ["on_region_restart", "on_region_start"],
+        ["reset"] = ["on_reset"], ["destroy"] = ["on_destroy"], ["enable"] = ["on_enable"], ["disable"] = ["on_disable"], ["owner_changed"] = ["on_owner_changed"], ["region_shutdown"] = ["on_region_shutdown"],
+        ["interval"] = ["on_interval"], ["delay_complete"] = ["on_delay_complete"], ["link_message"] = ["on_link_message"], ["script_error"] = ["on_script_error"], ["dialog_response"] = ["on_dialog_response"],
+        ["http_response"] = ["on_http_response"], ["payment"] = ["on_payment"], ["hud_click"] = ["on_hud_click"], ["hud_input"] = ["on_hud_input"], ["hud_closed"] = ["on_hud_closed"], ["animation_finished"] = ["on_animation_finished"], ["inventory_changed"] = ["on_inventory_changed"], ["item_added"] = ["on_item_added"], ["item_removed"] = ["on_item_removed"], ["payment_failed"] = ["on_payment_failed"], ["permission_granted"] = ["on_permission_granted"], ["permission_denied"] = ["on_permission_denied"]
     };
+    /// <summary>The names of every function the host calls when something happens (what a script can define).</summary>
+    public static IReadOnlyCollection<string> KnownHandlers { get; } = Handlers.Values.SelectMany(x => x).ToHashSet();
+
     private static readonly Regex ColorPattern = new("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$", RegexOptions.Compiled);
 
-    private sealed class Timer { public int Id; public double Interval; public bool Repeat; public double Due; public int Count; }
+    private sealed class MotionState { public Vec3? Position, Rotation, CurrentPosition, CurrentRotation; public float Speed = 1, TurnSpeed = 90; public double Last; }
+
+    private sealed class Timer { public int Id; public double Interval; public bool Repeat; public double Due; public int Count; public DynValue? Callback; public string? Name; public bool Paused; public double PausedRemaining; }
 
     private sealed class Instance(ScriptDefinition definition, LuaSandbox sandbox)
     {
-        public ScriptDefinition Definition { get; } = definition;
+        public ScriptDefinition Definition { get; set; } = definition;
         public LuaSandbox Sandbox { get; } = sandbox;
         public bool Quarantined { get; set; }
         public string? Reason { get; set; }
@@ -75,13 +117,28 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
         public int NextTimerId { get; set; } = 1;
         public double LastReport { get; set; } = double.NegativeInfinity;
         public HashSet<string> HandlerNames { get; } = [];
+        public ScriptMetricsData Metrics { get; } = new();
+        public ScriptLifecycle Lifecycle { get; set; } = ScriptLifecycle.Running;
+        public bool Enabled { get; set; } = true;
+        public HashSet<int> Listening { get; } = [];
+        public Dictionary<Guid, ObjectChange> PendingLinks { get; set; } = [];
+        public Queue<double> Chats { get; } = new();
+        public Queue<double> LinkMessages { get; } = new();
+        public Queue<double> Directs { get; } = new();
+        public Queue<double> Pushes { get; } = new();
+        public List<ScriptLogEntry> Logs { get; } = [];
+        public bool InHandler { get; set; }
+        public string? CurrentEvent { get; set; }
+        public Dictionary<int, DynValue> OneShotCallbacks { get; } = [];
+        public MotionState? Motion { get; set; }
+        public int Depth { get; set; }
     }
 
-    private readonly ScriptHostOptions _options = Prepare(options);
+    private readonly ScriptHostOptions _options = Prepare(options, warm);
     private readonly Dictionary<Guid, Instance> _instances = [];
     private readonly Queue<(Guid Object, string Name, IReadOnlyDictionary<string, object?>? Data, Guid? Only)> _queue = new();
 
-    private static ScriptHostOptions Prepare(ScriptHostOptions? options) { LuaSandbox.WarmUp(); return options ?? new ScriptHostOptions(); }
+    private static ScriptHostOptions Prepare(ScriptHostOptions? options, bool warm) { LuaSandbox.WarmUp(); if (warm) ScriptWarmUp.Run(); return options ?? new ScriptHostOptions(); }
 
     public event Action<ScriptReport>? Report;
     public event Action<string>? Log;
@@ -90,65 +147,11 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
     public IReadOnlyList<ScriptInfo> Scripts => _instances.Values.Select(i => new ScriptInfo(i.Definition.Id, i.Definition.ObjectId, i.Definition.Name, i.Definition.Version, i.Quarantined, i.Reason, i.Events, i.Violations.Count)).ToList();
 
     /// <summary>Makes the loaded scripts match the definitions: new ones start, changed versions reload, missing ones are dropped.</summary>
-    public void Sync(IEnumerable<ScriptDefinition> definitions, Func<Guid, IReadOnlyDictionary<string, string>?>? savedState = null)
-    {
-        var wanted = definitions.ToDictionary(d => d.Id);
-        foreach (var id in _instances.Keys.Where(id => !wanted.ContainsKey(id)).ToList()) _instances.Remove(id);
-        foreach (var definition in wanted.Values)
-        {
-            if (_instances.TryGetValue(definition.Id, out var existing) && existing.Definition.Version == definition.Version && existing.Definition.Source == definition.Source && existing.Definition.ObjectId == definition.ObjectId) continue;
-            var instance = Load(definition, savedState?.Invoke(definition.Id));
-            _instances[definition.Id] = instance;
-            if (!instance.Quarantined) _queue.Enqueue((definition.ObjectId, "start", null, definition.Id));
-        }
-    }
-
-    public void Enqueue(ScriptEvent scriptEvent)
-    {
-        while (_queue.Count >= _options.MaxQueuedEvents) _queue.Dequeue();
-        _queue.Enqueue((scriptEvent.ObjectId, scriptEvent.Name, scriptEvent.Data, scriptEvent.OnlyScript));
-    }
-
     /// <summary>True when any live script of the object handles the event; lets the server skip work nobody listens to.</summary>
     public bool Wants(Guid objectId, string eventName) => Handlers.TryGetValue(eventName, out var names) && _instances.Values.Any(i => i.Definition.ObjectId == objectId && !i.Quarantined && names.Any(i.HandlerNames.Contains));
 
     public IEnumerable<Guid> ObjectsWanting(string eventName) => _instances.Values.Where(i => !i.Quarantined && Handlers.TryGetValue(eventName, out var names) && names.Any(i.HandlerNames.Contains)).Select(i => i.Definition.ObjectId).Distinct();
 
-    /// <summary>Starts due timers. Call regularly with the world clock.</summary>
-    public void Tick(double now)
-    {
-        foreach (var instance in _instances.Values)
-        {
-            if (instance.Quarantined) continue;
-            foreach (var timer in instance.Timers.ToList())
-            {
-                if (timer.Due > now) continue;
-                timer.Count++;
-                Enqueue(new ScriptEvent(instance.Definition.ObjectId, "timer", new Dictionary<string, object?> { ["timer_id"] = timer.Id, ["count"] = timer.Count }, instance.Definition.Id));
-                if (timer.Repeat) timer.Due = now + timer.Interval; else instance.Timers.Remove(timer);
-            }
-        }
-    }
-
-    /// <summary>Runs queued events until the time budget is spent; returns how many ran.</summary>
-    public int Process(double budgetMilliseconds)
-    {
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        var ran = 0;
-        while (_queue.Count > 0 && watch.Elapsed.TotalMilliseconds < budgetMilliseconds)
-        {
-            var (objectId, name, data, only) = _queue.Dequeue();
-            if (!Handlers.TryGetValue(name, out var handlerNames)) continue;
-            foreach (var instance in _instances.Values.Where(i => i.Definition.ObjectId == objectId && (only is null || i.Definition.Id == only)).ToList())
-            {
-                if (instance.Quarantined) continue;
-                var handler = handlerNames.FirstOrDefault(instance.HandlerNames.Contains);
-                if (handler is null || !AllowEvent(instance)) continue;
-                Run(instance, name, handler, data); ran++;
-            }
-        }
-        return ran;
-    }
 
     /// <summary>Script state that changed since the last call, for persistence.</summary>
     public IReadOnlyDictionary<Guid, Dictionary<string, string>> TakeDirtyState()
@@ -160,61 +163,6 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
 
     // ---- loading and running ---------------------------------------------------------------------------------
 
-    private Instance Load(ScriptDefinition definition, IReadOnlyDictionary<string, string>? saved)
-    {
-        var limits = new LuaLimits(InstructionsPerEvent: Math.Clamp(definition.InstructionBudget, 1_000, 100_000), MillisecondsPerEvent: _options.MillisecondsPerEvent);
-        var sandbox = new LuaSandbox(limits, text => Log?.Invoke($"[{definition.Name}] {text}"));
-        var instance = new Instance(definition, sandbox);
-        if (saved is not null) foreach (var (key, value) in saved.Take(_options.MaxStateKeys)) instance.State[key] = value;
-        InstallApi(instance);
-        var result = sandbox.Load(definition.Source);
-        if (!result.Ok) { Quarantine(instance, result.Status == LuaStatus.Rejected ? $"does not load: {result.Error}" : $"top-level code failed: {result.Error ?? result.Status.ToString()}"); Notify(instance, "load", result); return instance; }
-        foreach (var name in Handlers.Values.SelectMany(x => x)) if (sandbox.HasHandler(name)) instance.HandlerNames.Add(name);
-        return instance;
-    }
-
-    private bool AllowEvent(Instance instance)
-    {
-        var now = world.Now;
-        while (instance.Recent.Count > 0 && now - instance.Recent.Peek() > 1) instance.Recent.Dequeue();
-        if (instance.Recent.Count >= _options.MaxEventsPerSecond) return false;
-        instance.Recent.Enqueue(now);
-        return true;
-    }
-
-    private void Run(Instance instance, string eventName, string handler, IReadOnlyDictionary<string, object?>? data)
-    {
-        instance.Pending = new ObjectChange();
-        var argument = DynValue.NewTable(ToTable(instance.Sandbox.Script, data));
-        var result = instance.Sandbox.Call(handler, argument);
-        instance.Events++;
-        if (instance.Pending is { IsEmpty: false } change) world.ApplyChange(instance.Definition, change);
-        instance.Pending = null;
-        if (result.Violation)
-        {
-            var now = world.Now;
-            instance.Violations.Enqueue(now);
-            while (instance.Violations.Count > 0 && now - instance.Violations.Peek() > _options.ViolationWindowSeconds) instance.Violations.Dequeue();
-            if (instance.Violations.Count >= _options.ViolationsBeforeQuarantine) Quarantine(instance, $"{result.Status} {instance.Violations.Count} times in {_options.ViolationWindowSeconds:0}s");
-        }
-        else if (instance.Events % 50 == 0 && StoredEntries(instance.Sandbox.Script) > _options.StoredEntriesLimit) Quarantine(instance, "stores too much data");
-        if (!result.Ok || result.Violation || instance.Quarantined) Notify(instance, eventName, result);
-    }
-
-    private void Quarantine(Instance instance, string reason)
-    {
-        instance.Quarantined = true; instance.Reason = reason; instance.Timers.Clear();
-        Log?.Invoke($"[{instance.Definition.Name}] quarantined: {reason}");
-    }
-
-    private void Notify(Instance instance, string eventName, LuaRunResult result)
-    {
-        var now = world.Now;
-        if (now - instance.LastReport < _options.ReportIntervalSeconds && !instance.Quarantined) return;
-        instance.LastReport = now;
-        var message = instance.Quarantined ? $"script disabled ({instance.Reason}). Edit and save it to enable it again." : $"{eventName}: {result.Error ?? result.Status.ToString()}";
-        Report?.Invoke(new ScriptReport(instance.Definition, eventName, result.Status, message));
-    }
 
     // ---- the object API --------------------------------------------------------------------------------------
 
@@ -222,7 +170,7 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
     {
         var script = instance.Sandbox.Script;
         var objectApi = new Table(script);
-        void Add(string name, Func<CallbackArguments, DynValue> body) => objectApi[name] = DynValue.NewCallback((_, args) => body(args));
+        void Add(string name, Func<CallbackArguments, DynValue> body) => objectApi[name] = DynValue.NewCallback((_, args) => { instance.Metrics.ApiCalls++; return body(args); });
         ScriptObjectState Me() => world.GetObject(instance.Definition.ObjectId) ?? throw new ScriptRuntimeException("the object no longer exists");
         ObjectChange Change() => instance.Pending ?? throw new ScriptRuntimeException("objects can only be changed while handling an event");
 
@@ -275,6 +223,7 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
         var lv = new Table(script) { ["object"] = objectApi };
         lv["time"] = DynValue.NewCallback((_, _) => DynValue.NewNumber(world.Now));
         script.Globals["lv"] = lv;
+        InstallExtendedApi(instance); InstallHttpApi(instance); InstallPhysicsApi(instance); InstallEconomyApi(instance); InstallInventoryApi(instance); InstallAvatarApi(instance); InstallHudApi(instance);
     }
 
     private void Say(Instance instance, string text)
@@ -329,7 +278,7 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
         try
         {
             using var document = JsonDocument.Parse(json);
-            return document.RootElement.ValueKind switch { JsonValueKind.Number => DynValue.NewNumber(document.RootElement.GetDouble()), JsonValueKind.String => DynValue.NewString(document.RootElement.GetString()), JsonValueKind.True => DynValue.True, JsonValueKind.False => DynValue.False, _ => DynValue.Nil };
+            return document.RootElement.ValueKind switch { JsonValueKind.Number => DynValue.NewNumber(document.RootElement.GetDouble()), JsonValueKind.String => DynValue.NewString(document.RootElement.GetString()), JsonValueKind.True => DynValue.True, JsonValueKind.False => DynValue.False, JsonValueKind.Object or JsonValueKind.Array => DynValue.NewTable(JsonTable(instance.Sandbox.Script, document.RootElement)), _ => DynValue.Nil };
         }
         catch (JsonException) { return DynValue.Nil; }
     }
@@ -342,7 +291,8 @@ public sealed class ScriptHost(IScriptWorld world, ScriptHostOptions? options = 
             DataType.Number when double.IsFinite(value.Number) => value.Number.ToString("R", CultureInfo.InvariantCulture),
             DataType.String when value.String.Length <= _options.MaxStateValueLength => JsonSerializer.Serialize(value.String),
             DataType.Boolean => value.Boolean ? "true" : "false",
-            _ => throw new ScriptRuntimeException($"state values must be numbers, booleans or strings up to {_options.MaxStateValueLength} characters")
+            DataType.Table => TableJson(value.Table),
+            _ => throw new ScriptRuntimeException($"state values must be numbers, booleans, strings up to {_options.MaxStateValueLength} characters, or small tables of those")
         };
         if (!instance.State.ContainsKey(key) && instance.State.Count >= _options.MaxStateKeys) throw new ScriptRuntimeException($"at most {_options.MaxStateKeys} state keys per script");
         if (!instance.State.TryGetValue(key, out var old) || old != json) { instance.State[key] = json; instance.StateDirty = true; }

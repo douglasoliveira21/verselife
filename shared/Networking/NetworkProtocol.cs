@@ -9,7 +9,8 @@ public static class NetworkProtocol
     // v6 adds proximity voice chat (Opus packets relayed by the island server).
     // v9 moves the flight state change to an idempotent reliable RPC; continuous
     // movement inputs remain unreliable/ordered so packet loss cannot toggle flight.
-    public const int Version = 9;
+    // v10 adds answers to dialogs and permission requests that scripts show to players (ScriptDialogResponse).
+    public const int Version = 10;
     public const int MaxVehicles = 64;
     public const int MaxTerrainEditsPerSecond = 20;
     public const int MaxTerrainImportBytes = 300_000;

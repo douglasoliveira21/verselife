@@ -45,7 +45,7 @@ public partial class ScriptingSmoke : Node
             using var http = new System.Net.Http.HttpClient(new FakeApi(routes, posts));
             var config = new ServerConfiguration(Guid.NewGuid(), Guid.NewGuid(), "http://api.test", new string('k', 40), "localhost", 7777, 7070, 20, 20, 100f, 4);
             var said = new List<string>(); var broadcasts = new List<string>(); var told = new List<string>();
-            var scripting = new IslandScripting(http, config, broadcasts.Add, (name, _, text) => said.Add($"{name}: {text}"), (_, text) => told.Add(text), (_, _) => { });
+            var scripting = new IslandScripting(http, config, broadcasts.Add, (name, _, text, _) => said.Add($"{name}: {text}"), (_, text) => told.Add(text), (_, _) => { });
 
             await scripting.RefreshAsync(CancellationToken.None);
             Require(scripting.Scripts.Count == 2 && scripting.Scripts.All(s => !s.Quarantined), "scripts did not load");

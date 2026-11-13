@@ -32,6 +32,7 @@ public partial class BuildContentSmoke : Node3D
                 calls.Add(method + " " + path);
                 if (method == "GET" && path.EndsWith("/scripts")) return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(scripts.Select(s => new { id = s.Id, name = s.Name, version = s.Version, status = "active" }))));
                 if (method == "GET" && path.EndsWith("/api/v1/scripting/templates")) return Task.FromResult<(long, string)>((200, "[]"));
+                if (method == "GET" && (path.EndsWith("/runtime") || path.EndsWith("/api/v1/scripting/reference"))) return Task.FromResult<(long, string)>((404, "{}"));   // the island has not reported yet; no reference in this pretend server
                 if (method == "POST" && path.EndsWith("/scripts")) { var made = (Guid.NewGuid(), JsonDocument.Parse(body!).RootElement.GetProperty("name").GetString()!, "function on_touch(event) end", 1); scripts.Add(made); return Task.FromResult<(long, string)>((201, JsonSerializer.Serialize(new { id = made.Item1 }))); }
                 if (method == "GET" && path.EndsWith("/executions")) return Task.FromResult<(long, string)>((200, "[]"));
                 if (method == "GET") { var s = scripts.First(x => path.EndsWith(x.Id.ToString())); return Task.FromResult<(long, string)>((200, JsonSerializer.Serialize(new { id = s.Id, name = s.Name, source = s.Source, version = s.Version, status = "active" }))); }
@@ -99,7 +100,7 @@ public partial class BuildContentSmoke : Node3D
             GD.Print("event=build_content_smoke result=passed");
             GetTree().Quit();
         }
-        catch (Exception exception) { GD.PushError($"event=build_content_smoke result=failed error={exception.Message}"); GetTree().Quit(1); }
+        catch (Exception exception) { GD.PushError($"event=build_content_smoke result=failed error={exception.Message} at {exception.StackTrace?.Split((char)10).FirstOrDefault(l => l.Contains("LifeVerse"))}"); GetTree().Quit(1); }
     }
 
     private async Task Frames(int count) { for (var i = 0; i < count; i++) await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame); }

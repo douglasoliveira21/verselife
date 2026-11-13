@@ -104,7 +104,7 @@ end";
             log?.Invoke(text.Length > 200 ? text[..200] : text);
             return DynValue.Nil;
         });
-        Harden();
+        Harden(); MoonSharpStacks.Shrink(Script); Worker();
     }
 
     /// <summary>Loads source and runs its top level (which defines the handlers) under the same budgets.</summary>
@@ -125,33 +125,60 @@ end";
         return function.Type == DataType.Function ? Run(function, arguments) : new(LuaStatus.NoHandler, null, 0, 0, 0);
     }
 
+    /// <summary>Runs a function value (a callback a script stored, for instance) under the same budgets as a handler.</summary>
+    public LuaRunResult CallFunction(DynValue function, params DynValue[] arguments) => function.Type == DataType.Function ? Run(function, arguments) : new(LuaStatus.NoHandler, null, 0, 0, 0);
+
     public Table NewTable() => new(Script);
+
+    // One coroutine per script serves every event: creating one per event costs MoonSharp two 1 MB stacks each time. The coroutine runs a small dispatcher that calls the function it is given
+    // and then yields; the yield function lives only inside the dispatcher, so scripts cannot reach it. A coroutine that failed or ran out of budget is thrown away and a new one is made for the next event.
+    private Coroutine? _worker;
+    private DynValue? _dispatcher;
+
+    private DynValue Dispatcher()
+    {
+        if (_dispatcher is not null) return _dispatcher;
+        Script.Globals["__yield"] = DynValue.NewCallback((_, _) => DynValue.NewYieldReq([]));
+        _dispatcher = Script.DoString("local yield = __yield\n__yield = nil\nreturn function(fn, arg)\n  while true do\n    fn(arg)\n    fn, arg = yield()\n  end\nend");
+        return _dispatcher;
+    }
+
+    /// <summary>The coroutine that serves the events, made before an event's clock starts (creating it is the script's set-up, not its work).</summary>
+    private Coroutine Worker()
+    {
+        if (_worker is null || _worker.State is CoroutineState.Dead or CoroutineState.ForceSuspended or CoroutineState.Running)
+        {
+            var thread = Script.CreateCoroutine(Dispatcher()); MoonSharpStacks.Shrink(thread.Coroutine); thread.Coroutine.AutoYieldCounter = _limits.SliceInstructions; _worker = thread.Coroutine;
+        }
+        return _worker;
+    }
 
     private LuaRunResult Run(DynValue function, DynValue[] arguments)
     {
-        var watch = Stopwatch.StartNew();
+        var worker = Worker(); var watch = Stopwatch.StartNew();
         long baseline = 0;
         long instructions = 0;
         LuaRunResult Result(LuaStatus status, string? error = null) => new(status, error, instructions, watch.Elapsed.TotalMilliseconds, GC.GetAllocatedBytesForCurrentThread() - baseline);
         try
         {
-            var thread = Script.CreateCoroutine(function);
-            thread.Coroutine.AutoYieldCounter = _limits.SliceInstructions;
-            thread.Coroutine.Resume(arguments);
+            var argument = arguments.Length > 0 ? arguments[0] : DynValue.Nil;
+            worker.Resume(function, argument);
             // The interpreter's own start-up cost is not the script's: budget what is allocated after the first slice.
             baseline = GC.GetAllocatedBytesForCurrentThread();
-            while (thread.Coroutine.State == CoroutineState.ForceSuspended)
+            while (worker.State == CoroutineState.ForceSuspended)
             {
                 instructions += _limits.SliceInstructions;
-                if (instructions > _limits.InstructionsPerEvent) return Result(LuaStatus.InstructionLimit, "Instruction budget exceeded.");
-                if (watch.Elapsed.TotalMilliseconds > _limits.MillisecondsPerEvent) return Result(LuaStatus.TimeLimit, "Time budget exceeded.");
-                if (GC.GetAllocatedBytesForCurrentThread() - baseline > _limits.AllocatedBytesPerEvent) return Result(LuaStatus.MemoryLimit, "Memory budget exceeded.");
-                thread.Coroutine.Resume();
+                if (instructions > _limits.InstructionsPerEvent) { _worker = null; return Result(LuaStatus.InstructionLimit, "Instruction budget exceeded."); }
+                if (watch.Elapsed.TotalMilliseconds > _limits.MillisecondsPerEvent) { _worker = null; return Result(LuaStatus.TimeLimit, "Time budget exceeded."); }
+                if (GC.GetAllocatedBytesForCurrentThread() - baseline > _limits.AllocatedBytesPerEvent) { _worker = null; return Result(LuaStatus.MemoryLimit, "Memory budget exceeded."); }
+                worker.Resume();
             }
+            if (worker.State == CoroutineState.Dead) _worker = null;
             // A single library call cannot be interrupted, so overruns are caught afterwards and count as violations.
             return watch.Elapsed.TotalMilliseconds > _limits.MillisecondsPerEvent * 4 ? Result(LuaStatus.TimeLimit, "Time budget exceeded.") : Result(LuaStatus.Completed);
         }
-        catch (InterpreterException exception) { return Result(LuaStatus.Error, exception.DecoratedMessage ?? exception.Message); }
+        catch (InterpreterException exception) { _worker = null; return Result(LuaStatus.Error, exception.DecoratedMessage ?? exception.Message); }
+        catch (Exception exception) when (exception is IndexOutOfRangeException or InvalidOperationException or NullReferenceException or ArgumentException or InvalidCastException) { _worker = null; return Result(LuaStatus.Error, exception is IndexOutOfRangeException ? "Stack overflow: too many nested calls." : "Script failed: " + exception.Message); }
     }
 
     private void Harden()

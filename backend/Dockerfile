@@ -3,6 +3,7 @@ WORKDIR /src
 COPY Directory.Build.props ./
 COPY global.json ./
 COPY shared/ shared/
+COPY scripting/ scripting/
 COPY backend/LifeVerse.Api.csproj backend/
 RUN dotnet restore backend/LifeVerse.Api.csproj
 COPY backend/ backend/
