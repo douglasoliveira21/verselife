@@ -148,8 +148,8 @@ public partial class ScriptingApiSmoke : Node
             await Run(8); posts.Clear();
             speedNow = new LifeVerse.Scripting.Vec3(3, 0, 4); await Run(8); await Task.Delay(300); await Run(8);
             Require(posts.Any(p => p.Contains("build-operations") && p.Contains("corre 5")), $"on_velocity_changed told the speed ({string.Join(" // ", posts.Select(p => p.Length > 520 ? p[200..520] : p))})");
-            Require(!posts.Any(p => p.Contains("7.5")), "a slow body does not trigger the fast branch"); posts.Clear(); await scripting.RefreshAsync(CancellationToken.None); await Run(4); speedNow = new LifeVerse.Scripting.Vec3(12, 0, 0); await Run(8); await Task.Delay(300); await Run(8);
-            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("7.5")), $"on_physics_update ran while the body moved (posts {posts.Count}, told [{string.Join(" // ", told)}] said {string.Join("|", said.Select(s => s.Text))})");
+            Require(!posts.Any(p => p.Contains("7.5")), "a slow body does not trigger the fast branch"); posts.Clear(); await scripting.RefreshAsync(CancellationToken.None); await Run(4); speedNow = new LifeVerse.Scripting.Vec3(12, 0, 0); for (var t = 0; t < 20 && !posts.Any(p => p.Contains("7.5")); t++) { await scripting.RefreshAsync(CancellationToken.None); await Run(3); await Task.Delay(100); }      // the pretend API answers every change as if the object were gone, so it is read again
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("7.5")), $"on_physics_update ran while the body moved (posts {string.Join(" // ", posts.Select(p => p.Length > 560 ? p[250..560] : p))}, told [{string.Join(" // ", told)}] said {string.Join("|", said.Select(s => s.Text))})");
             scripting.VelocityOf = null; await Run(4);
 
             // trigger volumes: the box of the object (2 x 3 x 0.2 at 11, 1, 20), not a circle around it
@@ -184,6 +184,21 @@ public partial class ScriptingApiSmoke : Node
             Require(posts.Any(p => p.Contains("build-operations") && p.Contains("vendido 250 copy")), "on_purchase told the price and the kind of sale");
             posts.Clear(); scripting.OnObjectApplied(JsonSerializer.Serialize(new { operation = "bought", objectId = giver, buyerUserId = anaUser, replay = true, objects = Array.Empty<object>() })); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); }
             Require(!posts.Any(p => p.Contains("vendido")), "a replayed purchase is not a new sale");
+
+            // non-player characters: made by a script whose owner allowed it, shown through the world of NPCs, walking and speaking
+            var guard = Guid.NewGuid(); var guardScript = Guid.NewGuid(); var spawnedNpcs = new List<int>(); var goneNpcs = new List<int>();
+            scripting.Npcs = new LifeVerse.Shared.Networking.NpcWorld((_, _) => 1f, () => 0f, () => 200f) { Spawned = n => spawnedNpcs.Add(n.PeerId), Despawned = goneNpcs.Add };
+            var guardSource = "function on_touch(e) local g = npc.create('Guarda', 31, 20) npc.moveTo(g, 35, 20, 4) end function on_npc_arrived(e) npc.say(e.npc, 'cheguei') end";
+            routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(guard, "Guarita", 30) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(guardScript, guard, "guarita", guardSource) + ",");
+            await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            sent.Clear(); said.Clear(); scripting.Touch(donor, guard); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(spawnedNpcs.Count == 0, "without the owner's permission no NPC is made");
+            routes["island-content"] = routes["island-content"].Replace("\"grants\":[", "\"grants\":[{\"scriptId\":\"" + guardScript + "\",\"subjectId\":\"" + Guid.Empty + "\",\"permission\":\"CREATE_NPCS\"},");
+            await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            scripting.Touch(donor, guard); await Task.Delay(1100); scripting.Touch(donor, guard); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(spawnedNpcs.Count >= 1 && scripting.Npcs.All.Count == spawnedNpcs.Count, $"the script made an NPC (spawned {spawnedNpcs.Count})");
+            for (var i = 0; i < 6; i++) { scripting.Npcs.Tick(scripting.Now + i, 1f); } for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(scripting.Npcs.All.All(n => n.X == 35f) && said.Any(s => s.Name == "Guarda" && s.Text == "cheguei"), $"the NPC walked to where it was sent and spoke under its own name (said {string.Join("|", said.Select(s => s.Name + ":" + s.Text))})");
             // shutdown
             said.Clear(); await scripting.ShutdownAsync(); await Run(2); Require(said.Any(s => s.Text == "desligando") && posts.Any(p => p.Contains("script-state") || p.Contains("script-runtime")), "scripts hear the shutdown and the state is saved");
 

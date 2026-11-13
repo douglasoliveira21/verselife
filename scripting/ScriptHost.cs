@@ -57,6 +57,15 @@ public interface IScriptWorld
     bool StartGiveItem(ScriptDefinition script, Guid avatarId, Guid assetId, string itemName) => false;
     /// <summary>Sets the sale price of the object of the script (the API decides: it must be for sale and the script owner must own it). False when this world cannot.</summary>
     bool SetObjectPrice(ScriptDefinition script, int price) => false;
+    /// <summary>NPCs: makes one standing at (x, z) (its number, or 0 when there is no room or the spot is not land), walks it, stops it, makes it speak or play a gesture, tells where it is, and removes one or all of a script. All false/null/0 in a world without NPCs.</summary>
+    int CreateNpc(ScriptDefinition script, string name, float x, float z) => 0;
+    bool MoveNpc(ScriptDefinition script, int npc, float x, float z, float speed) => false;
+    bool StopNpc(ScriptDefinition script, int npc) => false;
+    bool NpcSay(ScriptDefinition script, int npc, string text) => false;
+    bool NpcAnimate(ScriptDefinition script, int npc, string gesture, double seconds) => false;
+    Vec3? GetNpcPosition(int npc) => null;
+    bool RemoveNpc(ScriptDefinition script, int npc) => false;
+    void RemoveNpcsOf(ScriptDefinition script) { }
     /// <summary>Pushes the body of the object the physics simulation runs (action: impulse, velocity, angular, gravity). False when the object is not a simulated body.</summary>
     bool ApplyPhysics(ScriptDefinition script, string action, Vec3 value) => false;
     /// <summary>The name of an avatar on the island, or null.</summary>
@@ -97,7 +106,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         ["timer"] = ["on_timer"], ["chat"] = ["on_chat"], ["message"] = ["on_message", "on_object_message"], ["region_restart"] = ["on_region_restart", "on_region_start"],
         ["reset"] = ["on_reset"], ["destroy"] = ["on_destroy"], ["enable"] = ["on_enable"], ["disable"] = ["on_disable"], ["owner_changed"] = ["on_owner_changed"], ["region_shutdown"] = ["on_region_shutdown"],
         ["interval"] = ["on_interval"], ["delay_complete"] = ["on_delay_complete"], ["link_message"] = ["on_link_message"], ["script_error"] = ["on_script_error"], ["dialog_response"] = ["on_dialog_response"],
-        ["http_response"] = ["on_http_response"], ["payment"] = ["on_payment"], ["purchase"] = ["on_purchase"], ["item_given"] = ["on_item_given"], ["item_give_failed"] = ["on_item_give_failed"], ["parcel_enter"] = ["on_parcel_enter"], ["parcel_leave"] = ["on_parcel_leave"], ["collision_enter"] = ["on_collision_enter", "on_collision"], ["collision_exit"] = ["on_collision_exit"], ["land_collision"] = ["on_land_collision"], ["hud_click"] = ["on_hud_click"], ["hud_input"] = ["on_hud_input"], ["hud_closed"] = ["on_hud_closed"], ["animation_finished"] = ["on_animation_finished"], ["inventory_changed"] = ["on_inventory_changed"], ["item_added"] = ["on_item_added"], ["item_removed"] = ["on_item_removed"], ["payment_failed"] = ["on_payment_failed"], ["permission_granted"] = ["on_permission_granted"], ["permission_denied"] = ["on_permission_denied"]
+        ["http_response"] = ["on_http_response"], ["payment"] = ["on_payment"], ["npc_arrived"] = ["on_npc_arrived"], ["purchase"] = ["on_purchase"], ["item_given"] = ["on_item_given"], ["item_give_failed"] = ["on_item_give_failed"], ["parcel_enter"] = ["on_parcel_enter"], ["parcel_leave"] = ["on_parcel_leave"], ["collision_enter"] = ["on_collision_enter", "on_collision"], ["collision_exit"] = ["on_collision_exit"], ["land_collision"] = ["on_land_collision"], ["hud_click"] = ["on_hud_click"], ["hud_input"] = ["on_hud_input"], ["hud_closed"] = ["on_hud_closed"], ["animation_finished"] = ["on_animation_finished"], ["inventory_changed"] = ["on_inventory_changed"], ["item_added"] = ["on_item_added"], ["item_removed"] = ["on_item_removed"], ["payment_failed"] = ["on_payment_failed"], ["permission_granted"] = ["on_permission_granted"], ["permission_denied"] = ["on_permission_denied"]
     };
     /// <summary>The names of every function the host calls when something happens (what a script can define).</summary>
     public static IReadOnlyCollection<string> KnownHandlers { get; } = Handlers.Values.SelectMany(x => x).ToHashSet();
@@ -138,6 +147,9 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         public Queue<double> Pushes { get; } = new();
         public Queue<double> Gives { get; } = new();
         public Queue<double> Prices { get; } = new();
+        public HashSet<int> Npcs { get; } = [];
+        public Queue<double> NpcCreates { get; } = new();
+        public Queue<double> NpcSays { get; } = new();
         public int NextEffectId { get; set; } = 1;
         public List<ScriptLogEntry> Logs { get; } = [];
         public bool InHandler { get; set; }
@@ -236,7 +248,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         var lv = new Table(script) { ["object"] = objectApi };
         lv["time"] = DynValue.NewCallback((_, _) => DynValue.NewNumber(world.Now));
         script.Globals["lv"] = lv;
-        InstallExtendedApi(instance); InstallHttpApi(instance); InstallPhysicsApi(instance); InstallEconomyApi(instance); InstallInventoryApi(instance); InstallAvatarApi(instance); InstallHudApi(instance); InstallEffectsApi(instance); InstallLandApi(instance);
+        InstallExtendedApi(instance); InstallHttpApi(instance); InstallPhysicsApi(instance); InstallEconomyApi(instance); InstallInventoryApi(instance); InstallAvatarApi(instance); InstallHudApi(instance); InstallEffectsApi(instance); InstallLandApi(instance); InstallNpcApi(instance);
     }
 
     private void Say(Instance instance, string text)

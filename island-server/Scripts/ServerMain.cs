@@ -105,6 +105,7 @@ public partial class ServerMain : Node
         SweepLocks();
         var dt = Math.Min((float)delta, 1f / 20f);
         TickVehicles(dt);
+        _scripting?.Npcs?.Tick(_scripting.Now, dt);
         foreach (var player in _players.Values.Where(x => x.Authenticated))
 
         {
@@ -192,6 +193,7 @@ public partial class ServerMain : Node
                 SendSpawn(existing.PeerId, player);
             }
             SendSpawn(peerId, player);
+            if (_scripting?.Npcs is { } npcs) foreach (var npc in npcs.All) SendSpawnNpc(peerId, npc);
             _bridge.RpcId(peerId, NetworkBridge.MethodName.AuthResult, true, "ok", (long)_serverTick);
             SendTerrain(player);
             SendAllVehicles(peerId);
@@ -273,6 +275,11 @@ public partial class ServerMain : Node
         _scripting.SendToAvatar = (avatarId, json) => { foreach (var target in _players.Values.Where(x => x.Authenticated && x.AvatarId == avatarId)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, json); };
         _physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(_physics);
         _physics.Initialize(message => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message); });
+        _scripting.Npcs = new NpcWorld((x, z) => _terrain.SampleHeight(x, z), () => _terrain.SeaLevel, () => _terrain.HalfExtent)
+        {
+            Spawned = npc => { foreach (var target in _players.Values.Where(x => x.Authenticated)) SendSpawnNpc(target.PeerId, npc); },
+            Despawned = id => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.DespawnPlayer, id, false); }
+        };
         _scripting.AnimationPlayer = PlayScriptGesture; _scripting.AnimationStopper = StopScriptGesture; _physics.Contacted = _scripting.OnContact;
         _scripting.PhysicsAction = (id, action, v) => { if (_physics.BodyOf(id) is not { } body) return false; var vector = new Vector3(v.X, v.Y, v.Z); switch (action) { case "impulse": body.ApplyCentralImpulse(vector); break; case "velocity": body.LinearVelocity = vector; break; case "angular": body.AngularVelocity = vector; break; case "gravity": body.GravityScale = v.X; break; default: return false; } body.Sleeping = false; return true; };
         _scripting.VelocityOf = id => _physics.BodyOf(id) is { } body ? new LifeVerse.Scripting.Vec3(body.LinearVelocity.X, body.LinearVelocity.Y, body.LinearVelocity.Z) : null;
@@ -541,12 +548,13 @@ public partial class ServerMain : Node
         {
             var visible = _players.Values.Where(x => x.Authenticated && DistanceSquared(target.State, x.State) <= _config.InterestRadius * _config.InterestRadius)
                 .Select(x => new PlayerSnapshot(x.PeerId, x.State.X, x.State.Y, x.State.Z, x.State.VelocityX, x.State.VelocityY, x.State.VelocityZ,
-                    YawOf(x), x.Motion, x.LastProcessedInput)).ToArray();
+                    YawOf(x), x.Motion, x.LastProcessedInput)).Concat(_scripting?.Npcs?.Snapshots(target.State.X, target.State.Y, target.State.Z, _config.InterestRadius) ?? []).ToArray();
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.Snapshot, SnapshotCodec.Encode(_serverTick, visible));
         }
         BroadcastVehicles();
     }
 
+    private void SendSpawnNpc(int targetPeer, NpcState npc) => _bridge.RpcId(targetPeer, NetworkBridge.MethodName.SpawnPlayer, npc.PeerId, Guid.Empty.ToString(), npc.Name, System.Text.Json.JsonSerializer.Serialize(new { DisplayName = npc.Name }), npc.X, npc.Y, npc.Z, (int)npc.Motion);
     private void SendSpawn(int targetPeer, ConnectedPlayer player) => _bridge.RpcId(targetPeer, NetworkBridge.MethodName.SpawnPlayer,
         player.PeerId, player.AvatarId.ToString(), player.DisplayName, player.AppearanceJson, player.State.X, player.State.Y, player.State.Z, (int)player.Motion);
     private void Reject(int peerId, string code) { _bridge.RpcId(peerId, NetworkBridge.MethodName.AuthResult, false, code, (long)_serverTick); Multiplayer.MultiplayerPeer.DisconnectPeer(peerId); }

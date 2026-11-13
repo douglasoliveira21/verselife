@@ -44,6 +44,7 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_inventory_changed` | O Conteúdo do objeto mudou (item posto ou tirado). | added, removed (quantos) |
 | `on_item_added` | Um item foi posto no Conteúdo do objeto. | item.name, item.type, item.id |
 | `on_item_removed` | Um item saiu do Conteúdo do objeto. | item.name, item.type, item.id |
+| `on_npc_arrived` | Um NPC deste script chegou ao destino de npc.moveTo (ou parou no mar ou na borda da ilha). | npc (número), position {x, y, z} |
 | `on_item_given` | A entrega pedida com inventory.giveItem terminou: o avatar tem o item. | avatar_id, avatar.name, item (nome) |
 | `on_item_give_failed` | A entrega pedida com inventory.giveItem não aconteceu. | avatar_id, avatar.name, item, reason (not_copyable, item_unavailable, unavailable...) |
 | `on_animation_finished` | Uma animação de avatar começada por avatar.playAnimation terminou. | avatar_id, avatar.id, avatar.name, name, reason (finished, interrupted, stopped, replaced) |
@@ -1196,6 +1197,112 @@ Muda o preço do próprio objeto à venda (clique Comprar). O objeto precisa est
 
 ```lua
 economy.setObjectPrice(150)
+```
+
+## NPCs
+
+### `npc.create(nome, x, z)`
+
+Cria um personagem não jogador em pé no ponto (x, z) da ilha; ele aparece para todos como um avatar. Pertence a este script e some quando o script termina, para ou reinicia.
+
+- **Retorna:** o número do NPC, ou nada se não há vaga ou o ponto é mar ou fora da ilha
+- **Permissão:** CREATE_NPCS (o dono dá no editor, aba Permissões)
+- **Limites:** 5 por script, 20 por ilha, 10 criações por minuto; nome até 40 letras
+- **Erros possíveis:** sem permissão; limites; coordenadas longe demais (5.000 m)
+
+```lua
+local guarda = npc.create('Guarda', 10, 20)
+```
+
+### `npc.moveTo(npc, x, z, velocidade)`
+
+Manda o NPC caminhar em linha reta até (x, z) (ele não desvia de obstáculos nem entra no mar). Velocidade de 0,5 a 6 m/s (padrão 1,8); a partir de 3 ele corre. Ao chegar, o script ouve on_npc_arrived.
+
+- **Retorna:** verdadeiro se começou a andar
+- **Permissão:** CREATE_NPCS
+- **Limites:** —
+- **Erros possíveis:** NPC que não é deste script; destino no mar ou fora da ilha
+
+```lua
+npc.moveTo(guarda, 30, 20, 2)
+```
+
+### `npc.stop(npc)`
+
+Para o NPC onde ele está.
+
+- **Retorna:** verdadeiro se existe
+- **Permissão:** CREATE_NPCS
+- **Limites:** —
+- **Erros possíveis:** NPC que não é deste script
+
+```lua
+npc.stop(guarda)
+```
+
+### `npc.say(npc, mensagem)`
+
+O NPC fala no chat local (20 m), com o nome dele.
+
+- **Retorna:** verdadeiro se falou
+- **Permissão:** CREATE_NPCS
+- **Limites:** 5 mensagens a cada 10 s por script; até 500 letras
+- **Erros possíveis:** limite de mensagens
+
+```lua
+npc.say(guarda, 'Alto lá!')
+```
+
+### `npc.playAnimation(npc, 'wave'|'dance', segundos)`
+
+O NPC acena ou dança por até 30 s (para de andar).
+
+- **Retorna:** verdadeiro se tocou
+- **Permissão:** CREATE_NPCS
+- **Limites:** wave e dance; 1 a 30 s
+- **Erros possíveis:** animação desconhecida
+
+```lua
+npc.playAnimation(guarda, 'wave', 3)
+```
+
+### `npc.getPosition(npc)`
+
+Onde o NPC está agora.
+
+- **Retorna:** tabela {x, y, z} ou nada
+- **Permissão:** CREATE_NPCS
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+local p = npc.getPosition(guarda)
+```
+
+### `npc.remove(npc)`
+
+Remove o NPC da ilha.
+
+- **Retorna:** verdadeiro se existia
+- **Permissão:** CREATE_NPCS
+- **Limites:** —
+- **Erros possíveis:** NPC que não é deste script
+
+```lua
+npc.remove(guarda)
+```
+
+### `npc.list()`
+
+Os números dos NPCs deste script.
+
+- **Retorna:** lista de números
+- **Permissão:** CREATE_NPCS
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+for _, id in ipairs(npc.list()) do npc.remove(id) end
 ```
 
 ## Inventário
