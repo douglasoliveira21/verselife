@@ -277,7 +277,7 @@ public partial class ServerMain : Node
         _physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(_physics);
         _physics.Initialize(message => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message); });
         _scripting.Fleet = _fleet; _scripting.SeaLevelOf = () => _terrain.SeaLevel;
-        _scripting.Npcs = new NpcWorld((x, z) => _terrain.SampleHeight(x, z), () => _terrain.SeaLevel, () => _terrain.HalfExtent)
+        _scripting.Npcs = new NpcWorld((x, z) => _terrain.SampleHeight(x, z), () => _terrain.SeaLevel, () => _terrain.HalfExtent, (x, z) => _scripting!.Obstacles.Blocked(x, _terrain.SampleHeight(x, z), z))
         {
             Spawned = npc => { foreach (var target in _players.Values.Where(x => x.Authenticated)) SendSpawnNpc(target.PeerId, npc); },
             Despawned = id => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.DespawnPlayer, id, false); }

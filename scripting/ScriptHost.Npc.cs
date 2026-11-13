@@ -4,7 +4,7 @@ namespace LifeVerse.Scripting;
 
 public sealed partial class ScriptHost
 {
-    public const int MaxNpcNameLength = 40, MaxNpcSaysPer10Seconds = 5, MaxNpcCreatesPerMinute = 10;
+    public const int MaxNpcNameLength = 40, MaxNpcSaysPer10Seconds = 5, MaxNpcCreatesPerMinute = 10, MaxNpcMovesPerSecond = 10;
     public const float MaxNpcDistance = 5000f;
 
     /// <summary>npc.*: non-player characters of the island, made by a script whose owner gave it CREATE_NPCS (editor, tab Permissões). An NPC belongs to the script that made it and goes when the script ends, stops or restarts.</summary>
@@ -30,7 +30,12 @@ public sealed partial class ScriptHost
             if (id == 0) return DynValue.Nil;       // no room (five a script, twenty an island) or the spot is the sea or off the island
             instance.Npcs.Add(id); return DynValue.NewNumber(id);
         });
-        npc["moveTo"] = Fn(args => DynValue.NewBoolean(world.MoveNpc(instance.Definition, Mine(args), Coordinate(args, 1), Coordinate(args, 2), Number(args, 3, 1.8f))));
+        npc["moveTo"] = Fn(args =>
+        {
+            var now = world.Now; while (instance.NpcMoves.Count > 0 && now - instance.NpcMoves.Peek() > 1) instance.NpcMoves.Dequeue();
+            if (instance.NpcMoves.Count >= MaxNpcMovesPerSecond) throw new ScriptRuntimeException($"npc.moveTo: at most {MaxNpcMovesPerSecond} a second (each one looks for a way around things)"); instance.NpcMoves.Enqueue(now);
+            return DynValue.NewBoolean(world.MoveNpc(instance.Definition, Mine(args), Coordinate(args, 1), Coordinate(args, 2), Number(args, 3, 1.8f)));
+        });
         npc["stop"] = Fn(args => DynValue.NewBoolean(world.StopNpc(instance.Definition, Mine(args))));
         npc["say"] = Fn(args =>
         {
@@ -58,9 +63,9 @@ public sealed partial class ScriptHost
     }
 
     /// <summary>An NPC of a script arrived where it was sent (or stopped at the sea or the edge): the script hears <c>on_npc_arrived</c>.</summary>
-    public void NpcArrived(Guid scriptId, int npcId, Vec3 at)
+    public void NpcArrived(Guid scriptId, int npcId, Vec3 at, bool arrived = true)
     {
         if (Find(scriptId) is not { } instance || !instance.Npcs.Contains(npcId)) return;
-        Enqueue(new ScriptEvent(instance.Definition.ObjectId, "npc_arrived", new Dictionary<string, object?> { ["npc"] = npcId, ["position"] = new Dictionary<string, object?> { ["x"] = at.X, ["y"] = at.Y, ["z"] = at.Z } }, scriptId));
+        Enqueue(new ScriptEvent(instance.Definition.ObjectId, "npc_arrived", new Dictionary<string, object?> { ["npc"] = npcId, ["arrived"] = arrived, ["position"] = new Dictionary<string, object?> { ["x"] = at.X, ["y"] = at.Y, ["z"] = at.Z } }, scriptId));
     }
 }

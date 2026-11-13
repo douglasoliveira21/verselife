@@ -12,7 +12,7 @@ public sealed partial class IslandScripting
     public NpcWorld? Npcs
     {
         get => _npcs;
-        set { _npcs = value; if (value is not null) value.Arrived = n => _host.NpcArrived(n.Script, n.PeerId, new Vec3(n.X, n.Y, n.Z)); }
+        set { _npcs = value; if (value is not null) value.Arrived = n => _host.NpcArrived(n.Script, n.PeerId, new Vec3(n.X, n.Y, n.Z), n.Reached); }
     }
 
     public int CreateNpc(ScriptDefinition script, string name, float x, float z) => _npcs?.Create(script.Id, script.OwnerUserId, name, x, z) ?? 0;

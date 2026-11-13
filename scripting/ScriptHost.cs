@@ -159,6 +159,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         public HashSet<int> Npcs { get; } = [];
         public Queue<double> NpcCreates { get; } = new();
         public Queue<double> NpcSays { get; } = new();
+        public Queue<double> NpcMoves { get; } = new();
         public Queue<double> VehicleCommands { get; } = new();
         public Queue<double> MediaPlays { get; } = new();
         public MediaSpec? Media { get; set; }

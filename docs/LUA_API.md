@@ -47,7 +47,7 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_region_changed` | A ilha mudou como um todo: o nível do mar ou o terreno foi editado (agrupado: no máximo um aviso a cada 2 segundos, por maior que seja o número de edições). | kinds (texto: sea_level e/ou terrain, separados por vírgula), sea_level (altura atual do mar), sea_level_changed, terrain_changed |
 | `on_media_finished` | Um stream sem loop de media.play chegou ao fim (o aviso vem do cliente de alguém perto; sem ninguém perto, o fim não é percebido). | url |
 | `on_sound_finished` | Um som do objeto (audio.play) chegou ao fim no cliente de alguém perto. | — |
-| `on_npc_arrived` | Um NPC deste script chegou ao destino de npc.moveTo (ou parou no mar ou na borda da ilha). | npc (número), position {x, y, z} |
+| `on_npc_arrived` | A caminhada de um NPC deste script (npc.moveTo) terminou: ele chegou, ou parou no mar, na borda da ilha ou por algo que não conseguiu contornar. | npc (número), arrived (verdadeiro se chegou), position {x, y, z} |
 | `on_vehicle_arrived` | Um piloto automático (vehicle.driveTo) deste script terminou. | vehicle {id, name, type, x, y, z, yaw, speed, occupied}, arrived (verdadeiro: chegou; falso: ficou preso) |
 | `on_vehicle_enter` | Alguém entrou em um veículo do dono do objeto. | vehicle, avatar_id, avatar_name, avatar.id, avatar.name |
 | `on_vehicle_exit` | Alguém saiu de um veículo do dono do objeto. | vehicle, avatar_id, avatar_name, avatar.id, avatar.name |
@@ -1235,12 +1235,12 @@ local guarda = npc.create('Guarda', 10, 20)
 
 ### `npc.moveTo(npc, x, z, velocidade)`
 
-Manda o NPC caminhar em linha reta até (x, z) (ele não desvia de obstáculos nem entra no mar). Velocidade de 0,5 a 6 m/s (padrão 1,8); a partir de 3 ele corre. Ao chegar, o script ouve on_npc_arrived.
+Manda o NPC caminhar até (x, z) CONTORNANDO o que estiver no caminho (paredes e objetos sólidos; ele acha o caminho numa grade de 1 m e corta caminho onde está livre). Ele nunca entra no mar. Se um objeto aparecer no meio da caminhada, ele procura outro caminho (até 5 vezes). Velocidade de 0,5 a 6 m/s (padrão 1,8); a partir de 3 ele corre. Ao terminar (chegou ou não), o script ouve on_npc_arrived com arrived verdadeiro ou falso.
 
-- **Retorna:** verdadeiro se começou a andar
+- **Retorna:** verdadeiro se começou a andar; falso se não há caminho (destino cercado, dentro de algo ou longe demais para procurar, ~140 m de janela)
 - **Permissão:** CREATE_NPCS
-- **Limites:** —
-- **Erros possíveis:** NPC que não é deste script; destino no mar ou fora da ilha
+- **Limites:** 10 ordens por segundo por script
+- **Erros possíveis:** NPC que não é deste script; destino no mar, fora da ilha ou sem caminho
 
 ```lua
 npc.moveTo(guarda, 30, 20, 2)

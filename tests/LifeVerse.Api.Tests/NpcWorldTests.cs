@@ -88,3 +88,97 @@ public sealed class NpcWorldTests
         var snapshots = world.Snapshots(0, 1, 0, 30).ToList(); Assert.Equal([near], snapshots.Select(s => s.PeerId));
     }
 }
+
+/// <summary>NPCs go around what is in the way, look for another way when something appears, and refuse a place they cannot reach.</summary>
+public sealed class NpcWorldPathTests
+{
+    private static readonly Guid Script = Guid.NewGuid(), Owner = Guid.NewGuid();
+    private static float Flat(float x, float z) => 1f;
+
+    // a wall along x = 10 from z = -10 to z = 10 (blocks points within 0.7 of it), on land everywhere
+    private static bool Wall(float x, float z) => MathF.Abs(x - 10) < .7f && z is >= -10 and <= 10;
+
+    private static NpcWorld World(Func<float, float, bool>? blocked) => new(Flat, () => -100f, () => 200f, blocked);
+
+    private static (NpcWorld World, int Id, List<NpcState> Ended) Rig(Func<float, float, bool>? blocked, float x = 0, float z = 0)
+    {
+        var world = World(blocked); var ended = new List<NpcState>(); world.Arrived = ended.Add; var id = world.Create(Script, Owner, "Guarda", x, z); return (world, id, ended);
+    }
+
+    private static void Walk(NpcWorld world, double seconds, float dt = .1f) { for (var t = 0.0; t < seconds; t += dt) world.Tick(t, dt); }
+
+    [Fact]
+    public void WithNothingInTheWayThePathIsStraight()
+    {
+        var (world, id, ended) = Rig(Wall); Assert.Equal([(0f, 30f)], world.FindPath(0, 0, 0, 30)!.Select(p => (p.X, p.Z)));
+        Assert.True(world.MoveTo(Script, id, 0, 30, 3)); Walk(world, 20); Assert.True(ended.Single().Reached); Assert.Equal((0f, 30f), (world.Get(id)!.X, world.Get(id)!.Z));
+    }
+
+    [Fact]
+    public void AWallIsGoneAround_AndTheNpcArrives()
+    {
+        var (world, id, ended) = Rig(Wall, 0, 0); var path = world.FindPath(0, 0, 20, 0)!;
+        Assert.True(path.Count >= 2 && path.Any(p => MathF.Abs(p.Z) > 10), "the way turns at the end of the wall");                      // it has to pass beyond z = ±10
+        Assert.True(world.MoveTo(Script, id, 20, 0, 5)); var maxCrossing = 0f;
+        for (var t = 0.0; t < 60 && ended.Count == 0; t += .1) { world.Tick(t, .1f); var n = world.Get(id)!; Assert.False(Wall(n.X, n.Z), $"walked into the wall at {n.X},{n.Z}"); maxCrossing = MathF.Max(maxCrossing, MathF.Abs(n.Z)); }
+        Assert.True(ended.Single().Reached); Assert.Equal((20f, 0f), (world.Get(id)!.X, world.Get(id)!.Z)); Assert.True(maxCrossing > 10);
+    }
+
+    [Fact]
+    public void ATargetThatCannotBeReachedRefusesTheOrder()
+    {
+        // a closed box around the target: a ring of walls from 18 to 22 in both axes
+        static bool Box(float x, float z) { var ax = MathF.Abs(x - 30); var az = MathF.Abs(z); var inside = ax < 6 && az < 6; return inside && !(ax < 3 && az < 3); }
+        var (world, id, _) = Rig(Box); Assert.False(world.MoveTo(Script, id, 30, 0, 3)); Assert.Null(world.Get(id)!.TargetX);                // walled in
+        Assert.True(world.MoveTo(Script, id, 20, 0, 3));
+        Assert.False(World(Wall).MoveTo(Script, 12345, 5, 5, 3));
+        var inside = Rig(Wall); Assert.False(inside.World.MoveTo(Script, inside.Id, 10, 0, 3));                                              // the target is inside the wall
+    }
+
+    [Fact]
+    public void TooFarToSearchIsRefusedWhenTheWayIsNotStraight()
+    {
+        var (world, id, _) = Rig((x, z) => MathF.Abs(x - 100) < .7f && z is >= -400 and <= 400, 0, 0); Assert.False(world.MoveTo(Script, id, 190, 0, 3));
+        var (free, freeId, _) = Rig(null, 0, 0); Assert.True(free.MoveTo(Script, freeId, 190, 0, 3));                                          // a clear line needs no search, however long
+    }
+
+    [Fact]
+    public void ASeaIsGoneAroundToo()
+    {
+        var lake = new NpcWorld((x, z) => (x - 10) * (x - 10) + z * z < 36 ? -5f : 1f, () => 0f, () => 200f); var id = lake.Create(Script, Owner, "Nadador", -2, 0); var ended = new List<NpcState>(); lake.Arrived = ended.Add;
+        Assert.True(lake.MoveTo(Script, id, 22, 0, 4)); Walk(lake, 30); Assert.True(ended.Single().Reached); Assert.Equal(22f, lake.Get(id)!.X);
+    }
+
+    [Fact]
+    public void SomethingThatAppearsInTheWayMakesItLookForAnotherWay_AFewTimesOnly()
+    {
+        var wall = false; var (world, id, ended) = Rig((x, z) => wall && Wall(x, z)); Assert.True(world.MoveTo(Script, id, 20, 0, 4)); Walk(world, 1);
+        wall = true; for (var t = 1.0; t < 60 && ended.Count == 0; t += .1) { world.Tick(t, .1f); Assert.False(Wall(world.Get(id)!.X, world.Get(id)!.Z)); }
+        Assert.True(ended.Single().Reached);                                                                                                  // it went around the wall that was not there when it set out
+        var trapped = false; var (world2, id2, ended2) = Rig((x, z) => trapped && MathF.Abs(x - 3) < 50 && MathF.Abs(x - 3) > .5); world2.MoveTo(Script, id2, 20, 0, 4); trapped = true; Walk(world2, 5);
+        Assert.False(ended2.Single().Reached); Assert.Null(world2.Get(id2)!.TargetX);                                                          // it gave up and says so
+    }
+}
+
+public sealed class ObstacleFieldWalkingTests
+{
+    [Fact]
+    public void WallsBlockAvatarsButLowLedgesAndFarAwayDoNot()
+    {
+        var field = new ObstacleField(); var wall = ObstacleField.For("cube", new System.Numerics.Vector3(10, 1.5f, 0), System.Numerics.Vector3.Zero, new System.Numerics.Vector3(1, 3, 20));   // 1 m thick, 3 m high, 20 m long, feet of the avatar at 0
+        field.Set(Guid.NewGuid(), wall); var ledge = ObstacleField.For("cube", new System.Numerics.Vector3(30, .15f, 0), System.Numerics.Vector3.Zero, new System.Numerics.Vector3(4, .3f, 4)); field.Set(Guid.NewGuid(), ledge);
+        Assert.True(field.Blocked(10, 0, 0)); Assert.True(field.Blocked(9.2f, 0, 5));                                                  // in and against the wall
+        Assert.False(field.Blocked(5, 0, 0)); Assert.False(field.Blocked(10, 0, 40));                                                 // away from it, and beyond its end
+        Assert.False(field.Blocked(30, 0, 0));                                                                                          // a ledge lower than a step is walked over
+        Assert.False(new ObstacleField().Blocked(1, 0, 1));
+    }
+
+    [Fact]
+    public void ANpcWorldOnARealFieldWalksAroundAWall()
+    {
+        var field = new ObstacleField(); field.Set(Guid.NewGuid(), ObstacleField.For("cube", new System.Numerics.Vector3(10, 1.5f, 0), System.Numerics.Vector3.Zero, new System.Numerics.Vector3(1, 3, 20)));
+        var world = new NpcWorld((_, _) => 0f, () => -50f, () => 200f, (x, z) => field.Blocked(x, 0, z)); var script = Guid.NewGuid(); var id = world.Create(script, Guid.NewGuid(), "G", 0, 0); var ended = new List<NpcState>(); world.Arrived = ended.Add;
+        Assert.True(world.MoveTo(script, id, 20, 0, 5)); for (var t = 0.0; t < 40 && ended.Count == 0; t += .1) world.Tick(t, .1f);
+        Assert.True(ended.Single().Reached); Assert.Equal(20f, world.Get(id)!.X);
+    }
+}

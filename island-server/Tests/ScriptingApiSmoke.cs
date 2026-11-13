@@ -193,7 +193,7 @@ public partial class ScriptingApiSmoke : Node
 
             // non-player characters: made by a script whose owner allowed it, shown through the world of NPCs, walking and speaking
             var guard = Guid.NewGuid(); var guardScript = Guid.NewGuid(); var spawnedNpcs = new List<int>(); var goneNpcs = new List<int>();
-            scripting.Npcs = new LifeVerse.Shared.Networking.NpcWorld((_, _) => 1f, () => 0f, () => 200f) { Spawned = n => spawnedNpcs.Add(n.PeerId), Despawned = goneNpcs.Add };
+            scripting.Npcs = new LifeVerse.Shared.Networking.NpcWorld((_, _) => 1f, () => 0f, () => 200f, (x, z) => MathF.Abs(x - 33) < .7f && z is > 12f and < 28f) { Spawned = n => spawnedNpcs.Add(n.PeerId), Despawned = goneNpcs.Add };
             var guardSource = "function on_touch(e) local g = npc.create('Guarda', 31, 20) npc.moveTo(g, 35, 20, 4) end function on_npc_arrived(e) npc.say(e.npc, 'cheguei') end";
             routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(guard, "Guarita", 30) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(guardScript, guard, "guarita", guardSource) + ",");
             await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
@@ -203,8 +203,8 @@ public partial class ScriptingApiSmoke : Node
             await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
             scripting.Touch(donor, guard); await Task.Delay(1100); scripting.Touch(donor, guard); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
             Require(spawnedNpcs.Count >= 1 && scripting.Npcs.All.Count == spawnedNpcs.Count, $"the script made an NPC (spawned {spawnedNpcs.Count})");
-            for (var i = 0; i < 6; i++) { scripting.Npcs.Tick(scripting.Now + i, 1f); } for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(60); }
-            Require(scripting.Npcs.All.All(n => n.X == 35f) && said.Any(s => s.Name == "Guarda" && s.Text == "cheguei"), $"the NPC walked to where it was sent and spoke under its own name (said {string.Join("|", said.Select(s => s.Name + ":" + s.Text))})");
+            var crossed = false; for (var i = 0; i < 40; i++) { scripting.Npcs.Tick(scripting.Now + i, .5f); foreach (var n in scripting.Npcs.All) { if (MathF.Abs(n.X - 33) < .7f && n.Z is > 12f and < 28f) throw new Exception("the NPC walked into the wall"); crossed |= n.Z < 12f || n.Z > 28f; } } for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(crossed && scripting.Npcs.All.All(n => n.X == 35f) && said.Any(s => s.Name == "Guarda" && s.Text == "cheguei"), $"the NPC walked to where it was sent and spoke under its own name (said {string.Join("|", said.Select(s => s.Name + ":" + s.Text))})");
 
             // vehicles: the owner's empty car driven by a script with the owner's permission, an autopilot that arrives and tells the script, and the seat taken back by a driver
             var garage = Guid.NewGuid(); var garageScript = Guid.NewGuid(); var fleet = new LifeVerse.Shared.Vehicles.VehicleFleet(); var jipe = fleet.Add(Guid.NewGuid(), "Jipe", "car", 30, 20, 0, 20f, (_, _) => 1f, owner)!; scripting.Fleet = fleet;

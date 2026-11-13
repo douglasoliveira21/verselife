@@ -187,3 +187,14 @@ public sealed class ObstacleField
         return best;
     }
 }
+
+public static class ObstacleFieldWalking
+{
+    /// <summary>Would an avatar standing with its feet at (x, feetY, z) be inside a wall? (Ledges it can step onto are not walls.) Used to plan walks that go around things.</summary>
+    public static bool Blocked(this ObstacleField field, float x, float feetY, float z)
+    {
+        var probe = new AuthoritativePlayerState { X = x, Y = feetY, Z = z };
+        var (bx, bz) = (x, z); field.Resolve(probe);
+        return MathF.Abs(probe.X - bx) > .02f || MathF.Abs(probe.Z - bz) > .02f;
+    }
+}

@@ -76,6 +76,15 @@ public sealed class LuaNpcTests
         Assert.Contains("at most", Assert.Single(reports2).Message); Assert.Equal(ScriptHost.MaxNpcSaysPer10Seconds, world2.Calls.Count(c => c.StartsWith("say", StringComparison.Ordinal)));
     }
 
+
+    [Fact]
+    public void TheArrivalSaysWhetherTheNpcGotThere_AndOrdersAreLimited()
+    {
+        var (host, world, obj, script, reports) = Rig("function on_touch() local g = npc.create('G', 1, 1) for i = 1, 11 do npc.moveTo(g, 5, 5) end end function on_npc_arrived(e) chat.say(tostring(e.arrived)) end");
+        host.NpcArrived(script, -1, new Vec3(5, 1, 6), false); Touch(host, obj); host.NpcArrived(script, -1, new Vec3(5, 1, 6), false); host.NpcArrived(script, -1, new Vec3(5, 1, 6)); host.Process(500);
+        Assert.Contains("at most", Assert.Single(reports).Message); Assert.Equal(ScriptHost.MaxNpcMovesPerSecond, world.Calls.Count(c => c.StartsWith("move", StringComparison.Ordinal)));
+        Assert.Equal(["false", "true"], world.Said);                                                                                                    // the first one was before the NPC existed: not heard
+    }
     [Fact]
     public void TheNpcsGoWhenTheScriptStopsOrRestarts_AndTheScriptHearsWhenOneArrives()
     {

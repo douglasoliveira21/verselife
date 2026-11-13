@@ -83,7 +83,7 @@ function on_start() guarda = npc.create('Guarda', 10, 10) end
 function on_touch(e) npc.moveTo(guarda, 30, 10, 2) end
 function on_npc_arrived(e) npc.say(e.npc, 'cheguei!') npc.playAnimation(e.npc, 'wave', 3) end
 ```
-- [ ] O NPC aparece como um avatar para todos, anda em linha reta, fala com o nome dele, acena e some quando o script para ou reinicia. Não entra no mar.
+- [ ] O NPC aparece como um avatar para todos, anda (contornando paredes e objetos sólidos: ponha um muro no meio do caminho e veja ele dar a volta), fala com o nome dele, acena e some quando o script para ou reinicia. Não entra no mar.
 - [ ] Anotar como o avatar sem aparência própria se parece (é o ponto que os testes não mostram).
 
 ## 8. Veículos (`CONTROL_VEHICLES`)
