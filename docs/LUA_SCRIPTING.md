@@ -1,6 +1,6 @@
 # Scripting Lua — arquitetura, integrações, testes e pendências
 
-Complementa `docs/SCRIPTING.md` (primeira camada da API) e `docs/LUA_DIAGNOSTICO.md` (o que já existia). A **referência das funções e eventos** é `docs/LUA_API.md`, gerada do código e conferida por teste.
+Complementa `docs/SCRIPTING.md`, `docs/LUA_TESTE_NO_JOGO.md` (roteiro para conferir tudo dentro do jogo) (primeira camada da API) e `docs/LUA_DIAGNOSTICO.md` (o que já existia). A **referência das funções e eventos** é `docs/LUA_API.md`, gerada do código e conferida por teste.
 
 ## Arquitetura final do runtime
 

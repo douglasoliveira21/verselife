@@ -33,11 +33,13 @@ function on_touch(e)
   local a = e.avatar_id particles.create({preset = 'fire', rate = 10, color = {1, 0.5, 0}}) light.set({radius = 6, flicker = true}) particles.stopAll() light.off() inventory.count() inventory.list() inventory.hasItem('x')
   hud.show(a) hud.setTitle(a, 'T') hud.setLabel(a, 'l', 'x', '#FFFFFF') hud.setButton(a, 'b', 'B') hud.setProgress(a, 'p', 1, 2, 'P') hud.setInput(a, 'i', 'I') hud.clear(a) hud.hide(a)
   avatar.playAnimation(a, 'wave', 2) avatar.stopAnimation(a) physics.setDynamic(true) physics.setMass(2) physics.applyImpulse(0, 1, 0) physics.getVelocity() economy.requestPayment(a, 5, 'x') http.request({url = 'https://api.exemplo.com/x'}) audio.playAtPosition('s', 1, 2, 3)
+  parcel.getName() parcel.getPermissions() object.getParcel() animation.play('Abrir', {speed = 2}) animation.pause() animation.resume() animation.setSpeed(1) animation.getState() animation.stop()
+  npc.create('N', 1, 1) npc.list() vehicle.list() vehicle.get(1) media.play('https://exemplo.com/a.mp3', {volume = 0.5}) media.isPlaying() media.stop() economy.setObjectPrice(10) region.getSeaLevel() pcall(inventory.giveItem, a, 'x') pcall(npc.moveTo, 1, 1, 1)
 end
 function on_dialog_response(e) end function on_chat(e) end function on_permission_granted(e) end function on_link_message(e) end function on_script_error(e) end";
         var scriptId = Guid.NewGuid(); host.Sync([new ScriptDefinition(scriptId, objectId, Guid.NewGuid(), "warm", source, 1, 100_000)]); host.Process(10_000);
-        foreach (var permission in new[] { ScriptPermission.ShowHud, ScriptPermission.ControlAnimation }) host.Permissions.Grant(scriptId, avatar, permission);
-        foreach (var permission in new[] { ScriptPermission.ControlPhysics, ScriptPermission.HttpRequests }) host.Permissions.Grant(scriptId, Guid.Empty, permission);
+        foreach (var permission in new[] { ScriptPermission.ShowHud, ScriptPermission.ControlAnimation, ScriptPermission.GiveItems }) host.Permissions.Grant(scriptId, avatar, permission);
+        foreach (var permission in new[] { ScriptPermission.ControlPhysics, ScriptPermission.HttpRequests, ScriptPermission.CreateNpcs, ScriptPermission.ControlVehicles, ScriptPermission.ControlMedia }) host.Permissions.Grant(scriptId, Guid.Empty, permission);
         for (var i = 0; i < 3; i++)
         {
             host.Enqueue(new ScriptEvent(objectId, "touch", new Dictionary<string, object?> { ["avatar_id"] = avatar, ["avatar_name"] = "A", ["avatar"] = new Dictionary<string, object?> { ["id"] = avatar, ["name"] = "A" } })); host.Process(10_000);
