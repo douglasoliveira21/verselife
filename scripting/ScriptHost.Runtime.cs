@@ -42,7 +42,7 @@ public sealed partial class ScriptHost
                 if (definition.Paused != existing.Definition.Paused) { if (definition.Paused) Pause(definition.Id); else if (existing.Enabled) Resume(definition.Id); existing.Definition = definition; }
                 continue;
             }
-            if (existing is not null) { _permissions.Revoke(definition.Id, Guid.Empty, ScriptPermission.ModifyObject); CloseHuds(existing); CloseEffects(existing); CloseNpcs(existing); CloseVehicles(existing); }
+            if (existing is not null) { _permissions.Revoke(definition.Id, Guid.Empty, ScriptPermission.ModifyObject); CloseHuds(existing); CloseEffects(existing); CloseNpcs(existing); CloseVehicles(existing); CloseMedia(existing); }
             var instance = Load(definition, savedState?.Invoke(definition.Id));
             _instances[definition.Id] = instance;
             if (!instance.Quarantined) _queue.Enqueue((definition.ObjectId, "start", null, definition.Id));
@@ -192,7 +192,7 @@ public sealed partial class ScriptHost
 
     private void Quarantine(Instance instance, string reason, ScriptLifecycle state = ScriptLifecycle.Suspended)
     {
-        instance.Quarantined = true; instance.Reason = reason; CloseHuds(instance); CloseEffects(instance); CloseNpcs(instance); CloseVehicles(instance); instance.Timers.Clear(); instance.Motion = null; SetLifecycle(instance, state);
+        instance.Quarantined = true; instance.Reason = reason; CloseHuds(instance); CloseEffects(instance); CloseNpcs(instance); CloseVehicles(instance); CloseMedia(instance); instance.Timers.Clear(); instance.Motion = null; SetLifecycle(instance, state);
         if (state == ScriptLifecycle.Suspended) instance.Metrics.Suspensions++;
         AddLog(instance, ScriptLogLevel.Error, "limit", state == ScriptLifecycle.Suspended ? $"suspended: {reason}" : reason);
         Log?.Invoke($"[{instance.Definition.Name}] quarantined: {reason}");
@@ -221,7 +221,7 @@ public sealed partial class ScriptHost
     public bool Stop(Guid scriptId)
     {
         if (Find(scriptId) is not { } instance || instance.Lifecycle == ScriptLifecycle.Stopped) return false;
-        CloseHuds(instance); CloseEffects(instance); CloseNpcs(instance); CloseVehicles(instance); instance.Timers.Clear(); instance.Motion = null; instance.Listening.Clear(); instance.Lifecycle = ScriptLifecycle.Stopped; instance.Quarantined = false; instance.Reason = "stopped";
+        CloseHuds(instance); CloseEffects(instance); CloseNpcs(instance); CloseVehicles(instance); CloseMedia(instance); instance.Timers.Clear(); instance.Motion = null; instance.Listening.Clear(); instance.Lifecycle = ScriptLifecycle.Stopped; instance.Quarantined = false; instance.Reason = "stopped";
         AddLog(instance, ScriptLogLevel.Info, "control", "stopped"); return true;
     }
 
@@ -229,7 +229,7 @@ public sealed partial class ScriptHost
     public bool Restart(Guid scriptId)
     {
         if (Find(scriptId) is not { } old) return false;
-        CloseNpcs(old); CloseVehicles(old); var definition = old.Definition; var state = new Dictionary<string, string>(old.State);
+        CloseNpcs(old); CloseVehicles(old); CloseMedia(old); var definition = old.Definition; var state = new Dictionary<string, string>(old.State);
         var instance = Load(definition, state); instance.Metrics.Suspensions = old.Metrics.Suspensions; _instances[definition.Id] = instance;
         if (instance.Quarantined) return true;
         _queue.Enqueue((definition.ObjectId, "reset", null, definition.Id)); _queue.Enqueue((definition.ObjectId, "start", null, definition.Id));
@@ -284,7 +284,7 @@ public sealed partial class ScriptHost
     private void Destroy(Instance instance)
     {
         if (Live(instance) && instance.HandlerNames.Contains("on_destroy")) RunNow(instance, "destroy", "on_destroy", null);
-        CloseHuds(instance); CloseEffects(instance); CloseNpcs(instance); CloseVehicles(instance); instance.Timers.Clear(); instance.Motion = null; instance.Lifecycle = ScriptLifecycle.Destroyed; _permissions.RevokeAll(instance.Definition.Id); _instances.Remove(instance.Definition.Id);
+        CloseHuds(instance); CloseEffects(instance); CloseNpcs(instance); CloseVehicles(instance); CloseMedia(instance); instance.Timers.Clear(); instance.Motion = null; instance.Lifecycle = ScriptLifecycle.Destroyed; _permissions.RevokeAll(instance.Definition.Id); _instances.Remove(instance.Definition.Id);
     }
 
     private void RunNow(Instance instance, string eventName, string handler, IReadOnlyDictionary<string, object?>? data)

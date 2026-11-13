@@ -33,3 +33,13 @@ public sealed partial class ScriptHost
         if (to is not null) foreach (var objectId in ObjectsWanting("parcel_enter").ToList()) if (world.GetObject(objectId) is { } o && world.GetParcelAt(o.Position.X, o.Position.Z)?.Id == to.Id) Enqueue(new ScriptEvent(objectId, "parcel_enter", Data(to)));
     }
 }
+
+public sealed partial class ScriptHost
+{
+    /// <summary>The island changed as a whole: every script that handles <c>on_region_changed</c> hears what changed (<c>sea_level</c> and/or <c>terrain</c>) and the sea level now.</summary>
+    public void RegionChanged(IReadOnlyList<string> kinds, float seaLevel)
+    {
+        var data = new Dictionary<string, object?> { ["kinds"] = string.Join(",", kinds), ["sea_level"] = seaLevel, ["sea_level_changed"] = kinds.Contains("sea_level"), ["terrain_changed"] = kinds.Contains("terrain") };
+        foreach (var objectId in ObjectsWanting("region_changed").ToList()) Enqueue(new ScriptEvent(objectId, "region_changed", data));
+    }
+}

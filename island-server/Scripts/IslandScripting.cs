@@ -229,7 +229,7 @@ public sealed partial class IslandScripting : IScriptWorld
     /// Called every server tick: timers, walking into or out of objects, queued events and the changes scripts made.
     public void Update(IReadOnlyList<AvatarPresence> avatars)
     {
-        var now = Now; _avatars = avatars; DrainHttp(); DrainPayments(); DrainGives(); RestoreHuds(avatars);
+        var now = Now; _avatars = avatars; DrainHttp(); DrainPayments(); DrainGives(); RestoreHuds(avatars); FlushRegionChanges(now);
         _host.Tick(now);
         if (now - _lastProximity >= .25) { _lastProximity = now; Proximity(avatars); WatchParcels(avatars); WatchMotion(); WatchTriggers(avatars); }
         _host.Process(6);

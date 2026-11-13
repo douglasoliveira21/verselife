@@ -44,6 +44,9 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_inventory_changed` | O Conteúdo do objeto mudou (item posto ou tirado). | added, removed (quantos) |
 | `on_item_added` | Um item foi posto no Conteúdo do objeto. | item.name, item.type, item.id |
 | `on_item_removed` | Um item saiu do Conteúdo do objeto. | item.name, item.type, item.id |
+| `on_region_changed` | A ilha mudou como um todo: o nível do mar ou o terreno foi editado (agrupado: no máximo um aviso a cada 2 segundos, por maior que seja o número de edições). | kinds (texto: sea_level e/ou terrain, separados por vírgula), sea_level (altura atual do mar), sea_level_changed, terrain_changed |
+| `on_media_finished` | Um stream sem loop de media.play chegou ao fim (o aviso vem do cliente de alguém perto; sem ninguém perto, o fim não é percebido). | url |
+| `on_sound_finished` | Um som do objeto (audio.play) chegou ao fim no cliente de alguém perto. | — |
 | `on_npc_arrived` | Um NPC deste script chegou ao destino de npc.moveTo (ou parou no mar ou na borda da ilha). | npc (número), position {x, y, z} |
 | `on_vehicle_arrived` | Um piloto automático (vehicle.driveTo) deste script terminou. | vehicle {id, name, type, x, y, z, yaw, speed, occupied}, arrived (verdadeiro: chegou; falso: ficou preso) |
 | `on_vehicle_enter` | Alguém entrou em um veículo do dono do objeto. | vehicle, avatar_id, avatar_name, avatar.id, avatar.name |
@@ -878,6 +881,19 @@ Quantas pessoas estão na ilha.
 chat.say(region.getAvatarCount())
 ```
 
+### `region.getSeaLevel()`
+
+A altura do mar da ilha, em metros.
+
+- **Retorna:** número
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+chat.say(region.getSeaLevel())
+```
+
 ## Permissões
 
 ### `permissions.request(avatarId, 'PERMISSAO')`
@@ -1373,6 +1389,140 @@ Solta o veículo: ele freia até parar.
 
 ```lua
 vehicle.stop(1)
+```
+
+## Mídia
+
+### `media.play(url, {volume, loop, range})`
+
+Toca um arquivo de áudio da internet (.mp3 ou .ogg, só https) em 3D no objeto, para quem está perto. Cada cliente baixa o arquivo (até 12 MB). Um stream por script: tocar de novo troca o anterior. Quem chega depois ouve do começo. Ao terminar (sem loop), o script ouve on_media_finished.
+
+- **Retorna:** verdadeiro se o pedido foi enviado
+- **Permissão:** CONTROL_MEDIA (o dono dá no editor, aba Permissões)
+- **Limites:** volume 0 a 1 (padrão 0,8); range 3 a 60 m (padrão 25); 10 por minuto por script
+- **Erros possíveis:** endereço que não é https, de rede interna ou que não termina em .mp3/.ogg; sem permissão
+
+```lua
+media.play('https://exemplo.com/musica.mp3', {volume = 0.6, loop = true, range = 30})
+```
+
+### `media.stop()`
+
+Para o stream deste script.
+
+- **Retorna:** nada
+- **Permissão:** CONTROL_MEDIA
+- **Limites:** —
+- **Erros possíveis:** sem permissão
+
+```lua
+media.stop()
+```
+
+### `media.setVolume(volume)`
+
+Muda o volume do stream em andamento (0 a 1).
+
+- **Retorna:** verdadeiro se há um stream deste script
+- **Permissão:** CONTROL_MEDIA
+- **Limites:** —
+- **Erros possíveis:** sem permissão
+
+```lua
+media.setVolume(0.3)
+```
+
+### `media.isPlaying()`
+
+Se este script tem um stream em andamento (um stream sem loop deixa de contar ao terminar, quando alguém perto avisa).
+
+- **Retorna:** verdadeiro ou falso
+- **Permissão:** CONTROL_MEDIA
+- **Limites:** —
+- **Erros possíveis:** sem permissão
+
+```lua
+if not media.isPlaying() then media.play(url) end
+```
+
+## Animação de objeto
+
+### `animation.play(clip, {loop, speed, offset})`
+
+Toca um clipe da animação do modelo importado do próprio objeto (a "Animação de Mesh" da aba Recursos; os nomes dos clipes aparecem lá). Todos veem a mesma pose: o servidor marca o início com o relógio dele. Um clipe que o modelo não tem é ignorado pelos clientes.
+
+- **Retorna:** verdadeiro
+- **Permissão:** —
+- **Limites:** velocidade 0,1 a 4 (padrão 1); offset 0 a 3600 s; nome do clipe de 1 a 64 letras; vale o limite de 5 mudanças por segundo do objeto
+- **Erros possíveis:** nome do clipe vazio ou longo demais; fora de um evento
+
+```lua
+animation.play('Abrir', {speed = 1.5})
+```
+
+### `animation.pause()`
+
+Pausa a animação na pose em que está (calculada pelo relógio do script).
+
+- **Retorna:** verdadeiro se estava tocando
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+animation.pause()
+```
+
+### `animation.resume()`
+
+Continua a animação pausada.
+
+- **Retorna:** verdadeiro se estava pausada
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+animation.resume()
+```
+
+### `animation.stop()`
+
+Para a animação na primeira pose do clipe.
+
+- **Retorna:** verdadeiro se este script tinha uma animação
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+animation.stop()
+```
+
+### `animation.setSpeed(velocidade)`
+
+Muda a velocidade da animação sem perder o ponto em que está (0,1 a 4).
+
+- **Retorna:** verdadeiro se este script tinha uma animação
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+animation.setSpeed(2)
+```
+
+### `animation.getState()`
+
+O que este script deixou: clip, playing, loop, speed e position (segundos, estimada; o servidor não conhece a duração do clipe, então não há evento de fim).
+
+- **Retorna:** tabela ou nada
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+local s = animation.getState()
 ```
 
 ## Inventário

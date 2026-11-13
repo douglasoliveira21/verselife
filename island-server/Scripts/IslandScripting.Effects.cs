@@ -28,6 +28,7 @@ public sealed partial class IslandScripting
     {
         if (!_objects.TryGetValue(objectId, out var at)) return;
         foreach (var (key, active) in _activeEffects.Where(p => p.Value.Object == objectId).ToList()) _broadcastApplied(EffectOp(key, objectId, active.Effect, at));
+        FollowMedia(objectId);
     }
 
     /// <summary>Plays a sound the object carries at a point of the island (everybody near hears it, fading with distance).</summary>

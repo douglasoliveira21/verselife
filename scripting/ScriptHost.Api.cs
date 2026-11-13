@@ -135,6 +135,7 @@ public sealed partial class ScriptHost
         region["getName"] = Fn(_ => world.GetRegion() is { } info ? DynValue.NewString(info.Name) : DynValue.Nil);
         region["getId"] = Fn(_ => world.GetRegion() is { } info ? DynValue.NewString(info.Id.ToString()) : DynValue.Nil);
         region["getAvatarCount"] = Fn(_ => world.GetRegion() is { } info ? DynValue.NewNumber(info.AvatarCount) : DynValue.Nil);
+        region["getSeaLevel"] = Fn(_ => world.GetRegion() is { } info ? DynValue.NewNumber(info.SeaLevel) : DynValue.Nil);
 
         // ---- permissions and dialogs: a script cannot act on a person without being allowed by that person ----
         var permissions = Namespace("permissions");

@@ -200,6 +200,7 @@ public partial class ServerMain : Node
             SendLocks(peerId);
             if (_scripting is not null) foreach (var text in _scripting.TextOps()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, text); // the floating texts that scripts put on objects
             if (_scripting is not null) foreach (var effect in _scripting.EffectOps()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, effect); // the particles and lights scripts keep going
+            if (_scripting is not null) foreach (var stream in _scripting.MediaOps()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, stream); // the sound from the internet scripts keep playing
             if (_physics is not null) foreach (var pose in _physics.PoseMessages()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, pose); // where the bodies of the simulation are now
             Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
             if (admission.TransferId is { } trip) _ = ConfirmArrivalAsync(peerId, trip, _shutdown.Token); // a person who travelled: the API completes the trip only when this island says they are here
@@ -275,7 +276,7 @@ public partial class ServerMain : Node
         _scripting.SendToAvatar = (avatarId, json) => { foreach (var target in _players.Values.Where(x => x.Authenticated && x.AvatarId == avatarId)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, json); };
         _physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(_physics);
         _physics.Initialize(message => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message); });
-        _scripting.Fleet = _fleet;
+        _scripting.Fleet = _fleet; _scripting.SeaLevelOf = () => _terrain.SeaLevel;
         _scripting.Npcs = new NpcWorld((x, z) => _terrain.SampleHeight(x, z), () => _terrain.SeaLevel, () => _terrain.HalfExtent)
         {
             Spawned = npc => { foreach (var target in _players.Values.Where(x => x.Authenticated)) SendSpawnNpc(target.PeerId, npc); },
@@ -363,7 +364,7 @@ public partial class ServerMain : Node
         var mask = actor.CanEditTerrain ? null : _rights.MaskFor(actor.UserId, _terrain);
         var before = _terrain.Capture(x, z, radius, brush.Square, mask);
         if (!_terrain.Apply((TerrainTool)tool, x, z, radius, strength, layer, brush, mask)) return;
-        _terrainDirty = true;
+        _terrainDirty = true; _scripting?.RegionChanged("terrain");
         RememberStroke(actor, before);
         if (mask is null && brush.IsDefault && (TerrainTool)tool <= TerrainTool.Noise)
         {
@@ -388,7 +389,7 @@ public partial class ServerMain : Node
         if (!TryBeginTerrainAction(peerId, out var seaActor)) return;
         if (!seaActor.CanEditTerrain) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "no_permission"); return; } // the sea belongs to island editors
         if (!_terrain.SetSeaLevel(level)) return;
-        _terrainDirty = true;
+        _terrainDirty = true; _scripting?.RegionChanged("sea_level");
         foreach (var target in _players.Values.Where(p => p.Authenticated))
             _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.SeaLevelChanged, _terrain.SeaLevel, _terrain.Revision);
     }
@@ -404,7 +405,7 @@ public partial class ServerMain : Node
         if (from.Count == 0) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, undo ? "nothing_to_undo" : "nothing_to_redo"); return; }
         var patch = from[^1]; from.RemoveAt(from.Count - 1);
         to.Add(_terrain.Restore(patch));
-        _terrainDirty = true;
+        _terrainDirty = true; _scripting?.RegionChanged("terrain");
         actor.LastStrokeAt = DateTimeOffset.MinValue;
         BroadcastPatch(patch);
     }
@@ -429,7 +430,7 @@ public partial class ServerMain : Node
         var undo = _terrain.ImportHeights16(heights);
         if (undo is null) { _bridge.RpcId(peerId, NetworkBridge.MethodName.TerrainEditRejected, "invalid_heightmap"); return; }
         if (undo.Count == 0) return;
-        _terrainDirty = true;
+        _terrainDirty = true; _scripting?.RegionChanged("terrain");
         actor.UndoStack.Add(undo); actor.RedoStack.Clear(); if (actor.UndoStack.Count > 20) actor.UndoStack.RemoveAt(0);
         foreach (var target in _players.Values.Where(p => p.Authenticated)) SendTerrain(target);
     }

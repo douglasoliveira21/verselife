@@ -165,7 +165,7 @@ public partial class ScriptingApiSmoke : Node
 
             // giving: the object carries an item, the avatar allows GIVE_ITEMS, the API makes the copy and the script hears about it
             var giver = Guid.NewGuid(); var giverScript = Guid.NewGuid(); var gift = Guid.NewGuid();
-            var giverSource = "function on_touch(e) permissions.request(e.avatar_id, 'GIVE_ITEMS') end function on_permission_granted(e) inventory.giveItem(e.avatar_id, 'Brinde') end function on_item_given(e) object.setName('deu ' .. e.item) economy.setObjectPrice(150) end function on_item_give_failed(e) object.setName('falhou ' .. e.reason) end function on_purchase(e) object.setName('vendido ' .. e.price .. ' ' .. e.sale_type) end";
+            var giverSource = "function on_touch(e) permissions.request(e.avatar_id, 'GIVE_ITEMS') end function on_permission_granted(e) inventory.giveItem(e.avatar_id, 'Brinde') end function on_item_given(e) object.setName('deu ' .. e.item) economy.setObjectPrice(150) end function on_item_give_failed(e) object.setName('falhou ' .. e.reason) end function on_purchase(e) object.setName('vendido ' .. e.price .. ' ' .. e.sale_type) end function on_region_changed(e) object.setName('mar ' .. e.kinds .. ' ' .. e.sea_level) end";
             routes["script-give-item"] = "{\"status\":\"completed\",\"name\":\"Brinde\"}";
             routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(giver, "Doador", 30).Replace("\"contentJson\":\"[]\"", "\"contentJson\":" + JsonSerializer.Serialize(JsonSerializer.Serialize(new[] { new { assetId = gift, name = "Brinde", category = "objects" } }))) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(giverScript, giver, "doador", giverSource) + ",");
             await scripting.RefreshAsync(CancellationToken.None); var donor = new AvatarPresence(2, ana, anaUser, "Ana", 30, 1, 20);
@@ -184,6 +184,12 @@ public partial class ScriptingApiSmoke : Node
             Require(posts.Any(p => p.Contains("build-operations") && p.Contains("vendido 250 copy")), "on_purchase told the price and the kind of sale");
             posts.Clear(); scripting.OnObjectApplied(JsonSerializer.Serialize(new { operation = "bought", objectId = giver, buyerUserId = anaUser, replay = true, objects = Array.Empty<object>() })); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); }
             Require(!posts.Any(p => p.Contains("vendido")), "a replayed purchase is not a new sale");
+
+            // the island changed as a whole: several edits in a row are one announcement, with the sea level now
+            await scripting.RefreshAsync(CancellationToken.None); scripting.SeaLevelOf = () => 3f; posts.Clear();
+            scripting.RegionChanged("terrain"); scripting.RegionChanged("terrain"); scripting.RegionChanged("sea_level");
+            for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(posts.Count(p => p.Contains("build-operations") && p.Contains("mar terrain,sea_level 3")) == 1, $"on_region_changed came once, with what changed and the sea level (posts {posts.Count})");
 
             // non-player characters: made by a script whose owner allowed it, shown through the world of NPCs, walking and speaking
             var guard = Guid.NewGuid(); var guardScript = Guid.NewGuid(); var spawnedNpcs = new List<int>(); var goneNpcs = new List<int>();
@@ -215,6 +221,29 @@ public partial class ScriptingApiSmoke : Node
             Require(arrivals.SequenceEqual([true]) && MathF.Abs(jipe.State.Z - 6f) <= 3.5f, $"the car drove to the point (z {jipe.State.Z})");
             for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
             Require(posts.Any(p => p.Contains("build-operations") && p.Contains("chegou true")), "the script heard that the car arrived");
+
+            // sound from the internet: announced to everybody, remembered for who arrives later, ended only by somebody near after it had time to play, and taken away with the play
+            var radio = Guid.NewGuid(); var radioScript = Guid.NewGuid();
+            var radioSource = "function on_touch(e) media.play('https://exemplo.com/musica.mp3', {range = 20}) animation.play('Abrir', {speed = 2}) end function on_media_finished(e) object.setName('fim ' .. e.url) end function on_sound_finished(e) object.setName('som acabou') end";
+            routes["island-content"] = routes["island-content"].Replace("\"objects\":[", "\"objects\":[" + Obj(radio, "Radio", 30) + ",").Replace("\"scripts\":[", "\"scripts\":[" + Script(radioScript, radio, "radio", radioSource) + ",").Replace("\"grants\":[", "\"grants\":[{\"scriptId\":\"" + radioScript + "\",\"subjectId\":\"" + Guid.Empty + "\",\"permission\":\"CONTROL_MEDIA\"},");
+            await scripting.RefreshAsync(CancellationToken.None); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            broadcasts.Clear(); scripting.Touch(donor, radio); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            var mediaOn = broadcasts.FirstOrDefault(b => b.Contains("\"operation\":\"media\"") && b.Contains("\"on\":true")); Require(mediaOn is not null && mediaOn.Contains("musica.mp3") && mediaOn.Contains("\"range\":20"), "the stream was announced to everybody");
+            Require(scripting.MediaOps().Count() == 1, "somebody who arrives later is sent the stream");
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("materialJson") && p.Contains("Abrir") && p.Contains("animation")), "animation.play changed the animation of the object through the build operation");
+            var playId = JsonDocument.Parse(mediaOn!).RootElement.GetProperty("playId").GetString(); var mediaKey = radioScript.ToString("N");
+            var farAway = new AvatarPresence(5, Guid.NewGuid(), Guid.NewGuid(), "Longe", 900, 1, 900);
+            await scripting.RefreshAsync(CancellationToken.None); posts.Clear(); broadcasts.Clear();
+            string Finished(string id) => JsonSerializer.Serialize(new { media_finished = true, key = mediaKey, playId = id });
+            scripting.OnDialogResponse(farAway, Finished(playId!)); scripting.OnDialogResponse(donor, Finished("outro")); for (var i = 0; i < 6; i++) { scripting.Update([donor, farAway]); await Task.Delay(40); }
+            Require(scripting.MediaOps().Count() == 1 && !posts.Any(p => p.Contains("fim ")), "neither a faraway client nor a made-up play can end the stream");
+            scripting.OnDialogResponse(donor, Finished(playId!)); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("fim https://exemplo.com/musica.mp3")), "the script heard that the stream ended");
+            Require(scripting.MediaOps().Count() == 0 && broadcasts.Any(b => b.Contains("\"operation\":\"media\"") && b.Contains("\"on\":false")), "the end took the stream away for everybody");
+            await scripting.RefreshAsync(CancellationToken.None); posts.Clear(); scripting.OnDialogResponse(farAway, JsonSerializer.Serialize(new { sound_finished = true, objectId = radio })); for (var i = 0; i < 6; i++) { scripting.Update([donor]); await Task.Delay(40); }
+            Require(!posts.Any(p => p.Contains("som acabou")), "a sound end told from far away is not believed");
+            scripting.OnDialogResponse(donor, JsonSerializer.Serialize(new { sound_finished = true, objectId = radio })); for (var i = 0; i < 8; i++) { scripting.Update([donor]); await Task.Delay(60); } await Task.Delay(300); for (var i = 0; i < 4; i++) { scripting.Update([donor]); await Task.Delay(60); }
+            Require(posts.Any(p => p.Contains("build-operations") && p.Contains("som acabou")), "the script heard that a sound ended");
             // shutdown
             said.Clear(); await scripting.ShutdownAsync(); await Run(2); Require(said.Any(s => s.Text == "desligando") && posts.Any(p => p.Contains("script-state") || p.Contains("script-runtime")), "scripts hear the shutdown and the state is saved");
 

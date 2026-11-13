@@ -18,6 +18,7 @@ public sealed class LuaLandTests
         public void ApplyChange(ScriptDefinition script, ObjectChange change) { }
         public void Say(ScriptDefinition script, string text) => Said.Add(text);
         public ParcelData? GetParcelAt(double x, double z) => x < 0 ? null : x < 50 ? Garden : Shop;     // west of 0 is nobody's land
+        public RegionInfo? GetRegion() => new(Guid.NewGuid(), "Ilha", 1, 2.5f);
     }
 
     private static (ScriptHost Host, World World, Guid Object, List<ScriptReport> Reports) Rig(string source, double x)
@@ -50,6 +51,17 @@ public sealed class LuaLandTests
         host.AvatarMovedParcels(ana, "Ana", Shop, null); host.Process(500); Assert.Equal("saiu Ana de Loja", world.Said.Last());                                           // walking off the land is leaving
         host.AvatarMovedParcels(ana, "Ana", null, null); host.Process(500); Assert.Equal(4, world.Said.Count);
     }
+
+    [Fact]
+    public void RegionChanged_ReachesTheScriptsThatAskForIt_WithWhatChanged()
+    {
+        var (host, world, obj, reports) = Rig("function on_region_changed(e) chat.say(e.kinds .. ' ' .. e.sea_level .. ' ' .. tostring(e.sea_level_changed) .. ' ' .. tostring(e.terrain_changed)) end function on_touch() chat.say('mar ' .. region.getSeaLevel()) end", 10);
+        host.RegionChanged(["sea_level", "terrain"], 2.5f); host.RegionChanged(["terrain"], 2.5f); host.Process(500); Touch(host, obj);
+        Assert.Empty(reports); Assert.Equal(["sea_level.terrain 2.5 true true", "terrain 2.5 false true", "mar 2.5"], world.Said.Select(s => s.Replace(',', '.')));
+        var (quiet, quietWorld, _, _) = Rig("function on_touch() end", 10); quiet.RegionChanged(["terrain"], 0); quiet.Process(500); Assert.Empty(quietWorld.Said);                  // nobody asked: nothing happens
+    }
+
+    private static void Touch(ScriptHost host, Guid obj) { host.Enqueue(new ScriptEvent(obj, "touch")); host.Process(500); }
 
     [Fact]
     public void LandInfo_ReadsWhatTheApiSends_AndSkipsDamagedEntries()

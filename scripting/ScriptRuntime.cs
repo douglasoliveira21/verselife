@@ -54,7 +54,7 @@ public sealed record ScriptDiagnostic(string Severity, int Line, string Message)
 public enum ChatKind { Say, Whisper, Shout }
 
 /// <summary>What a script may ask about the island it runs on.</summary>
-public sealed record RegionInfo(Guid Id, string Name, int AvatarCount);
+public sealed record RegionInfo(Guid Id, string Name, int AvatarCount, float SeaLevel = 0);
 
 /// <summary>The kinds of things a script may do that reach beyond its own object. Each one is granted by a person (the owner of the object, or the avatar affected) and can be taken back at any time.</summary>
 public static class ScriptPermission

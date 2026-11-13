@@ -43,7 +43,7 @@ public sealed class LuaCatalogTests
     {
         var documented = string.Join(",", ScriptCatalog.Functions.Select(f => $"'{f.Namespace}.{f.Name}'").Concat(ScriptCatalog.LegacyObject.Select(n => $"'object.{n}'")));
         var (host, _, _, script) = Run("function on_start() local known = {} for _, n in ipairs({" + documented + "}) do known[n] = true end local extra = {} "
-            + "for _, ns in ipairs({'object', 'chat', 'timer', 'storage', 'debug', 'region', 'script', 'permissions', 'dialog', 'audio', 'http', 'physics', 'economy', 'inventory', 'avatar', 'hud', 'particles', 'light', 'parcel', 'npc', 'vehicle', 'lv'}) do for name, value in pairs(_G[ns]) do if type(value) == 'function' and not known[ns .. '.' .. name] then extra[#extra + 1] = ns .. '.' .. name end end end storage.set('extra', table.concat(extra, ' ')) end");
+            + "for _, ns in ipairs({'object', 'chat', 'timer', 'storage', 'debug', 'region', 'script', 'permissions', 'dialog', 'audio', 'http', 'physics', 'economy', 'inventory', 'avatar', 'hud', 'particles', 'light', 'parcel', 'npc', 'vehicle', 'media', 'animation', 'lv'}) do for name, value in pairs(_G[ns]) do if type(value) == 'function' and not known[ns .. '.' .. name] then extra[#extra + 1] = ns .. '.' .. name end end end storage.set('extra', table.concat(extra, ' ')) end");
         Assert.Null(host.AllMetrics().Single().LastError); Assert.Equal("\"\"", host.TakeDirtyState()[script]["extra"]);
     }
 

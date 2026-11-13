@@ -46,7 +46,7 @@ public partial class ObjectEffects : Node
     {
         foreach (var player in _players.Values) if (IsInstanceValid(player)) player.QueueFree();
         foreach (var label in _labels.Values) if (IsInstanceValid(label)) label.QueueFree();
-        _players.Clear(); _labels.Clear(); _waiting.Clear(); ClearEffects();
+        _players.Clear(); _labels.Clear(); _waiting.Clear(); ClearEffects(); ClearMedia();
     }
 
     public void OnOperation(string json)
@@ -56,6 +56,7 @@ public partial class ObjectEffects : Node
             using var document = JsonDocument.Parse(json); var root = document.RootElement;
             var operation = root.GetProperty("operation").GetString();
             if (operation == "effect") { OnEffect(root); return; }
+            if (operation == "media") { OnMedia(root); return; }
             if (operation is not ("sound" or "sound_stop" or "text")) return;
             if (!Guid.TryParse(root.GetProperty("objectId").GetString(), out var objectId)) return;
             switch (operation)
@@ -91,7 +92,7 @@ public partial class ObjectEffects : Node
                 MaxDistance = 60f, UnitSize = 6f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Name = "Sound_" + objectId.ToString("N")
             };
             AddChild(player); player.GlobalPosition = position; _players[objectId] = player;
-            player.Finished += () => { if (_players.TryGetValue(objectId, out var current) && current == player) _players.Remove(objectId); player.QueueFree(); };
+            player.Finished += () => { var ended = _players.TryGetValue(objectId, out var current) && current == player; if (ended) _players.Remove(objectId); player.QueueFree(); if (ended && !loop) _network?.SendScriptDialogResponse(System.Text.Json.JsonSerializer.Serialize(new { sound_finished = true, objectId })); };
             player.Play();
         });
     }

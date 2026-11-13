@@ -75,6 +75,25 @@ public partial class ObjectEffectsSmoke : Node3D
             for (var i = 0; i < 30; i++) fx.OnOperation(Fx($"l:{i}", true, "light")); Require(fx.LightsForTesting == ObjectEffects.MaxLights, "and so is the number of lights");
             fx.OnOperation(Fx("s1:1", false, "particles")); await Frames(2); Require(fx.EffectForTesting("s1:1") is null && fx.EmittersForTesting == ObjectEffects.MaxEmitters - 1, "an effect is taken away when the script says so");
             fx.ClearEffects(); await Frames(2); Require(fx.EmittersForTesting == 0 && fx.LightsForTesting == 0, "leaving the island clears every effect");
+
+            // ---- sound from the internet: downloaded once, played in 3D at the object, one play at a time per script, only well-formed https addresses ----
+            var fetched = new List<string>(); var song = new byte[] { 0xFF, 0xFB, 0x90, 0x00, 1, 2, 3, 4, 5, 6, 7, 8 };
+            fx.MediaFetchOverride = url => { fetched.Add(url); return url.EndsWith("quebrado.mp3", StringComparison.Ordinal) ? null : song; };
+            string Media(string key, string playId, bool on = true, string url = "https://exemplo.com/musica.mp3", float volume = .5f, float x = 1, bool loop = false, float range = 20) =>
+                "{\"operation\":\"media\",\"key\":\"" + key + "\",\"objectId\":\"" + door + "\",\"on\":" + (on ? "true" : "false") + ",\"url\":\"" + url + "\",\"volume\":" + volume.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"loop\":" + (loop ? "true" : "false") + ",\"range\":" + range.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"playId\":\"" + playId + "\",\"x\":" + x.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"y\":2,\"z\":3}";
+            fx.OnOperation(Media("k1", "p1")); await Frames(3);
+            var stream = fx.StreamPlayerForTesting("k1"); Require(stream is not null && fx.StreamsForTesting == 1 && fetched.Count == 1 && stream!.Stream is AudioStreamMP3, "a stream is downloaded and put at the object");
+            Require(stream is not null && Math.Abs(stream.MaxDistance - 20f) < .01f && Math.Abs(stream.GlobalPosition.X - 1f) < .01f, "it is heard within its range, at the object");
+            fx.OnOperation(Media("k1", "p1", volume: 1, x: 7, range: 40)); await Frames(2);
+            Require(stream is not null && fetched.Count == 1 && fx.StreamPlayerForTesting("k1") == stream && Math.Abs(stream.GlobalPosition.X - 7f) < .01f && Math.Abs(stream.MaxDistance - 40f) < .01f, "the same play follows the object and takes the new volume without downloading again");
+            fx.OnOperation(Media("k1", "p2", url: "https://exemplo.com/outra.mp3")); await Frames(2);
+            Require(fx.StreamPlayForTesting("k1") == "p2" && fetched.Count == 2, "a new play replaces the old one");
+            fx.OnOperation(Media("k2", "p3", url: "https://exemplo.com/musica.mp3")); await Frames(2); Require(fetched.Count == 2 && fx.StreamsForTesting == 2, "a file already downloaded is not downloaded again");
+            fx.OnOperation(Media("k3", "p4", url: "http://exemplo.com/a.mp3")); fx.OnOperation(Media("k3", "p4", url: "https://127.0.0.1/a.mp3")); fx.OnOperation(Media("k3", "p4", url: "https://exemplo.com/a.wav")); fx.OnOperation(Media("k3", "p4", url: "https://exemplo.com/quebrado.mp3")); await Frames(2);
+            Require(fx.StreamPlayerForTesting("k3") is null && fx.StreamsForTesting == 2, "addresses that are not allowed, or files that did not arrive, play nothing");
+            fx.OnOperation(Media("k1", "p2", on: false)); await Frames(2); Require(fx.StreamPlayerForTesting("k1") is null && fx.StreamsForTesting == 1, "the stream is taken away when the script says so");
+            for (var i = 0; i < ObjectEffects.MaxStreams + 2; i++) fx.OnOperation(Media("m" + i, "q" + i)); await Frames(3); Require(fx.StreamsForTesting <= ObjectEffects.MaxStreams, "there is a limit of streams at once");
+            fx.Clear(); await Frames(2); Require(fx.StreamsForTesting == 0, "leaving the island clears the streams");
             GD.Print("event=object_effects_smoke result=passed");
             GetTree().Quit();
         }
