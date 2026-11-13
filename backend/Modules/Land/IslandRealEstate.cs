@@ -69,8 +69,11 @@ public static class IslandRealEstate
         var names = await LandOverview.NamesAsync(db, people, ct); string Name(Guid id) => names.GetValueOrDefault(id, "—");
         var forMe = island.SaleBuyerUserId is null || island.SaleBuyerUserId == viewer || staff;
         var parcels = await db.IslandParcels.AsNoTracking().CountAsync(p => p.IslandId == island.Id && p.DeletedAt == null, ct);
+        // the platform plan is the owner's bill: nobody else sees it
+        var host = island.OwnerUserId == viewer ? await (from r in db.IslandRentals.AsNoTracking() join plan in db.IslandRentalPlans.AsNoTracking() on r.PlanId equals plan.Id where r.IslandId == island.Id && r.Status == "active" orderby r.ExpiresAt descending select new { r.ExpiresAt, r.RecoveryUntil, Plan = plan.Name, plan.MaxPlayers, plan.MaxObjects }).FirstOrDefaultAsync(ct) : null;
         return new
         {
+            hosting = host is null ? null : new { plan = host.Plan, status = host.ExpiresAt > now ? "active" : "recovery", expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects },
             islandId = island.Id, name = island.Name, size = island.Size, region = IslandCommerce.RegionOf(island), ownerId = island.OwnerUserId, owner = Name(island.OwnerUserId), createdAt = island.CreatedAt, parcels,
             isOwner = island.OwnerUserId == viewer, isTenant = lease?.TenantUserId == viewer, isWelcome = island.IsWelcome,
             sale = island.SalePrice is { } price && forMe ? new { price, exclusive = island.SaleBuyerUserId is not null, includeObjects = island.SaleIncludesObjects, description = island.SaleDescription } : null,

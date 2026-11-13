@@ -102,6 +102,20 @@ public sealed class LandPropertiesTests : IDisposable
     }
 
     [Fact]
+    public async Task AnIslandShowsThePlatformPlanThatHostsIt()
+    {
+        Assert.Equal(JsonValueKind.Null, (await Mine(_alice)).GetProperty("islands")[0].GetProperty("hosting").ValueKind); // no plan: nothing to show
+        var plan = new IslandRentalPlan { Id = Guid.NewGuid(), Name = "Plano Ouro", PriceCoins = 1000, DurationDays = 30, MaxSize = 512, MaxObjects = 20000, MaxPlayers = 80, IsActive = true };
+        _db.IslandRentalPlans.Add(plan);
+        _db.IslandRentals.Add(new IslandRental { Id = Guid.NewGuid(), IslandId = _mine.Id, UserId = _alice, PlanId = plan.Id, StartsAt = _clock.Now.AddDays(-20), ExpiresAt = _clock.Now.AddDays(10), RecoveryUntil = _clock.Now.AddDays(17), Status = "active" });
+        await _db.SaveChangesAsync();
+        var hosting = (await Mine(_alice)).GetProperty("islands")[0].GetProperty("hosting");
+        Assert.Equal(("Plano Ouro", "active", 80, 20000), (hosting.GetProperty("plan").GetString(), hosting.GetProperty("status").GetString(), hosting.GetProperty("maxPlayers").GetInt32(), hosting.GetProperty("maxObjects").GetInt32()));
+        _clock.Now = _clock.Now.AddDays(12); // past the end, inside the recovery window
+        Assert.Equal("recovery", (await Mine(_alice)).GetProperty("islands")[0].GetProperty("hosting").GetProperty("status").GetString());
+    }
+
+    [Fact]
     public async Task AnIslandShowsItsOwnNumbers()
     {
         var parcel = Claim(_mine, _alice, "Casa"); _ = parcel;

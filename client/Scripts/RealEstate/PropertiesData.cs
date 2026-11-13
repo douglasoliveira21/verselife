@@ -4,7 +4,10 @@ using LifeVerse.Client.Scripts.LandManagement;
 
 namespace LifeVerse.Client.Scripts.RealEstate;
 
-public sealed record PropIsland(Guid Id, string Name, string Cover, string State, int Visitors, int MaxPlayers, int Objects, int MaxObjects, bool IsPublic, int Parcels, string Region = "full", long? SalePrice = null, long? RentPrice = null, int RentPeriodDays = 30, string Tenant = "", DateTimeOffset? LeaseExpiresAt = null, Guid? LeaseId = null);
+public sealed record PropIsland(Guid Id, string Name, string Cover, string State, int Visitors, int MaxPlayers, int Objects, int MaxObjects, bool IsPublic, int Parcels, string Region = "full", long? SalePrice = null, long? RentPrice = null, int RentPeriodDays = 30, string Tenant = "", DateTimeOffset? LeaseExpiresAt = null, Guid? LeaseId = null, PropHosting? Hosting = null);
+
+/// <summary>The platform plan that keeps an island running: its name, whether it is in force or only in the recovery window, and until when.</summary>
+public sealed record PropHosting(string Plan, string Status, DateTimeOffset ExpiresAt, DateTimeOffset RecoveryUntil, int MaxPlayers, int MaxObjects);
 
 public sealed record PropParcel(Guid Id, Guid IslandId, string Island, string Code, string Name, string Category, double Area, int MaxObjects, int Objects, string Kind, long? SalePrice, long? RentPrice, int RentPeriodDays, string Tenant, DateTimeOffset? RentExpiresAt, Guid? RentalId, bool CanVisit, string Image = "")
 {
@@ -59,7 +62,7 @@ public sealed class PropertiesData
             return new PropertiesData
             {
                 Summary = new PropSummary(Int(s, "total"), Int(s, "inUse"), Int(s, "rentedOut"), Long(s, "monthlyRevenue"), Int(s, "expiringSoon")),
-                Islands = All(root, "islands", i => new PropIsland(G(i, "id"), Str(i, "name"), Str(i, "coverImageUrl"), Str(i, "state"), Int(i, "visitors"), Int(i, "maxPlayers"), Int(i, "objects"), Int(i, "maxObjects"), Flag(i, "isPublic"), Int(i, "parcels"), Str(i, "region") is { Length: > 0 } region ? region : "full", LongOrNull(i, "salePrice"), LongOrNull(i, "rentPrice"), Int(i, "rentPeriodDays"), Str(i, "tenant"), DOrNull(i, "leaseExpiresAt"), GOrNull(i, "leaseId"))),
+                Islands = All(root, "islands", i => new PropIsland(G(i, "id"), Str(i, "name"), Str(i, "coverImageUrl"), Str(i, "state"), Int(i, "visitors"), Int(i, "maxPlayers"), Int(i, "objects"), Int(i, "maxObjects"), Flag(i, "isPublic"), Int(i, "parcels"), Str(i, "region") is { Length: > 0 } region ? region : "full", LongOrNull(i, "salePrice"), LongOrNull(i, "rentPrice"), Int(i, "rentPeriodDays"), Str(i, "tenant"), DOrNull(i, "leaseExpiresAt"), GOrNull(i, "leaseId"), i.TryGetProperty("hosting", out var host) && host.ValueKind == JsonValueKind.Object ? new PropHosting(Str(host, "plan"), Str(host, "status"), D(host, "expiresAt"), D(host, "recoveryUntil"), Int(host, "maxPlayers"), Int(host, "maxObjects")) : null)),
                 Parcels = All(root, "parcels", p => new PropParcel(G(p, "id"), G(p, "islandId"), Str(p, "island"), Str(p, "code"), Str(p, "name"), Str(p, "category"), Dbl(p, "area"), Int(p, "maxObjects"), Int(p, "objects"), Str(p, "kind"), LongOrNull(p, "salePrice"), LongOrNull(p, "rentPrice"), Int(p, "rentPeriodDays"), Str(p, "tenant"), DOrNull(p, "rentExpiresAt"), GOrNull(p, "rentalId"), Flag(p, "canVisit"), Str(p, "imageUrl"))),
                 Contracts = All(root, "contracts", c => new PropContract(G(c, "id"), G(c, "parcelId"), G(c, "islandId"), Str(c, "island"), Str(c, "code"), Str(c, "parcel"), Str(c, "landlord"), Str(c, "tenant"), Str(c, "role"), Long(c, "price"), Int(c, "periodDays"), Str(c, "status"), D(c, "startsAt"), D(c, "expiresAt"), DOrNull(c, "endedAt"), Flag(c, "autoRenew"), Long(c, "deposit"), Flag(c, "canVisit"), Str(c, "target") is { Length: > 0 } ct ? ct : "parcel")),
                 Listings = All(root, "listings", l => new PropListing(Str(l, "kind"), G(l, "parcelId"), G(l, "islandId"), Str(l, "island"), Str(l, "code"), Str(l, "name"), Dbl(l, "area"), Long(l, "price"), Int(l, "periodDays"), Flag(l, "exclusive"), D(l, "since"), Str(l, "target") is { Length: > 0 } lt ? lt : "parcel")),

@@ -24,7 +24,7 @@ public partial class IslandPropertySmoke : Node3D
 
         private object View() => new
         {
-            islandId = Island, name = "Ilha Tropical", size = 256, region = "full", ownerId = Guid.NewGuid(), owner = Owner, createdAt = DateTimeOffset.UtcNow.AddDays(-30), parcels = 6, isOwner = IsOwner, isTenant = IsTenant, isWelcome = Welcome,
+            islandId = Island, name = "Ilha Tropical", size = 256, region = "full", ownerId = Guid.NewGuid(), owner = Owner, createdAt = DateTimeOffset.UtcNow.AddDays(-30), parcels = 6, hosting = IsOwner ? new { plan = "Plano Ouro", status = "active", expiresAt = DateTimeOffset.UtcNow.AddDays(10), recoveryUntil = DateTimeOffset.UtcNow.AddDays(17), maxPlayers = 80, maxObjects = 20000 } : null, isOwner = IsOwner, isTenant = IsTenant, isWelcome = Welcome,
             sale = Sale is { } s ? new { price = s, exclusive = false, includeObjects = true, description = "" } : null,
             rentOffer = Rent is { } r ? new { price = r, periodDays = Days, minPeriods = 1, maxPeriods = 6, deposit = 0L, graceDays = 3 } : null,
             lease = LeaseLive ? new { id = Lease, tenant = "Bruno", landlord = Owner, price = 5000L, periodDays = 30, status = "active", startsAt = DateTimeOffset.UtcNow.AddDays(-5), expiresAt = DateTimeOffset.UtcNow.AddDays(25), deposit = 500L } : null,
@@ -58,6 +58,7 @@ public partial class IslandPropertySmoke : Node3D
 
             // --- the owner of an island with no offer --------------------------------------------------------------------------------
             await page.LoadAsync(); await Frames(2);
+            Require(page.TextForTesting.Contains("Hospedagem") && page.TextForTesting.Contains("Plano Ouro, até") && page.TextForTesting.Contains("80 pessoas"), $"the owner sees the hosting plan (got {page.TextForTesting})");
             var text = page.TextForTesting; Require(page.IsOwner && text.Contains("AliceVerse") && text.Contains("Full Region") && text.Contains("256 m × 256 m") && text.Contains("Sem anúncio") && text.Contains("Terrenos") && text.Contains("L$ 30.000"), $"owner, region, size, situation and history (got {text})");
             Require(page.HasButtonForTesting("Colocar Ilha à Venda") && page.HasButtonForTesting("Alugar Ilha") && page.ButtonEnabledForTesting("Transferir Propriedade") && !page.HasButtonForTesting("Retirar da Venda"), "the owner can sell, rent out and hand over");
 

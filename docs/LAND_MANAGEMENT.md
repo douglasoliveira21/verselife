@@ -185,7 +185,6 @@ Como funciona: a lista de terrenos do cliente ganhou `allowMedia`; o painel perg
 
 ### Ainda não feito (e por quê)
 
-- **Hospedagem da ilha (plano da plataforma, `economy.rentals`) nas janelas**: o dado existe no servidor, mas não é exibido.
 - **Atualização ao vivo das janelas e "Visitar" até o terreno exato**: as janelas atualizam ao abrir/recarregar; "Visitar" leva à ilha, não ao terreno.
 - **Retenção de snapshots**: apaga dados; precisa de decisão do dono do produto sobre prazos.
 - **Pagamento em duas fases (reservar/liquidar)**: deliberadamente não feito; as operações usam chaves idempotentes no livro-razão.
@@ -200,3 +199,9 @@ Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Pha
 - `POST .../parcels/{parcelId}/shrink` (`cells`): devolve quadrados à ilha. A parte que fica precisa ser de uma peça só, não pode ficar vazia e nenhum objeto pode estar nos quadrados devolvidos (`has_objects`). O limite de objetos não muda; o ponto de nascimento é movido se cair fora.
 - Nos dois casos os anúncios de venda/aluguel da parcela são retirados e a mudança entra no histórico (`expand` / `shrink`). Parcelas alugadas não mudam de forma.
 - Cliente: na aba Demarcação, marque os quadrados e use **Expandir** (livres, com a parcela escolhida) ou **Reduzir** (dentro da parcela).
+
+## Hospedagem da ilha nas janelas
+
+- O plano da plataforma que mantém a ilha no ar (`IslandRental` + `IslandRentalPlan`, comprado em `economy.rentals`) aparece como `hosting` (`plan`, `status` = `active` ou `recovery`, `expiresAt`, `recoveryUntil`, `maxPlayers`, `maxObjects`; `null` sem plano) em `GET /properties/mine` (cada ilha) e na visão da ilha de `real-estate` (só para o dono, que é quem paga).
+- **Minhas Propriedades**: o cartão da ilha mostra "Hospedagem: plano, até data" ou "Hospedagem vencida: renove até data". **Propriedade** (gerenciamento da ilha): linha "Hospedagem" com plano, vencimento, pessoas e objetos.
+- Só exibição: comprar e renovar o plano continua no fluxo de economia (`/economy/islands/{id}/rent` e `/economy/rentals/{id}/renew`).

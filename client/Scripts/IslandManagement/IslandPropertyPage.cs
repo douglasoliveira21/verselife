@@ -84,6 +84,8 @@ public partial class IslandPropertyPage : ScrollContainer
         body.AddChild(Line("Proprietário atual", Str(v, "owner"))); body.AddChild(Line("ID da ilha", Str(v, "islandId")));
         body.AddChild(Line("Classe da região", Str(v, "region") == "homestead" ? "Homestead" : "Full Region")); body.AddChild(Line("Tamanho", $"{Int(v, "size")} m × {Int(v, "size")} m")); body.AddChild(Line("Terrenos", Int(v, "parcels").ToString(Pt)));
         body.AddChild(Line("Criada em", Date(v, "createdAt").ToLocalTime().ToString("dd/MM/yyyy", Pt)));
+        if (v.TryGetProperty("hosting", out var hosting) && hosting.ValueKind == System.Text.Json.JsonValueKind.Object)
+            body.AddChild(Line("Hospedagem", Str(hosting, "status") == "active" ? $"{Str(hosting, "plan")}, até {Date(hosting, "expiresAt").ToLocalTime():dd/MM/yyyy} · {Int(hosting, "maxPlayers")} pessoas · {LandMath.Number(Int(hosting, "maxObjects"))} objetos" : $"{Str(hosting, "plan")} vencido: renove até {Date(hosting, "recoveryUntil").ToLocalTime():dd/MM/yyyy}", Str(hosting, "status") == "active" ? IslandUi.TextPrimary : IslandUi.Warning));
         var situation = lease is { } l ? $"Alugada para {Str(l, "tenant")} até {Date(l, "expiresAt").ToLocalTime():dd/MM/yyyy}" + (Str(l, "status") == "grace" ? " (em tolerância)" : "")
             : sale is { } s ? $"À venda por {LandMath.Money(Long(s, "price"))}" + (Flag(s, "exclusive") ? " (exclusiva para uma pessoa)" : "")
             : offer is { } o ? $"Para alugar por {LandMath.Money(Long(o, "price"))} a cada {Int(o, "periodDays")} dias" : "Sem anúncio";

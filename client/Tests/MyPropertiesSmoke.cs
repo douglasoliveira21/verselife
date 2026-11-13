@@ -41,7 +41,7 @@ public partial class MyPropertiesSmoke : Node3D
             return new
             {
                 summary = new { total = 1 + Mine.Count + (inn is null ? 0 : 1), inUse = 1 + Mine.Count(p => p.Tenant is null) + (inn is null ? 0 : 1), rentedOut = Mine.Count(p => p.Tenant is not null), monthlyRevenue = monthly, expiringSoon = (inn is null ? 0 : 1) },
-                islands = new[] { new { id = IslandA, name = "Ilha Tropical", coverImageUrl = (string?)null, state = "online", visitors = 12, maxPlayers = 60, objects = 12450, maxObjects = 30000, size = 256, region = "full", salePrice = IslandSale, rentPrice = IslandRent, rentPeriodDays = IslandDays, isPublic = true, parcels = Mine.Count(p => p.Island == IslandA), createdAt = now } },
+                islands = new[] { new { id = IslandA, name = "Ilha Tropical", coverImageUrl = (string?)null, state = "online", visitors = 12, maxPlayers = 60, objects = 12450, maxObjects = 30000, size = 256, region = "full", salePrice = IslandSale, rentPrice = IslandRent, rentPeriodDays = IslandDays, isPublic = true, parcels = Mine.Count(p => p.Island == IslandA), createdAt = now, hosting = new { plan = "Plano Ouro", status = "active", expiresAt = now.AddDays(10), recoveryUntil = now.AddDays(17), maxPlayers = 80, maxObjects = 20000 } } },
                 parcels, contracts, listings,
                 payments = new[] { new { id = Guid.NewGuid(), at = now.AddDays(-3), type = "sale", direction = "in", amount = 60000L, parcelId = Guid.NewGuid(), island = IslandName(IslandA), code = "L-04", parcel = "Casa do Bruno", other = "Bruno" }, new { id = Guid.NewGuid(), at = now.AddDays(-10), type = "rent_start", direction = "out", amount = 12500L, parcelId = TenantParcel, island = IslandName(IslandB), code = "L-09", parcel = "Loja da Praia", other = "Bruno" }, new { id = Guid.NewGuid(), at = now.AddDays(-4), type = "rent_payment", direction = "in", amount = 3000L, parcelId = Guid.NewGuid(), island = IslandName(IslandA), code = "L-03", parcel = "Centro", other = "Carla" } },
             };
@@ -92,6 +92,7 @@ public partial class MyPropertiesSmoke : Node3D
 
             // --- islands --------------------------------------------------------------------------------------------------------
             var text = window.TextForTesting; Require(text.Contains("Minhas Ilhas (1)") && text.Contains("Ilha Tropical") && text.Contains("12.450 / 30.000") && text.Contains("12 / 60") && text.Contains("Online"), $"the island card shows name, prims, visitors and state (got {text})");
+            Require(text.Contains("Hospedagem: Plano Ouro, até") && window.Data.Islands[0].Hosting?.MaxPlayers == 80, $"the island card shows the hosting plan (got {text})");
             Require(window.ButtonEnabledForTesting("Gerenciar") && window.ButtonEnabledForTesting("Visitar") && window.ButtonEnabledForTesting("Anunciar"), "manage, visit and offer work for an island with no offer");
             window.PressForTesting("Gerenciar"); Require(manageIsland == IslandA, "Gerenciar opens the island management"); window.PressForTesting("Visitar"); Require(visited == IslandA && !window.IsOpen, "Visitar goes to the island and closes the window");
             await window.OpenAsync(); await Frames(3);

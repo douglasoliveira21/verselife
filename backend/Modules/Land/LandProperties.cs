@@ -53,12 +53,17 @@ public static class LandProperties
         var counts = await db.BuildObjects.AsNoTracking().Where(o => o.DeletedAt == null && islands.Select(x => x.Id).Contains(o.IslandId)).GroupBy(o => o.IslandId).Select(g => new { Island = g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Island, g => g.Count, ct);
         var parcelsPerIsland = await db.IslandParcels.AsNoTracking().Where(p => p.DeletedAt == null && islands.Select(x => x.Id).Contains(p.IslandId)).GroupBy(p => p.IslandId).Select(g => new { Island = g.Key, Count = g.Count() }).ToDictionaryAsync(g => g.Island, g => g.Count, ct);
         var liveLeaseByIsland = leasesAsLandlord.Where(l => l.Status is "active" or "grace").GroupBy(l => l.IslandId).ToDictionary(g => g.Key, g => g.First());
+        // the platform plan that hosts each island (the latest one that is not over yet)
+        var hostingIds = islands.Select(i => i.Id).ToList();
+        var hostingRows = await (from r in db.IslandRentals.AsNoTracking() join plan in db.IslandRentalPlans.AsNoTracking() on r.PlanId equals plan.Id where hostingIds.Contains(r.IslandId) && r.Status == "active" select new { r.IslandId, r.ExpiresAt, r.RecoveryUntil, r.Status, Plan = plan.Name, plan.MaxPlayers, plan.MaxObjects }).ToListAsync(ct);
+        var hostingByIsland = hostingRows.GroupBy(h => h.IslandId).ToDictionary(g => g.Key, g => g.OrderByDescending(h => h.ExpiresAt).First());
         var islandRows = islands.Select(i =>
         {
             var instance = instances.Where(x => x.IslandId == i.Id).OrderByDescending(x => x.StartedAt).FirstOrDefault();
             var state = instance is null ? (i.RuntimeState is "starting" or "restarting" ? i.RuntimeState : "offline") : instance.Status == "running" ? "online" : instance.Status;
             liveLeaseByIsland.TryGetValue(i.Id, out var lease);
-            return new { id = i.Id, name = i.Name, coverImageUrl = i.CoverImageUrl, region = IslandCommerce.RegionOf(i), salePrice = i.SalePrice, rentPrice = i.RentPrice, rentPeriodDays = i.RentPeriodDays, tenant = lease is null ? null : Name(lease.TenantUserId), leaseExpiresAt = lease?.ExpiresAt, leaseId = lease?.Id, state, visitors = instance?.PlayerCount ?? 0, maxPlayers = i.MaxPlayers, objects = counts.GetValueOrDefault(i.Id), maxObjects = LandBudget.IslandObjects(i), size = i.Size, isPublic = i.IsPublic, parcels = parcelsPerIsland.GetValueOrDefault(i.Id), createdAt = i.CreatedAt };
+            return new { id = i.Id, name = i.Name, coverImageUrl = i.CoverImageUrl, region = IslandCommerce.RegionOf(i), salePrice = i.SalePrice, rentPrice = i.RentPrice, rentPeriodDays = i.RentPeriodDays, tenant = lease is null ? null : Name(lease.TenantUserId), leaseExpiresAt = lease?.ExpiresAt, leaseId = lease?.Id, state, visitors = instance?.PlayerCount ?? 0, maxPlayers = i.MaxPlayers, objects = counts.GetValueOrDefault(i.Id), maxObjects = LandBudget.IslandObjects(i), size = i.Size, isPublic = i.IsPublic, parcels = parcelsPerIsland.GetValueOrDefault(i.Id), createdAt = i.CreatedAt,
+                hosting = hostingByIsland.TryGetValue(i.Id, out var host) ? new { plan = host.Plan, status = host.ExpiresAt > now ? "active" : "recovery", expiresAt = host.ExpiresAt, recoveryUntil = host.RecoveryUntil, maxPlayers = host.MaxPlayers, maxObjects = host.MaxObjects } : null };
         }).ToList();
 
         // objects used per parcel, island by island
