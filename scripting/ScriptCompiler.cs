@@ -46,7 +46,7 @@ public static partial class ScriptCompiler
             {
                 var ns = match.Groups["ns"].Value; var fn = match.Groups["fn"].Value;
                 if (ns == "debug" && !DebugAllowed.Contains(fn)) { diagnostics.Add(new("error", line, $"debug.{fn} não existe: só debug.log, debug.warn e debug.error.")); continue; }
-                if (ns is "object" or "chat" or "timer" or "storage" or "region" or "permissions" or "dialog" or "audio" or "script" or "http" or "physics" or "economy" or "inventory" or "avatar" or "hud" && ScriptCatalog.ByNamespace.TryGetValue(ns, out var known) && !known.Contains(fn) && !(ns == "object" && ScriptCatalog.LegacyObject.Contains(fn)))
+                if (ns is "object" or "chat" or "timer" or "storage" or "region" or "permissions" or "dialog" or "audio" or "script" or "http" or "physics" or "economy" or "inventory" or "avatar" or "hud" or "particles" or "light" && ScriptCatalog.ByNamespace.TryGetValue(ns, out var known) && !known.Contains(fn) && !(ns == "object" && ScriptCatalog.LegacyObject.Contains(fn)))
                     diagnostics.Add(new("warning", line, $"{ns}.{fn} não existe na API.{Suggest(fn, known, ns + ".")}"));
             }
         }

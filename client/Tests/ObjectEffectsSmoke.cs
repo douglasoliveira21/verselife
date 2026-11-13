@@ -62,6 +62,19 @@ public partial class ObjectEffectsSmoke : Node3D
             Require(fx.TextsForTesting == 1 && fx.TextOfForTesting(door) == "Olá!", "a new text replaces the old one and a bad colour does not break it");
             fx.OnOperation("{\"operation\":\"text\",\"objectId\":\"" + door + "\",\"text\":\"\",\"color\":\"#FFFFFF\"}");
             Require(fx.TextsForTesting == 0, "an empty text takes it away");
+            // particles and lights from scripts
+            string Fx(string key, bool on, string kind, string preset = "fire", double rate = 30, double lifetime = 1.5, string color = "#FF8000", double radius = 8, bool flicker = false, double x = 1) => System.Text.Json.JsonSerializer.Serialize(new { operation = "effect", key, objectId = door, on, kind, preset, rate, lifetime, size = .5, speed = 2, color, radius, energy = 2, flicker, x, y = 2, z = 3 });
+            fx.OnOperation(Fx("s1:1", true, "particles")); await Frames(2);
+            Require(fx.EmittersForTesting == 1 && fx.EffectForTesting("s1:1") is CpuParticles3D { Emitting: true, Amount: 45 } fire && fire.GlobalPosition.IsEqualApprox(new Vector3(1, 2, 3)) && Mathf.IsEqualApprox(fire.Lifetime, 1.5f), "an emitter is created where the object is, with its numbers");
+            fx.OnOperation(Fx("s1:1", true, "particles", "fire", 60, 6, "#00FF00", x: 9)); Require(fx.EmittersForTesting == 1 && ((CpuParticles3D)fx.EffectForTesting("s1:1")!).Amount == 240 && ((CpuParticles3D)fx.EffectForTesting("s1:1")!).GlobalPosition.X == 9, "the same emitter is updated in place (and follows the object); the amount is capped");
+            fx.OnOperation(Fx("s1:2", true, "particles", "explosion")); Require(((CpuParticles3D)fx.EffectForTesting("s1:2")!).OneShot, "an explosion fires once");
+            fx.OnOperation(Fx("s1:3", true, "light", color: "#FFC46B", radius: 10, flicker: true)); Require(fx.LightsForTesting == 1 && fx.EffectForTesting("s1:3") is OmniLight3D { OmniRange: 10 } lamp && lamp.LightColor.ToHtml(false) == "ffc46b", "a light with its colour and range");
+            fx.OnOperation(Fx("s1:3", true, "light", color: "#FFC46B", radius: 4)); Require(((OmniLight3D)fx.EffectForTesting("s1:3")!).OmniRange == 4 && fx.LightsForTesting == 1, "the light changes in place");
+            fx.OnOperation("{\"operation\":\"effect\",\"key\":\"x\"}"); fx.OnOperation("{\"operation\":\"effect\",\"on\":true}"); fx.OnOperation(Fx(new string('k', 200), true, "particles")); fx.OnOperation(Fx("bad", true, "laser")); Require(fx.EmittersForTesting == 2 && fx.LightsForTesting == 1, "bad messages create nothing");
+            for (var i = 0; i < 80; i++) fx.OnOperation(Fx($"m:{i}", true, "particles", "smoke")); Require(fx.EmittersForTesting == ObjectEffects.MaxEmitters, "the number of emitters is capped");
+            for (var i = 0; i < 30; i++) fx.OnOperation(Fx($"l:{i}", true, "light")); Require(fx.LightsForTesting == ObjectEffects.MaxLights, "and so is the number of lights");
+            fx.OnOperation(Fx("s1:1", false, "particles")); await Frames(2); Require(fx.EffectForTesting("s1:1") is null && fx.EmittersForTesting == ObjectEffects.MaxEmitters - 1, "an effect is taken away when the script says so");
+            fx.ClearEffects(); await Frames(2); Require(fx.EmittersForTesting == 0 && fx.LightsForTesting == 0, "leaving the island clears every effect");
             GD.Print("event=object_effects_smoke result=passed");
             GetTree().Quit();
         }

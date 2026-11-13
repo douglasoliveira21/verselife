@@ -149,6 +149,12 @@ public sealed partial class ScriptHost
         var audio = Namespace("audio");
         audio["play"] = Fn(args => PlaySound(instance, args));
         audio["stop"] = Fn(_ => { world.StopSound(instance.Definition); return DynValue.Nil; });
+        audio["playAtPosition"] = Fn(args =>
+        {
+            var name = Plain(args, 0, "sound name"); var at = Limit(new Vec3(Number(args, 1), Number(args, 2), Number(args, 3))); var volume = Math.Clamp(Number(args, 4, 1f), 0f, 1f);
+            var now = world.Now; while (instance.Sounds.Count > 0 && now - instance.Sounds.Peek() > 10) instance.Sounds.Dequeue(); if (instance.Sounds.Count >= 5) throw new ScriptRuntimeException("audio.playAtPosition: at most 5 calls every 10 seconds"); instance.Sounds.Enqueue(now);
+            return DynValue.NewBoolean(world.PlaySoundAt(instance.Definition, name.Length > 120 ? name[..120] : name, volume, args.Count > 5 && args[5].CastToBool(), at));
+        });
     }
 
     // ---- helpers of the API ----------------------------------------------------------------------------------

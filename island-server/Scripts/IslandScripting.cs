@@ -129,7 +129,7 @@ public sealed partial class IslandScripting : IScriptWorld
         {
             using var document = JsonDocument.Parse(acceptedJson);
             var root = document.RootElement;
-            if (root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object) { var cached = Parse(state); _objects[cached.Id] = cached; UpdateObstacle(cached); }
+            if (root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object) { var cached = Parse(state); _objects[cached.Id] = cached; UpdateObstacle(cached); FollowEffects(cached.Id); }
             else if (root.TryGetProperty("objectId", out var id) && Guid.TryParse(id.GetString(), out var removed)) { _objects.Remove(removed); Obstacles.Remove(removed); ObjectsVersion++; }
             foreach (var listName in new[] { "objects", "healed" }) if (root.TryGetProperty(listName, out var placed) && placed.ValueKind == JsonValueKind.Array) foreach (var one in placed.EnumerateArray()) { var cached = Parse(one); _objects[cached.Id] = cached; UpdateObstacle(cached); } // constructions placed, linksets changed, objects protected or re-hung: every object it carries
         }

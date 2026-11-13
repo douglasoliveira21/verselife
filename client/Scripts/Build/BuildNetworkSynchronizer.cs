@@ -141,7 +141,7 @@ public partial class BuildNetworkSynchronizer : Node
             var operation = root.GetProperty("operation").GetString();
             if (operation is "lock" or "unlock") { LockMessage?.Invoke(operation, root.Clone()); return; }
             if (operation == "live") { ReadLive(root); return; }
-            if (operation is "sound" or "sound_stop" or "text" or "physics" or "script_dialog" or "script_hud") return; // other nodes (or later phases) deal with those; none of them changes the object list
+            if (operation is "sound" or "sound_stop" or "text" or "physics" or "script_dialog" or "script_hud" or "effect") return; // other nodes (or later phases) deal with those; none of them changes the object list
             if (operation == "rez") { if (root.TryGetProperty("objects", out var rezzed)) ApplyList(rezzed); return; }
             if (operation is "structure" or "protect" or "properties") { if (root.TryGetProperty("objects", out var changed)) ApplyList(changed); return; }
             if (operation == "bought")

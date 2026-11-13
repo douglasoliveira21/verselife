@@ -137,6 +137,13 @@ public static class ScriptCatalog
         F("HUD", "hud", "setInput", "hud.setInput(avatarId, id, dica)", "Cria ou muda um campo de texto. Ao confirmar com Enter, o script ouve on_hud_input com element e text.", "nada", "SHOW_HUD, dada pelo avatar", "texto de até 200 caracteres", "id inválido; elementos demais", "hud.setInput(event.avatar.id, 'nome', 'Seu nome')"),
         F("HUD", "hud", "remove", "hud.remove(avatarId, id)", "Tira um elemento do painel.", "nada", "SHOW_HUD, dada pelo avatar", "—", "id inválido", "hud.remove(event.avatar.id, 'status')"),
         F("HUD", "hud", "clear", "hud.clear(avatarId)", "Tira todos os elementos do painel.", "nada", "SHOW_HUD, dada pelo avatar", "—", "sem permissão do avatar", "hud.clear(event.avatar.id)"),
+        // ---- Partículas e luzes ----
+        F("Efeitos", "particles", "create", "particles.create({preset=, rate=, lifetime=, size=, color=, speed=})", "Cria um emissor de partículas no objeto, visível para todos na ilha. Presets: smoke, fire, sparks, rain, snow, explosion, trail, teleport, dust (também aceita texture='smoke' como no exemplo do manual). color é '#RRGGBB' ou {r, g, b} de 0 a 1.", "número (id do emissor)", "—", "até 4 emissores por script e 12 por pessoa; 10 criações a cada 10 s; rate 1 a 60 por segundo, lifetime 0,2 a 6 s, size 0,05 a 2 m, speed 0 a 10", "preset desconhecido; emissores demais; número inválido", "particles.create({preset='fire', rate=30, lifetime=1.5, size=0.5, color={1, 0.5, 0}, speed=2})"),
+        F("Efeitos", "particles", "stop", "particles.stop(id)", "Para um emissor.", "verdadeiro se existia", "—", "—", "—", "particles.stop(fumaca)"),
+        F("Efeitos", "particles", "stopAll", "particles.stopAll()", "Para todos os emissores do script.", "quantos pararam", "—", "—", "—", "particles.stopAll()"),
+        F("Efeitos", "light", "set", "light.set({color=, radius=, energy=, flicker=})", "Põe uma luz no objeto (uma por script); chamar de novo a muda.", "nada", "—", "radius 0,5 a 30 m; energy 0 a 8", "número inválido", "light.set({color='#FFC46B', radius=10, energy=2, flicker=true})"),
+        F("Efeitos", "light", "off", "light.off()", "Apaga a luz do script.", "nada", "—", "—", "—", "light.off()"),
+        F("Áudio", "audio", "playAtPosition", "audio.playAtPosition(nome, x, y, z, volume, repetir)", "Toca um som que está no Conteúdo do objeto num ponto da ilha (som 3D: some com a distância).", "verdadeiro se o objeto tem esse som", "—", "5 chamadas a cada 10 s; ±5000 m", "—", "audio.playAtPosition('Alarme', 10, 1, 20, 0.8)"),
         // ---- Tempo ----
         F("Tempo", "lv", "time", "lv.time()", "O relógio da ilha, em segundos.", "número", "—", "—", "—", "local agora = lv.time()"),
     ];
@@ -176,6 +183,10 @@ public static class ScriptCatalog
         new("on_hud_click", "O jogador clicou num botão do HUD do script.", "avatar_id, avatar.id, avatar.name, element", "function on_hud_click(event) if event.element == 'ativar' then chat.say('ligado') end end"),
         new("on_hud_input", "O jogador confirmou um campo de texto do HUD.", "avatar_id, avatar.id, avatar.name, element, text", "function on_hud_input(event) chat.say(event.text) end"),
         new("on_hud_closed", "O jogador fechou o HUD do script no X.", "avatar_id, avatar.id, avatar.name", "function on_hud_closed(event) end"),
+        new("on_collision_enter", "O corpo físico do objeto bateu em algo (outro objeto ou o terreno). Só objetos dinâmicos (physics.setDynamic) e só batidas com velocidade acima de 0,3 m/s; no máximo 10 por segundo.", "entity.type (object ou ground), entity.id, entity.name, speed", "function on_collision_enter(event) chat.say(event.entity.name) end"),
+        new("on_collision", "O mesmo que on_collision_enter.", "os mesmos de on_collision_enter", "function on_collision(event) end"),
+        new("on_collision_exit", "O corpo físico do objeto deixou de tocar em algo.", "entity.type, entity.id, entity.name, speed", "function on_collision_exit(event) end"),
+        new("on_land_collision", "O corpo físico do objeto bateu no terreno.", "entity (type ground), speed", "function on_land_collision(event) chat.say('pousou') end"),
         new("on_dialog_response", "Um avatar respondeu a um diálogo.", "avatar_id, response, input, request_id", "function on_dialog_response(event) chat.say(event.response) end"),
         new("on_permission_granted", "Um avatar concedeu (ou já tinha concedido) uma permissão.", "avatar_id, permission", "function on_permission_granted(event) end"),
         new("on_permission_denied", "Um avatar negou uma permissão.", "avatar_id, permission", "function on_permission_denied(event) end"),

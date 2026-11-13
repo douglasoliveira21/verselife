@@ -41,6 +41,10 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_hud_click` | O jogador clicou num botão do HUD do script. | avatar_id, avatar.id, avatar.name, element |
 | `on_hud_input` | O jogador confirmou um campo de texto do HUD. | avatar_id, avatar.id, avatar.name, element, text |
 | `on_hud_closed` | O jogador fechou o HUD do script no X. | avatar_id, avatar.id, avatar.name |
+| `on_collision_enter` | O corpo físico do objeto bateu em algo (outro objeto ou o terreno). Só objetos dinâmicos (physics.setDynamic) e só batidas com velocidade acima de 0,3 m/s; no máximo 10 por segundo. | entity.type (object ou ground), entity.id, entity.name, speed |
+| `on_collision` | O mesmo que on_collision_enter. | os mesmos de on_collision_enter |
+| `on_collision_exit` | O corpo físico do objeto deixou de tocar em algo. | entity.type, entity.id, entity.name, speed |
+| `on_land_collision` | O corpo físico do objeto bateu no terreno. | entity (type ground), speed |
 | `on_dialog_response` | Um avatar respondeu a um diálogo. | avatar_id, response, input, request_id |
 | `on_permission_granted` | Um avatar concedeu (ou já tinha concedido) uma permissão. | avatar_id, permission |
 | `on_permission_denied` | Um avatar negou uma permissão. | avatar_id, permission |
@@ -982,6 +986,19 @@ O mesmo que audio.stop.
 object.stop_sound()
 ```
 
+### `audio.playAtPosition(nome, x, y, z, volume, repetir)`
+
+Toca um som que está no Conteúdo do objeto num ponto da ilha (som 3D: some com a distância).
+
+- **Retorna:** verdadeiro se o objeto tem esse som
+- **Permissão:** —
+- **Limites:** 5 chamadas a cada 10 s; ±5000 m
+- **Erros possíveis:** —
+
+```lua
+audio.playAtPosition('Alarme', 10, 1, 20, 0.8)
+```
+
 ## Física
 
 ### `physics.setEnabled(verdadeiro)`
@@ -1395,6 +1412,73 @@ Tira todos os elementos do painel.
 
 ```lua
 hud.clear(event.avatar.id)
+```
+
+## Efeitos
+
+### `particles.create({preset=, rate=, lifetime=, size=, color=, speed=})`
+
+Cria um emissor de partículas no objeto, visível para todos na ilha. Presets: smoke, fire, sparks, rain, snow, explosion, trail, teleport, dust (também aceita texture='smoke' como no exemplo do manual). color é '#RRGGBB' ou {r, g, b} de 0 a 1.
+
+- **Retorna:** número (id do emissor)
+- **Permissão:** —
+- **Limites:** até 4 emissores por script e 12 por pessoa; 10 criações a cada 10 s; rate 1 a 60 por segundo, lifetime 0,2 a 6 s, size 0,05 a 2 m, speed 0 a 10
+- **Erros possíveis:** preset desconhecido; emissores demais; número inválido
+
+```lua
+particles.create({preset='fire', rate=30, lifetime=1.5, size=0.5, color={1, 0.5, 0}, speed=2})
+```
+
+### `particles.stop(id)`
+
+Para um emissor.
+
+- **Retorna:** verdadeiro se existia
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+particles.stop(fumaca)
+```
+
+### `particles.stopAll()`
+
+Para todos os emissores do script.
+
+- **Retorna:** quantos pararam
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+particles.stopAll()
+```
+
+### `light.set({color=, radius=, energy=, flicker=})`
+
+Põe uma luz no objeto (uma por script); chamar de novo a muda.
+
+- **Retorna:** nada
+- **Permissão:** —
+- **Limites:** radius 0,5 a 30 m; energy 0 a 8
+- **Erros possíveis:** número inválido
+
+```lua
+light.set({color='#FFC46B', radius=10, energy=2, flicker=true})
+```
+
+### `light.off()`
+
+Apaga a luz do script.
+
+- **Retorna:** nada
+- **Permissão:** —
+- **Limites:** —
+- **Erros possíveis:** —
+
+```lua
+light.off()
 ```
 
 ## Tempo

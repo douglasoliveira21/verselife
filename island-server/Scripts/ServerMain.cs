@@ -197,6 +197,7 @@ public partial class ServerMain : Node
             SendAllVehicles(peerId);
             SendLocks(peerId);
             if (_scripting is not null) foreach (var text in _scripting.TextOps()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, text); // the floating texts that scripts put on objects
+            if (_scripting is not null) foreach (var effect in _scripting.EffectOps()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, effect); // the particles and lights scripts keep going
             if (_physics is not null) foreach (var pose in _physics.PoseMessages()) _bridge.RpcId(peerId, NetworkBridge.MethodName.BuildOperationApplied, pose); // where the bodies of the simulation are now
             Log("peer_authenticated", new { peerId, admission.UserId, admission.AvatarId });
             if (admission.TransferId is { } trip) _ = ConfirmArrivalAsync(peerId, trip, _shutdown.Token); // a person who travelled: the API completes the trip only when this island says they are here
@@ -272,7 +273,7 @@ public partial class ServerMain : Node
         _scripting.SendToAvatar = (avatarId, json) => { foreach (var target in _players.Values.Where(x => x.Authenticated && x.AvatarId == avatarId)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, json); };
         _physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(_physics);
         _physics.Initialize(message => { foreach (var target in _players.Values.Where(x => x.Authenticated)) _bridge.RpcId(target.PeerId, NetworkBridge.MethodName.BuildOperationApplied, message); });
-        _scripting.AnimationPlayer = PlayScriptGesture; _scripting.AnimationStopper = StopScriptGesture;
+        _scripting.AnimationPlayer = PlayScriptGesture; _scripting.AnimationStopper = StopScriptGesture; _physics.Contacted = _scripting.OnContact;
         _scripting.PhysicsAction = (id, action, v) => { if (_physics.BodyOf(id) is not { } body) return false; var vector = new Vector3(v.X, v.Y, v.Z); switch (action) { case "impulse": body.ApplyCentralImpulse(vector); break; case "velocity": body.LinearVelocity = vector; break; case "angular": body.AngularVelocity = vector; break; case "gravity": body.GravityScale = v.X; break; default: return false; } body.Sleeping = false; return true; };
         _scripting.VelocityOf = id => _physics.BodyOf(id) is { } body ? new LifeVerse.Scripting.Vec3(body.LinearVelocity.X, body.LinearVelocity.Y, body.LinearVelocity.Z) : null;
         try { await _scripting.RefreshAsync(ct); }

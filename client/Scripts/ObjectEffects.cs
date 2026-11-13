@@ -46,7 +46,7 @@ public partial class ObjectEffects : Node
     {
         foreach (var player in _players.Values) if (IsInstanceValid(player)) player.QueueFree();
         foreach (var label in _labels.Values) if (IsInstanceValid(label)) label.QueueFree();
-        _players.Clear(); _labels.Clear(); _waiting.Clear();
+        _players.Clear(); _labels.Clear(); _waiting.Clear(); ClearEffects();
     }
 
     public void OnOperation(string json)
@@ -55,6 +55,7 @@ public partial class ObjectEffects : Node
         {
             using var document = JsonDocument.Parse(json); var root = document.RootElement;
             var operation = root.GetProperty("operation").GetString();
+            if (operation == "effect") { OnEffect(root); return; }
             if (operation is not ("sound" or "sound_stop" or "text")) return;
             if (!Guid.TryParse(root.GetProperty("objectId").GetString(), out var objectId)) return;
             switch (operation)

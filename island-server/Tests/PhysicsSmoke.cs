@@ -14,7 +14,7 @@ public partial class PhysicsSmoke : Node
         try
         {
             var sent = new List<string>();
-            var physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(physics); physics.Initialize(sent.Add);
+            var physics = new ServerPhysics { Name = "ServerPhysics" }; AddChild(physics); physics.Initialize(sent.Add); var contacts = new List<(Guid Self, Guid? Other, bool Entered, float Speed)>(); physics.Contacted = (self, other, entered, speed) => contacts.Add((self, other, entered, speed));
             var terrain = new TerrainMap(); // flat ground
             physics.SetTerrain(terrain); await Frames(2);
             Require(physics.HasGround, "the terrain becomes the ground");
@@ -36,6 +36,7 @@ public partial class PhysicsSmoke : Node
             await Seconds(9);
             var rest = physics.BodyOf(ball)!;
             Require(MathF.Abs(rest.GlobalPosition.Y - (ground + .5f)) < .15f, $"the ball rests on the ground with its radius above it (y={rest.GlobalPosition.Y}, ground={ground})");
+            Require(contacts.Any(c => c.Self == ball && c.Other is null && c.Entered && c.Speed > .3f), $"the ball falling onto the ground is reported as a hit on the ground (contacts: {contacts.Count})");
             Require(sent.Count > 0 && sent.Any(m => m.Contains("\"operation\":\"physics\"") && m.Contains(ball.ToString())), "poses are announced to the players");
             Require(sent.Last().Contains("\"asleep\":true"), "the last announcement says the body went to sleep");
 

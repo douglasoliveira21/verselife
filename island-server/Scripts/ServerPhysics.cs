@@ -105,7 +105,8 @@ public partial class ServerPhysics : Node3D
         var scale = new Vector3(def.Scale.X, def.Scale.Y, def.Scale.Z); var signature = SignatureOf(def, settings);
         if (!_bodies.TryGetValue(def.Id, out var body))
         {
-            body = new Dynamic { Node = new RigidBody3D { Name = "Body_" + def.Id.ToString("N"), CollisionLayer = 1, CollisionMask = 1, ContinuousCd = true, CanSleep = true }, Mesh = mesh };
+            body = new Dynamic { Node = new RigidBody3D { Name = "Body_" + def.Id.ToString("N"), CollisionLayer = 1, CollisionMask = 1, ContinuousCd = true, CanSleep = true, ContactMonitor = true, MaxContactsReported = 6 }, Mesh = mesh };
+            var self = def.Id; body.Node.BodyEntered += other => Contact(self, other, true); body.Node.BodyExited += other => Contact(self, other, false);
             AddChild(body.Node); _bodies[def.Id] = body;
             body.Node.GlobalTransform = stored; body.Stored = stored; body.SentPosition = stored.Origin; body.SentRotation = stored.Basis.GetRotationQuaternion();
         }
@@ -197,5 +198,17 @@ public partial class ServerPhysics : Node3D
     }
 
     /// <summary>For tests: the body of an object, when there is one.</summary>
+    /// <summary>A simulated body touched (or left) something: the object it is, what it touched (another object, or null for the ground) and how fast it was going. Set by the server to tell the scripts of the object.</summary>
+    public Action<Guid, Guid?, bool, float>? Contacted { get; set; }
+
+    private void Contact(Guid self, Node other, bool entered)
+    {
+        if (Contacted is null) return;
+        Guid? id = null; var ground = ReferenceEquals(other, _ground);
+        if (!ground) { id = _bodies.FirstOrDefault(p => ReferenceEquals(p.Value.Node, other)).Key; if (id == Guid.Empty) id = _fixed.FirstOrDefault(p => ReferenceEquals(p.Value.Node, other)).Key; if (id == Guid.Empty) return; }
+        var speed = _bodies.TryGetValue(self, out var body) && IsInstanceValid(body.Node) ? body.Node.LinearVelocity.Length() : 0f;
+        Contacted(self, id, entered, speed);
+    }
+
     public RigidBody3D? BodyOf(Guid id) => _bodies.TryGetValue(id, out var body) ? body.Node : null;
 }

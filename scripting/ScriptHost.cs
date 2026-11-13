@@ -62,6 +62,10 @@ public interface IScriptWorld
     void StopAnimation(ScriptDefinition script, Guid avatarId) { }
     /// <summary>Shows, updates or hides the HUD of a script on the screen of an avatar (the whole picture each time; a hidden one is removed).</summary>
     void ShowHud(ScriptDefinition script, Guid avatarId, HudSnapshot hud) { }
+    /// <summary>Starts, changes or removes an emitter of particles or a light on the object of a script (everybody on the island sees it).</summary>
+    void SetEffect(ScriptDefinition script, EffectSpec effect) { }
+    /// <summary>Plays a sound that is in the object at a chosen point of the island. False when the object has no such sound.</summary>
+    bool PlaySoundAt(ScriptDefinition script, string soundName, float volume, bool loop, Vec3 position) => false;
     /// <summary>What the object carries in its Conteúdo (sounds, textures, notes...), read only.</summary>
     IReadOnlyList<ScriptItem> GetContents(Guid objectId) => [];
     /// <summary>The velocity of the simulated body of the object, or null when it is not simulated.</summary>
@@ -87,7 +91,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         ["timer"] = ["on_timer"], ["chat"] = ["on_chat"], ["message"] = ["on_message", "on_object_message"], ["region_restart"] = ["on_region_restart", "on_region_start"],
         ["reset"] = ["on_reset"], ["destroy"] = ["on_destroy"], ["enable"] = ["on_enable"], ["disable"] = ["on_disable"], ["owner_changed"] = ["on_owner_changed"], ["region_shutdown"] = ["on_region_shutdown"],
         ["interval"] = ["on_interval"], ["delay_complete"] = ["on_delay_complete"], ["link_message"] = ["on_link_message"], ["script_error"] = ["on_script_error"], ["dialog_response"] = ["on_dialog_response"],
-        ["http_response"] = ["on_http_response"], ["payment"] = ["on_payment"], ["hud_click"] = ["on_hud_click"], ["hud_input"] = ["on_hud_input"], ["hud_closed"] = ["on_hud_closed"], ["animation_finished"] = ["on_animation_finished"], ["inventory_changed"] = ["on_inventory_changed"], ["item_added"] = ["on_item_added"], ["item_removed"] = ["on_item_removed"], ["payment_failed"] = ["on_payment_failed"], ["permission_granted"] = ["on_permission_granted"], ["permission_denied"] = ["on_permission_denied"]
+        ["http_response"] = ["on_http_response"], ["payment"] = ["on_payment"], ["collision_enter"] = ["on_collision_enter", "on_collision"], ["collision_exit"] = ["on_collision_exit"], ["land_collision"] = ["on_land_collision"], ["hud_click"] = ["on_hud_click"], ["hud_input"] = ["on_hud_input"], ["hud_closed"] = ["on_hud_closed"], ["animation_finished"] = ["on_animation_finished"], ["inventory_changed"] = ["on_inventory_changed"], ["item_added"] = ["on_item_added"], ["item_removed"] = ["on_item_removed"], ["payment_failed"] = ["on_payment_failed"], ["permission_granted"] = ["on_permission_granted"], ["permission_denied"] = ["on_permission_denied"]
     };
     /// <summary>The names of every function the host calls when something happens (what a script can define).</summary>
     public static IReadOnlyCollection<string> KnownHandlers { get; } = Handlers.Values.SelectMany(x => x).ToHashSet();
@@ -126,6 +130,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         public Queue<double> LinkMessages { get; } = new();
         public Queue<double> Directs { get; } = new();
         public Queue<double> Pushes { get; } = new();
+        public int NextEffectId { get; set; } = 1;
         public List<ScriptLogEntry> Logs { get; } = [];
         public bool InHandler { get; set; }
         public string? CurrentEvent { get; set; }
@@ -223,7 +228,7 @@ public sealed partial class ScriptHost(IScriptWorld world, ScriptHostOptions? op
         var lv = new Table(script) { ["object"] = objectApi };
         lv["time"] = DynValue.NewCallback((_, _) => DynValue.NewNumber(world.Now));
         script.Globals["lv"] = lv;
-        InstallExtendedApi(instance); InstallHttpApi(instance); InstallPhysicsApi(instance); InstallEconomyApi(instance); InstallInventoryApi(instance); InstallAvatarApi(instance); InstallHudApi(instance);
+        InstallExtendedApi(instance); InstallHttpApi(instance); InstallPhysicsApi(instance); InstallEconomyApi(instance); InstallInventoryApi(instance); InstallAvatarApi(instance); InstallHudApi(instance); InstallEffectsApi(instance);
     }
 
     private void Say(Instance instance, string text)
