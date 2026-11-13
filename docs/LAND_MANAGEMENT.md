@@ -218,4 +218,4 @@ Produção: publicar API, servidor de ilha e jogo juntos, com as migrações Pha
 - "Visitar" em um terreno (Minhas Propriedades: terrenos e contratos de terreno; Mercado Imobiliário: anúncios de terreno) leva ao **terreno**, não só à ilha. Ilhas continuam indo para a ilha.
 - Na mesma ilha, o avatar pede o teleporte ao terreno na hora (`LandManager.TeleportToParcel`). Em outra ilha, o cliente entra nela e guarda o terreno em `SearchTravel.SetParcel`; quando o avatar aparece lá, pede o teleporte (o mesmo caminho da busca global, que guarda um ponto em vez de um terreno).
 - As regras do servidor da ilha continuam valendo: terreno que não aceita teleporte ou sem acesso responde com a mensagem de sempre ("Você não pode entrar nesse terreno."). Quem pede outra ilha no meio do caminho esquece o terreno guardado.
-- "Sobre este Terreno" ainda não tem botão Visitar.
+- **Sobre este Terreno** tem o botão **Visitar** no cabeçalho (vale para todas as abas). Terreno privado fica desligado para quem não é dono, locatário ou da administração; terreno que não aceita teleporte leva só até a ilha, com um aviso.

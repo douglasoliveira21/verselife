@@ -73,6 +73,27 @@ public partial class ParcelInfoWindow : Node
     /// <summary>Opens the land selection window on this parcel (the older window that cuts and joins land).</summary>
     public Action<Guid>? OpenLandWindow { get; set; }
     public Action<Guid>? Visit { get; set; }
+    /// <summary>Goes to this parcel (island, parcel): the avatar is taken there, joining the island first when it is another one.</summary>
+    public Action<Guid, Guid>? VisitParcel { get; set; }
+    private Button _visit = null!;
+    public bool VisitEnabledForTesting => !_visit.Disabled;
+    public string VisitTipForTesting => _visit.TooltipText;
+    public void VisitForTesting() => VisitHere();
+
+    /// <summary>Who may be sent to the parcel: a private one only takes its owner, its tenant and the staff of the island.</summary>
+    private void RefreshVisit()
+    {
+        var closed = Str(About.GetProperty("parcel"), "accessMode") == "private" && !Can("canManage") && !Can("isTenant") && !Can("isStaff");
+        _visit.Disabled = closed; _visit.TooltipText = closed ? "Este terreno é privado: só o dono e quem aluga entram." : "Ir até este terreno.";
+    }
+
+    private void VisitHere()
+    {
+        if (!_loaded || _visit.Disabled) return;
+        if (Str(About.GetProperty("parcel"), "teleportMode") == "disabled" || VisitParcel is null) { if (VisitParcel is not null) Notify("Este terreno não aceita teleportes: você vai para a ilha."); Visit?.Invoke(_island); }
+        else VisitParcel(_island, _parcel);
+        RequestClose();
+    }
 
     public bool IsOpen => _root is not null && _root.Visible;
     public Guid ParcelId => _parcel;
@@ -168,6 +189,7 @@ public partial class ParcelInfoWindow : Node
         var identity = IslandUi.Column(4); identity.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter; identity.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; row.AddChild(identity);
         _title = IslandUi.Text("Carregando…", 24, IslandUi.TextPrimary, true); identity.AddChild(_title);
         var sub = IslandUi.Row(12); _subtitle = IslandUi.Text("", 15, IslandUi.TextSecondary); sub.AddChild(_subtitle); _statePill = new Control(); sub.AddChild(_statePill); identity.AddChild(sub);
+        _visit = IslandUi.Action("Visitar", "pin", IslandUi.Kind.Secondary, 40); _visit.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter; _visit.Pressed += VisitHere; _visit.Disabled = true; row.AddChild(_visit);
         return bar;
     }
 
@@ -218,7 +240,7 @@ public partial class ParcelInfoWindow : Node
             _loaded = false; _note.Text = reply.Status == 404 ? "O servidor ainda não tem os detalhes deste terreno. Eles chegam com a próxima publicação da API." : reply.Status == 0 ? "Sem conexão com o servidor." : LandManagementApi.Words(reply);
             foreach (var child in _content.GetChildren()) child.QueueFree(); return;
         }
-        _about = reply.Body.Clone(); _loaded = true; _note.Text = ""; Fill(); Render();
+        _about = reply.Body.Clone(); _loaded = true; _note.Text = ""; Fill(); RefreshVisit(); Render();
     }
 
     private void Fill()

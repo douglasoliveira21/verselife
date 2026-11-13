@@ -173,6 +173,21 @@ public partial class ParcelInfoSmoke : Node3D
             server.Owner = false; server.Rent = 800; await window.LoadAsync(); window.SelectTabForTesting("venda"); await Frames(2); Require(window.HasButtonForTesting("Alugar") && !window.HasButtonForTesting("Comprar"), "a rent offer shows Alugar");
             Require(await window.RentForTesting(2), "renting works"); await Frames(3); Require(server.Leased && server.Tenant, "the visitor became the tenant");
 
+            // --- visiting ----------------------------------------------------------------------------------------------------------------------------------
+            server.Owner = false; server.Tenant = false; server.Leased = false; await window.LoadAsync(); await Frames(2);
+            (Guid Island, Guid Parcel)? went = null; Guid? islandOnly = null; window.VisitParcel = (i, p) => went = (i, p); window.Visit = i => islandOnly = i;
+            Require(window.VisitEnabledForTesting, "a public parcel can be visited");
+            window.VisitForTesting(); Require(went == (Island, Parcel) && islandOnly is null && !window.IsOpen, "Visitar goes to the parcel and closes the window");
+            await window.OpenAsync(Island, Parcel); await Frames(3);
+            server.Teleport = "disabled"; await window.LoadAsync(); await Frames(2); went = null;
+            window.VisitForTesting(); Require(went is null && islandOnly == Island, "a parcel that takes no teleports sends the person to the island instead");
+            await window.OpenAsync(Island, Parcel); await Frames(3); server.Teleport = "free";
+            server.AccessMode = "private"; await window.LoadAsync(); await Frames(2); islandOnly = null;
+            Require(!window.VisitEnabledForTesting && window.VisitTipForTesting.Contains("privado"), "a private parcel cannot be visited by a stranger");
+            window.VisitForTesting(); Require(went is null && islandOnly is null && window.IsOpen, "and pressing does nothing");
+            server.Tenant = true; await window.LoadAsync(); await Frames(2); Require(window.VisitEnabledForTesting, "its tenant can");
+            server.Tenant = false; server.Owner = true; server.AccessMode = "public"; await window.LoadAsync(); await Frames(2);
+
             // --- trouble ----------------------------------------------------------------------------------------------------------------------------------
             server.Gone = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("ainda não tem os detalhes"), $"an old server is told apart (got {window.NoteForTesting})");
             server.Gone = false; server.Down = true; await window.LoadAsync(); await Frames(2); Require(window.NoteForTesting.Contains("Sem conexão"), "no connection is said");
