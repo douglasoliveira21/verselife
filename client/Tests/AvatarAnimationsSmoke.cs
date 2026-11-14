@@ -30,6 +30,7 @@ public partial class AvatarAnimationsSmoke : Node
     {
         try
         {
+            DefaultAvatarAnimations.BytesForTesting = new byte[] { 0 }; DefaultAvatarAnimations.Reset();      // these checks are about the game's own animations and the person's files, not the default clips
             var root = new Node3D(); AddChild(root);
             var rig = GD.Load<PackedScene>("res://Scenes/AvatarRig.tscn").Instantiate<AvatarRig>(); root.AddChild(rig);
             await Frames(5);

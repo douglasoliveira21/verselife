@@ -193,3 +193,52 @@ Antes, o nível "Reduzido" desenhava o corpo personalizado com **todos** os tri�
 **Limitações:** a simplificação considera a pose de repouso (não os pesos dos ossos), então articulações muito detalhadas podem ficar um pouco mais angulosas ao dobrar; nada foi visto em captura de tela; o resultado depende de o build do engine incluir o simplificador (o editor e os smokes incluem; num build exportado sem ele o corpo simplesmente segue com todos os triângulos).
 
 **Limpeza:** o `LocomotionSolver.cs` (sem nenhum uso) foi removido.
+
+## Animações padrão do jogo para corpo personalizado (Mixamo)
+
+O jogo agora carrega, como recurso do cliente, um arquivo com as animações do Mixamo (`client/Assets/animations/default_avatar_animations.bin`, um GLB de 0,8 MB; a extensão `.bin` evita que o Godot o importe e ele entra no pacote pelo filtro de inclusão do `export_presets.cfg`). Um **corpo personalizado** toca essas animações onde a pessoa não escolheu nada; antes ele só copiava os movimentos do boneco procedural.
+
+| Estado do jogo | Animação do arquivo |
+|---|---|
+| Parado (`Idle`) | Idle |
+| Andar (`Walk`) | Walk_formal (KinemIQ, retargetado) |
+| Correr (`Run`) | Running |
+| Pular (`Jump`) | Jump (toca uma vez; sem subir o quadril, porque a física já faz o salto) |
+| Cair (`Fall`) | Falling |
+| Voar parado e voar (`FlyIdle`, `FlyMove`) | Flying (a mesma para os dois) |
+
+O arquivo também guarda **Walking Backwards**, **Falling Flat Impact** (`FallFlat`) e **Male Dynamic Pose** (`DynamicPose`), mas **nenhum estado do jogo as usa ainda**: não existe andar de costas (o avatar sempre vira para onde anda), o `Landing` do jogo é um amortecimento de 0,35 s (a queda deitada do Mixamo termina com o corpo no chão e prenderia o avatar deitado) e a pose estática não tem estado. Os demais estados (sentar, nadar, dançar, acenar…) continuam com as animações do jogo.
+
+**Regras:** a animação que a pessoa escolheu (arquivo próprio ou alternativa da biblioteca) sempre vence a padrão; o corpo procedural não muda; a animação padrão só toca de perto (nível de detalhe completo). Se o arquivo não carregar, tudo volta ao que era. Os clipes estão em metros, no lugar (o jogo move o avatar) e o quadril só sobe e desce.
+
+**Como refazer o arquivo:** `blender -b --python tools/blender/build_default_avatar_animations.py -- <pasta com os .fbx> <saida.glb>`, e copiar a saída para o `.bin`. O Blender importa os FBX, passa a escala de centímetros para metros, tira a elevação do quadril do pulo e exporta um GLB com uma animação por clipe.
+
+**Testes:** `AvatarDefaultAnimationsSmoke` (o arquivo carrega com 6 clipes, cada estado tem o seu, os outros não, a escolha da pessoa vence, sem arquivo nada quebra, e um corpo personalizado com esqueleto Mixamo toca o clipe de correr com as pernas em oposição); `AvatarAnimationsSmoke` e `AvatarCustomSmoke` desligam os padrões para continuar medindo as animações do jogo. A conferência visual do corpo real da pessoa ainda é no jogo aberto.
+
+**Transição entre animações (corpo personalizado).** Antes, trocar de estado era um corte seco. Agora, a cada mudança de estado (ou de animação própria para a do jogo), o corpo faz uma **mistura suave de 0,22 s** (curva de entrada e saída) entre a pose que ele tinha e a nova, osso a osso, incluindo a subida e descida do quadril. Vale para clipe → clipe e para clipe ↔ animação do jogo. O corpo procedural já usava a mistura da árvore de animação. O smoke `AvatarDefaultAnimationsSmoke` confere que logo após a troca a pose ainda está perto da antiga, que a mistura termina e que a animação nova assume por completo. Para mudar a duração: `AvatarRig.BlendSeconds`.
+
+**Queda e andar de costas (corpo personalizado).**
+- O clipe **Falling** do Mixamo só toca quando a pessoa **parou o voo no alto** e está caindo. Uma queda depois de um pulo, ou ao sair de uma borda, **não** o usa: continua a animação do jogo (o clipe de pular cobre a subida). O corpo lembra se a queda começou no voo (`FlyIdle`/`FlyMove` → `Fall`) e deixa de lembrar ao tocar o chão, pousar ou pular.
+- **Andar de costas:** com **S** ou a **seta para trás** (sem W), andando ou correndo, o corpo continua olhando para a frente (os controles já funcionam assim) e toca o clipe **Walking Backwards**. É o estado novo `WalkBack`, acrescentado no fim do enum para nenhum número mudar. Ele existe **só no avatar do próprio jogador**: não viaja pela rede (os outros jogadores veem o avatar virado para onde ele anda, como antes) e não tem animação própria escolhível no editor. No boneco procedural usa a animação de andar.
+
+**Descida do pulo e queda chapada (corpo personalizado).**
+- **Pulo em duas partes:** ao subir toca **Jump**; ao descer (uma queda que não veio do voo, seja depois de um pulo ou ao sair de uma borda) toca **Jumping Down**, um clipe curto de 0,4 s que **segura a última pose** até o avatar pousar. A queda comprida do Mixamo (**Falling**) continua só para quando o voo é interrompido no alto.
+- **Queda chapada (Falling Flat Impact):** se o avatar cai porque **parou de voar no alto** e toca o chão, ele faz a queda e fica deitado por 1,6 s (os controles ficam travados nesse tempo: sem andar, pular ou voar) e depois levanta, com uma mistura de 0,7 s da pose deitada para a parada. Pousar voando devagar (descendo com a tecla de descer) **não** faz isso, e o boneco procedural toca só o pouso do jogo. Estado novo `FlatImpact`, no fim do enum, só no avatar do próprio jogador (não viaja pela rede, como o andar de costas).
+- O arquivo de animações do jogo tem agora 9 clipes usados e a pose "Male Dynamic Pose" ainda sem estado.
+
+**Andar, voo parado e água.** O clipe de andar é o **Walking (1)** do Mixamo (uma tentativa com o `Walk_formal` do KinemIQ, retargetado no Blender, foi trocada por ele). O voo parado usa **Floating** (o voo andando continua com **Flying**), e na água o avatar nada com **Swimming** e, quando não vai a lugar nenhum, fica com **Treading Water**. Para isso existe o estado novo `SwimIdle`, no fim do enum: o jogo já só avisava "nadando" pela rede, então **cada cliente decide** se o avatar está parado na água pela velocidade (abaixo de 0,3 m/s), e vale também para os outros jogadores, sem mudar o protocolo. No boneco procedural, parado na água usa a animação de nadar.
+
+| Estado do jogo | Animação do arquivo |
+|---|---|
+| Parado | Idle |
+| Andar | Walking (1) |
+| Andar de costas (`WalkBack`) | Walking Backwards |
+| Correr | Running |
+| Pular / descer do pulo | Jump / Jumping Down |
+| Queda do voo / queda chapada (`FlatImpact`) | Falling / Falling Flat Impact |
+| Voar parado / voar (`FlyIdle` / `FlyMove`) | Floating / Flying |
+| Nadar / parado na água (`Swim` / `SwimIdle`) | Swimming / Treading Water |
+
+Sem estado até agora: **Male Dynamic Pose**. O arquivo tem 1,2 MB e 13 clipes.
+
+**Som de passos.** Enquanto um avatar anda, corre ou anda de costas no chão, toca uma gravação de tênis em concreto (`client/Assets/audio/footsteps_concrete.mp3`, 164 KB) em 3D no pé dele: some com a distância (até 28 m), então os passos dos outros jogadores e dos NPCs são ouvidos quando estão perto. É um loop só, não preso a cada passo da animação (cada avatar começa num ponto diferente); correndo toca 45% mais rápido, de costas um pouco mais devagar, e some em fade quando o avatar para. Não toca pulando, caindo, voando, nadando nem sentado. Vale para o boneco padrão e para corpos personalizados. Para desligar em código: `AvatarRig.FootstepsEnabled = false` (ainda não há opção no menu de som).

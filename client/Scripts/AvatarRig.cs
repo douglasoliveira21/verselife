@@ -28,6 +28,7 @@ public partial class AvatarRig : Node3D
 
     public override void _Ready()
     {
+        DefaultAvatarAnimations.Preload();      // read the game's own clips in the background, not in the middle of the first walk
         BuildSkeleton();
         BuildAnimationSystem();
         ApplyAppearance(AvatarAppearanceDataFallback());
@@ -135,15 +136,17 @@ public partial class AvatarRig : Node3D
         if (_overrideState is not null && Time.GetTicksMsec() / 1000.0 < _overrideUntil && !force) return;
         if (_overrideState is not null && Time.GetTicksMsec() / 1000.0 >= _overrideUntil) { _overrideState = null; _overridePriority = 0; }
         if (!force && state == _state) return;
+        if (state == AvatarMotionState.Fall) _fallFromFlight = _state is AvatarMotionState.FlyIdle or AvatarMotionState.FlyMove || (_fallFromFlight && _state == AvatarMotionState.Fall); else _fallFromFlight = false;
         _state = state;
         if (_playback is not null) _playback.Travel(Effective(state));
+        UpdateFootsteps();
     }
 
     public bool SetAnimationOverride(AvatarMotionState state, float duration, int priority = 1)
     {
         if (duration <= 0 || priority < _overridePriority) return false;
         _overrideState = state; _overridePriority = priority; _overrideUntil = Time.GetTicksMsec() / 1000.0 + Math.Clamp(duration, .05f, 30f);
-        _state = state; _playback?.Travel(Effective(state));
+        _state = state; _playback?.Travel(Effective(state)); UpdateFootsteps();
         return true;
     }
 
@@ -177,7 +180,7 @@ public partial class AvatarRig : Node3D
         _tree = new AnimationTree { Name = "AnimationTree", AnimPlayer = new NodePath("../AnimationPlayer") };
         AddChild(_tree);
         var machine = new AnimationNodeStateMachine();
-        var names = Enum.GetValues<AvatarMotionState>().Select(StateName).Concat(AlternativeNames()).ToArray();
+        var names = Enum.GetValues<AvatarMotionState>().Select(StateName).Distinct().Concat(AlternativeNames()).ToArray();
         foreach (var name in names) machine.AddNode(name, new AnimationNodeAnimation { Animation = name });
         foreach (var from in names)
         foreach (var to in names)
@@ -238,7 +241,7 @@ public partial class AvatarRig : Node3D
     }
 
     private static Vector3 V(float x) => new(x, 0, 0);
-    private static string StateName(AvatarMotionState state) => state.ToString();
+    private static string StateName(AvatarMotionState state) => state == AvatarMotionState.WalkBack ? "Walk" : state == AvatarMotionState.FlatImpact ? "Landing" : state == AvatarMotionState.SwimIdle ? "Swim" : state.ToString();      // walking backwards uses the walk of the procedural doll; the custom body has its own clip
 
     private static Node3D Part(Node parent, string name, Vector3 position, Vector3 size, Material material)
     {

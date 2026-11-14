@@ -182,3 +182,35 @@ public sealed class ObstacleFieldWalkingTests
         Assert.True(ended.Single().Reached); Assert.Equal(20f, world.Get(id)!.X);
     }
 }
+
+public sealed class BackwardsWalkTests
+{
+    [Theory]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Walk, true, LifeVerse.Shared.Gameplay.AvatarMotionState.WalkBack)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Run, true, LifeVerse.Shared.Gameplay.AvatarMotionState.WalkBack)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Walk, false, LifeVerse.Shared.Gameplay.AvatarMotionState.Walk)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Idle, true, LifeVerse.Shared.Gameplay.AvatarMotionState.Idle)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Jump, true, LifeVerse.Shared.Gameplay.AvatarMotionState.Jump)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Fall, true, LifeVerse.Shared.Gameplay.AvatarMotionState.Fall)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.FlyMove, true, LifeVerse.Shared.Gameplay.AvatarMotionState.FlyMove)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Sit, true, LifeVerse.Shared.Gameplay.AvatarMotionState.Sit)]
+    public void OnlyWalkingAndRunningWhilePullingBackBecomeWalkingBackwards(LifeVerse.Shared.Gameplay.AvatarMotionState state, bool back, LifeVerse.Shared.Gameplay.AvatarMotionState expected) => Assert.Equal(expected, LifeVerse.Shared.Gameplay.BackwardsWalk.Apply(state, back));
+
+    [Fact]
+    public void WalkingBackwardsIsNotAStateTheEditorOrTheNetworkKnows()
+    {
+        Assert.False(LifeVerse.Shared.Avatar.AnimationStates.All.ContainsKey("WalkBack")); Assert.False(LifeVerse.Shared.Avatar.AnimationStates.All.ContainsKey("FlatImpact"));                                                // no override for it, and the server accepts none
+        Assert.Equal(17, (int)LifeVerse.Shared.Gameplay.AvatarMotionState.SitFloor); Assert.Equal(18, (int)LifeVerse.Shared.Gameplay.AvatarMotionState.WalkBack); Assert.Equal(19, (int)LifeVerse.Shared.Gameplay.AvatarMotionState.FlatImpact); Assert.Equal(20, (int)LifeVerse.Shared.Gameplay.AvatarMotionState.SwimIdle);   // added at the end: no number moved
+    }
+}
+
+public sealed class WaterStillTests
+{
+    [Theory]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Swim, false, LifeVerse.Shared.Gameplay.AvatarMotionState.SwimIdle)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Swim, true, LifeVerse.Shared.Gameplay.AvatarMotionState.Swim)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Idle, false, LifeVerse.Shared.Gameplay.AvatarMotionState.Idle)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.FlyIdle, false, LifeVerse.Shared.Gameplay.AvatarMotionState.FlyIdle)]
+    [InlineData(LifeVerse.Shared.Gameplay.AvatarMotionState.Walk, false, LifeVerse.Shared.Gameplay.AvatarMotionState.Walk)]
+    public void OnlySwimmingWithoutMovingIsTreadingWater(LifeVerse.Shared.Gameplay.AvatarMotionState state, bool moving, LifeVerse.Shared.Gameplay.AvatarMotionState expected) => Assert.Equal(expected, LifeVerse.Shared.Gameplay.WaterStill.Apply(state, moving));
+}

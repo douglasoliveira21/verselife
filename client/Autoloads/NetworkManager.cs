@@ -200,6 +200,8 @@ public partial class NetworkManager : Node
     /// <summary>Leaving the island we are on for another: its other avatars, vehicles and permissions go away at once, and the rest of the game is told so it can clear what belongs to it.</summary>
     public void LeaveCurrentIslandForTesting() => LeaveCurrentIsland();
     public int RemoteAvatarCountForTesting => _remote.Count;
+    /// <summary>The other avatars on the island right now.</summary>
+    public int RemoteAvatarCount => _remote.Count;
     public void SetAuthenticatedForTesting(bool on) => IsAuthenticated = on;
     public void SetCurrentIslandForTesting(Guid island, bool authenticated) { _islandId = island; IsAuthenticated = authenticated; }
 
@@ -305,7 +307,7 @@ public partial class NetworkManager : Node
             if (state.PeerId == ownPeer) { _localPlayer?.Reconcile(position, new Vector3(state.VelocityX, state.VelocityY, state.VelocityZ), state.LastProcessedInput, state.Motion); continue; }
             if (_remote.TryGetValue(state.PeerId, out var remote))
             {
-                remote.TargetPosition = position; remote.TargetYaw = state.Yaw; remote.Rig.SetMotionState(ToAvatarMotion(state.Motion));
+                remote.TargetPosition = position; remote.TargetYaw = state.Yaw; remote.Rig.SetMotionState(WaterStill.Apply(ToAvatarMotion(state.Motion), state.VelocityX * state.VelocityX + state.VelocityZ * state.VelocityZ > .09f));
             }
         }
     }

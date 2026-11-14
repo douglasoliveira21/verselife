@@ -69,7 +69,7 @@ public partial class AmbientAudio : Node
             if (speed > .5f && _splashTimer <= 0) { _synth.TriggerStep(.55f, soft: true); _splashTimer = 1.05f; }
             return;
         }
-        if (!_avatar.IsOnFloor() || speed < .6f) { _stride = 0; return; }
+        if (!_avatar.IsOnFloor() || speed < .6f || AvatarRig.RecordedFootstepsAvailable) { _stride = 0; return; }      // the recorded steps of the avatar replace the synthesized ones on the ground (the splash in the water stays)
         _stride += speed * dt;
         if (_stride < 1.7f) return;
         _stride = 0;

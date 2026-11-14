@@ -29,6 +29,9 @@ public partial class AvatarRig
     public IReadOnlyDictionary<string, string> AnimationStatus => _animationStatus;
     public IReadOnlyDictionary<string, string> Overrides => _overrides;
     public AvatarMotionState CurrentState => _state;
+    /// <summary>Tests: whether the game's own clip (not a person's file) is what moves the custom body now.</summary>
+    public string DefaultClipNameForTesting => DefaultClipActiveForTesting ? ActiveClip!.Name : "";
+    public bool DefaultClipActiveForTesting => CustomBodyActive && !_clips.ContainsKey(_state.ToString()) && ActiveClip is not null;
     /// The node of the animation tree that is playing ("Walk", or "Walk@happy" when the library alternative was chosen).
     public string CurrentAnimationNode => _playback?.GetCurrentNode() ?? string.Empty;
 
@@ -37,7 +40,19 @@ public partial class AvatarRig
         ? $"{state}@{source[AnimationStates.BuiltinPrefix.Length..]}" : StateName(state);
 
     /// <summary>The clip of the person's own file that plays for the current state, when there is one and the body can show it.</summary>
-    private SkeletonClip? ActiveClip => CustomBodyActive && _clips.TryGetValue(_state.ToString(), out var clip) ? clip : null;
+    private SkeletonClip? ActiveClip => !CustomBodyActive ? null : _clips.TryGetValue(_state.ToString(), out var clip) ? clip : DefaultClip();
+
+    /// <summary>The game's own clip for the state, when the person chose nothing for it (any choice, even a library alternative, is respected) and the avatar is close enough to be shown in full.</summary>
+    private SkeletonClip? DefaultClip() => _detail >= AvatarDetail.Full && !_overrides.ContainsKey(_state.ToString()) ? DefaultAvatarAnimations.For(_state == AvatarMotionState.Fall && !_fallFromFlight ? "FallDown" : _state.ToString()) : null;
+
+    /// <summary>True while the avatar falls because it stopped flying in the air. Only that fall plays the game's long falling clip; a fall after a jump or off a ledge keeps the game's own animation.</summary>
+    private bool _fallFromFlight;
+    public bool FallFromFlightForTesting => _fallFromFlight;
+    /// <summary>True while the avatar falls because it stopped flying in the air.</summary>
+    public bool FallingFromFlight => _fallFromFlight;
+    /// <summary>Whether this avatar can show the flat landing: a custom body that is close enough, that the person has not given an animation of its own for landing, and the game's clip.</summary>
+    public bool CanFlatImpact => CustomBodyActive && _detail >= AvatarDetail.Full && !_overrides.ContainsKey("Landing") && DefaultAvatarAnimations.For("FlatImpact") is not null;
+    public float FlatImpactSeconds => DefaultAvatarAnimations.For("FlatImpact")?.Duration ?? 0f;
 
     private void StartAnimations(AvatarAppearanceData data)
     {
@@ -96,7 +111,8 @@ public partial class AvatarRig
         hipsLift = 0;
         if (ActiveClip is not { } clip) { _clipState = _state; return null; }
         if (_clipState != _state) { _clipState = _state; _clipTime = 0; }
-        var loop = AnimationStates.All.TryGetValue(_state.ToString(), out var loops) && loops;
+        var plainFall = _state == AvatarMotionState.Fall && !_fallFromFlight;      // the short clip of coming down after a jump: it holds its last pose until the avatar lands
+        var loop = _state is AvatarMotionState.WalkBack or AvatarMotionState.SwimIdle || (!plainFall && AnimationStates.All.TryGetValue(_state.ToString(), out var loops) && loops);
         var sample = clip.SampleDeltas((float)_clipTime, loop); var result = new Dictionary<int, Quaternion>();
         foreach (var (standard, rotation) in sample)
         {

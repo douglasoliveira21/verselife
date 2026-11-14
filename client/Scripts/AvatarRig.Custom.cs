@@ -3,6 +3,7 @@ using Godot;
 using LifeVerse.Client.Autoloads;
 using LifeVerse.Client.Models;
 using LifeVerse.Shared.Avatar;
+using LifeVerse.Shared.Gameplay;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -51,7 +52,7 @@ public partial class AvatarRig
     {
         var token = ++_customToken;
         if (_customBody is not null && IsInstanceValid(_customBody)) _customBody.QueueFree();
-        _customBody = null; _customRoot = null; _customSkeleton = null; _retarget = []; CustomBodyStatus = string.Empty;
+        _customBody = null; _customRoot = null; _customSkeleton = null; _lastDelta = null; _blendFrom = null; _retarget = []; CustomBodyStatus = string.Empty;
         if (data.CustomModelId is not { } id || string.IsNullOrEmpty(data.CustomModelHash)) return;
         if (_detail < AvatarDetail.Reduced) { CustomBodyStatus = "Longe demais: o corpo padrão é usado até chegar perto."; return; }
         CustomBodyStatus = "loading"; _customScale = data.CustomModelScale > 0 ? data.CustomModelScale : 1f;
@@ -142,7 +143,7 @@ public partial class AvatarRig
 
         // the procedural parts keep animating but are no longer drawn
         if (_visual.GetNodeOrNull<Node3D>("Hips") is { } hips) foreach (var mesh in Meshes(hips)) mesh.Visible = false;
-        _customBody = holder; _customRoot = scene; _customSkeleton = skeleton; _retarget = [.. table];
+        _customBody = holder; _customRoot = scene; _customSkeleton = skeleton; _lastDelta = null; _blendFrom = null; _retarget = [.. table];
         _standardBones.Clear();
         for (var bone = 0; bone < skeleton.GetBoneCount(); bone++) if (BoneMapper.Map(skeleton.GetBoneName(bone)) is { } named) _standardBones.TryAdd(named, bone);
         _restGlobal = new Quaternion[skeleton.GetBoneCount()]; _globalNow = new Quaternion[skeleton.GetBoneCount()]; _globalDone = new bool[skeleton.GetBoneCount()];
@@ -177,7 +178,14 @@ public partial class AvatarRig
         }
     }
 
-    public override void _Process(double delta) { if (Throttled) { AdvanceClip(delta); return; } AdvanceClip(delta); RetargetCustom(); FollowWearables(); }
+    public const double BlendSeconds = .22, GetUpBlendSeconds = .7;
+    private double _blendLength = BlendSeconds;
+    private Dictionary<int, Quaternion>? _lastDelta, _blendFrom; private float _lastHipsLift, _blendFromLift; private double _blendTime; private (AvatarMotionState, bool) _lastBlendKey;
+    /// <summary>Tests: whether a crossfade between two poses is running, and how far along (0 to 1).</summary>
+    public bool BlendingForTesting => _blendFrom is not null;
+    public double BlendProgressForTesting => _blendFrom is null ? 1 : _blendTime / _blendLength;
+
+    public override void _Process(double delta) { _blendTime += delta; FadeFootsteps(delta); if (Throttled) { AdvanceClip(delta); return; } AdvanceClip(delta); RetargetCustom(); FollowWearables(); }
 
     /// <summary>Copies the animated rotations of the procedural body onto the bones of the custom model, in the model's own space.</summary>
     public void RetargetCustom()
@@ -195,9 +203,24 @@ public partial class AvatarRig
             delta[bone] = skeletonInModel.Inverse() * inModel * skeletonInModel;
             if (_neutral.TryGetValue(bone, out var neutral)) delta[bone] *= neutral; // first the arm is lowered from its modelled pose, then the animation moves it
         }
+        // a state change is a short crossfade from the pose the bones had to the new one, not a cut
+        var blendKey = (_state, clipDeltas is not null);
+        if (_lastDelta is not null && blendKey != _lastBlendKey) { _blendFrom = _lastDelta; _blendFromLift = _lastHipsLift; _blendTime = 0; _blendLength = _lastBlendKey.Item1 == AvatarMotionState.FlatImpact ? GetUpBlendSeconds : BlendSeconds; }      // getting up from the ground takes longer than any other change
+        _lastBlendKey = blendKey;
+        if (_blendFrom is not null)
+        {
+            if (_blendTime >= _blendLength) _blendFrom = null;
+            else
+            {
+                var t = _blendTime / _blendLength; t = t * t * (3 - 2 * t);                      // smooth in and out
+                foreach (var (bone, target) in delta.ToList()) if (_blendFrom.TryGetValue(bone, out var from)) delta[bone] = from.Slerp(target, (float)t);
+                hipsLift = Mathf.Lerp(_blendFromLift, hipsLift, (float)t);
+            }
+        }
+        _lastDelta = new Dictionary<int, Quaternion>(delta); _lastHipsLift = hipsLift;
         if (_standardBones.TryGetValue("hips", out var hipsBone))
         {
-            if (clipDeltas is not null) { skeleton.SetBonePosePosition(hipsBone, skeleton.GetBoneRest(hipsBone).Origin + Vector3.Up * hipsLift); _hipsLifted = true; }
+            if (clipDeltas is not null || Mathf.Abs(hipsLift) > .0005f) { skeleton.SetBonePosePosition(hipsBone, skeleton.GetBoneRest(hipsBone).Origin + Vector3.Up * hipsLift); _hipsLifted = true; }
             else if (_hipsLifted) { skeleton.SetBonePosePosition(hipsBone, skeleton.GetBoneRest(hipsBone).Origin); _hipsLifted = false; }
         }
         Array.Clear(_globalDone);

@@ -50,7 +50,7 @@ public partial class PlayerController : CharacterBody3D
     private bool _rightDragging;
     private bool _rightDragMoved;
     private bool _wasGrounded;
-    private float _landingTime;
+    private float _landingTime, _flatImpactTime;
     private float _emoteTime;
     private AvatarMotionState _emoteState;
     private float _cameraSensitivity = .003f;
@@ -190,7 +190,8 @@ public partial class PlayerController : CharacterBody3D
             return;
         }
         if (_landingTime > 0) _landingTime -= dt;
-        var blocked = IsTyping() || _contextMenu.Visible || _mirror;
+        if (_flatImpactTime > 0) _flatImpactTime -= dt;      // lying on the ground after a fall from the sky: no walking, jumping or flying until the avatar is up
+        var blocked = IsTyping() || _contextMenu.Visible || _mirror || _flatImpactTime > 0;
         UpdateDoubleTapRun(blocked);
         UpdateHoldToFly(blocked, dt);
         var input = blocked ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_back");
@@ -270,7 +271,7 @@ public partial class PlayerController : CharacterBody3D
         _blockedVelocity = WallContact() ? new Vector2(Velocity.X, Velocity.Z) : null;
         if (_flying && IsOnFloor() && descendPressed) _flying = false;
         var grounded = IsOnFloor();
-        if (grounded && !_wasGrounded) _landingTime = .22f;
+        if (grounded && !_wasGrounded) { _landingTime = .22f; if (_rig.FallingFromFlight && _rig.CanFlatImpact) _flatImpactTime = _rig.FlatImpactSeconds; }      // a fall that began when the flight stopped in the air ends flat on the ground
         _wasGrounded = grounded;
         UpdateAnimation(direction, direction.Length());
         _status.Text = $"{_cameraMode} · " + (_swimming ? "Swimming" : _flying ? "Flying" : direction.LengthSquared() < .01f ? "Idle" : RunHeld ? "Running" : "Walking");
@@ -430,7 +431,10 @@ public partial class PlayerController : CharacterBody3D
     {
         var snapshot = new MovementSnapshot(false, _swimming, _flying, IsOnFloor(), Velocity.Y > 0,
             _landingTime > 0, direction.LengthSquared() > .01f && inputAmount >= .05f, RunHeld);
-        _rig.SetMotionState(MovementStateResolver.Resolve(snapshot));
+        // S or the back arrow with W not held: the body keeps facing forward while it moves back (walk or run), so it plays the backwards walk
+        var backwards = !_flying && !_swimming && !IsTyping() && Input.IsActionPressed("move_back") && !Input.IsActionPressed("move_forward") && direction.LengthSquared() > .01f;
+        var resolved = WaterStill.Apply(BackwardsWalk.Apply(MovementStateResolver.Resolve(snapshot), backwards), snapshot.IsMoving);
+        _rig.SetMotionState(_flatImpactTime > 0 ? AvatarMotionState.FlatImpact : resolved);
     }
 
     private float SmoothHorizontal(float current, float target, float dt)
