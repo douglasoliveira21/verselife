@@ -1,6 +1,7 @@
 using LifeVerse.Client.Build;
 using Godot;
 using LifeVerse.Client.Autoloads;
+using LifeVerse.Client.Scripts.Interface;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -29,10 +30,12 @@ public partial class ViewerUI
             ("Editar aparência (tela completa)…", () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator(), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
             ("Preferências…", () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(), false),
+            ("Interface…", () => ToggleInterfaceSettings(), false),
+            ("Restaurar layout das janelas", RestoreWindowLayout, false),
             ("-", null, false),
             ("Sair da ilha", _network.Disconnect, false),
             ("Sair do LifeVerse", () => GetTree().Quit(), false));
-        AddChoiceSubmenu(me, "Escala da interface", ["70%", "80%", "90%", "100%", "110%", "125%"], index => SetUiScale(UiScales[index]));
+        AddChoiceSubmenu(me, "Escala da interface", InterfaceScale.MenuLabels(), index => ChooseUiScale(index));
         AddChoiceSubmenu(me, "Volume", ["Mudo", "25%", "50%", "75%", "100%"], index => SetVolume(Volumes[index]));
         AddMenu(row, "Comunicar",
             ("Conversa local   Enter", () => _chat.GrabFocus(), false),
@@ -92,42 +95,43 @@ public partial class ViewerUI
         _balance.AddThemeFontSizeOverride("font_size", 20); _balance.AddThemeFontOverride("font", UiStyle.Medium);
         row.AddChild(new Control { CustomMinimumSize = new Vector2(4, 0) });
         row.AddChild(_balance);
-        var plus = new Button { Icon = UiStyle.Icon("plus", UiStyle.Accent, 20), TooltipText = "Carteira e marketplace", CustomMinimumSize = new Vector2(32, 32), FocusMode = Control.FocusModeEnum.None, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, ExpandIcon = false };
-        plus.AddThemeStyleboxOverride("normal", UiStyle.Box(new Color(UiStyle.AccentFill, .55f), UiStyle.Accent, 8, 2, 0, 0));
-        plus.AddThemeStyleboxOverride("hover", UiStyle.Box(UiStyle.AccentFillHover, UiStyle.Accent, 8, 2, 0, 0));
-        plus.AddThemeStyleboxOverride("pressed", UiStyle.Box(UiStyle.AccentFillPressed, UiStyle.Accent, 8, 2, 0, 0));
-        plus.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        var plus = new Button { Text = "Comprar L$", Icon = UiStyle.Icon("plus", UiStyle.Accent, 18), TooltipText = "Carteira e marketplace: comprar e usar moedas", CustomMinimumSize = new Vector2(0, 30), FocusMode = Control.FocusModeEnum.None, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, ExpandIcon = false };
+        plus.AddThemeStyleboxOverride("normal", UiStyle.Box(new Color(UiStyle.AccentFill, .55f), UiStyle.Accent, 8, 2, 10, 0));
+        plus.AddThemeStyleboxOverride("hover", UiStyle.Box(UiStyle.AccentFillHover, UiStyle.Accent, 8, 2, 10, 0));
+        plus.AddThemeStyleboxOverride("pressed", UiStyle.Box(UiStyle.AccentFillPressed, UiStyle.Accent, 8, 2, 10, 0));
+        plus.AddThemeStyleboxOverride("focus", new StyleBoxEmpty()); plus.AddThemeFontSizeOverride("font_size", 15); plus.AddThemeFontOverride("font", UiStyle.Medium);
         plus.Pressed += () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle();
         row.AddChild(plus);
         row.AddChild(Divider(26));
+        row.AddChild(TopIconButton("bag", "Loja (marketplace)", () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle()));
+        var audio = new MenuButton { Flat = true, FocusMode = Control.FocusModeEnum.None, Icon = UiStyle.Icon("volume", UiStyle.Text, 20), ExpandIcon = false, TooltipText = "Áudio: volume geral", CustomMinimumSize = new Vector2(34, 30), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        StyleFlatMenu(audio, 15); audio.AddThemeConstantOverride("icon_max_width", 20);
+        foreach (var (label, i) in new[] { "Mudo", "25%", "50%", "75%", "100%" }.Select((l, i) => (l, i))) audio.GetPopup().AddItem($"Volume: {label}", i);
+        audio.GetPopup().IdPressed += id => SetVolume(Volumes[(int)id]);
+        row.AddChild(audio);
+        var config = new MenuButton { Flat = true, FocusMode = Control.FocusModeEnum.None, Icon = UiStyle.Icon("settings", UiStyle.Text, 20), ExpandIcon = false, TooltipText = "Configurações", CustomMinimumSize = new Vector2(34, 30), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        StyleFlatMenu(config, 15); config.AddThemeConstantOverride("icon_max_width", 20);
+        config.GetPopup().AddItem("Gráficos, controles e som…", 0); config.GetPopup().AddItem("Interface…", 1);
+        config.GetPopup().IdPressed += id => { if (id == 0) _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(); else ToggleInterfaceSettings(); };
+        row.AddChild(config);
         // The bell: the number of unread notifications, the panel below it and the full center.
         _notificationCenter = new Notifications.NotificationCenterUi { Name = "NotificationCenter", Said = text => Toast(text), Open = OpenNotification }; AddChild(_notificationCenter); _notificationCenter.AttachTo(row, _root);
         row.AddChild(Divider(26));
 
-        // Where you are, and whether you are connected.
-        row.AddChild(UiStyle.IconRect("pin-filled", UiStyle.Accent, 22));
-        _islandName = new Label { Text = "Sem ilha", TooltipText = "Ilha atual. Clique para gerenciar a ilha.", MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.PointingHand };
-        _islandName.AddThemeFontSizeOverride("font_size", 17);
-        _islandName.GuiInput += e =>
-        {
-            if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } && _network.CurrentIslandId != Guid.Empty)
-                _world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow")?.Toggle();
-        };
-        row.AddChild(_islandName);
-        row.AddChild(Divider(26));
-        _indicator = new StatusDot { CustomMinimumSize = new Vector2(14, 14), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, TooltipText = "Estado da conexão" };
-        row.AddChild(_indicator);
-        var state = new MenuButton { Text = "Desconectado", Flat = true, FocusMode = Control.FocusModeEnum.None, Icon = UiStyle.Icon("caret-down", UiStyle.Text, 12), IconAlignment = HorizontalAlignment.Right, ExpandIcon = false, TooltipText = "Conexão com a ilha" };
-        StyleFlatMenu(state, 17);
-        state.GetPopup().AddItem("Sair da ilha", 0);
-        state.GetPopup().IdPressed += _ => _network.Disconnect();
-        row.AddChild(state);
-        _connection = new Label { Visible = false };   // text is mirrored onto the menu button by UpdateStatus
-        _connectionMenu = state;
         row.AddChild(new Control { CustomMinimumSize = new Vector2(6, 0) });
 
-        // Position, world clock and frame rate live in the performance overlay now; the labels stay so existing updates keep working.
-        _coords = new Label(); _clock = new Label(); _fps = new Label();
+        // Where you are, the coordinates and the connection live in the location bar (BuildLocationBar). World clock and frame rate live in the performance overlay; the labels stay so existing updates keep working.
+        _clock = new Label(); _fps = new Label(); _connection = new Label { Visible = false };
+    }
+
+    private static Button TopIconButton(string icon, string tooltip, Action action)
+    {
+        var button = new Button { Icon = UiStyle.Icon(icon, UiStyle.Text, 20), Flat = true, FocusMode = Control.FocusModeEnum.None, TooltipText = tooltip, CustomMinimumSize = new Vector2(34, 30), ExpandIcon = false, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
+        var hover = UiStyle.Box(new Color(1, 1, 1, .10f), new Color(0, 0, 0, 0), UiStyle.RadiusSmall, 0, 0, 0);
+        button.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); button.AddThemeStyleboxOverride("hover", hover); button.AddThemeStyleboxOverride("pressed", hover); button.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        button.AddThemeConstantOverride("icon_max_width", 20);
+        button.Pressed += action;
+        return button;
     }
 
     private MenuButton _connectionMenu = null!;
@@ -211,22 +215,27 @@ public partial class ViewerUI
         var voiceBar = new VoiceBar { Name = "VoiceBar", SizeFlagsVertical = Control.SizeFlags.ShrinkCenter }; row.AddChild(voiceBar); voiceBar.Bind(_network.Voice); voiceBar.VoiceRule = () => _world.GetNodeOrNull<LandManager>("LandManager")?.Presence is { } presence ? (presence.VoiceAllowed, presence.VoiceOffIn) : (true, "");
         row.AddChild(Divider(32));
 
-        _moveButton = ToolButton(row, "move", "Mover", "Andar, correr e voar", () => ToggleWindow(_moveWindow), toggle: true);
+        _toolRow = row; _toolFirst = row.GetChildCount();
+        _moveButton = Reg("mover", "Mover", ToolButton(row, "move", "Mover", "Andar, correr e voar", () => ToggleWindow(_moveWindow), toggle: true));
+        _gestureButton = Reg("gestos", "Gestos", ToolButton(row, "hand", "Gestos", "Gestos e emoções", ToggleGestures, toggle: true));
         var view = new MenuButton { Text = "Ver", TooltipText = "Modos de câmera", FocusMode = Control.FocusModeEnum.None, Flat = false, Icon = UiStyle.Icon("camera", UiStyle.Text, 18), CustomMinimumSize = new Vector2(0, ToolbarButtonHeight) };
         StyleTool(view, UiStyle.ButtonKind.ToolSelected, selectedLook: false);
         var viewPopup = view.GetPopup();
         viewPopup.AddItem("Terceira pessoa (padrão)", 0); viewPopup.AddItem("Primeira pessoa   C", 1); viewPopup.AddItem("Câmera livre   V", 2); viewPopup.AddSeparator(); viewPopup.AddItem("Redefinir câmera   R", 3);
         viewPopup.IdPressed += id => { switch (id) { case 0: _player?.SetCameraMode("ThirdPerson"); break; case 1: _player?.SetCameraMode("FirstPerson"); break; case 2: _player?.SetCameraMode("FreeLook"); break; default: _player?.ResetCamera(); break; } };
         view.Text = "Ver";
-        row.AddChild(view);
-        ToolButton(row, "photo", "Foto", "Capturar a tela sem a interface", TakeSnapshot);
-        ToolButton(row, "hammer", "Construir", "Ferramentas de construção (B)", () => BuildHost.SetActive(_world, true));
-        ToolButton(row, "search", "Buscar", "Buscar ilhas, pessoas, amigos, grupos, lojas, eventos e lugares", () => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.Toggle());
-        _peopleButton = ToolButton(row, "people", "Pessoas", "Buscar pessoas, amigos e grupos", () => _people?.Toggle(), toggle: true);
-        ToolButton(row, "pin", "Mapa", "Mapa, busca e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle());
-        _inventoryButton = ToolButton(row, "bag", "Inventário", "Seu inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), toggle: true, orange: true);
-        _miniMapButton = ToolButton(row, "map", "Mini-mapa", "Mostrar ou ocultar o mini-mapa", () => ToggleWindow(_miniMapWindow), toggle: true);
+        row.AddChild(view); Reg("ver", "Ver", view);
+        Reg("foto", "Foto", ToolButton(row, "photo", "Foto", "Capturar a tela sem a interface", TakeSnapshot));
+        Reg("construir", "Construir", ToolButton(row, "hammer", "Construir", "Ferramentas de construção (B)", () => BuildHost.SetActive(_world, true)));
+        Reg("buscar", "Buscar", ToolButton(row, "search", "Buscar", "Buscar ilhas, pessoas, amigos, grupos, lojas, eventos e lugares", () => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.Toggle()));
+        _peopleButton = Reg("pessoas", "Pessoas", ToolButton(row, "people", "Pessoas", "Buscar pessoas, amigos e grupos", () => _people?.Toggle(), toggle: true));
+        Reg("mapa", "Mapa", ToolButton(row, "pin", "Mapa", "Mapa, busca e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle()));
+        _inventoryButton = Reg("inventario", "Inventário", ToolButton(row, "bag", "Inventário", "Seu inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), toggle: true, orange: true));
+        _miniMapButton = Reg("minimapa", "Mini-mapa", ToolButton(row, "map", "Mini-mapa", "Mostrar ou ocultar o mini-mapa", () => ToggleWindow(_miniMapWindow), toggle: true));
         _miniMapButton.ButtonPressed = true;
+        BuildToolbarCustomizer(row);
+        _root.Resized += () => ApplyToolbar();
+        ApplyToolbar();
     }
 
     private Button _peopleButton = null!;
@@ -449,18 +458,40 @@ public partial class ViewerUI
     private void BuildMiniMap()
     {
         _miniMapWindow = new FloatingWindow("Mini-mapa", icon: "target", expandable: true);
-        _miniMapWindow.Place(1, 0, -352, 56, -12, 420);
+        _miniMapWindow.Place(1, 0, -352, 84, -12, 448);
         // The map is clipped to a rounded frame; the frame's own drawing is the mask.
-        var frame = new Panel { CustomMinimumSize = new Vector2(300, 300), ClipChildren = CanvasItem.ClipChildrenMode.Only, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
+        var frame = new Panel { CustomMinimumSize = new Vector2(220, 220), ClipChildren = CanvasItem.ClipChildrenMode.Only, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
         frame.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color("#133F73"), new Color(0, 0, 0, 0), 16, 0, 0, 0));
         var map = new MiniMap(); map.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         frame.AddChild(map);
         map.BuildOverlay(frame);
         _miniMapWindow.Content.AddChild(frame);
+        // below the map: how see-through the window is, and the full map
+        var tools = new HBoxContainer(); tools.AddThemeConstantOverride("separation", 8);
+        tools.AddChild(new Label { Text = "Opacidade", TooltipText = "Transparência desta janela" });
+        _miniMapOpacity = new HSlider { MinValue = 30, MaxValue = 100, Step = 5, Value = Math.Round(_interface.MiniMapOpacity * 100), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(120, 24), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, FocusMode = Control.FocusModeEnum.None };
+        _miniMapOpacity.ValueChanged += value => SetMiniMapOpacity((float)value / 100f);
+        tools.AddChild(_miniMapOpacity);
+        var full = new Button { Text = "Mapa completo", Icon = UiStyle.Icon("expand", UiStyle.Text, 18), ExpandIcon = false, TooltipText = "Abrir o mapa de terrenos e busca", FocusMode = Control.FocusModeEnum.None };
+        full.Pressed += () => _world.GetNodeOrNull<LandMapWindow>("LandMapWindow")?.Open();
+        _miniMapWindow.Content.AddChild(tools);
+        _miniMapWindow.Content.AddChild(full);
+        SetMiniMapOpacity(_interface.MiniMapOpacity, save: false);
         if (_terrain is not null) map.Bind(_terrain, _player, _network);
         _miniMapWindow.CloseRequested += () => _miniMapButton.ButtonPressed = false;
-        _miniMapWindow.ExpandToggled += large => { frame.CustomMinimumSize = large ? new Vector2(520, 520) : new Vector2(300, 300); _miniMapWindow.ResetSize(); };
+        _miniMapWindow.ExpandToggled += large => { frame.CustomMinimumSize = large ? new Vector2(520, 520) : new Vector2(220, 220); _miniMapWindow.ResetSize(); };
         _root.AddChild(_miniMapWindow);
+    }
+
+    private HSlider _miniMapOpacity = null!;
+    public FloatingWindow MiniMapWindowForTesting => _miniMapWindow;
+    public HSlider MiniMapOpacitySliderForTesting => _miniMapOpacity;
+
+    private void SetMiniMapOpacity(float alpha, bool save = true)
+    {
+        alpha = Mathf.Clamp(alpha, .3f, 1f);
+        _miniMapWindow.SetOpacity(alpha);
+        if (save) { _interface.MiniMapOpacity = alpha; _interface.Save(); }
     }
 
     // ---- move window (client/Assets/ui/07) -------------------------------------------------------------------------
@@ -534,10 +565,17 @@ public partial class ViewerUI
         var column = new VBoxContainer(); column.AddThemeConstantOverride("separation", 6); panel.AddChild(column);
 
         var tabs = new UiTabs();
-        tabs.AddTab("Chat Local"); tabs.AddTab("Conversas"); tabs.AddTab("Nova conversa", "plus", iconOnly: true);
+        tabs.AddTab("Local"); tabs.AddTab("Grupo"); tabs.AddTab("IM"); tabs.AddTab("Nova conversa", "plus", iconOnly: true);
+        _chatTabs = tabs;
         var header = new HBoxContainer(); header.AddThemeConstantOverride("separation", 6);
         header.AddChild(tabs);
         header.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill });
+        var opacity = new MenuButton { Flat = true, FocusMode = Control.FocusModeEnum.None, Icon = UiStyle.Icon("eye", Colors.White, 24), ExpandIcon = false, TooltipText = "Transparência da conversa", CustomMinimumSize = new Vector2(40, 40) };
+        opacity.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); opacity.AddThemeStyleboxOverride("hover", UiStyle.Box(new Color(1, 1, 1, .10f), new Color(0, 0, 0, 0), 8, 0, 0, 0)); opacity.AddThemeStyleboxOverride("pressed", new StyleBoxEmpty()); opacity.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
+        foreach (var (label, i) in ChatOpacities.Select((o, i) => ($"Opacidade {Mathf.RoundToInt(o * 100)}%", i))) opacity.GetPopup().AddItem(label, i);
+        opacity.GetPopup().IdPressed += id => SetChatOpacity(ChatOpacities[(int)id]);
+        header.AddChild(opacity);
+        header.AddChild(ChatChromeButton("minimize", "Minimizar a conversa (vira um botão com as mensagens novas)", () => SetChatMinimized(true)));
         header.AddChild(ChatChromeButton("settings", "Preferências de conversa", () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle()));
         header.AddChild(ChatChromeButton("expand", "Aumentar ou diminuir a conversa", () => { panel.OffsetTop = Mathf.Abs(panel.OffsetBottom - panel.OffsetTop - 250) < 1 ? panel.OffsetBottom - 480 : panel.OffsetBottom - 250; }));
         column.AddChild(header);
@@ -549,22 +587,77 @@ public partial class ViewerUI
         _chatLog.AddThemeConstantOverride("line_separation", 4);
         column.AddChild(_chatLog);
 
-        _conversations = new VBoxContainer { Visible = false, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-        _conversations.AddThemeConstantOverride("separation", 10);
-        var none = new Label { Text = "Nenhuma conversa privada aberta.", Modulate = new Color(1, 1, 1, .7f) };
-        var open = new Button { Text = "Abrir mensagens privadas", Icon = UiStyle.Icon("chat", Colors.White, 20), ExpandIcon = false };
-        UiStyle.StyleButton(open, UiStyle.ButtonKind.Primary, 16, 8, 12);
-        open.Pressed += () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle();
-        _conversations.AddChild(none); _conversations.AddChild(open);
-        column.AddChild(_conversations);
+        VBoxContainer Page(string message, string buttonText, string icon, Action open)
+        {
+            var page = new VBoxContainer { Visible = false, SizeFlagsVertical = Control.SizeFlags.ExpandFill }; page.AddThemeConstantOverride("separation", 10);
+            page.AddChild(new Label { Text = message, Modulate = new Color(1, 1, 1, .7f), AutowrapMode = TextServer.AutowrapMode.WordSmart });
+            var button = new Button { Text = buttonText, Icon = UiStyle.Icon(icon, Colors.White, 20), ExpandIcon = false };
+            UiStyle.StyleButton(button, UiStyle.ButtonKind.Primary, 16, 8, 12); button.Pressed += open;
+            page.AddChild(button); column.AddChild(page); return page;
+        }
+        _groupChat = Page("As conversas de grupo ficam na janela de grupos e organizações.", "Abrir grupos e organizações", "people", () => _world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow")?.Toggle());
+        _conversations = Page("Nenhuma conversa privada aberta.", "Abrir mensagens privadas", "chat", () => _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle());
         tabs.TabChanged += index =>
         {
-            if (index == 2) { tabs.Select(1, notify: false); _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(); index = 1; }
-            _chatLog.Visible = index == 0; _conversations.Visible = index == 1;
+            if (index == 3) { tabs.Select(2, notify: false); _world.GetNodeOrNull<SocialPanel>("SocialPanel")?.Toggle(); index = 2; }
+            _chatLog.Visible = index == 0; _groupChat.Visible = index == 1; _conversations.Visible = index == 2;
         };
         _chatWindow = panel;
         _root.AddChild(panel);
+        BuildChatBubble();
+        SetChatOpacity(_interface.ChatOpacity, save: false);
     }
+
+    private UiTabs _chatTabs = null!;
+    private VBoxContainer _groupChat = null!;
+    private Button _chatBubble = null!;
+    private bool _chatMinimized;
+    private int _chatUnread;
+    private static readonly float[] ChatOpacities = [1f, .8f, .6f, .4f];
+
+    public bool ChatMinimizedForTesting => _chatMinimized;
+    public int ChatUnreadForTesting => _chatUnread;
+    public Button ChatBubbleForTesting => _chatBubble;
+    public void SetChatMinimizedForTesting(bool minimized) => SetChatMinimized(minimized);
+    public void SetChatOpacityForTesting(float alpha) => SetChatOpacity(alpha);
+    public UiTabs ChatTabsForTesting => _chatTabs;
+    public Control ChatWindowForTesting => _chatWindow;
+
+    /// <summary>The chat panel's fill: the person's transparency, kept per account.</summary>
+    private void SetChatOpacity(float alpha, bool save = true)
+    {
+        alpha = Mathf.Clamp(alpha, .3f, 1f);
+        _chatWindow.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.PanelFill, alpha), UiStyle.BorderBright, 16, 1, 6, 6, 14));
+        if (save) { _interface.ChatOpacity = alpha; _interface.Save(); }
+    }
+
+    private void BuildChatBubble()
+    {
+        _chatBubble = new Button { Name = "ChatBubble", Visible = false, Text = "Chat", Icon = UiStyle.Icon("chat", UiStyle.Text, 20), ExpandIcon = false, TooltipText = "Abrir a conversa", CustomMinimumSize = new Vector2(0, 40), FocusMode = Control.FocusModeEnum.None };
+        StyleTool(_chatBubble, UiStyle.ButtonKind.ToolSelected, false);
+        _chatBubble.AnchorTop = _chatBubble.AnchorBottom = 1; _chatBubble.AnchorLeft = _chatBubble.AnchorRight = 0;
+        _chatBubble.OffsetLeft = 12; _chatBubble.OffsetBottom = -(10 + ToolbarButtonHeight + 16 + 10); _chatBubble.OffsetTop = _chatBubble.OffsetBottom - 40; _chatBubble.GrowVertical = Control.GrowDirection.Begin;
+        _chatBubble.Pressed += () => SetChatMinimized(false);
+        _root.AddChild(_chatBubble);
+    }
+
+    /// <summary>Minimizing turns the chat into a small button; messages that arrive meanwhile are counted on it.</summary>
+    private void SetChatMinimized(bool minimized)
+    {
+        _chatMinimized = minimized;
+        if (minimized) { _chatWindow.Visible = false; _chatVisibleUntil = 0; _chat.ReleaseFocus(); }
+        else { _chatUnread = 0; _chatWindow.Visible = true; _chatVisibleUntil = 0; _root.MoveChild(_chatWindow, -1); }
+        UpdateChatBubble();
+    }
+
+    private void UpdateChatBubble()
+    {
+        _chatBubble.Visible = _chatMinimized;
+        _chatBubble.Text = _chatUnread > 0 ? $"Chat · {_chatUnread} nova{(_chatUnread == 1 ? "" : "s")}" : "Chat";
+    }
+
+    /// <summary>A message arrived while the chat is minimized.</summary>
+    private void NoteUnreadChat() { if (!_chatMinimized) return; _chatUnread++; UpdateChatBubble(); }
 
     private static Button ChatChromeButton(string icon, string tooltip, Action action)
     {
@@ -583,6 +676,7 @@ public partial class ViewerUI
         var colon = close >= 0 ? line.IndexOf(": ", close, StringComparison.Ordinal) : -1;
         if (close < 0 || colon < 0) { AppendLine(Esc(line)); ShowChatTemporarily(); return; }
         var name = line[(close + 2)..colon];
+        if (!string.Equals(name, GetNodeOrNull<SessionManager>("/root/SessionManager")?.Username, StringComparison.OrdinalIgnoreCase)) NoteUnreadChat();
         AppendLine($"[color=#A9B3BD]{Esc(line[..(close + 1)])}[/color] [b][color=#{ColorForName(name).ToHtml(false)}]{Esc(name)}:[/color][/b] {Esc(line[(colon + 2)..])}");
         ShowChatTemporarily();
     }

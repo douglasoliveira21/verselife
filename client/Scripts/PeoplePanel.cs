@@ -66,15 +66,106 @@ public partial class PeoplePanel : Node
         _window.Place(.5f, .5f, -280, -300, 280, 300);
         _window.Content.AddThemeConstantOverride("separation", 10);
         var tabs = _tabs = new UiTabs { EqualWidth = true };
-        tabs.AddTab("Buscar"); tabs.AddTab("Amigos"); tabs.AddTab("Grupos");
+        tabs.AddTab("Buscar"); tabs.AddTab("Perto"); tabs.AddTab("Amigos"); tabs.AddTab("Grupos"); tabs.AddTab("Recente");
         _window.Content.AddChild(tabs);
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 470) };
         _window.Content.AddChild(stack);
 
-        _pages.Add(Page(stack, BuildSearch())); _pages.Add(Page(stack, BuildFriends())); _pages.Add(Page(stack, BuildGroups()));
-        tabs.TabChanged += index => { for (var i = 0; i < _pages.Count; i++) _pages[i].Visible = i == index; };
-        tabs.Select(1);
+        _pages.Add(Page(stack, BuildSearch())); _pages.Add(Page(stack, BuildPeopleList("Pessoas perto de você", out _nearby, out _nearbyTitle, "Ninguém por perto agora.")));
+        _pages.Add(Page(stack, BuildFriends())); _pages.Add(Page(stack, BuildGroups())); _pages.Add(Page(stack, BuildPeopleList("Vistos recentemente", out _recent, out _recentTitle, "Ninguém ainda: quem passar perto de você aparece aqui.")));
+        tabs.TabChanged += index => { for (var i = 0; i < _pages.Count; i++) _pages[i].Visible = i == index; if (index is TabNearby or TabRecent) RefreshNearby(); };
+        tabs.Select(TabFriends);
         UpdateButtons();
+    }
+
+    private const int TabSearch = 0, TabNearby = 1, TabFriends = 2, TabGroups = 3, TabRecent = 4;
+
+    // ---- nearby and recent -----------------------------------------------------------------------------------------
+
+    private RowList _nearby = null!, _recent = null!;
+    private Label _nearbyTitle = null!, _recentTitle = null!;
+    private readonly List<string> _nearbyNames = [], _recentNames = [];
+    private double _nearbyTimer;
+    /// <summary>The avatars around the person: name and distance in meters (the viewer supplies it from the island).</summary>
+    public Func<IEnumerable<(string Name, float Distance)>>? NearbyProvider { get; set; }
+    /// <summary>The person asked for a profile / a private message / to go to somebody, by name.</summary>
+    public event Action<string>? ProfileByNameRequested, MessageByNameRequested, GoToRequested;
+    /// <summary>The list of recent people changed (the viewer keeps it per account).</summary>
+    public event Action<IReadOnlyList<string>>? RecentChanged;
+    public RowList NearbyForTesting => _nearby;
+    public RowList RecentForTesting => _recent;
+    public void SelectTabForTesting(int index) => _tabs.Select(index);
+    public void SetRecent(IEnumerable<string> names) { _recentNames.Clear(); _recentNames.AddRange(names.Take(MaxRecent)); RenderRecent(); }
+    public IReadOnlyList<string> RecentNames => _recentNames;
+    public const int MaxRecent = 20;
+
+    private Control BuildPeopleList(string title, out RowList list, out Label titleLabel, string empty)
+    {
+        var box = Column();
+        var body = Section(box, title, out titleLabel);
+        list = new RowList(); body.AddChild(list);
+        var rows = list;
+        var actions = new HBoxContainer(); actions.AddThemeConstantOverride("separation", 8);
+        Button Make(string text, string tip, Action<string> run)
+        {
+            var b = new Button { Text = text, TooltipText = tip, Disabled = true, CustomMinimumSize = new Vector2(0, 40), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            UiStyle.StyleButton(b, UiStyle.ButtonKind.Secondary);
+            b.Pressed += () => { if (NameOf(rows) is { } name) run(name); };
+            rows.SelectionChanged += _ => b.Disabled = NameOf(rows) is null; actions.AddChild(b); return b;
+        }
+        Make("Perfil", "Ver o perfil", name => ProfileByNameRequested?.Invoke(name));
+        Make("IM", "Mensagem privada", name => MessageByNameRequested?.Invoke(name));
+        Make("Ir até", "Caminhar até a pessoa (só se ela estiver na ilha, por perto)", name => GoToRequested?.Invoke(name));
+        body.AddChild(actions);
+        return box;
+    }
+
+    private string? NameOf(RowList list) => Selected(list) is { } i ? (ReferenceEquals(list, _nearby) ? (i < _nearbyNames.Count ? _nearbyNames[i] : null) : (i < _recentNames.Count ? _recentNames[i] : null)) : null;
+
+    public override void _Process(double delta)
+    {
+        if (_window is null || !_window.IsVisibleInTree()) return;
+        _nearbyTimer -= delta; if (_nearbyTimer > 0) return; _nearbyTimer = 1.5;
+        RefreshNearby();
+    }
+
+    /// <summary>Redraws "Perto" from the island and adds those people to "Recente".</summary>
+    public void RefreshNearby()
+    {
+        var people = (NearbyProvider?.Invoke() ?? []).OrderBy(p => p.Distance).ToList();
+        var selected = NameOf(_nearby);
+        _nearby.Clear(); _nearbyNames.Clear();
+        foreach (var (name, distance) in people)
+        {
+            _nearbyNames.Add(name);
+            var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10);
+            row.AddChild(new Dot(UiStyle.SuccessBright));
+            var label = new Label { Text = name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore }; label.AddThemeFontSizeOverride("font_size", 17); row.AddChild(label);
+            row.AddChild(new Label { Text = $"{Mathf.RoundToInt(distance)} m", Modulate = new Color(1, 1, 1, .7f), MouseFilter = Control.MouseFilterEnum.Ignore });
+            _nearby.Add(row, name);
+        }
+        if (selected is not null && _nearbyNames.IndexOf(selected) is var at and >= 0) _nearby.Select(at);
+        SetSectionTitle(_nearbyTitle, people.Count == 0 ? "Pessoas perto de você" : $"Pessoas perto de você ({people.Count})");
+        var changed = false;
+        foreach (var (name, _) in people) { _recentNames.Remove(name); _recentNames.Insert(0, name); changed = true; }
+        if (_recentNames.Count > MaxRecent) _recentNames.RemoveRange(MaxRecent, _recentNames.Count - MaxRecent);
+        if (changed) { RenderRecent(); RecentChanged?.Invoke(_recentNames.ToList()); }
+    }
+
+    private void RenderRecent()
+    {
+        if (_recent is null) return;
+        var selected = NameOf(_recent);
+        _recent.Clear();
+        foreach (var name in _recentNames)
+        {
+            var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 10);
+            row.AddChild(new Dot(_nearbyNames.Contains(name) ? UiStyle.SuccessBright : UiStyle.TextDisabled));
+            var label = new Label { Text = name, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, VerticalAlignment = VerticalAlignment.Center, MouseFilter = Control.MouseFilterEnum.Ignore }; label.AddThemeFontSizeOverride("font_size", 17); row.AddChild(label);
+            _recent.Add(row, name);
+        }
+        if (selected is not null && _recentNames.IndexOf(selected) is var at and >= 0) _recent.Select(at);
+        SetSectionTitle(_recentTitle, _recentNames.Count == 0 ? "Vistos recentemente" : $"Vistos recentemente ({_recentNames.Count})");
     }
 
     private static Control Page(Control stack, Control content)

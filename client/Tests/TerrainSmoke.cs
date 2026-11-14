@@ -116,7 +116,7 @@ public partial class TerrainSmoke : Node
     private static void PressButton(Node root, string text)
     {
         foreach (var node in root.FindChildren("*", "Button", true, false))
-            if (node is Button button && button.Text == text) { button.EmitSignal(BaseButton.SignalName.Pressed); return; }
+            if (node is Button button && (button.Text == text || button.HasMeta("label") && (string)button.GetMeta("label") == text)) { button.EmitSignal(BaseButton.SignalName.Pressed); return; }
         throw new InvalidOperationException($"button not found: {text}");
     }
 

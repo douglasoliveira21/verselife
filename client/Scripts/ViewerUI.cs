@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Godot;
 using LifeVerse.Client.Autoloads;
+using LifeVerse.Client.Scripts.Interface;
 
 namespace LifeVerse.Client.Scripts;
 
@@ -61,7 +62,6 @@ public partial class ViewerUI : CanvasLayer
     private string _state = "offline";
     private Theme _theme = null!;
     private const string PrefsPath = "user://viewer.cfg";
-    private static readonly float[] UiScales = [.7f, .8f, .9f, 1f, 1.1f, 1.25f];
     private static readonly float[] Volumes = [0f, .25f, .5f, .75f, 1f];
     private static readonly string[] WeatherNames = ["clear", "cloudy", "rain", "storm", "fog"];
     private readonly ConfigFile _prefs = new();
@@ -80,6 +80,8 @@ public partial class ViewerUI : CanvasLayer
         _terrain = _world.GetNodeOrNull<IslandTerrain>("IslandTerrain");
         _environment = _world.GetNodeOrNull<IslandEnvironmentController>("EnvironmentController");
         _prefs.Load(PrefsPath);
+        // The interface preferences belong to the account (user://interface_<account>.cfg); the old per-machine viewer.cfg only seeds them. Loaded first: the windows read their saved layout from it.
+        WindowManager.Settings = _interface = InterfaceSettings.Load(GetNodeOrNull<SessionManager>("/root/SessionManager")?.Username);
         var theme = _theme = ViewerTheme.Create();
         GetWindow().Theme = theme;
         _root = new Control { Name = "Viewer", Theme = theme, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -95,24 +97,20 @@ public partial class ViewerUI : CanvasLayer
         AnnounceUpdate();
         _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += text => Toast(text); _people.ProfileRequested += id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id); _people.ChatRequested += (_, name) => Toast($"Mensagem privada para {name}: abra a aba Conversas.");
         BuildTopBar();
+        BuildLocationBar();
         BuildBottomBar();
+        BuildSideBar();
+        WirePeople();
+        ApplyInterfaceMode();
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
         _islands = new HttpRequest(); AddChild(_islands); _islands.RequestCompleted += OnIslands;
         RefreshIslands();
         _start = new HttpRequest(); AddChild(_start); _start.RequestCompleted += OnStart;
         _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected; _network.VehicleMessage += Toast;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
-        var uiScale = (float)(double)_prefs.GetValue("ui", "scale", .8);
-        // One-time compact-layout migration. Existing larger layouts are reduced once,
-        // but the person's choice remains available in the menu afterwards.
-        if (!(bool)_prefs.GetValue("ui", "compact_v2", false))
-        {
-            uiScale = Mathf.Min(uiScale, .8f);
-            _prefs.SetValue("ui", "scale", (double)uiScale);
-            _prefs.SetValue("ui", "compact_v2", true);
-            _prefs.Save(PrefsPath);
-        }
-        SetUiScale(uiScale, save: false);
+        // The interface preferences belong to the account (user://interface_<account>.cfg); the old per-machine viewer.cfg only seeds them.
+        ApplyUiScale();
+        GetWindow().SizeChanged += () => ApplyUiScale();     // "Automático" follows the window
         SetVolume((float)(double)_prefs.GetValue("audio", "volume", 1.0), save: false);
         UpdateStatus();
         BuildRadial();
@@ -194,8 +192,15 @@ public partial class ViewerUI : CanvasLayer
             GetViewport().SetInputAsHandled();
             return;
         }
+        if (input is InputEventKey { Pressed: true, Echo: false, PhysicalKeycode: Key.F10 } && GetViewport().GuiGetFocusOwner() is null)
+        {
+            ToggleImmersiveReveal();         // immersive mode: show or hide the interface
+            GetViewport().SetInputAsHandled();
+            return;
+        }
         if (input is InputEventKey { Pressed: true, Echo: false, PhysicalKeycode: Key.Enter or Key.KpEnter } && GetViewport().GuiGetFocusOwner() is null)
         {
+            RevealForChat();
             _chat.GrabFocus();
             GetViewport().SetInputAsHandled();
         }
@@ -269,7 +274,7 @@ public partial class ViewerUI : CanvasLayer
     {
         _toasts = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         _toasts.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.CenterTop);
-        _toasts.OffsetTop = 56; _toasts.OffsetLeft = -280; _toasts.OffsetRight = 280; _toasts.AddThemeConstantOverride("separation", 10);
+        _toasts.OffsetTop = 84; _toasts.OffsetLeft = -280; _toasts.OffsetRight = 280; _toasts.AddThemeConstantOverride("separation", 10);
         _root.AddChild(_toasts);
     }
 
@@ -311,12 +316,25 @@ public partial class ViewerUI : CanvasLayer
         parent.AddSubmenuNodeItem(title, submenu);
     }
 
-    private void SetUiScale(float scale, bool save = true)
+    private InterfaceSettings _interface = null!;
+
+    /// <summary>Menu choice: 0 is "Automático", the others are the fixed factors of <see cref="InterfaceScale.Choices"/>.</summary>
+    private void ChooseUiScale(int index)
     {
-        scale = Mathf.Clamp(scale, .6f, 2f);
-        GetWindow().ContentScaleFactor = scale;
-        if (save) { _prefs.SetValue("ui", "scale", (double)scale); _prefs.Save(PrefsPath); Toast($"Escala da interface: {scale:P0}"); }
+        if (index <= 0) _interface.AutoScale = true; else { _interface.AutoScale = false; _interface.Scale = InterfaceScale.Choices[Math.Clamp(index - 1, 0, InterfaceScale.Choices.Length - 1)]; }
+        _interface.Save();
+        var factor = ApplyUiScale();
+        Toast(_interface.AutoScale ? $"Escala da interface: Automático ({InterfaceScale.Label(factor)})" : $"Escala da interface: {InterfaceScale.Label(factor)}");
     }
+
+    private float ApplyUiScale()
+    {
+        var factor = InterfaceScale.Apply(GetWindow(), _interface.AutoScale, _interface.Scale);
+        Callable.From(WindowManager.KeepAll).CallDeferred();      // a new size or scale must not leave a window outside the screen
+        return factor;
+    }
+
+    private void RestoreWindowLayout() { WindowManager.ResetLayout(); Toast("Layout das janelas restaurado."); }
 
     private void SetVolume(float volume, bool save = true)
     {
@@ -520,6 +538,7 @@ public partial class ViewerUI : CanvasLayer
 
     private void OpenChatHistory()
     {
+        if (_chatMinimized) SetChatMinimized(false);
         _chatWindow.Visible = true;
         _chatVisibleUntil = 0;
         _player?.SetTextInputActive(true);
@@ -528,6 +547,7 @@ public partial class ViewerUI : CanvasLayer
 
     private void ShowChatTemporarily(double seconds = 6)
     {
+        if (_chatMinimized) return;          // minimized: the bubble counts the new messages instead
         _chatWindow.Visible = true;
         _chatVisibleUntil = Time.GetTicksMsec() + (ulong)(seconds * 1000);
     }
@@ -535,6 +555,7 @@ public partial class ViewerUI : CanvasLayer
     private void CloseChatInput()
     {
         _player?.SetTextInputActive(false);
+        EndChatReveal();
         if (_chatWindow.Visible) _chatVisibleUntil = Time.GetTicksMsec() + 6000;
     }
 
@@ -571,7 +592,8 @@ public partial class ViewerUI : CanvasLayer
         var online = _network.IsAuthenticated;
         var connecting = !online && _state is "requesting_ticket" or "connecting" or "authenticating" or "waiting_island";
         _indicator.Color = online ? UiStyle.SuccessBright : connecting ? UiStyle.Warning : UiStyle.Danger;
-        _connectionMenu.Text = online ? "Conectado" : connecting ? "Conectando…" : "Desconectado";
+        _connectionMenu.Text = ConnectionText(online, connecting);
+        NoteIsland(online ? _network.CurrentIslandId : Guid.Empty);
         _islandName.Text = online ? (_islandNames.TryGetValue(_network.CurrentIslandId, out var islandTitle) ? islandTitle : "Ilha") : "Sem ilha";
         _peopleButton.SetPressedNoSignal(_people?.Visible ?? false);
         _inventoryButton.SetPressedNoSignal(_world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.IsOpen ?? false);

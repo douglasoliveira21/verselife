@@ -250,7 +250,7 @@ public partial class TerrainEditor : Node3D
     private void BuildPanel()
     {
         _window = new FloatingWindow("Editar terreno", icon: "map", minimizable: true) { Name = "TerrainTools", Visible = false };
-        _window.Place(0, 0, 18, 56, 548, 56 + 760);
+        _window.Place(0, 0, 18, 84, 548, 84 + 760);
         _window.Scale = new Vector2(.8f, .8f);
         var box = _window.Content; box.AddThemeConstantOverride("separation", 8);
 
