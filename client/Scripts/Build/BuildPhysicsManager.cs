@@ -35,13 +35,22 @@ public partial class BuildPhysicsManager : Node
         var plan = new List<BuildObjectState>();
         foreach (var state in states)
         {
-            var (settings, why) = change(PhysicsRules.Read(state.PhysicsJson)); if (why is not null) { problem = why; break; }
+            var (settings, why) = change(SettingsOf(state)); if (why is not null) { problem = why; break; }
             var after = BuildPersistenceManager.Clone(state); after.PhysicsJson = PhysicsRules.Write(state.PhysicsJson, settings);
             if (after.PhysicsJson != state.PhysicsJson) plan.Add(after);
         }
         if (problem is null) foreach (var after in plan) if (_sync.Update(after)) sent++;
         return (sent, problem);
     }
+
+    /// <summary>The object's physics settings. An imported model with no shape of its own is exact (triangle mesh): reading it as a box and writing that back would turn a house into a solid block.</summary>
+    public static PhysicsSettings SettingsOf(BuildObjectState state)
+    {
+        var read = PhysicsRules.Read(state.PhysicsJson);
+        return state.PrimitiveType == "mesh" && !HasShape(state.PhysicsJson) ? read with { CollisionShape = "triangle" } : read;
+    }
+
+    private static bool HasShape(string json) { try { return !string.IsNullOrWhiteSpace(json) && System.Text.Json.Nodes.JsonNode.Parse(json) is System.Text.Json.Nodes.JsonObject o && o["shape"] is not null; } catch (System.Text.Json.JsonException) { return false; } }
 
     public (int Sent, string? Problem) SetPhysical(bool on) => Edit(s =>
     {

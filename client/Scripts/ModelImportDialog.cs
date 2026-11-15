@@ -50,9 +50,10 @@ public partial class ModelImportDialog : Node
     {
         get
         {
-            try { var config = new ConfigFile(); if (config.Load(PrefsPath) == Error.Ok && config.GetValue("models", "collision_shape", "box").AsString() is var shape && shape is "none" or "box" or "convex" or "triangle") return shape; }
+            // A model is exact by default (triangle mesh): people walk into houses. The old default was a box, an invisible wall around the whole model, so a "box" saved before this choice existed is ignored.
+            try { var config = new ConfigFile(); if (config.Load(PrefsPath) == Error.Ok && (bool)config.GetValue("models", "collision_default_v2", false) && config.GetValue("models", "collision_shape", "triangle").AsString() is var shape && shape is "none" or "box" or "convex" or "triangle") return shape; }
             catch (Exception) { }
-            return "box";
+            return "triangle";
         }
     }
 
@@ -126,7 +127,7 @@ public partial class ModelImportDialog : Node
         var physicsLabel = Muted("Colisão:", 18); physicsRow.AddChild(physicsLabel);
         _collisionShape = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, TooltipText = "Caixa é leve; casco convexo serve para objetos simples; malha triangular preserva interiores e só pode ser estática." };
         _collisionShape.AddItem("Nenhuma"); _collisionShape.AddItem("Caixa"); _collisionShape.AddItem("Casco convexo"); _collisionShape.AddItem("Malha triangular (estática)");
-        _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, ImportedCollisionShape) is var collisionIndex && collisionIndex >= 0 ? collisionIndex : 1); physicsRow.AddChild(_collisionShape);
+        _collisionShape.Select(Array.IndexOf(new[] { "none", "box", "convex", "triangle" }, ImportedCollisionShape) is var collisionIndex && collisionIndex >= 0 ? collisionIndex : 3); physicsRow.AddChild(_collisionShape);
         physicsBody.AddChild(Muted("A escolha é salva como padrão de colocação; você pode refiná-la depois no editor.", 15));
         right.AddChild(physics);
 
@@ -309,7 +310,7 @@ public partial class ModelImportDialog : Node
         if (!float.IsFinite(size) || size is < .1f or > 64f) { SetProblem("O tamanho deve ficar entre 0,1 e 64 metros."); return; }
         SavePlacementSize(size);
         var collision = new[] { "none", "box", "convex", "triangle" }.ElementAtOrDefault(_collisionShape.Selected) ?? "box";
-        var config = new ConfigFile(); config.Load(PrefsPath); config.SetValue("models", "collision_shape", collision); config.Save(PrefsPath);
+        var config = new ConfigFile(); config.Load(PrefsPath); config.SetValue("models", "collision_shape", collision); config.SetValue("models", "collision_default_v2", true); config.Save(PrefsPath);
         var path = _path;
         Close();
         Confirmed?.Invoke(path);

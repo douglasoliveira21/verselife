@@ -23,11 +23,11 @@ public static class GraphicsQuality
 
     public static readonly Preset LowPreset = new("Baixo", 0, false, false, false, RenderingServer.EnvironmentSsaoQuality.VeryLow, true, false, false, 0f, false, 1f, 1f,
         true, DirectionalLight3D.ShadowMode.Parallel2Splits, 55f, RenderingServer.ShadowQuality.Hard, 2048, 1f);
-    public static readonly Preset MediumPreset = new("Médio", 0, true, false, true, RenderingServer.EnvironmentSsaoQuality.Low, true, false, true, .35f, true, 1.04f, 1.06f,
+    public static readonly Preset MediumPreset = new("Médio", 2, false, false, true, RenderingServer.EnvironmentSsaoQuality.Low, true, false, true, .35f, true, 1.04f, 1.06f,
         true, DirectionalLight3D.ShadowMode.Parallel2Splits, 90f, RenderingServer.ShadowQuality.SoftLow, 2048, 1f);
-    public static readonly Preset HighPreset = new("Alto", 2, false, true, true, RenderingServer.EnvironmentSsaoQuality.Medium, false, false, true, .5f, true, 1.06f, 1.1f,
+    public static readonly Preset HighPreset = new("Alto", 4, false, false, true, RenderingServer.EnvironmentSsaoQuality.Medium, false, false, true, .5f, true, 1.06f, 1.1f,
         true, DirectionalLight3D.ShadowMode.Parallel4Splits, 140f, RenderingServer.ShadowQuality.SoftMedium, 4096, 1.2f);
-    public static readonly Preset UltraPreset = new("Ultra", 4, false, true, true, RenderingServer.EnvironmentSsaoQuality.High, false, true, true, .6f, true, 1.08f, 1.12f,
+    public static readonly Preset UltraPreset = new("Ultra", 4, false, false, true, RenderingServer.EnvironmentSsaoQuality.High, false, true, true, .6f, true, 1.08f, 1.12f,
         true, DirectionalLight3D.ShadowMode.Parallel4Splits, 240f, RenderingServer.ShadowQuality.SoftHigh, 4096, 1.5f);
 
     public static Preset PresetOf(Level level) => level switch { Level.Low => LowPreset, Level.Medium => MediumPreset, Level.High => HighPreset, Level.Ultra => UltraPreset, _ => HighPreset };
@@ -55,7 +55,7 @@ public static class GraphicsQuality
 
     public static void Apply(Preset p, Viewport viewport, Godot.Environment? environment, DirectionalLight3D? sun)
     {
-        // anti-aliasing: MSAA for the geometry edges, FXAA when MSAA is off, TAA for the shimmer on thin things
+        // anti-aliasing: MSAA only. FXAA and TAA smear anything drawn as a moving flat sprite, such as the name over an avatar, so no preset uses them
         viewport.Msaa3D = p.Msaa switch { 2 => Viewport.Msaa.Msaa2X, 4 => Viewport.Msaa.Msaa4X, 8 => Viewport.Msaa.Msaa8X, _ => Viewport.Msaa.Disabled };
         viewport.ScreenSpaceAA = p.Fxaa ? Viewport.ScreenSpaceAAEnum.Fxaa : Viewport.ScreenSpaceAAEnum.Disabled;
         viewport.UseTaa = p.Taa;

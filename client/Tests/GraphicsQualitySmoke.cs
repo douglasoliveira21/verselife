@@ -24,12 +24,13 @@ public partial class GraphicsQualitySmoke : Node
             GraphicsQuality.Choose(GraphicsQuality.Level.Low); await Frames(2);
             Require(!env.SsaoEnabled && !env.GlowEnabled && viewport.Msaa3D == Viewport.Msaa.Disabled && !viewport.UseTaa && sun.DirectionalShadowMode == DirectionalLight3D.ShadowMode.Parallel2Splits, "Baixo: no effects, 2 shadow splits");
             GraphicsQuality.Choose(GraphicsQuality.Level.Medium); await Frames(2);
-            Require(env.SsaoEnabled && env.GlowEnabled && viewport.ScreenSpaceAA == Viewport.ScreenSpaceAAEnum.Fxaa && !env.SsilEnabled, "Médio: ambient occlusion, glow and FXAA");
+            Require(env.SsaoEnabled && env.GlowEnabled && viewport.Msaa3D == Viewport.Msaa.Msaa2X && !env.SsilEnabled, "Médio: ambient occlusion, glow and MSAA 2x");
             GraphicsQuality.Choose(GraphicsQuality.Level.High); await Frames(2);
-            Require(viewport.UseTaa && viewport.Msaa3D == Viewport.Msaa.Msaa2X && sun.DirectionalShadowMode == DirectionalLight3D.ShadowMode.Parallel4Splits && sun.ShadowEnabled, "Alto: TAA, MSAA 2x and 4 shadow splits");
+            Require(viewport.Msaa3D == Viewport.Msaa.Msaa4X && sun.DirectionalShadowMode == DirectionalLight3D.ShadowMode.Parallel4Splits && sun.ShadowEnabled, "Alto: MSAA 4x and 4 shadow splits");
             GraphicsQuality.Choose(GraphicsQuality.Level.Ultra); await Frames(2);
             Require(env.SsilEnabled && viewport.Msaa3D == Viewport.Msaa.Msaa4X && sun.DirectionalShadowMaxDistance >= 200f && env.AdjustmentEnabled, "Ultra: indirect light, MSAA 4x, long shadows, color adjustment");
             Require(sun.DirectionalShadowMaxDistance > GraphicsQuality.PresetOf(GraphicsQuality.Level.Low).ShadowDistance, "every step reaches further with shadows");
+            foreach (var level in new[] { GraphicsQuality.Level.Low, GraphicsQuality.Level.Medium, GraphicsQuality.Level.High, GraphicsQuality.Level.Ultra }) { var p = GraphicsQuality.PresetOf(level); Require(!p.Taa && !p.Fxaa, $"{p.Name}: no TAA or FXAA (they blur the name plates)"); }
             GraphicsQuality.Choose(GraphicsQuality.Level.Auto); await Frames(2);
             Require(GraphicsQuality.Current != GraphicsQuality.Level.Auto, "Automático resolves to a level");
 

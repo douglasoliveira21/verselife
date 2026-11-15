@@ -5,9 +5,9 @@ O cliente usa o renderizador **Forward+** do Godot. Antes só havia céu, névoa
 | Nível | Antialiasing | Oclusão ambiente | Luz indireta | Brilho | Cor | Sombras do sol |
 |---|---|---|---|---|---|---|
 | **Baixo** | nenhum | — | — | — | — | 2 cascatas, 55 m, duras |
-| **Médio** | FXAA | baixa | — | leve | contraste +4%, saturação +6% | 2 cascatas, 90 m, suaves |
-| **Alto** | TAA + MSAA 2x | média | — | sim | +6% / +10% | 4 cascatas, 140 m, suaves |
-| **Ultra** | TAA + MSAA 4x | alta | sim | sim | +8% / +12% | 4 cascatas, 240 m, muito suaves |
+| **Médio** | MSAA 2x | baixa | — | leve | contraste +4%, saturação +6% | 2 cascatas, 90 m, suaves |
+| **Alto** | MSAA 4x | média | — | sim | +6% / +10% | 4 cascatas, 140 m, suaves |
+| **Ultra** | MSAA 4x | alta | sim | sim | +8% / +12% | 4 cascatas, 240 m, muito suaves |
 | **Automático** (padrão) | placa dedicada → Alto, integrada → Baixo, outra → Médio | | | | | |
 
 - Código: `client/Scripts/GraphicsQuality.cs` (predefinições e regras), aplicado pelo `IslandEnvironmentController` ao `WorldEnvironment`, ao `Sun` e à viewport; a escolha é salva em `user://settings.cfg` (`[graphics] quality`) e vale na hora, sem reiniciar.
@@ -28,3 +28,5 @@ O cliente usa o renderizador **Forward+** do Godot. Antes só havia céu, névoa
 É um mundo quase vazio: serve para comparar o custo relativo dos níveis, não para prever uma ilha cheia (onde objetos, luzes e scripts pesam mais que os efeitos de tela).
 
 Teste automático: `GraphicsQualitySmoke`.
+
+**Por que não há TAA nem FXAA:** os dois borram o que se move como um sprite plano, como o nome sobre o avatar (relato: o nome ficava borrado ao andar nos níveis Alto e Ultra). Os níveis usam só MSAA.
