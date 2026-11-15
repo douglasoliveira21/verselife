@@ -32,6 +32,10 @@ public partial class NetworkManager : Node
     public IEnumerable<(int Peer, string Name, Vector3 Position)> RemoteAvatars => _remote.Select(x => (x.Key, x.Value.Name, x.Value.Node.GlobalPosition)).ToList();
     public int OwnPeerId => Multiplayer.HasMultiplayerPeer() ? Multiplayer.GetUniqueId() : 0;
     private readonly Dictionary<int, RemoteAvatar> _remote = [];
+    /// Avatars this person chose to hide on this screen (a local choice for the session: nobody else is affected, and the server still sees them).
+    public static readonly HashSet<int> HiddenPeers = [];
+    /// Hides or shows an avatar on this screen; returns whether it is hidden now.
+    public static bool ToggleHidden(int peer) { if (HiddenPeers.Remove(peer)) return false; HiddenPeers.Add(peer); return true; }
     private HttpRequest _http = null!;
     private HttpRequest _snapshotHttp = null!;
     private NetworkBridge _bridge = null!;
@@ -99,6 +103,7 @@ public partial class NetworkManager : Node
         var weight = 1f - MathF.Exp(-12f * (float)delta);
         foreach (var (peer, remote) in _remote)
         {
+            remote.Node.Visible = !HiddenPeers.Contains(peer);
             remote.Node.Position = remote.Node.Position.Lerp(remote.TargetPosition, weight);
             remote.Node.Rotation = new Vector3(0, Mathf.LerpAngle(remote.Node.Rotation.Y, remote.TargetYaw, weight), 0);
             // Voice is a property of the island: while it is on for you, everyone shows the small dot. Speakers feed their own rings (VoicePlayback).
@@ -209,7 +214,7 @@ public partial class NetworkManager : Node
 
     private void LeaveCurrentIsland()
     {
-        IsAuthenticated = false; CanEditTerrain = false; foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); Vehicles.Clear();
+        IsAuthenticated = false; CanEditTerrain = false; foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); HiddenPeers.Clear(); VoiceChat.MutedPeers.Clear(); Vehicles.Clear();
         EmitSignal(SignalName.ConnectionStateChanged, "switching", "Mudando de ilha");
     }
 
@@ -337,7 +342,7 @@ public partial class NetworkManager : Node
         if (_remote.TryGetValue(peerId, out var remote)) { remote.Rig.ApplyAppearance(data); remote.Name = displayName; EmitSignal(SignalName.AppearanceRefreshed, peerId, displayName); }
     }
 
-    public void OnPlayerDespawned(int peerId, bool suspended) { Voice.Forget(peerId); if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }
+    public void OnPlayerDespawned(int peerId, bool suspended) { Voice.Forget(peerId); HiddenPeers.Remove(peerId); VoiceChat.MutedPeers.Remove(peerId); if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }
     public void OnChatReceived(int peerId, string displayName, string message, long unixMilliseconds)
     {
         var time = DateTimeOffset.FromUnixTimeMilliseconds(unixMilliseconds).ToLocalTime().ToString("HH:mm");

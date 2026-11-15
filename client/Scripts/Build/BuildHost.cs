@@ -27,6 +27,8 @@ public static class BuildHost
 
     public static void SelectFromContext(Node world, Guid id) => Editor(world)?.SelectFromContext(id);
 
+    public static void TakeObject(Node world, Guid id, string name, bool remove) => Editor(world)?.TakeObject(id, name, remove);
+
     public static void DeleteOwnedObject(Node world, Guid id) => Editor(world)?.DeleteOwnedObject(id);
 
     public static void StartPlacing(Node world)

@@ -157,6 +157,7 @@ public partial class InventoryPanel : Node3D
         _tree.AddThemeStyleboxOverride("selected", UiStyle.Box(new Color(UiStyle.AccentFillStrong, .85f), new Color(0, 0, 0, 0), 10, 0, 6, 4)); _tree.AddThemeStyleboxOverride("selected_focus", UiStyle.Box(new Color(UiStyle.AccentFillStrong, .85f), new Color(0, 0, 0, 0), 10, 0, 6, 4));
         _tree.AddThemeStyleboxOverride("cursor", clear); _tree.AddThemeStyleboxOverride("cursor_unfocused", clear);
         _tree.ItemSelected += OnSelected;
+        _tree.ItemMouseSelected += (position, button) => { if (button == (long)MouseButton.Right) OnFolderRightClick(); };
         _tree.SetDragForwarding(Callable.From<Vector2, Variant>(FolderDragData), Callable.From<Vector2, Variant, bool>(CanDrop), Callable.From<Vector2, Variant>(Drop));
         left.AddChild(_tree);
         _status = new Label { Text = string.Empty, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(250, 0) };
@@ -847,8 +848,27 @@ public partial class InventoryPanel : Node3D
         }
     }
 
+    /// <summary>Asked for the radial menu of an item or a folder (the screen position and what was clicked). When nobody listens, the old list menu opens as before.</summary>
+    public event Action<Vector2, ContextTarget>? ContextRequested;
+
+    /// <summary>Runs an action of the inventory menu (the same numbers the list menu uses) on the selected item or folder.</summary>
+    public void RunMenuAction(long id) => OnMenu(id);
+
+    private void OnFolderRightClick()
+    {
+        var node = _tree.GetSelected();
+        if (node is null || node.GetMetadata(0).VariantType != Variant.Type.String || !node.GetMetadata(0).AsString().StartsWith("folder:", StringComparison.Ordinal)) return;
+        if (ContextRequested is null || !Guid.TryParse(node.GetMetadata(0).AsString()[7..], out var folder)) return;
+        ContextRequested.Invoke(_tree.GetGlobalMousePosition(), new InventoryFolderTarget(folder, node.GetText(0)));
+    }
+
     private void OpenItemMenu(Control anchor, Vector2 screen)
     {
+        if (ContextRequested is not null && _items.TryGetValue(_selectedItem, out var item))
+        {
+            ContextRequested.Invoke(screen, new InventoryItemTarget(item.ItemId, item.Name, IsModel(item) ? "models" : item.Category, item.OwnerRights, _trash || item.Deleted, item.Status == "offered"));
+            return;
+        }
         var menu = new PopupMenu();
         menu.AddItem("Pré-visualizar…", 16); menu.AddItem("Versões…", 21); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5);
         menu.AddSeparator(); if (_trash) { menu.AddItem("Restaurar da lixeira", 6); menu.AddItem("Excluir definitivamente", 14); } else menu.AddItem("Excluir (vai para a lixeira)", 13);

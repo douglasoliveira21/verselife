@@ -5274,6 +5274,58 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("reports", "social");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.TeleportInvite", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("FromUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("from_user_id");
+
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("character varying(8)")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset?>("RespondedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("responded_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("ToUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("to_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("FromUserId", "CreatedAt");
+
+                    b.HasIndex("ToUserId", "Status", "ExpiresAt");
+
+                    b.ToTable("teleport_invites", "social");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.TeleportReservation", b =>
                 {
                     b.Property<Guid>("Id")

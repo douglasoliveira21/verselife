@@ -125,6 +125,7 @@ public partial class ViewerUI : CanvasLayer
         if (_world.GetNodeOrNull<ObjectEffects>("ObjectEffects") is null) _world.AddChild(new ObjectEffects { Name = "ObjectEffects" });
         if (_world.GetNodeOrNull<ScriptDialogWindow>("ScriptDialogWindow") is null) _world.AddChild(new ScriptDialogWindow { Name = "ScriptDialogWindow" });
         if (_world.GetNodeOrNull<ScriptHudLayer>("ScriptHudLayer") is null) _world.AddChild(new ScriptHudLayer { Name = "ScriptHudLayer" });
+        if (_world.GetNodeOrNull<ScriptHudLayer>("ScriptHudLayer") is { } scriptHud) scriptHud.PanelContextRequested += (script, title, position) => _context?.OpenFor(new HudTarget(script, title), position);
         if (_world.GetNodeOrNull<WorldEntryCoordinator>("WorldEntryCoordinator") is null) _world.AddChild(new WorldEntryCoordinator { Name = "WorldEntryCoordinator" });
         if (_world.GetNodeOrNull<TeleportCoordinator>("TeleportCoordinator") is null) { var trip = new TeleportCoordinator { Name = "TeleportCoordinator" }; _world.AddChild(trip); trip.Initialize(_world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator")); }
         _teleport = _world.GetNode<TeleportCoordinator>("TeleportCoordinator");

@@ -139,10 +139,14 @@ public partial class VoiceChat : Node
     public int FirstSpeaker => _speakers.Keys.FirstOrDefault();
     public VoicePlayback? PlaybackOf(int peer) => _speakers.TryGetValue(peer, out var state) && state.Playback is { } playback && IsInstanceValid(playback) ? playback : null;
 
+    /// People this player silenced on their own screen (a local choice for the session: they can still talk to everybody else).
+    public static readonly HashSet<int> MutedPeers = [];
+    public static bool ToggleMuted(int peer) { if (MutedPeers.Remove(peer)) return false; MutedPeers.Add(peer); return true; }
+
     /// A packet from the server. Late or repeated packets are ignored; a short gap is filled with concealment.
     public void Receive(int speaker, long sequence, byte[] data)
     {
-        if (!Enabled) return;
+        if (!Enabled || MutedPeers.Contains(speaker)) return;
         if (!_speakers.TryGetValue(speaker, out var state)) _speakers[speaker] = state = new SpeakerState();
         if (sequence <= state.LastSequence) return;
         var gap = state.LastSequence < 0 ? 0 : sequence - state.LastSequence - 1;

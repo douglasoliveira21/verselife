@@ -23,6 +23,10 @@ public partial class ScriptHudLayer : Node
     /// <summary>Sends an action (JSON) to the island. Replaced in tests.</summary>
     public Action<string>? Send { get; set; }
     public int PanelCount => _panels.Count;
+    /// <summary>A right click on a panel: the script, its title and where the cursor is (the radial menu opens there).</summary>
+    public event Action<Guid, string, Vector2>? PanelContextRequested;
+    /// <summary>Closes a panel the way its X does: tells the island and removes it.</summary>
+    public void CloseFromMenu(Guid script) { if (!_panels.ContainsKey(script)) return; Transmit(JsonSerializer.Serialize(new { hud = true, script, action = "close" })); Remove(script); }
     public bool Has(Guid script) => _panels.ContainsKey(script);
     public string TextOf(Guid script) => _panels.TryGetValue(script, out var panel) ? string.Join("|", panel.Box.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)) : "";
     public IReadOnlyList<string> ButtonsOf(Guid script) => _panels.TryGetValue(script, out var panel) ? [.. panel.Body.FindChildren("*", "Button", true, false).OfType<Button>().Select(b => b.Text)] : [];
@@ -75,7 +79,7 @@ public partial class ScriptHudLayer : Node
         {
             if (_panels.Count >= MaxPanels) return;
             panel = new Panel { Script = script }; _panels[script] = panel;
-            panel.Box = new PanelContainer { Name = $"ScriptHud_{script:N}", MouseFilter = Control.MouseFilterEnum.Stop }; panel.Box.AddThemeStyleboxOverride("panel", UiStyle.Glass(.9f, 14, 12)); AddChild(panel.Box);
+            panel.Box = new PanelContainer { Name = $"ScriptHud_{script:N}", MouseFilter = Control.MouseFilterEnum.Stop }; var shown = panel; panel.Box.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Right } click) { PanelContextRequested?.Invoke(script, shown.Object, click.GlobalPosition); panel.Box.AcceptEvent(); } }; panel.Box.AddThemeStyleboxOverride("panel", UiStyle.Glass(.9f, 14, 12)); AddChild(panel.Box);
             panel.Body = new VBoxContainer(); panel.Body.AddThemeConstantOverride("separation", 6); panel.Box.AddChild(panel.Body);
         }
         panel.Object = objectName; var captured = panel;

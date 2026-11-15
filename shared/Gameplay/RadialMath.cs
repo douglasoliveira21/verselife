@@ -4,11 +4,13 @@ namespace LifeVerse.Shared.Gameplay;
 
 /// <summary>
 /// The geometry of the radial (pie) menu: which slice the cursor is over, where each slice's label goes, how to keep the circle on screen
-/// and how to split a long list into several circles of at most eight. Slice 0 is centred at the top and the slices run clockwise.
+/// and how to split a long list into several circles of at most twelve. Slice 0 is centred at the top and the slices run clockwise.
 /// </summary>
 public static class RadialMath
 {
-    public const int MaxSlices = 8;
+    public const int MaxSlices = 12;
+    /// <summary>Up to this many slices keep the normal text size; more get compact text.</summary>
+    public const int NormalSlices = 8;
 
     /// <summary>The angle (radians, 0 = right, positive = clockwise on screen) of the middle of a slice.</summary>
     public static float SliceCenter(int index, int count) => -MathF.PI / 2f + index * 2f * MathF.PI / Math.Max(1, count);
@@ -40,7 +42,7 @@ public static class RadialMath
     }
 
     /// <summary>
-    /// Splits entries into circles of at most <see cref="MaxSlices"/>. When there are more, the first circle keeps seven and its eighth
+    /// Splits entries into circles of at most <see cref="MaxSlices"/>. When there are more, the first circle keeps eleven and its twelfth
     /// slice opens the next circle, and so on, so nothing is ever left out.
     /// </summary>
     public static List<List<T>> Pages<T>(IReadOnlyList<T> items)
@@ -52,7 +54,7 @@ public static class RadialMath
         return pages;
     }
 
-    /// <summary>Which slice a number key (1 to 8) picks, or -1.</summary>
+    /// <summary>Which slice a number key (1 to 9) picks, or -1.</summary>
     public static int SliceForKey(int number, int count) => number >= 1 && number <= count ? number - 1 : -1;
 
     /// <summary>The next slice in a direction (+1 clockwise, -1 anticlockwise), wrapping round; starts at the top when none is chosen.</summary>

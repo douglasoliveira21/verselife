@@ -13,6 +13,12 @@ public static partial class SettingsAppliers
     {
         store.RegisterApplier("general.keep_on_top", v => DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.AlwaysOnTop, (bool)v));
 
+        store.RegisterApplier("interface.radial_size", v => RadialStyle.Size = (int)v);
+        store.RegisterApplier("interface.radial_opacity", v => RadialStyle.Opacity = (int)v);
+        store.RegisterApplier("interface.radial_glow", v => RadialStyle.Glow = (int)v);
+        store.RegisterApplier("interface.radial_speed", v => RadialStyle.Speed = Convert.ToSingle(v));
+        store.RegisterApplier("interface.radial_tooltips", v => RadialStyle.Tooltips = (bool)v);
+
         store.RegisterApplier("avatar.show_names", v => NamePlate.ShowNames = (bool)v);
         store.RegisterApplier("avatar.show_own_name", v => NamePlate.ShowOwnName = (bool)v);
         store.RegisterApplier("avatar.show_titles", v => NamePlate.ShowTitles = (bool)v);

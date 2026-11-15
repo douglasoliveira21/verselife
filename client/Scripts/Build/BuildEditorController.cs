@@ -522,6 +522,9 @@ public partial class BuildEditorController : Node3D
     }
     public void SelectFromContext(Guid id) => EditObject(id);
 
+    /// <summary>"Pegar" / "Pegar cópia" in the context menu: selects the object and saves it to the inventory (and removes it from the world when asked). The server checks ownership and rights.</summary>
+    public void TakeObject(Guid id, string name, bool remove) { EditObject(id); _packages.SaveSelection(string.IsNullOrWhiteSpace(name) ? "Objeto" : name, remove); }
+
     /// <summary>"Delete" in the context menu: the server refuses it when the object is not the person's.</summary>
     public void DeleteOwnedObject(Guid id) => _sync.Delete(id);
 

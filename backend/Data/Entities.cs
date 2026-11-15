@@ -874,3 +874,22 @@ public sealed class UserPreference
     public required string ValuesJson { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
+
+/// <summary>
+/// A teleport between two people on the same island: an "offer" (the sender takes the recipient to where the sender is) or a "request"
+/// (the sender asks to be taken to where the recipient is). Nobody moves until the recipient accepts, and the spot is read from the
+/// island's own report at that moment, never from the game.
+/// </summary>
+public sealed class TeleportInvite
+{
+    public Guid Id { get; set; }
+    public Guid FromUserId { get; set; }
+    public Guid ToUserId { get; set; }
+    public required string Kind { get; set; }
+    public Guid IslandId { get; set; }
+    /// <summary>pending, accepted, declined or expired.</summary>
+    public required string Status { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? RespondedAt { get; set; }
+}

@@ -160,6 +160,7 @@ app.MapWelcomeEndpoints();
 app.MapGlobalSearchEndpoints();
 app.MapSearchModerationEndpoints();
 app.MapItemRightsEndpoints();
+app.MapTeleportInviteEndpoints();
 app.MapItemOfferEndpoints();
 app.MapObjectRightsEndpoints();
 app.MapParcelEndpoints();

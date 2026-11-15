@@ -316,6 +316,14 @@ public partial class ViewerUI
         {
             InviteToGroup = name => { var invite = _world.GetNodeOrNull<Groups.GroupInviteWindow>("GroupInviteWindow"); if (invite is null) { invite = new Groups.GroupInviteWindow { Name = "GroupInviteWindow", Said = text => Toast(text) }; _world.AddChild(invite); } _ = invite.OpenAsync(name); },
             AddFriend = people.AddFriend, Message = people.AskMessage, Block = people.Block, Report = people.AskReport,
+            Relation = people.RelationOf, Pay = people.AskPayment, Teleport = (name, kind) => people.SendTeleportInvite(name, _network.CurrentIslandId, kind), RemoveFriend = people.RemoveFriend, AcceptFriend = people.AcceptFriend, CopyPersonId = people.CopyId, Prefetch = name => { people.Prefetch(name); people.ProbeAdmin(_network.CurrentIslandId); },
+            IsIslandAdmin = () => people.IsIslandAdmin(_network.CurrentIslandId),
+            EjectFromParcel = (name, position) => { if (_world.GetNodeOrNull<LandManager>("LandManager")?.ParcelAt(position.X, position.Z) is { } parcel) people.EjectFromParcel(name, _network.CurrentIslandId, parcel.Id); else Toast("Esta pessoa não está num terreno."); },
+            BanFromParcel = (name, position, minutes) => { if (_world.GetNodeOrNull<LandManager>("LandManager")?.ParcelAt(position.X, position.Z) is { } parcel) people.BanFromParcel(name, _network.CurrentIslandId, parcel.Id, minutes); else Toast("Esta pessoa não está num terreno."); },
+            KickFromRegion = name => people.KickFromRegion(name, _network.CurrentIslandId, "expulso pelo menu"),
+            IsHidden = peer => NetworkManager.HiddenPeers.Contains(peer), IsMuted = peer => VoiceChat.MutedPeers.Contains(peer),
+            ToggleHidden = peer => Toast(NetworkManager.ToggleHidden(peer) ? "Avatar oculto só na sua tela, até você sair da ilha." : "Avatar visível de novo."),
+            ToggleMuted = peer => Toast(VoiceChat.ToggleMuted(peer) ? "Voz silenciada só neste aparelho, até você sair da ilha." : "Você volta a ouvir esta pessoa."),
             ToggleInventory = () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(),
             ToggleGestures = ToggleGestures,
             TogglePeople = () => _people?.Toggle(),
@@ -339,11 +347,25 @@ public partial class ViewerUI
             EnterVehicle = id => _network.EnterVehicle(id),
             ExitVehicle = () => _network.ExitVehicle(),
             IsDriving = id => _network.Vehicles.DrivenBy(_network.OwnPeerId)?.VehicleId == id,
-            Owns = view => session is null || session.UserId == Guid.Empty || view.State.OwnerUserId == session.UserId
+            Owns = view => session is null || session.UserId == Guid.Empty || view.State.OwnerUserId == session.UserId,
+            Actor = () => new LifeVerse.Shared.Interaction.ContextActor(session?.UserId ?? Guid.Empty),
+            Parcel = point => ParcelFactsAt(point),
+            EditTerrain = () => _world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.SetActive(true),
+            ManageLand = () => { if (_world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow") is { IsOpen: false } manage) manage.Toggle(); },
+            ParcelOwner = point => Toast(_world.GetNodeOrNull<LandManager>("LandManager")?.ParcelAt(point.X, point.Z) is { } owned ? (owned.State == "public" ? "Terreno público da ilha." : $"Terreno «{owned.Name}» de {owned.OwnerName}.") : "Terreno sem dono."),
+            TakeObject = (id, name, remove) => BuildHost.TakeObject(_world, id, name, remove),
+            InventoryAction = action => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.RunMenuAction(action),
+            CloseHud = script => _world.GetNodeOrNull<ScriptHudLayer>("ScriptHudLayer")?.CloseFromMenu(script)
         };
         _context = new ContextInteractionManager { Name = "ContextInteraction" }; AddChild(_context);
         _context.Setup(_world, _player, menu, services);
+        if (_world.GetNodeOrNull<InventoryPanel>("InventoryPanel") is { } inventoryPanel) inventoryPanel.ContextRequested += (position, target) => _context?.OpenFor(target, position);
         if (_player is not null) _player.ContextRequested += position => { if (!ToolsOwnTheMouse()) _context.OpenAt(position); };
+        people.Known += name => _context?.RefreshFor(name);
+        people.AdminKnown += () => _context?.RefreshCurrent();
+        people.TeleportRequested += (x, z) => _network.RequestTeleport(string.Empty, x, z);
+        if (GetNodeOrNull<NotificationClient>("Notifications") is { } live) live.Raw += people.OnLiveEvent;
+        people.PaymentMade += RequestWallet;
     }
 
 
@@ -704,5 +726,17 @@ public partial class PadArrowButton(string direction) : Button
             _ => new Vector2[] { c + new Vector2(r, 0), c + new Vector2(-r * .8f, r * 1.15f), c + new Vector2(-r * .8f, -r * 1.15f) }
         };
         DrawColoredPolygon(points, Disabled ? UiStyle.TextDisabled : Colors.White);
+    }
+}
+
+public partial class ViewerUI
+{
+    /// What the radial menu needs to know about the parcel under a point: unknown until the land data has arrived, "free" when nobody owns the cell.
+    private LifeVerse.Shared.Interaction.ParcelFacts ParcelFactsAt(Vector3 point)
+    {
+        if (_world.GetNodeOrNull<LandManager>("LandManager") is not { } land || land.Version <= 0) return LifeVerse.Shared.Interaction.ParcelFacts.Unknown;
+        return land.ParcelAt(point.X, point.Z) is { } parcel
+            ? new LifeVerse.Shared.Interaction.ParcelFacts(true, parcel.State, parcel.Mine || parcel.TenantIsMe, parcel.CanEditTerrain, parcel.BuildMode)
+            : new LifeVerse.Shared.Interaction.ParcelFacts(true, "free", false, false, "owner");
     }
 }

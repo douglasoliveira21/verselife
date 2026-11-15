@@ -53,6 +53,10 @@ public partial class VoiceSmoke : Node3D
             await ToSignal(GetTree().CreateTimer(.9), SceneTreeTimer.SignalName.Timeout);
             Require(!chat.IsSpeaking(7) && !playback.Started, "after a pause the marker disappears and playback stops");
 
+            // a player silenced from the radial menu is not heard, and nothing about them is queued
+            var pending = playback.Queued; VoiceChat.ToggleMuted(7); chat.Receive(7, 30000, sent[0].Data); chat.Receive(7, 30001, sent[1].Data);
+            Require(playback.Queued == pending && VoiceChat.MutedPeers.Contains(7), "a muted speaker's packets are dropped on this screen");
+            VoiceChat.ToggleMuted(7); Require(!VoiceChat.MutedPeers.Contains(7), "muting is a toggle");
             chat.Enabled = false;
             chat.Receive(7, 20000, sent[0].Data);
             chat.Forget(7);

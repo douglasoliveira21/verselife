@@ -58,12 +58,12 @@ public sealed class RadialMathTests
     [Fact]
     public void Pages_SplitLongListsAndKeepEverything()
     {
-        Assert.Single(RadialMath.Pages(Enumerable.Range(0, 8).ToList()));
-        var pages = RadialMath.Pages(Enumerable.Range(0, 12).ToList());
-        Assert.Equal(2, pages.Count); Assert.Equal(7, pages[0].Count); Assert.Equal(5, pages[1].Count);
-        Assert.Equal(Enumerable.Range(0, 12), pages.SelectMany(x => x));
+        Assert.Single(RadialMath.Pages(Enumerable.Range(0, 12).ToList()));
+        var pages = RadialMath.Pages(Enumerable.Range(0, 20).ToList());
+        Assert.Equal(2, pages.Count); Assert.Equal(11, pages[0].Count); Assert.Equal(9, pages[1].Count);
+        Assert.Equal(Enumerable.Range(0, 20), pages.SelectMany(x => x));
         var many = RadialMath.Pages(Enumerable.Range(0, 30).ToList());
-        Assert.All(many, p => Assert.InRange(p.Count, 1, 8)); Assert.Equal(30, many.Sum(p => p.Count) );
+        Assert.All(many, p => Assert.InRange(p.Count, 1, 12)); Assert.Equal(30, many.Sum(p => p.Count) );
     }
 
     [Fact]
