@@ -22,13 +22,19 @@ public partial class UiTabs : HBoxContainer
     /// Size of the labels of flat tabs.
     public int FontSize { get; init; } = 18;
 
+    /// Tabs take keyboard focus (arrows and Enter) when this is set.
+    public bool Focusable { get; init; }
+
     public UiTabs() { AddThemeConstantOverride("separation", 4); }
+
+    /// Removes every tab.
+    public void Clear() { foreach (var tab in _tabs) { RemoveChild(tab); tab.QueueFree(); } _tabs.Clear(); _selected = -1; }
 
     public Button AddTab(string text, string? icon = null, bool iconOnly = false)
     {
         var tab = new TabButton(Flat, FontSize) { Text = iconOnly ? string.Empty : text, TooltipText = text, ToggleMode = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(iconOnly ? 48 : 0, Flat ? 46 : 44) };
         if (icon is not null) tab.Icon = UiStyle.Icon(icon, UiStyle.Text, 20);
-        tab.ExpandIcon = false;
+        tab.ExpandIcon = false; if (Focusable) tab.FocusMode = FocusModeEnum.All;
         if (EqualWidth) tab.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         var index = _tabs.Count;
         tab.Pressed += () => Select(index);

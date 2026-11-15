@@ -41,7 +41,7 @@ public partial class LoadingSmoke : Node
             Require(manager.Step("ready")!.State == StepState.Running && !manager.Succeeded && manager.Progress < 1, "the last step is only finished a frame later");
             await Frames(2);
             Require(manager.Succeeded && Mathf.IsEqualApprox((float)manager.Progress, 1f), "the loading is complete only when every step is");
-            await Frames(60);
+            for (var waited = 0; waited < 300 && (screen.IsOpen || screen.RootAlphaForTesting > .01f); waited++) await Frames(1);      // the fade is a time-based tween: wait for it, not for a number of frames
             Require(!screen.IsOpen && screen.RootAlphaForTesting <= .01f, "the screen fades away when the world is ready");
 
             // a failure while the server starts: retry yes, going back no (this is not a trip from another island)

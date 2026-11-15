@@ -26,7 +26,7 @@ public partial class LoginMusic : Node
     {
         if (GetNodeOrNull<LifeVerse.Client.Autoloads.ClientSettings>("/root/ClientSettings") is { } settings) ApplyBusVolume(settings.MasterVolume);
         var stream = ResourceLoader.Exists(TrackPath) ? GD.Load<AudioStreamMP3>(TrackPath) : null; if (stream is null) return;
-        stream.Loop = true; _player = new AudioStreamPlayer { Stream = stream, VolumeDb = -60f, Bus = "Master" }; AddChild(_player);
+        stream.Loop = true; _player = new AudioStreamPlayer { Stream = stream, VolumeDb = -60f, Bus = Settings.AudioBuses.Of(Settings.AudioBuses.Music) }; AddChild(_player);
         if (!Muted) Start();
     }
 

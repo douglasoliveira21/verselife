@@ -82,6 +82,7 @@ public partial class ViewerUI : CanvasLayer
         _prefs.Load(PrefsPath);
         // The interface preferences belong to the account (user://interface_<account>.cfg); the old per-machine viewer.cfg only seeds them. Loaded first: the windows read their saved layout from it.
         WindowManager.Settings = _interface = InterfaceSettings.Load(GetNodeOrNull<SessionManager>("/root/SessionManager")?.Username);
+        AddToGroup("lifeverse_viewer");
         var theme = _theme = ViewerTheme.Create();
         GetWindow().Theme = theme;
         _root = new Control { Name = "Viewer", Theme = theme, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -102,10 +103,12 @@ public partial class ViewerUI : CanvasLayer
         BuildSideBar();
         WirePeople();
         ApplyInterfaceMode();
+        SeedInterfaceSettings(); ApplyChatFont();
         _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
         _islands = new HttpRequest(); AddChild(_islands); _islands.RequestCompleted += OnIslands;
         RefreshIslands();
         _start = new HttpRequest(); AddChild(_start); _start.RequestCompleted += OnStart;
+        Settings.AutoQuality.Lowered += OnAutoQuality;
         _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected; _network.VehicleMessage += Toast;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
         // The interface preferences belong to the account (user://interface_<account>.cfg); the old per-machine viewer.cfg only seeds them.
@@ -170,12 +173,18 @@ public partial class ViewerUI : CanvasLayer
     public override void _ExitTree()
     {
         if (_network is null) return;
+        Settings.AutoQuality.Lowered -= OnAutoQuality;
         _network.ChatReceived -= OnChat; _network.ConnectionStateChanged -= OnConnectionState; _network.TerrainEditRejected -= OnTerrainRejected; _network.VehicleMessage -= Toast;
     }
+
+    private bool _talkKeyHeld;
 
     public override void _Process(double delta)
     {
         _statusTimer -= delta; _walletTimer += delta; RememberFacing(delta);
+        // the talk key (Configurações › Controles › Voz) works like the Falar button: held, the microphone is on
+        var talkKey = InputMap.HasAction("voice_talk") && !SettingsOpen && _chat.HasFocus() == false && Input.IsActionPressed("voice_talk");
+        if (talkKey != _talkKeyHeld) { _talkKeyHeld = talkKey; _network.Voice.KeyHeld = talkKey; if (!talkKey || (_network.Voice.Enabled && !_network.Voice.BlockedHere)) _network.Voice.PushToTalk = talkKey; }
         if (_chatWindow.Visible && !_chat.HasFocus() && _chatVisibleUntil > 0 && Time.GetTicksMsec() >= _chatVisibleUntil)
         {
             _chatWindow.Visible = false;
@@ -187,6 +196,7 @@ public partial class ViewerUI : CanvasLayer
 
     public override void _UnhandledInput(InputEvent input)
     {
+        if (SettingsOpen) return;                // the settings window owns the keyboard while it is open
         if (input is InputEventKey { Pressed: true, Echo: false, PhysicalKeycode: Key.Delete } && GetViewport().GuiGetFocusOwner() is null && _context?.DeleteSelectedObject() == true)
         {
             GetViewport().SetInputAsHandled();
@@ -334,6 +344,8 @@ public partial class ViewerUI : CanvasLayer
         return factor;
     }
 
+    private void OnAutoQuality(string message) => Toast(message, ToastKind.Warning);
+
     private void RestoreWindowLayout() { WindowManager.ResetLayout(); Toast("Layout das janelas restaurado."); }
 
     private void SetVolume(float volume, bool save = true)
@@ -341,7 +353,7 @@ public partial class ViewerUI : CanvasLayer
         volume = Mathf.Clamp(volume, 0f, 1f);
         AudioServer.SetBusVolumeDb(0, volume <= 0f ? -80f : Mathf.LinearToDb(volume));
         AudioServer.SetBusMute(0, volume <= 0f);
-        if (save) { _prefs.SetValue("audio", "volume", (double)volume); _prefs.Save(PrefsPath); Toast(volume <= 0f ? "Som desligado." : $"Volume: {volume:P0}"); }
+        if (save) { Settings.SettingsService.Mirror("audio.master", volume); _prefs.SetValue("audio", "volume", (double)volume); _prefs.Save(PrefsPath); Toast(volume <= 0f ? "Som desligado." : $"Volume: {volume:P0}"); }
     }
 
     private void SetWeather(string weather)
@@ -545,8 +557,9 @@ public partial class ViewerUI : CanvasLayer
         _root.MoveChild(_chatWindow, -1);
     }
 
-    private void ShowChatTemporarily(double seconds = 6)
+    private void ShowChatTemporarily(double seconds = -1)
     {
+        if (seconds < 0) seconds = ChatSeconds;
         if (_chatMinimized) return;          // minimized: the bubble counts the new messages instead
         _chatWindow.Visible = true;
         _chatVisibleUntil = Time.GetTicksMsec() + (ulong)(seconds * 1000);
@@ -556,7 +569,7 @@ public partial class ViewerUI : CanvasLayer
     {
         _player?.SetTextInputActive(false);
         EndChatReveal();
-        if (_chatWindow.Visible) _chatVisibleUntil = Time.GetTicksMsec() + 6000;
+        if (_chatWindow.Visible) _chatVisibleUntil = Time.GetTicksMsec() + (ulong)(ChatSeconds * 1000);
     }
 
 
@@ -622,14 +635,16 @@ public partial class ViewerUI : CanvasLayer
         if (_snapshotBusy) return;
         _snapshotBusy = true;
         var hud = _player?.GetNodeOrNull<CanvasLayer>("HUD");
-        _root.Visible = false; if (hud is not null) hud.Visible = false;
+        var withInterface = Settings.SettingsService.Store.Get<bool>("camera.photo_include_ui");
+        if (!withInterface) { _root.Visible = false; if (hud is not null) hud.Visible = false; }
         for (var i = 0; i < 3; i++) await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         var image = GetViewport().GetTexture().GetImage();
         _root.Visible = true; if (hud is not null) hud.Visible = true;
         var directory = ProjectSettings.GlobalizePath("user://snapshots");
         DirAccess.MakeDirRecursiveAbsolute(directory);
-        var path = $"{directory}/lifeverse-{DateTime.Now:yyyyMMdd-HHmmss}.png";
-        Toast(image.SavePng(path) == Error.Ok ? $"Foto salva em {path}" : "Não foi possível salvar a foto.");
+        var jpg = (string)Settings.SettingsService.Store.Value("camera.photo_format") == "jpg";
+        var path = $"{directory}/lifeverse-{DateTime.Now:yyyyMMdd-HHmmss}.{(jpg ? "jpg" : "png")}";
+        Toast((jpg ? image.SaveJpg(path, .92f) : image.SavePng(path)) == Error.Ok ? $"Foto salva em {path}" : "Não foi possível salvar a foto.");
         _snapshotBusy = false;
     }
 

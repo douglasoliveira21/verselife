@@ -11,7 +11,10 @@ namespace LifeVerse.Client.Scripts;
 public partial class VoiceChat : Node
 {
     public const string CaptureBus = "VoiceCapture";
-    private const float OpenMicThreshold = .06f;
+    /// <summary>How loud the voice must be for an open microphone to start sending (Configurações › Voz › Sensibilidade). Lower is more sensitive.</summary>
+    public static float OpenMicThreshold { get; set; } = .06f;
+    /// <summary>The talk key is held (the settings window sets it); it keeps the microphone on even though the mouse button is not down.</summary>
+    public bool KeyHeld { get; set; }
     private const int HangoverFrames = 10;
 
     [Signal] public delegate void TalkingChangedEventHandler(bool talking);
@@ -61,7 +64,7 @@ public partial class VoiceChat : Node
         LocalPeak = Mathf.MoveToward(LocalPeak, 0f, (float)delta * 2.5f);
         if (ExternalInput) return;
         // A button held while the mouse is released elsewhere (window lost focus) must not leave the microphone on.
-        if (_pushToTalk && !Input.IsMouseButtonPressed(MouseButton.Left)) PushToTalk = false;
+        if (_pushToTalk && !KeyHeld && !Input.IsMouseButtonPressed(MouseButton.Left)) PushToTalk = false;
         var wantsToTalk = Enabled && !_blockedHere && Online && (OpenMic || PushToTalk);
         if (!wantsToTalk) { _capture?.ClearBuffer(); ReleaseTalking(); return; }
         if (!EnsureMicrophone()) return;

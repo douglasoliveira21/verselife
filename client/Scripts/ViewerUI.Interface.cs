@@ -197,7 +197,7 @@ public partial class ViewerUI
 
     private void OnToolbarMenu(long id)
     {
-        if (id == 1000) { _interface.CompactToolbar = !_interface.CompactToolbar; _interface.Save(); ApplyToolbar(); }
+        if (id == 1000) { _interface.CompactToolbar = !_interface.CompactToolbar; _interface.Save(); MirrorInterface(); ApplyToolbar(); }
         else if (id == 1001) RestoreToolbar();
     }
 
@@ -219,7 +219,7 @@ public partial class ViewerUI
 
     private void RestoreToolbar()
     {
-        _interface.ToolbarOrder.Clear(); _interface.ToolbarHidden.Clear(); _interface.CompactToolbar = false; _interface.Save(); ApplyToolbar();
+        _interface.ToolbarOrder.Clear(); _interface.ToolbarHidden.Clear(); _interface.CompactToolbar = false; _interface.Save(); MirrorInterface(); ApplyToolbar();
         Toast("Barra de ferramentas restaurada.");
     }
 
@@ -268,7 +268,7 @@ public partial class ViewerUI
         Add("pin", "Mapa e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle());
         Add("hammer", "Construir (B)", () => BuildHost.SetActive(_world, true));
         Add("photo", "Tirar foto", TakeSnapshot);
-        Add("settings", "Configurações", () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle());
+        Add("settings", "Configurações", () => OpenSettings());
         SetSideBarOpen(_interface.SideToolbarOpen, save: false);
     }
 
@@ -278,7 +278,7 @@ public partial class ViewerUI
         _sideToggle.Icon = UiStyle.Icon(open ? "chevron-left" : "chevron-right", UiStyle.Text, 18);
         _sideToggle.TooltipText = open ? "Recolher a barra de atalhos" : "Abrir a barra de atalhos";
         _sideBar.ResetSize();
-        if (save) { _interface.SideToolbarOpen = open; _interface.Save(); }
+        if (save) { _interface.SideToolbarOpen = open; _interface.Save(); MirrorInterface(); }
     }
 }
 
@@ -323,7 +323,7 @@ public partial class ViewerUI
     {
         if (!InterfaceModes.Contains(mode)) mode = "full";
         _interface.Mode = mode; _immersiveReveal = false; _revealForChat = false;
-        if (save) _interface.Save();
+        if (save) { _interface.Save(); MirrorInterface(); }
         ApplyInterfaceMode();
         if (save) Toast($"Modo da interface: {InterfaceModeLabels[Array.IndexOf(InterfaceModes, mode)]}" + (mode == "immersive" ? ". F10 mostra ou esconde a interface." : ""));
     }
@@ -427,6 +427,94 @@ public partial class ViewerUI
         WindowManager.SetWindowOpacity(.92f); SetChatOpacity(.8f); SetMiniMapOpacity(.92f); _miniMapOpacity.SetValueNoSignal(92);
         SetSideBarOpen(true); RestoreToolbar(); SetInterfaceMode("full", save: true); WindowManager.ResetLayout();
         if (_interfaceWindow?.Visible == true) SyncInterfaceSettings();
+        MirrorInterface();
         Toast("Interface restaurada ao padrão.");
+    }
+}
+
+public partial class ViewerUI
+{
+    // ---- the settings window ---------------------------------------------------------------------------------------
+
+    private Settings.SettingsWindow? _settingsWindow;
+    public Settings.SettingsWindow? SettingsWindowForTesting => _settingsWindow;
+    public bool SettingsOpen => _settingsWindow is { Visible: true };
+
+    /// <summary>Opens the settings window (on a category when asked). Movement keys are ignored while it is open.</summary>
+    public void OpenSettings(Settings.SettingCategory? category = null)
+    {
+        if (_settingsWindow is null)
+        {
+            _settingsWindow = new Settings.SettingsWindow(Settings.SettingsService.Store);
+            _root.AddChild(_settingsWindow);
+            _settingsWindow.Opened += () => { if (_player is not null) _player.ControlsLocked = true; };
+            _settingsWindow.Closed += () => { if (_player is not null) _player.ControlsLocked = false; };
+        }
+        _settingsWindow.Open(category);
+    }
+}
+
+public partial class ViewerUI
+{
+    // ---- bridge to the settings store (Configurações › Interface e HUD, Chat, Mundo) --------------------------------------
+
+    public static readonly string[] ScaleIds = ["auto", .. InterfaceScale.Choices.Select(c => c.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))];
+    public static string ScaleIdOf(bool auto, float scale) => ScaleIds[InterfaceScale.MenuIndex(auto, scale)];
+
+    public void ApplyChatFont()
+    {
+        if (_chatLog is null) return;
+        _chatLog.AddThemeFontSizeOverride("normal_font_size", ChatFontSize); _chatLog.AddThemeFontSizeOverride("bold_font_size", ChatFontSize);
+    }
+
+    public void SetCoordinatesVisible(bool visible) { if (_coords is not null) _coords.Visible = visible; }
+
+    public void SetMiniMapOpen(bool open) { if (_miniMapWindow is null) return; _miniMapWindow.Visible = open; _miniMapButton?.SetPressedNoSignal(open); }
+
+    /// <summary>The seven interface values as the store sees them, taken from this account's interface file.</summary>
+    private Dictionary<string, object> InterfaceValues() => new()
+    {
+        ["interface.scale"] = ScaleIdOf(_interface.AutoScale, _interface.Scale), ["interface.mode"] = _interface.Mode, ["interface.window_opacity"] = (int)Math.Round(_interface.WindowOpacity * 100),
+        ["interface.map_opacity"] = (int)Math.Round(_interface.MiniMapOpacity * 100), ["interface.compact_toolbar"] = _interface.CompactToolbar, ["interface.side_bar"] = _interface.SideToolbarOpen,
+        ["chat.opacity"] = (int)Math.Round(_interface.ChatOpacity * 100)
+    };
+
+    /// <summary>The first time this account opens the new settings, what it chose before (scale, mode, opacities, toolbar) becomes the profile's value.</summary>
+    private void SeedInterfaceSettings() { try { Settings.SettingsService.Store.ImportOnce($"interface:{GetNodeOrNull<Autoloads.SessionManager>("/root/SessionManager")?.Username}", InterfaceValues()); } catch (Exception exception) { GD.PushWarning($"Interface não importada: {exception.Message}"); } }
+
+    /// <summary>The viewer changed one of these by itself (a menu): the store is told, so the window shows what is true.</summary>
+    private void MirrorInterface() { foreach (var (id, value) in InterfaceValues()) Settings.SettingsService.Mirror(id, value); }
+
+    /// <summary>Applies what the store says to the interface (the window's "Aplicar", a profile switch, entering the world).</summary>
+    public void ApplyInterfaceFromStore(Settings.SettingsStore store)
+    {
+        var scale = (string)store.Value("interface.scale");
+        if (scale == "auto") _interface.AutoScale = true; else if (float.TryParse(scale, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var factor)) { _interface.AutoScale = false; _interface.Scale = factor; }
+        ApplyUiScale();
+        SetInterfaceMode((string)store.Value("interface.mode"), save: false);
+        WindowManager.SetWindowOpacity(store.Get<int>("interface.window_opacity") / 100f);
+        var map = store.Get<int>("interface.map_opacity"); _interface.MiniMapOpacity = map / 100f; SetMiniMapOpacity(map / 100f, save: false); _miniMapOpacity.SetValueNoSignal(map);
+        _interface.CompactToolbar = store.Get<bool>("interface.compact_toolbar"); ApplyToolbar();
+        _interface.SideToolbarOpen = store.Get<bool>("interface.side_bar"); SetSideBarOpen(_interface.SideToolbarOpen, save: false);
+        _interface.ChatOpacity = store.Get<int>("chat.opacity") / 100f; SetChatOpacity(_interface.ChatOpacity, save: false);
+        _interface.Save();
+    }
+}
+
+public partial class ViewerUI
+{
+    /// <summary>What the buttons of Configurações do that need the viewer (the world, the menus, the windows).</summary>
+    public void RunSettingsAction(string id)
+    {
+        switch (id)
+        {
+            case "account.leave_island": _network.Disconnect(); break;
+            case "avatar.open_mirror": _world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow")?.Toggle(); break;
+            case "avatar.open_editor": GetNode<Autoloads.UIManager>("/root/UIManager").ShowCharacterCreator(); break;
+            case "chat.open_people": _people?.Toggle(); break;
+            case "interface.restore_layout": RestoreWindowLayout(); break;
+            case "interface.restore_toolbar": RestoreToolbar(); break;
+            case "interface.restore_all": ResetInterfaceToDefaults(); break;
+        }
     }
 }

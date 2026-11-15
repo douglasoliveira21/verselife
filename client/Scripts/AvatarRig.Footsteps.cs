@@ -43,7 +43,7 @@ public partial class AvatarRig
         if (_steps is null)
         {
             var stream = FootstepStream(); if (stream is null) { _stepsWanted = false; return; }
-            _steps = new AudioStreamPlayer3D { Name = "Footsteps", Stream = stream, VolumeDb = FootstepsSilentDb, MaxDistance = 28f, UnitSize = 4f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance };
+            _steps = new AudioStreamPlayer3D { Name = "Footsteps", Bus = Settings.AudioBuses.Of(Settings.AudioBuses.Effects), Stream = stream, VolumeDb = FootstepsSilentDb, MaxDistance = 28f, UnitSize = 4f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance };
             AddChild(_steps);
         }
         SetStepPitch();

@@ -132,7 +132,7 @@ public partial class AvatarRig
             var box = mesh.GetAabb(); var toHolder = holder.GlobalTransform.AffineInverse() * mesh.GlobalTransform;
             for (var corner = 0; corner < 8; corner++) low = Mathf.Min(low, (toHolder * (box.Position + new Vector3((corner & 1) * box.Size.X, ((corner >> 1) & 1) * box.Size.Y, ((corner >> 2) & 1) * box.Size.Z))).Y);
         }
-        holder.Position = new Vector3(0, low < float.MaxValue ? -low * _customScale : 0, 0);
+        _customLow = low < float.MaxValue ? low : 0; holder.Position = new Vector3(0, -_customLow * _customScale, 0);
 
         // which bones follow which animated part of the hidden procedural body
         var table = new List<(int, Node3D)>(); var used = new HashSet<string>();
@@ -146,6 +146,7 @@ public partial class AvatarRig
         _customBody = holder; _customRoot = scene; _customSkeleton = skeleton; _lastDelta = null; _blendFrom = null; _retarget = [.. table];
         _standardBones.Clear();
         for (var bone = 0; bone < skeleton.GetBoneCount(); bone++) if (BoneMapper.Map(skeleton.GetBoneName(bone)) is { } named) _standardBones.TryAdd(named, bone);
+        ApplyCustomShape();
         _restGlobal = new Quaternion[skeleton.GetBoneCount()]; _globalNow = new Quaternion[skeleton.GetBoneCount()]; _globalDone = new bool[skeleton.GetBoneCount()];
         for (var bone = 0; bone < _restGlobal.Length; bone++) _restGlobal[bone] = skeleton.GetBoneGlobalRest(bone).Basis.Orthonormalized().GetRotationQuaternion();
         ComputeNeutralPose(skeleton, scene);

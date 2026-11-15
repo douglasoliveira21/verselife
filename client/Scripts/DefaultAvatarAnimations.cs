@@ -12,7 +12,8 @@ public static class DefaultAvatarAnimations
 {
     public const string Path = "res://Assets/animations/default_avatar_animations.bin";
     /// <summary>Set the environment variable LIFEVERSE_NO_DEFAULT_ANIMATIONS=1 to play without the game's own clips (to tell whether they matter for a slowdown).</summary>
-    public static bool Disabled { get; } = System.Environment.GetEnvironmentVariable("LIFEVERSE_NO_DEFAULT_ANIMATIONS") == "1";
+    /// <summary>Off: custom bodies play only the game's own animations (Configurações › Avatar), or the environment variable of the tests.</summary>
+    public static bool Disabled { get; set; } = System.Environment.GetEnvironmentVariable("LIFEVERSE_NO_DEFAULT_ANIMATIONS") == "1";
 
     /// <summary>The state of the game → the name of the clip in the file. The flying clip serves both flying states; the file also carries "WalkBackwards", "FallFlat" and "DynamicPose", which no state of the game asks for yet.</summary>
     public static readonly IReadOnlyDictionary<string, string> ClipOfState = new Dictionary<string, string>

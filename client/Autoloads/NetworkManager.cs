@@ -41,6 +41,8 @@ public partial class NetworkManager : Node
     private string _host = string.Empty;
     private int _port;
     private int _reconnectAttempt;
+    /// <summary>Whether a lost connection to the island is retried by itself (up to three times). Configurações › Rede.</summary>
+    public static bool AutoReconnect { get; set; } = true;
     private int _startAttempts;
     private const int MaxStartAttempts = 18;
     private bool _intentionalDisconnect;
@@ -347,7 +349,7 @@ public partial class NetworkManager : Node
     {
         IsAuthenticated = false; CanEditTerrain = false; EmitSignal(SignalName.TerrainPermissionChanged, false); foreach (var remote in _remote.Values) remote.Node.QueueFree(); _remote.Clear(); Vehicles.Clear(); Voice.Reset();
         EmitSignal(SignalName.ConnectionStateChanged, "offline", reason);
-        if (_intentionalDisconnect || _islandId == Guid.Empty || _reconnectAttempt >= 3) return;
+        if (_intentionalDisconnect || !AutoReconnect || _islandId == Guid.Empty || _reconnectAttempt >= 3) return;
         if (TransferInProgress) return;
         _reconnectAttempt++; await ToSignal(GetTree().CreateTimer(Math.Pow(2, _reconnectAttempt - 1)), SceneTreeTimer.SignalName.Timeout); JoinIsland(_islandId);
     }

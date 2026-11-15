@@ -865,3 +865,12 @@ public sealed class IslandRestart
     /// <summary>When set, the terrain of this saved state is put back at the moment the server is told to stop (see IslandTerrainManagement).</summary>
     public Guid? RestoreSnapshotId { get; set; }
 }
+
+/// <summary>What a person chose that follows the account to every device (see <c>AccountPreferenceRules</c>): one row per user, the values as JSON, a revision that grows with every change so two devices do not silently overwrite each other.</summary>
+public sealed class UserPreference
+{
+    public Guid UserId { get; set; }
+    public int Revision { get; set; }
+    public required string ValuesJson { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}

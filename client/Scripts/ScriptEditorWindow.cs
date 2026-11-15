@@ -11,6 +11,11 @@ namespace LifeVerse.Client.Scripts;
 /// </summary>
 public partial class ScriptEditorWindow : Node
 {
+    /// <summary>The editor of Lua scripts as the person likes it (Configurações › Scripts): text size, how many spaces a tab is, and code suggestions.</summary>
+    public static int EditorFontSize { get; set; } = 16;
+    public static int EditorIndent { get; set; } = 4;
+    public static bool EditorAutocomplete { get; set; } = true;
+    public void ApplyEditorSettings() { if (_code is null) return; _code.AddThemeFontSizeOverride("font_size", EditorFontSize); _code.IndentSize = EditorIndent; _code.CodeCompletionEnabled = EditorAutocomplete; }
     private static readonly string[] Namespaces = ["object", "chat", "timer", "storage", "debug", "region", "script", "permissions", "dialog", "audio", "lv"];
     private static readonly string[] Keywords = ["and", "break", "do", "else", "elseif", "end", "false", "for", "function", "if", "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"];
     private static readonly Regex Member = new(@"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z0-9_]*)$", RegexOptions.Compiled);
@@ -79,7 +84,7 @@ public partial class ScriptEditorWindow : Node
             SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(760, 300), GuttersDrawLineNumbers = true, LineFolding = true, GuttersDrawFoldGutter = true, IndentUseSpaces = true, IndentSize = 2,
             AutoBraceCompletionEnabled = true, DrawTabs = false, SyntaxHighlighter = LuaHighlighter(), CodeCompletionEnabled = true, CodeCompletionPrefixes = ["."], DelimiterStrings = ["\" \"", "' '"], DelimiterComments = ["-- "]
         };
-        _code.AddThemeFontSizeOverride("font_size", 16); _code.TextChanged += MarkDirty; _code.CodeCompletionRequested += RequestCompletion; content.AddChild(_code);
+        _code.AddThemeFontSizeOverride("font_size", EditorFontSize); _code.IndentSize = EditorIndent; _code.CodeCompletionEnabled = EditorAutocomplete; AddToGroup("lifeverse_script_editor"); _code.TextChanged += MarkDirty; _code.CodeCompletionRequested += RequestCompletion; content.AddChild(_code);
         _info = new Label { Text = string.Empty, AutowrapMode = TextServer.AutowrapMode.WordSmart }; _info.AddThemeColorOverride("font_color", UiStyle.TextMuted); content.AddChild(_info);
 
         var buttons = new HBoxContainer(); buttons.AddThemeConstantOverride("separation", 6); content.AddChild(buttons);

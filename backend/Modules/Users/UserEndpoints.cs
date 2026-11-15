@@ -17,6 +17,7 @@ public static class UserEndpoints
         group.MapPut("/avatar", SaveAvatarAsync).Produces<AvatarResponse>().ProducesValidationProblem().ProducesProblem(404);
         group.MapPut("/profile", UpdateProfileAsync);
         group.MapAvatarLookEndpoints();
+        group.MapAccountPreferenceEndpoints();
         group.MapAvatarModelEndpoints();
         group.MapAvatarWearableEndpoints();
         group.MapAvatarAnimationEndpoints();

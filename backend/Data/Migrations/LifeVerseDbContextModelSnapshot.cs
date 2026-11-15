@@ -5565,6 +5565,31 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("blocks", "social");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.UserPreference", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("integer")
+                        .HasColumnName("revision");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("ValuesJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("values_json");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("user_preferences", "identity");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.Vehicle", b =>
                 {
                     b.Property<Guid>("Id")

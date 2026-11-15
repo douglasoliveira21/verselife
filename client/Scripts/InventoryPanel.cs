@@ -11,6 +11,12 @@ namespace LifeVerse.Client.Scripts;
 /// drop zone for placing models in the world. Drag an item onto a folder to file it, or onto the world to place a 3D model there.
 public partial class InventoryPanel : Node3D
 {
+    /// <summary>How the inventory starts (Configurações › Inventário): the order of the list and whether a folder includes its subfolders.</summary>
+    public static int DefaultSort { get; set; }
+    public static bool DefaultSubfolders { get; set; } = true;
+    public void ApplyDefaults() { if (_sortBox is null || _subfolders is null) return; _sortBox.Select(Math.Clamp(DefaultSort, 0, _sortBox.ItemCount - 1)); _subfolders.SetPressedNoSignal(DefaultSubfolders); }
+    public static int SortCount => SortChoices.Length;
+    public static string SortLabel(int index) => SortChoices[Math.Clamp(index, 0, SortChoices.Length - 1)].Label;
     private const long QuotaBytes = 100L * 1024 * 1024 * 1024;
     private static readonly Color FolderYellow = new("#F8B84A");
     private static readonly Color FolderGrey = new("#B9BEC2");
@@ -67,6 +73,7 @@ public partial class InventoryPanel : Node3D
 
     public override void _Ready()
     {
+        AddToGroup("lifeverse_inventory"); CallDeferred(nameof(ApplyDefaults));
         _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnResponse;
         _folderHttp = new HttpRequest(); AddChild(_folderHttp); _folderHttp.RequestCompleted += OnFolders;
         _trashHttp = new HttpRequest(); AddChild(_trashHttp); _trashHttp.RequestCompleted += OnTrashFolders;

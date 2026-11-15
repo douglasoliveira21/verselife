@@ -42,5 +42,7 @@ public partial class AvatarRig
     /// <summary>The avatar is not rebuilt in a different way on every refresh: the level it was last built at.</summary>
     private void RememberBuild(AvatarAppearanceData data) { _lastData = data; _builtDetail = _detail < AvatarDetail.Basic ? AvatarDetail.Basic : _detail; }
 
-    private bool Throttled => _detail == AvatarDetail.Reduced && (Engine.GetProcessFrames() & 1) == 1;
+    /// <summary>How often a Reduced avatar is animated: every frame (1), every other frame (2, the default) or every third (3). Configurações › Mundo e avatares › Qualidade das animações.</summary>
+    public static int AnimationDivisor { get; set; } = 2;
+    private bool Throttled => _detail == AvatarDetail.Reduced && AnimationDivisor > 1 && Engine.GetProcessFrames() % (ulong)AnimationDivisor != 0;
 }

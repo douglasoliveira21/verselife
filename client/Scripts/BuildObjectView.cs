@@ -463,14 +463,30 @@ public partial class BuildObjectView : Node3D
     /// Dynamic lights are expensive, so only the first few in the world are switched on; the rest stay dark until some go away.
     public partial class ObjectLight : OmniLight3D
     {
-        public const int MaxLights = 16, MaxShadows = 4;
-        private static int _shadows;
-        private bool _casting;
+        /// <summary>How many are on at once, and how many of those cast shadows (Configurações › Mundo e avatares). Changing them takes effect at once.</summary>
+        public static int MaxLights { get; private set; } = 16;
+        public static int MaxShadows { get; private set; } = 4;
+        private static readonly List<ObjectLight> All = [];
         public bool WantsShadow { get; set; }
-        private static int _active;
-        public override void _EnterTree() { _active++; Visible = _active <= MaxLights; if (WantsShadow && _shadows < MaxShadows) { ShadowEnabled = true; _casting = true; _shadows++; } }
-        public override void _ExitTree() { _active--; if (_casting) { _shadows--; _casting = false; } }
-        public static int ActiveForTesting => _active;
+        public override void _EnterTree() { All.Add(this); RefreshAll(); }
+        public override void _ExitTree() { All.Remove(this); ShadowEnabled = false; RefreshAll(); }
+        public static int ActiveForTesting => All.Count;
+        public static int OnForTesting => All.Count(l => l.Visible);
+        public static int ShadowsForTesting => All.Count(l => l.Visible && l.ShadowEnabled);
+
+        public static void SetLimits(int lights, int shadows) { MaxLights = Math.Clamp(lights, 0, 64); MaxShadows = Math.Clamp(shadows, 0, 16); RefreshAll(); }
+
+        /// <summary>The first lights in the world (by when they appeared) are on; the first of those that want it cast shadows; the rest stay dark until some go away.</summary>
+        private static void RefreshAll()
+        {
+            var shadows = 0;
+            for (var i = 0; i < All.Count; i++)
+            {
+                var light = All[i]; light.Visible = i < MaxLights;
+                var casts = light.Visible && light.WantsShadow && shadows < MaxShadows; if (casts) shadows++;
+                light.ShadowEnabled = casts;
+            }
+        }
     }
 
     private static bool TryGetBool(string json, string property, bool fallback) { try { using var doc = JsonDocument.Parse(json); return doc.RootElement.TryGetProperty(property, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : fallback; } catch { return fallback; } }

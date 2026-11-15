@@ -78,6 +78,7 @@ public partial class PlayerController : CharacterBody3D
         _cameraPivot = GetNode<Node3D>("CameraPivot");
         _springArm = GetNode<SpringArm3D>("CameraPivot/SpringArm3D");
         _camera = GetNode<Camera3D>("CameraPivot/SpringArm3D/Camera3D");
+        AddToGroup("lifeverse_player"); _pivotBaseY = _cameraPivot.Position.Y;
         _targetYaw = Rotation.Y; _cameraYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; _targetPitch = _cameraPivot.Rotation.X;
         _contextMenu = GetNode<Control>("HUD/ContextMenu");
         _status = GetNode<Label>("HUD/Status");
@@ -113,7 +114,7 @@ public partial class PlayerController : CharacterBody3D
         _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
-        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : _oceanSwimming ? 2.7f : 1.55f;
+        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : 1.55f) + _cameraHeightOffset;
         _cameraPivot.Position = new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
     }
 
@@ -146,15 +147,16 @@ public partial class PlayerController : CharacterBody3D
         if (input is InputEventMouseMotion motion && (_rightDragging || _firstPerson))
         {
             if (motion.Relative.LengthSquared() > 0.01f) _rightDragMoved = true;
-            _targetYaw -= motion.Relative.X * _cameraSensitivity;
-            var direction = _invertY ? 1f : -1f;
-            _targetPitch = Mathf.Clamp(_targetPitch + motion.Relative.Y * _cameraSensitivity * direction, -1.25f, .85f);
+            var sensitivity = _cameraSensitivity * SensitivityScale;
+            _targetYaw -= motion.Relative.X * sensitivity;
+            var direction = _invertY ^ InvertYExtra ? 1f : -1f;
+            _targetPitch = Mathf.Clamp(_targetPitch + motion.Relative.Y * sensitivity * direction, -1.25f, .85f);
             if (_firstPerson) _targetBodyYaw = _targetYaw;
         }
         if (input is InputEventMouseButton button)
         {
-            if (button.ButtonIndex == MouseButton.WheelUp && button.Pressed) SetZoom(_cameraDistance - .5f);
-            if (button.ButtonIndex == MouseButton.WheelDown && button.Pressed) SetZoom(_cameraDistance + .5f);
+            if (button.ButtonIndex == MouseButton.WheelUp && button.Pressed) SetZoom(_cameraDistance - ZoomStep);
+            if (button.ButtonIndex == MouseButton.WheelDown && button.Pressed) SetZoom(_cameraDistance + ZoomStep);
             if (button.ButtonIndex == MouseButton.Right)
             {
                 if (button.Pressed)
@@ -321,6 +323,7 @@ public partial class PlayerController : CharacterBody3D
 
     private void UpdateDoubleTapRun(bool blocked)
     {
+        if (!DoubleTapRunEnabled) { _doubleTapRun = false; return; }
         if (blocked) { _doubleTapRun = false; _lastForwardPress = 0; return; }
         if (Input.IsActionJustReleased("move_forward")) _doubleTapRun = false;
         if (!Input.IsActionJustPressed("move_forward")) return;
@@ -331,6 +334,7 @@ public partial class PlayerController : CharacterBody3D
 
     private void UpdateHoldToFly(bool blocked, float dt)
     {
+        if (!HoldToFlyEnabled) { _spaceHeld = 0; return; }
         if (blocked || !Input.IsActionPressed("jump"))
         {
             _spaceHeld = 0;
@@ -563,6 +567,32 @@ public partial class PlayerController : CharacterBody3D
     public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
     private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, _mirror ? .7f : 1.5f, _mirror ? 5f : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     /// <summary>True while a loading screen covers the world: the avatar ignores the keyboard and the mouse until the world is ready.</summary>
+    // ---- the person's own settings (Configurações › Controles e Câmera) ----
+    /// <summary>Multiplies the camera sensitivity of the avatar; and flips the vertical axis on top of what the avatar says.</summary>
+    public static float SensitivityScale { get; set; } = 1f;
+    public static bool InvertYExtra { get; set; }
+    public static bool DoubleTapRunEnabled { get; set; } = true;
+    public static bool HoldToFlyEnabled { get; set; } = true;
+    /// <summary>How far one notch of the mouse wheel moves the camera, in meters.</summary>
+    public static float ZoomStep { get; set; } = .5f;
+    private float _pivotBaseY, _cameraHeightOffset;
+    public string CameraModeName => _cameraMode.ToString();
+    public float FieldOfView => _camera.Fov;
+    public float PivotOffset => _cameraHeightOffset;
+    public float ShoulderOffset => _camera.HOffset;
+    public bool CameraCollides => _springArm.CollisionMask != 0;
+
+    /// <summary>The camera as the person likes it: field of view, how far behind, how high, a little to one side, how soon it follows a turn, whether walls stop it. Not while the mirror is in use.</summary>
+    public void ApplyCameraSettings(float fov, float distance, float height, float shoulder, float follow, bool collision)
+    {
+        _camera.Fov = Mathf.Clamp(fov, 40f, 120f);
+        _cameraHeightOffset = Mathf.Clamp(height, -1f, 1.5f);      // the pivot follows it smoothly (see _Process)
+        _camera.HOffset = Mathf.Clamp(shoulder, -2f, 2f);
+        CameraFollowRate = Mathf.Clamp(follow, .5f, 12f);
+        _springArm.CollisionMask = collision ? 1u : 0u;
+        if (!_mirror) SetZoom(distance);
+    }
+
     public bool ControlsLocked { get; set; }
     private bool IsTyping() => ControlsLocked || GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;
     public void SetTextInputActive(bool active)

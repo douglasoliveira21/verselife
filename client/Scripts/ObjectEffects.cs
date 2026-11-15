@@ -89,7 +89,7 @@ public partial class ObjectEffects : Node
             var player = new AudioStreamPlayer3D
             {
                 Stream = loop ? Looping(stream) : stream, VolumeDb = Mathf.LinearToDb(Mathf.Max(volume, .001f)),
-                MaxDistance = 60f, UnitSize = 6f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Name = "Sound_" + objectId.ToString("N")
+                MaxDistance = 60f, UnitSize = 6f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Name = "Sound_" + objectId.ToString("N"), Bus = Settings.AudioBuses.Of(Settings.AudioBuses.Effects)
             };
             AddChild(player); player.GlobalPosition = position; _players[objectId] = player;
             player.Finished += () => { var ended = _players.TryGetValue(objectId, out var current) && current == player; if (ended) _players.Remove(objectId); player.QueueFree(); if (ended && !loop) _network?.SendScriptDialogResponse(System.Text.Json.JsonSerializer.Serialize(new { sound_finished = true, objectId })); };

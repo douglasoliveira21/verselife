@@ -35,9 +35,9 @@ public partial class ObjectEffects
         }
         else if (kind == "particles")
         {
-            if (_effects.Values.Count(e => e is CpuParticles3D) >= MaxEmitters) return;
+            if (ParticleQuality.Factor <= 0f || _effects.Values.Count(e => e is CpuParticles3D) >= MaxEmitters) return;
             var emitter = new CpuParticles3D { Name = "Particles_" + key.Replace(':', '_'), LocalCoords = false }; AddChild(emitter); emitter.GlobalPosition = position;
-            ConfigureParticles(emitter, Text("preset"), Number("rate", 20, 1, 60), Number("lifetime", 2, .2, 6), Number("size", .4, .05, 2), Number("speed", 1.5, 0, 10), Colour("#FFFFFF")); _effects[key] = emitter;
+            ConfigureParticles(emitter, Text("preset"), Math.Max(1, Number("rate", 20, 1, 60) * ParticleQuality.Factor), Number("lifetime", 2, .2, 6), Number("size", .4, .05, 2), Number("speed", 1.5, 0, 10), Colour("#FFFFFF")); _effects[key] = emitter;
         }
     }
 

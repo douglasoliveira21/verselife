@@ -15,7 +15,7 @@ public partial class GraphicsQualitySmoke : Node
             Require(GraphicsQuality.Resolve(GraphicsQuality.Level.Auto, RenderingDevice.DeviceType.Cpu) == GraphicsQuality.Level.Medium, "anything else gets Médio");
             Require(GraphicsQuality.Resolve(GraphicsQuality.Level.Ultra, RenderingDevice.DeviceType.IntegratedGpu) == GraphicsQuality.Level.Ultra, "a chosen level is kept");
             Require(GraphicsQuality.Parse("ultra") == GraphicsQuality.Level.Ultra && GraphicsQuality.Parse("???") == GraphicsQuality.Level.Auto && GraphicsQuality.Parse(null) == GraphicsQuality.Level.Auto, "keys parse, unknown means automatic");
-            Require(GraphicsQuality.Labels.Length == 5 && GraphicsQuality.Keys.Length == 5 && GraphicsQuality.Labels[0] == "Automático", "five choices");
+            Require(GraphicsQuality.Labels.Length == 7 && GraphicsQuality.Keys.Length == 7 && GraphicsQuality.Labels[0] == "Automático", "seven choices");
 
             var world = GD.Load<PackedScene>("res://Scenes/World.tscn").Instantiate<Node3D>(); AddChild(world);
             await Frames(10);

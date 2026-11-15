@@ -59,7 +59,7 @@ public partial class LandPresence : Node
     public override void _Ready()
     {
         _land = GetParent<LandManager>();
-        _audio = new AudioStreamPlayer { Name = "ParcelMusic", Bus = "Master" }; AddChild(_audio);
+        _audio = new AudioStreamPlayer { Name = "ParcelMusic", Bus = Settings.AudioBuses.Of(Settings.AudioBuses.Music) }; AddChild(_audio);
         LoadSettings();
         _land.Changed += OnLandChanged;
     }

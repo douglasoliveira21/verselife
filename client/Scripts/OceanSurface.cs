@@ -65,6 +65,8 @@ void fragment() {
     METALLIC = 0.0;
 }";
 
+    /// <summary>The water moves in waves (Configurações › Gráficos › Qualidade). Off, the surface is flat and cheaper.</summary>
+    public static bool WavesEnabled { get; set; } = true;
     private MeshInstance3D _plane = null!;
     private ShaderMaterial _material = null!;
     private ColorRect _underwater = null!;
@@ -110,6 +112,7 @@ void fragment() {
         var position = camera.GlobalPosition;
         _plane.GlobalPosition = new Vector3(Mathf.Snapped(position.X, GridStep), Sea, Mathf.Snapped(position.Z, GridStep));
         _material.SetShaderParameter("day", _environment?.DayFactor ?? 1f);
+        _material.SetShaderParameter("wave_height", WavesEnabled ? .22f : 0f);
         var under = position.Y < Sea;
         _underwater.Visible = under;
         if (under) _underwater.Color = new Color(.02f, .26f, .4f, .5f).Lerp(new Color(0, .02f, .06f, .5f), 1f - (_environment?.DayFactor ?? 1f));

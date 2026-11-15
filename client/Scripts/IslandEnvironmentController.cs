@@ -83,7 +83,7 @@ void sky() {
         _sun = GetParent().GetNodeOrNull<DirectionalLight3D>("Sun")!; _environment = GetParent().GetNodeOrNull<WorldEnvironment>("WorldEnvironment")!;
         if (float.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_HOUR"), out var hour)) Hour = Mathf.PosMod(hour, 24); var configuredWeather = OS.GetEnvironment("LIFEVERSE_WEATHER"); if (!string.IsNullOrWhiteSpace(configuredWeather)) Weather = configuredWeather.ToLowerInvariant();
         BuildSky(); BuildRain(); UpdateSun(); ApplyWeather();
-        ApplyGraphics(); GraphicsQuality.Changed += ApplyGraphics;
+        ApplyGraphics(); GraphicsQuality.Changed += ApplyGraphics; Settings.SettingsService.ApplyWorld();
     }
     public override void _Process(double delta)
     {
@@ -114,8 +114,8 @@ void sky() {
     {
         if (_rainParticles is null) return;
         var raining = WeatherShown is "rain" or "storm";
-        _rainParticles.Emitting = raining;
-        _rainParticles.AmountRatio = WeatherShown == "storm" ? 1f : .6f;
+        _rainParticles.Emitting = raining && ParticleQuality.Factor > 0f;
+        _rainParticles.AmountRatio = Mathf.Max(.01f, (WeatherShown == "storm" ? 1f : .6f) * ParticleQuality.Factor);
         if (GetViewport().GetCamera3D() is { } camera) _rainParticles.GlobalPosition = camera.GlobalPosition + Vector3.Up * 14f;
     }
 
@@ -148,5 +148,5 @@ void sky() {
         if (_environment?.Environment is { } env) env.AmbientLightEnergy = Mathf.Lerp(.18f, .75f, day) * LightShown;
     }
 
-    private void ApplyWeather() { if (_environment?.Environment is not { } env) return; var shown = WeatherShown; var targetDensity = (shown switch { "fog" => .045f, "rain" => .012f, "storm" => .025f, "cloudy" => .006f, _ => 0f }) + (_lastLook.Fog ?? 0f) * .06f * _blend; env.FogEnabled = targetDensity > 0; env.FogDensity = Mathf.Lerp(env.FogDensity, targetDensity, Mathf.Clamp((float)GetProcessDeltaTime() * 2f, 0f, 1f)); env.FogLightColor = shown is "storm" ? new Color("#46506a") : new Color("#9fb5c9"); _sky?.SetShaderParameter("cloud_cover", shown switch { "cloudy" => .72f, "rain" => .85f, "storm" => .95f, "fog" => .8f, _ => .5f }); }
+    private void ApplyWeather() { if (_environment?.Environment is not { } env) return; var shown = WeatherShown; var targetDensity = !GraphicsQuality.WeatherFog ? 0f : (shown switch { "fog" => .045f, "rain" => .012f, "storm" => .025f, "cloudy" => .006f, _ => 0f }) + (_lastLook.Fog ?? 0f) * .06f * _blend; env.FogEnabled = targetDensity > 0; env.FogDensity = Mathf.Lerp(env.FogDensity, targetDensity, Mathf.Clamp((float)GetProcessDeltaTime() * 2f, 0f, 1f)); env.FogLightColor = shown is "storm" ? new Color("#46506a") : new Color("#9fb5c9"); _sky?.SetShaderParameter("cloud_cover", shown switch { "cloudy" => .72f, "rain" => .85f, "storm" => .95f, "fog" => .8f, _ => .5f }); }
 }

@@ -18,6 +18,16 @@ public partial class NamePlate : Sprite3D
 
     private readonly string _group;
 
+    /// <summary>The dot and the sound waves of the voice beside a name (Configurações › Voz › Indicadores de fala).</summary>
+    public static bool ShowVoiceIndicator { get; set; } = true;
+    /// <summary>The name over other avatars, over yours, and the title (group) under it (Configurações › Avatar).</summary>
+    public static bool ShowNames { get; set; } = true;
+    public static bool ShowOwnName { get; set; } = true;
+    public static bool ShowTitles { get; set; } = true;
+    private Label? _groupLabel;
+    private bool? _own;
+    private bool _shownIndicator = true;
+
     public NamePlate(string name, VoiceIndicator? voice, string group = "") { _name = name; _voice = voice; _group = group.Trim(); }
 
     public override void _Ready()
@@ -31,7 +41,7 @@ public partial class NamePlate : Sprite3D
         center.AddChild(_pill);
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 12);
         var column = new VBoxContainer(); column.AddThemeConstantOverride("separation", 0); _pill.AddChild(column); column.AddChild(row);
-        if (_group.Length > 0) { var group = new Label { Text = _group, HorizontalAlignment = HorizontalAlignment.Center, ClipText = true, CustomMinimumSize = new Vector2(0, 30) }; group.AddThemeFontOverride("font", UiStyle.Medium); group.AddThemeFontSizeOverride("font_size", 24); group.AddThemeColorOverride("font_color", UiStyle.Accent); column.AddChild(group); }
+        if (_group.Length > 0) { var group = _groupLabel = new Label { Text = _group, HorizontalAlignment = HorizontalAlignment.Center, ClipText = true, CustomMinimumSize = new Vector2(0, 30) }; group.AddThemeFontOverride("font", UiStyle.Medium); group.AddThemeFontSizeOverride("font_size", 24); group.AddThemeColorOverride("font_color", UiStyle.Accent); column.AddChild(group); }
         _dot = new DotControl(); row.AddChild(_dot);
         var label = new Label { Text = _name };
         label.AddThemeFontOverride("font", UiStyle.Bold); label.AddThemeFontSizeOverride("font_size", 34); label.AddThemeColorOverride("font_color", Colors.White);
@@ -45,7 +55,9 @@ public partial class NamePlate : Sprite3D
         Refresh(force: true);
     }
 
-    public override void _Process(double delta) => Refresh(force: false);
+    private bool IsOwn() { if (_own is { } known) return known; for (Node? n = GetParent(); n is not null; n = n.GetParent()) if (n is PlayerController) return (_own = true).Value; return (_own = false).Value; }
+
+    public override void _Process(double delta) { Visible = IsOwn() ? ShowOwnName : ShowNames; if (_groupLabel is not null) _groupLabel.Visible = ShowTitles; if (_shownIndicator != ShowVoiceIndicator) { _shownIndicator = ShowVoiceIndicator; Refresh(force: true); } else Refresh(force: false); }
 
     private void Refresh(bool force)
     {
@@ -55,9 +67,9 @@ public partial class NamePlate : Sprite3D
         _state = state;
         var color = state switch { 3 => UiStyle.Danger, 0 => new Color("#C9CDD1"), _ => UiStyle.SuccessBright };
         ((DotControl)_dot).Color = color; _dot.QueueRedraw();
-        _waves.Visible = state >= 2;
+        _waves.Visible = state >= 2 && ShowVoiceIndicator;
         if (state >= 2) _waves.Texture = UiStyle.Icon("waves", state == 3 ? UiStyle.DangerBright : UiStyle.SuccessBright, 32);
-        _dot.Visible = _voice is not null;
+        _dot.Visible = _voice is not null && ShowVoiceIndicator;
         _viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
     }
 

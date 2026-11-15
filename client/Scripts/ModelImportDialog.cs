@@ -57,6 +57,12 @@ public partial class ModelImportDialog : Node
         }
     }
 
+    /// <summary>Remembers the collision a model gets when it is placed (Configurações › Construção, or the import window).</summary>
+    public static void SaveImportedCollisionShape(string shape)
+    {
+        var config = new ConfigFile(); config.Load(PrefsPath); config.SetValue("models", "collision_shape", shape); config.SetValue("models", "collision_default_v2", true); config.Save(PrefsPath);
+    }
+
     public static void SetPlacementSizeForTesting(float size) => SavePlacementSize(size);
 
     private static void SavePlacementSize(float size)
@@ -310,7 +316,7 @@ public partial class ModelImportDialog : Node
         if (!float.IsFinite(size) || size is < .1f or > 64f) { SetProblem("O tamanho deve ficar entre 0,1 e 64 metros."); return; }
         SavePlacementSize(size);
         var collision = new[] { "none", "box", "convex", "triangle" }.ElementAtOrDefault(_collisionShape.Selected) ?? "box";
-        var config = new ConfigFile(); config.Load(PrefsPath); config.SetValue("models", "collision_shape", collision); config.SetValue("models", "collision_default_v2", true); config.Save(PrefsPath);
+        SaveImportedCollisionShape(collision);
         var path = _path;
         Close();
         Confirmed?.Invoke(path);

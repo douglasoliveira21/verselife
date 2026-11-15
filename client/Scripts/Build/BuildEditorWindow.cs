@@ -64,6 +64,9 @@ public partial class BuildEditorWindow : Node
     public bool RedoEnabledForTesting => !_redo.Disabled;
     public void PressUndoForTesting() => _undo.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressRedoForTesting() => _redo.EmitSignal(BaseButton.SignalName.Pressed);
+    /// <summary>What the editor starts with (Configurações › Construção): the axes, snapping and the three steps. Changing them applies to an open editor at once.</summary>
+    public static (bool Local, bool Snap, float Move, float Rotate, float Scale) Defaults { get; set; } = (false, false, .5f, 15f, .1f);
+    public void ApplyDefaults() { if (_space is null || _snap is null) return; SetOptionsForTesting(Defaults.Local, Defaults.Snap, Defaults.Move, Defaults.Rotate, Defaults.Scale); }
     public void SetOptionsForTesting(bool local, bool snap, float move, float rotate, float scale) { _space.Select(local ? 1 : 0); _snap.ButtonPressed = snap; _moveStep.Value = move; _rotateStep.Value = rotate; _scaleStep.Value = scale; OptionsChanged?.Invoke(); }
 
     public bool Visible { get => _window.Visible; set => _window.Visible = value; }
@@ -84,7 +87,7 @@ public partial class BuildEditorWindow : Node
     public override void _Ready()
     {
         _window = new FloatingWindow("Construir", icon: "hammer") { Name = "BuildWindow", Visible = false, Theme = ViewerTheme.Create() };
-        _window.Place(0, 0, 24, 90, 484, 740); _window.MakeResizable(); AddChild(_window);
+        _window.Place(0, 0, 24, 90, 484, 740); _window.MakeResizable(); AddChild(_window); AddToGroup("lifeverse_build_window"); CallDeferred(nameof(ApplyDefaults));
         _window.CloseRequested += () => CloseRequested?.Invoke();
         var content = _window.Content; content.AddThemeConstantOverride("separation", 10);
 

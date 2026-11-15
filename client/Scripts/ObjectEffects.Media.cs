@@ -51,7 +51,7 @@ public partial class ObjectEffects
             stream.Loading = false;
             if (!_streamsByKey.TryGetValue(key, out var live) || live != stream || !IsInsideTree()) return;          // it was stopped or replaced while downloading
             var audio = Decode(url, bytes, loop); if (audio is null) { _streamsByKey.Remove(key); return; }
-            var node = new AudioStreamPlayer3D { Stream = audio, VolumeDb = Mathf.LinearToDb(Mathf.Max(volume, .001f)), MaxDistance = range, UnitSize = Math.Max(3f, range / 4f), AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Name = "Media_" + key };
+            var node = new AudioStreamPlayer3D { Stream = audio, Bus = Settings.AudioBuses.Of(Settings.AudioBuses.Media), VolumeDb = Mathf.LinearToDb(Mathf.Max(volume, .001f)), MaxDistance = range, UnitSize = Math.Max(3f, range / 4f), AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Name = "Media_" + key };
             AddChild(node); node.GlobalPosition = position; stream.Player = node;
             node.Finished += () =>
             {

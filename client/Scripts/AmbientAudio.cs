@@ -22,7 +22,7 @@ public partial class AmbientAudio : Node
         _avatar = world.GetNodeOrNull<PlayerController>("Player");
         _terrain = world.GetNodeOrNull<IslandTerrain>("IslandTerrain");
         _environment = world.GetNodeOrNull<IslandEnvironmentController>("EnvironmentController");
-        _output = new AudioStreamPlayer { Name = "Ambient", Stream = new AudioStreamGenerator { MixRate = MixRate, BufferLength = .3f } };
+        _output = new AudioStreamPlayer { Name = "Ambient", Bus = Settings.AudioBuses.Of(Settings.AudioBuses.Ambient), Stream = new AudioStreamGenerator { MixRate = MixRate, BufferLength = .3f } };
         AddChild(_output);
         _output.Play();
         _playback = _output.GetStreamPlayback() as AudioStreamGeneratorPlayback;

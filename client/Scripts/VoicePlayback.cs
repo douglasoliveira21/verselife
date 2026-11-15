@@ -20,6 +20,10 @@ public partial class VoicePlayback : Node3D
     private float _pendingLevel;
     private float _pendingPeak;
 
+    /// <summary>How far a voice can be heard (the island server only forwards what is within <see cref="VoiceSettings.HearingRange"/>; a smaller value makes voices fade sooner) and whether they fade with distance and pan at all.</summary>
+    public static float Distance { get; set; } = VoiceSettings.HearingRange;
+    public static bool Spatial { get; set; } = true;
+
     public bool Speaking => _sinceLastFrame < .35;
     public int Queued => _queue.Count;
     public bool Started => _started;
@@ -31,7 +35,7 @@ public partial class VoicePlayback : Node3D
         _player = new AudioStreamPlayer3D
         {
             Stream = new AudioStreamGenerator { MixRate = VoiceSettings.SampleRate, BufferLength = .4f },
-            MaxDistance = VoiceSettings.HearingRange, UnitSize = 6f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Bus = "Master"
+            MaxDistance = Distance, UnitSize = 6f, AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, Bus = Settings.AudioBuses.Of(Settings.AudioBuses.Voice)
         };
         AddChild(_player);
     }
@@ -48,6 +52,9 @@ public partial class VoicePlayback : Node3D
     public override void _Process(double delta)
     {
         _sinceLastFrame += delta;
+        var model = Spatial ? AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance : AudioStreamPlayer3D.AttenuationModelEnum.Disabled;
+        if (_player.AttenuationModel != model) { _player.AttenuationModel = model; _player.PanningStrength = Spatial ? 1f : 0f; }
+        if (!Mathf.IsEqualApprox(_player.MaxDistance, Spatial ? Distance : 0f)) _player.MaxDistance = Spatial ? Distance : 0f;
         _level = _pendingLevel; _peak = _pendingPeak; _pendingLevel = _pendingPeak = 0;
         FeedIndicator();
         if (_sinceLastFrame > .5) { if (_started) Stop(); return; }

@@ -29,8 +29,8 @@ public partial class ViewerUI
             ("Espelho: mudar o visual aqui…", () => _world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow")?.Toggle(), false),
             ("Editar aparência (tela completa)…", () => GetNode<UIManager>("/root/UIManager").ShowCharacterCreator(), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
-            ("Preferências…", () => _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(), false),
-            ("Interface…", () => ToggleInterfaceSettings(), false),
+            ("Configurações…", () => OpenSettings(), false),
+            ("Interface…", () => OpenSettings(Settings.SettingCategory.Interface), false),
             ("Restaurar layout das janelas", RestoreWindowLayout, false),
             ("-", null, false),
             ("Sair da ilha", _network.Disconnect, false),
@@ -111,8 +111,8 @@ public partial class ViewerUI
         row.AddChild(audio);
         var config = new MenuButton { Flat = true, FocusMode = Control.FocusModeEnum.None, Icon = UiStyle.Icon("settings", UiStyle.Text, 20), ExpandIcon = false, TooltipText = "Configurações", CustomMinimumSize = new Vector2(34, 30), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter };
         StyleFlatMenu(config, 15); config.AddThemeConstantOverride("icon_max_width", 20);
-        config.GetPopup().AddItem("Gráficos, controles e som…", 0); config.GetPopup().AddItem("Interface…", 1);
-        config.GetPopup().IdPressed += id => { if (id == 0) _world.GetNodeOrNull<SettingsPanel>("SettingsPanel")?.Toggle(); else ToggleInterfaceSettings(); };
+        config.GetPopup().AddItem("Todas as configurações…", 0); config.GetPopup().AddItem("Interface (escala, modo e barras)…", 1);
+        config.GetPopup().IdPressed += id => { if (id == 0) OpenSettings(); else OpenSettings(Settings.SettingCategory.Interface); };
         row.AddChild(config);
         // The bell: the number of unread notifications, the panel below it and the full center.
         _notificationCenter = new Notifications.NotificationCenterUi { Name = "NotificationCenter", Said = text => Toast(text), Open = OpenNotification }; AddChild(_notificationCenter); _notificationCenter.AttachTo(row, _root);
@@ -418,10 +418,18 @@ public partial class ViewerUI
 
     /// A notification at the top of the screen: coloured outline, icon, divider, message and a close button (client/Assets/ui/08).
     private readonly Queue<(string Text, ToastKind Kind)> _toastQueue = new();
-    private const int MaxVisibleToasts = 3;
+    /// <summary>How the notices on the screen behave (Configurações › Notificações): how many at once, how long the plain ones stay, and Não perturbar (only warnings and errors get through).</summary>
+    public static int MaxVisibleToasts { get; set; } = 3;
+    public static double ToastSeconds { get; set; } = 4;
+    public static bool DoNotDisturb { get; set; }
+    /// <summary>The chat: how long it stays on the screen after a message, the size of its text, and whether lines show the time.</summary>
+    public static double ChatSeconds { get; set; } = 6;
+    public static int ChatFontSize { get; set; } = 17;
+    public static bool ChatTimes { get; set; } = true;
 
     private void Toast(string text, ToastKind kind)
     {
+        if (DoNotDisturb && kind is ToastKind.Info or ToastKind.Success) return;
         if (_toasts.GetChildCount() >= MaxVisibleToasts) { _toastQueue.Enqueue((text, kind)); return; } // at most three on the screen: the rest wait their turn
         var (icon, border, fill) = kind switch
         {
@@ -447,7 +455,7 @@ public partial class ViewerUI
         panel.TreeExited += () => { if (_toastQueue.Count > 0 && IsInsideTree()) { var next = _toastQueue.Dequeue(); Toast(next.Text, next.Kind); } };
         _toasts.AddChild(panel);
         var tween = CreateTween();
-        tween.TweenInterval(kind is ToastKind.Error or ToastKind.Warning ? 10.0 : 4.0); tween.TweenProperty(panel, "modulate:a", 0f, .6); tween.TweenCallback(Callable.From(() => { if (IsInstanceValid(panel)) panel.QueueFree(); }));
+        tween.TweenInterval(kind is ToastKind.Error or ToastKind.Warning ? Math.Max(10.0, ToastSeconds) : ToastSeconds); tween.TweenProperty(panel, "modulate:a", 0f, Accessibility.ReduceMotion ? .01 : .6); tween.TweenCallback(Callable.From(() => { if (IsInstanceValid(panel)) panel.QueueFree(); }));
     }
 }
 
@@ -491,7 +499,7 @@ public partial class ViewerUI
     {
         alpha = Mathf.Clamp(alpha, .3f, 1f);
         _miniMapWindow.SetOpacity(alpha);
-        if (save) { _interface.MiniMapOpacity = alpha; _interface.Save(); }
+        if (save) { _interface.MiniMapOpacity = alpha; _interface.Save(); MirrorInterface(); }
     }
 
     // ---- move window (client/Assets/ui/07) -------------------------------------------------------------------------
@@ -628,7 +636,7 @@ public partial class ViewerUI
     {
         alpha = Mathf.Clamp(alpha, .3f, 1f);
         _chatWindow.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color(UiStyle.PanelFill, alpha), UiStyle.BorderBright, 16, 1, 6, 6, 14));
-        if (save) { _interface.ChatOpacity = alpha; _interface.Save(); }
+        if (save) { _interface.ChatOpacity = alpha; _interface.Save(); MirrorInterface(); }
     }
 
     private void BuildChatBubble()
@@ -677,7 +685,7 @@ public partial class ViewerUI
         if (close < 0 || colon < 0) { AppendLine(Esc(line)); ShowChatTemporarily(); return; }
         var name = line[(close + 2)..colon];
         if (!string.Equals(name, GetNodeOrNull<SessionManager>("/root/SessionManager")?.Username, StringComparison.OrdinalIgnoreCase)) NoteUnreadChat();
-        AppendLine($"[color=#A9B3BD]{Esc(line[..(close + 1)])}[/color] [b][color=#{ColorForName(name).ToHtml(false)}]{Esc(name)}:[/color][/b] {Esc(line[(colon + 2)..])}");
+        AppendLine($"{(ChatTimes ? $"[color=#A9B3BD]{Esc(line[..(close + 1)])}[/color] " : "")}[b][color=#{ColorForName(name).ToHtml(false)}]{Esc(name)}:[/color][/b] {Esc(line[(colon + 2)..])}");
         ShowChatTemporarily();
     }
 }
