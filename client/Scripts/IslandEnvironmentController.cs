@@ -74,11 +74,16 @@ void sky() {
     /// 0 at night, 1 in full daylight; the ocean and sky use it to darken.
     public float DayFactor { get; private set; } = 1f;
 
+    /// <summary>Applies the graphics quality (anti-aliasing, ambient occlusion, glow, shadows) to this world.</summary>
+    public void ApplyGraphics() { if (!IsInsideTree()) return; GraphicsQuality.Apply(GetViewport(), _environment?.Environment, _sun); }
+    public override void _ExitTree() => GraphicsQuality.Changed -= ApplyGraphics;
+
     public override void _Ready()
     {
         _sun = GetParent().GetNodeOrNull<DirectionalLight3D>("Sun")!; _environment = GetParent().GetNodeOrNull<WorldEnvironment>("WorldEnvironment")!;
         if (float.TryParse(OS.GetEnvironment("LIFEVERSE_ISLAND_HOUR"), out var hour)) Hour = Mathf.PosMod(hour, 24); var configuredWeather = OS.GetEnvironment("LIFEVERSE_WEATHER"); if (!string.IsNullOrWhiteSpace(configuredWeather)) Weather = configuredWeather.ToLowerInvariant();
         BuildSky(); BuildRain(); UpdateSun(); ApplyWeather();
+        ApplyGraphics(); GraphicsQuality.Changed += ApplyGraphics;
     }
     public override void _Process(double delta)
     {

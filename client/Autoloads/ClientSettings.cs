@@ -11,6 +11,8 @@ public partial class ClientSettings : Node
     public float MasterVolume { get; private set; } = 1f;
     public bool VSync { get; private set; } = true;
     public override void _Ready() => Load();
+    /// <summary>Graphics quality (Automático, Baixo, Médio, Alto, Ultra): applied at once and kept.</summary>
+    public void SetQuality(Scripts.GraphicsQuality.Level level) { Scripts.GraphicsQuality.Choose(level); Save(); }
     public void Apply(int width, int height, bool fullscreen, bool vsync, int fps, float mouse, float uiScale, float volume)
     {
         DisplayServer.WindowSetSize(new Vector2I(Math.Max(640, width), Math.Max(360, height)));
@@ -18,6 +20,6 @@ public partial class ClientSettings : Node
         DisplayServer.WindowSetVsyncMode(vsync ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
         Engine.MaxFps = Math.Clamp(fps, 30, 360); FpsLimit = Engine.MaxFps; MouseSensitivity = Math.Clamp(mouse, .0005f, .02f); UiScale = Math.Clamp(uiScale, .75f, 2f); MasterVolume = Math.Clamp(volume, 0f, 1f); VSync = vsync; Save();
     }
-    private void Load() { var cfg = new ConfigFile(); if (cfg.Load(Path) != Error.Ok) return; FpsLimit = (int)cfg.GetValue("graphics", "fps", FpsLimit); MouseSensitivity = (float)cfg.GetValue("controls", "mouse", MouseSensitivity); UiScale = (float)cfg.GetValue("ui", "scale", UiScale); MasterVolume = (float)cfg.GetValue("audio", "master", MasterVolume); VSync = (bool)cfg.GetValue("graphics", "vsync", VSync); Engine.MaxFps = FpsLimit; }
-    private void Save() { var cfg = new ConfigFile(); cfg.SetValue("graphics", "fps", FpsLimit); cfg.SetValue("graphics", "vsync", VSync); cfg.SetValue("controls", "mouse", MouseSensitivity); cfg.SetValue("ui", "scale", UiScale); cfg.SetValue("audio", "master", MasterVolume); cfg.Save(Path); }
+    private void Load() { var cfg = new ConfigFile(); if (cfg.Load(Path) != Error.Ok) return; FpsLimit = (int)cfg.GetValue("graphics", "fps", FpsLimit); MouseSensitivity = (float)cfg.GetValue("controls", "mouse", MouseSensitivity); UiScale = (float)cfg.GetValue("ui", "scale", UiScale); MasterVolume = (float)cfg.GetValue("audio", "master", MasterVolume); VSync = (bool)cfg.GetValue("graphics", "vsync", VSync); Engine.MaxFps = FpsLimit; Scripts.GraphicsQuality.Chosen = Scripts.GraphicsQuality.Parse((string)cfg.GetValue("graphics", "quality", "auto")); }
+    private void Save() { var cfg = new ConfigFile(); cfg.SetValue("graphics", "fps", FpsLimit); cfg.SetValue("graphics", "vsync", VSync); cfg.SetValue("graphics", "quality", Scripts.GraphicsQuality.Keys[(int)Scripts.GraphicsQuality.Chosen]); cfg.SetValue("controls", "mouse", MouseSensitivity); cfg.SetValue("ui", "scale", UiScale); cfg.SetValue("audio", "master", MasterVolume); cfg.Save(Path); }
 }

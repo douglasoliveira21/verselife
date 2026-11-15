@@ -271,6 +271,7 @@ public partial class PlayerController : CharacterBody3D
         _blockedVelocity = WallContact() ? new Vector2(Velocity.X, Velocity.Z) : null;
         if (_flying && IsOnFloor() && descendPressed) _flying = false;
         var grounded = IsOnFloor();
+        NoteBuiltSupport(grounded);
         if (grounded && !_wasGrounded) { _landingTime = .22f; if (_rig.FallingFromFlight && _rig.CanFlatImpact) _flatImpactTime = _rig.FlatImpactSeconds; }      // a fall that began when the flight stopped in the air ends flat on the ground
         _wasGrounded = grounded;
         UpdateAnimation(direction, direction.Length());
@@ -366,6 +367,18 @@ public partial class PlayerController : CharacterBody3D
     /// Turns the avatar and the camera to face a heading at once (after a teleport to an arrival point).
     public void FaceYaw(float radians) { _targetBodyYaw = radians; _targetYaw = radians; _cameraYaw = radians; Rotation = new Vector3(0, radians, 0); }
 
+    private ulong _builtSupportUntil;
+    /// <summary>How long after standing on built geometry a jump is still treated as being from it (longer than a jump lasts).</summary>
+    public const ulong BuiltSupportMilliseconds = 1600;
+    public bool OnBuiltSupportForTesting => Time.GetTicksMsec() < _builtSupportUntil;
+    private void NoteBuiltSupport(bool grounded)
+    {
+        if (!grounded || _flying || _swimming) return;
+        _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
+        if (_terrainNode is null) return;
+        if (GlobalPosition.Y > _terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z) + .5f) _builtSupportUntil = Time.GetTicksMsec() + BuiltSupportMilliseconds;
+    }
+
     public void Reconcile(Vector3 authoritativePosition, Vector3 authoritativeVelocity, uint acknowledgedInput, NetworkMotionState motion)
     {
         if (_inVehicle) return;
@@ -379,6 +392,10 @@ public partial class PlayerController : CharacterBody3D
             }
         }
         else _flying = serverFlying;
+        // Standing (or jumping) on something built that the server does not model (an imported mesh, a pyramid...): the server thinks the avatar is lower.
+        // Pulling it down would cancel every jump, so while that is the case the vertical difference is left alone and only the horizontal position is reconciled.
+        var onBuilt = Time.GetTicksMsec() < _builtSupportUntil && authoritativePosition.Y < GlobalPosition.Y - .05f;
+        if (onBuilt) authoritativePosition = new Vector3(authoritativePosition.X, GlobalPosition.Y, authoritativePosition.Z);
         var error = GlobalPosition.DistanceTo(authoritativePosition);
         if (error > 3f)
         {
