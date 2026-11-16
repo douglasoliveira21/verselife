@@ -561,7 +561,7 @@ public partial class PlayerController : CharacterBody3D
     {
         _cameraMode = mode; _firstPerson = mode == CameraMode.FirstPerson;
         _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance;
-        _rig.Visible = !_firstPerson && !_avatarHidden;
+        _rig.Visible = !_avatarHidden; _rig.SetFirstPersonView(_firstPerson);
         if (_firstPerson)
         {
             _targetYaw = _targetBodyYaw;
@@ -573,7 +573,7 @@ public partial class PlayerController : CharacterBody3D
     }
     private bool _avatarHidden;
     /// Hides the avatar while the build camera is in use (and shows it again afterwards).
-    public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
+    public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden; }
     private void SetZoom(float value) { var options = Scripts.Camera.CameraSettings.Current; _cameraDistance = Mathf.Clamp(value, _editView ? .2f : _mirror ? .7f : _freeView ? options.MinDistance : 1.5f, _mirror ? 5f : _freeView ? options.MaxDistance : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     /// <summary>True while a loading screen covers the world: the avatar ignores the keyboard and the mouse until the world is ready.</summary>
     // ---- the person's own settings (Configurações › Controles e Câmera) ----

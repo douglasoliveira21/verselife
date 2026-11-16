@@ -81,7 +81,7 @@ public partial class AvatarRig
         if (problem is not null) { holder.QueueFree(); _attachStatus[data.Id] = problem; return; }
         _attached[data.Id] = new Worn { Data = data, Holder = holder, Follower = follower }; _attachFit[data.Id] = fit; if (_soloAttachment is { } solo && solo != data.Id) holder.Visible = false;
         if (_previews.TryGetValue(data.Id, out var preview)) { follower.Offset = Vec(point.Offset) + preview.Position; follower.ItemRot = EulerDegrees([preview.Rotation.X, preview.Rotation.Y, preview.Rotation.Z]); follower.ScaleVec = preview.Scale * fit; }
-        Follow(follower); _attached[data.Id].LastPosition = holder.GlobalPosition; _attachStatus[data.Id] = "ready";
+        Follow(follower); _attached[data.Id].LastPosition = holder.GlobalPosition; _attachStatus[data.Id] = "ready"; RefreshFirstPersonHolders();
     }
 }
 

@@ -31,7 +31,7 @@ public partial class AvatarRig
 
     private sealed class Follower
     {
-        public Node3D Item = null!; public Node3D? Proxy; public Skeleton3D? Skeleton; public int Bone;
+        public Node3D Item = null!; public Node3D? Proxy; public Skeleton3D? Skeleton; public int Bone; public string BoneName = string.Empty;
         public Basis RestRot, RigRot, ItemRot, Frame = Basis.Identity; public Vector3 Corr, Offset, ScaleVec; public float Scale;
     }
 
@@ -141,7 +141,7 @@ public partial class AvatarRig
         var k = VisibleHeight / StandardHeight;
         var follower = new Follower { Item = holder, Offset = Vec(item.Offset), ItemRot = EulerDegrees(item.Rotation), Scale = k * (item.Scale > 0 ? item.Scale : 1f), RigRot = GlobalBasis.Orthonormalized() };
         if (BindToBone(follower, bone) is { } problem) { holder.QueueFree(); _placed.Remove(holder); return problem; }
-        _followers.Add(follower); Follow(follower);
+        _followers.Add(follower); Follow(follower); RefreshFirstPersonHolders();
         return null;
     }
 
@@ -151,6 +151,7 @@ public partial class AvatarRig
     /// </summary>
     private string? BindToBone(Follower follower, string bone)
     {
+        follower.BoneName = bone;
         var k = VisibleHeight / StandardHeight; var flip = Basis.FromEuler(new Vector3(0, Mathf.Pi, 0));
         if (CustomBodyActive && _customSkeleton is { } skeleton)
         {
