@@ -180,7 +180,7 @@ public partial class AvatarRig
         }
     }
 
-    public const double BlendSeconds = .22, GetUpBlendSeconds = .7;
+    public const double BlendSeconds = .22, GetUpBlendSeconds = .7, TypingBlendSeconds = .5;
     private double _blendLength = BlendSeconds;
     private Dictionary<int, Quaternion>? _lastDelta, _blendFrom; private float _lastHipsLift, _blendFromLift; private double _blendTime; private (AvatarMotionState, bool) _lastBlendKey;
     /// <summary>Tests: whether a crossfade between two poses is running, and how far along (0 to 1).</summary>
@@ -207,7 +207,7 @@ public partial class AvatarRig
         }
         // a state change is a short crossfade from the pose the bones had to the new one, not a cut
         var blendKey = (_state, clipDeltas is not null);
-        if (_lastDelta is not null && blendKey != _lastBlendKey) { _blendFrom = _lastDelta; _blendFromLift = _lastHipsLift; _blendTime = 0; _blendLength = _lastBlendKey.Item1 == AvatarMotionState.FlatImpact ? GetUpBlendSeconds : BlendSeconds; }      // getting up from the ground takes longer than any other change
+        if (_lastDelta is not null && blendKey != _lastBlendKey) { _blendFrom = _lastDelta; _blendFromLift = _lastHipsLift; _blendTime = 0; _blendLength = _lastBlendKey.Item1 == AvatarMotionState.FlatImpact ? GetUpBlendSeconds : _lastBlendKey.Item1 == AvatarMotionState.Typing || _state == AvatarMotionState.Typing ? TypingBlendSeconds : BlendSeconds; }      // getting up from the ground takes longer than any other change
         _lastBlendKey = blendKey;
         if (_blendFrom is not null)
         {

@@ -186,7 +186,7 @@ public partial class AvatarRig : Node3D
         foreach (var name in names) machine.AddNode(name, new AnimationNodeAnimation { Animation = name });
         foreach (var from in names)
         foreach (var to in names)
-            if (from != to) machine.AddTransition(from, to, new AnimationNodeStateMachineTransition { XfadeTime = 0.16f });
+            if (from != to) machine.AddTransition(from, to, new AnimationNodeStateMachineTransition { XfadeTime = from == "Typing" || to == "Typing" ? (float)TypingBlendSeconds : 0.16f });
         _tree.TreeRoot = machine;
         _tree.Active = true;
         _playback = (AnimationNodeStateMachinePlayback)_tree.Get("parameters/playback");
