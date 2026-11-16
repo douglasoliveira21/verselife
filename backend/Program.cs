@@ -1,3 +1,4 @@
+using LifeVerse.Api.Modules.Map;
 using System.Text;
 using System.Threading.RateLimiting;
 using LifeVerse.Api.Data;
@@ -188,6 +189,8 @@ app.MapPeopleEndpoints();
 LifeVerse.Api.Modules.Platform.ClientReleaseEndpoints.MapClientReleaseEndpoints(app);
 app.MapNotificationEndpoints();
 app.MapDiscoveryEndpoints();
+app.MapMapEndpoints();
+app.MapMapPlaceEndpoints();
 app.MapEconomyEndpoints();
 app.MapAdminEndpoints();
 

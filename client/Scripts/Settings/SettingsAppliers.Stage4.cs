@@ -50,6 +50,7 @@ public static partial class SettingsAppliers
 
         store.RegisterApplier("world.minimap_open", v => Viewer?.SetMiniMapOpen((bool)v));
         store.RegisterApplier("world.show_coords", v => Viewer?.SetCoordinatesVisible((bool)v));
+        foreach (var id in Map.MapHub.SettingIds) { var captured = id; store.RegisterApplier(id, v => (Tree?.GetFirstNodeInGroup("lifeverse_map_hub") as Map.MapHub)?.ApplySetting(captured, v)); }
 
         foreach (var id in new[] { "scripts.font_size", "scripts.indent", "scripts.autocomplete" })
             store.RegisterApplier(id, _ => { ScriptEditorWindow.EditorFontSize = store.Get<int>("scripts.font_size"); ScriptEditorWindow.EditorIndent = store.Get<int>("scripts.indent"); ScriptEditorWindow.EditorAutocomplete = store.Get<bool>("scripts.autocomplete"); Tree?.CallGroup("lifeverse_script_editor", "ApplyEditorSettings"); });

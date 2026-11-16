@@ -131,6 +131,23 @@ public partial class ViewerUI : CanvasLayer
         _teleport = _world.GetNode<TeleportCoordinator>("TeleportCoordinator");
         _entry = _world.GetNode<WorldEntryCoordinator>("WorldEntryCoordinator"); _entry.RetryLocate = () => { _entering = false; EnterFirstIsland(); }; _entry.LeaveToMenu = () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); RefreshIslands(); };
         EnterFirstIsland(); // after the loading screen exists: it covers the world from the first moment
+        if (_world.GetNodeOrNull<Map.MapHub>("MapHub") is null)
+        {
+            var hub = new Map.MapHub
+            {
+                Name = "MapHub", JoinIsland = JoinIslandById, CurrentIsland = () => _network.CurrentIslandId, Say = text => Toast(text),
+                GoToPoint = (island, x, z) => { if (island == _network.CurrentIslandId) _world.GetNodeOrNull<LandManager>("LandManager")?.TeleportToPoint(x, z); else { SearchTravel.Set(island, x, z); JoinIslandById(island); } },
+                PlayerLocal = () =>
+                {
+                    if (_player is null) return null; var camera = _world.GetViewport().GetCamera3D(); var forward = camera is null ? Vector3.Forward : -camera.GlobalTransform.Basis.Z;
+                    return (_player.GlobalPosition.X, _player.GlobalPosition.Z, (Mathf.RadToDeg(Mathf.Atan2(forward.X, -forward.Z)) + 360f) % 360f);
+                }
+            };
+            _world.AddChild(hub); hub.OpenWorldMap = () => _world.GetNodeOrNull<Map.WorldMapWindow>("WorldMapWindow")?.Open(); if (_miniMap is not null) _miniMap.Hub = hub;
+            hub.SettingChanged = (id, value) => { var store = Settings.SettingsService.Store; try { store.Set(id, value); store.Apply(); } catch (Exception e) when (e is ArgumentException or InvalidOperationException or KeyNotFoundException) { } };
+            foreach (var id in Map.MapHub.SettingIds) hub.ApplySetting(id, Settings.SettingsService.Store.Value(id));
+            _world.AddChild(new Map.WorldMapWindow { Name = "WorldMapWindow", Hub = hub, OpenLink = link => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.OpenLink(link) });
+        }
         if (_world.GetNodeOrNull<LandMapWindow>("LandMapWindow") is null) _world.AddChild(new LandMapWindow { Name = "LandMapWindow", JoinIsland = JoinIslandById });
         if (_world.GetNodeOrNull<ItemRightsWindow>("ItemRightsWindow") is null) _world.AddChild(new ItemRightsWindow { Name = "ItemRightsWindow" });
         if (_world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow") is null) _world.AddChild(new ItemOffersWindow { Name = "ItemOffersWindow" });

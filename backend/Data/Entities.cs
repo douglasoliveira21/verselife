@@ -185,6 +185,9 @@ public sealed class Island
     public bool ShowOnMap { get; set; } = true;
     /// <summary>Whether people who are not the owner may announce events on this island (the owner always may).</summary>
     public bool AllowGuestEvents { get; set; }
+    /// <summary>Where the island stands in the atlas of the world map: a cell of a square grid (the map draws every cell as MapService.CellMeters). Given once, by the server, in order of arrival; null until the map is first asked.</summary>
+    public int? AtlasX { get; set; }
+    public int? AtlasY { get; set; }
     /// <summary>Temporarily closed: only the owner and administrators can come in. Whether the island is public is kept, so opening it again brings it back as it was.</summary>
     public bool AccessClosed { get; set; }
     /// <summary>The look of the whole island (hour, weather, fog, light, sky) where no parcel sets its own, as clean ParcelEnvironment JSON. Kept apart from EnvironmentJson, which the island server rewrites when it saves.</summary>

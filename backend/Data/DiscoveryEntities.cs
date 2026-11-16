@@ -1,7 +1,7 @@
 namespace LifeVerse.Api.Data;
 
 public sealed class IslandFavorite { public Guid Id { get; set; } public Guid UserId { get; set; } public Guid IslandId { get; set; } public DateTimeOffset CreatedAt { get; set; } }
-public sealed class Landmark { public Guid Id { get; set; } public Guid OwnerUserId { get; set; } public Guid IslandId { get; set; } public required string Name { get; set; } public float PositionX { get; set; } public float PositionY { get; set; } public float PositionZ { get; set; } public float RotationY { get; set; } public bool IsPublic { get; set; } public DateTimeOffset CreatedAt { get; set; } /* moves with every change, so the search index finds what changed */ public DateTimeOffset UpdatedAt { get; set; } public DateTimeOffset? DeletedAt { get; set; } }
+public sealed class Landmark { public Guid Id { get; set; } public Guid OwnerUserId { get; set; } public Guid IslandId { get; set; } public required string Name { get; set; } public float PositionX { get; set; } public float PositionY { get; set; } public float PositionZ { get; set; } public float RotationY { get; set; } public bool IsPublic { get; set; } public DateTimeOffset CreatedAt { get; set; } /* moves with every change, so the search index finds what changed */ public DateTimeOffset UpdatedAt { get; set; } public DateTimeOffset? DeletedAt { get; set; } /* what the owner wrote about the place, and the folder it is kept in (null: loose) */ public string Description { get; set; } = string.Empty; public Guid? FolderId { get; set; } }
 public sealed class DiscoveryEvent { public Guid Id { get; set; } public Guid IslandId { get; set; } public Guid OrganizerUserId { get; set; } public required string Name { get; set; } public required string Description { get; set; } public DateTimeOffset StartsAt { get; set; } public DateTimeOffset EndsAt { get; set; } public int Capacity { get; set; } public bool IsPublic { get; set; } public DateTimeOffset CreatedAt { get; set; } /* set for an event only the members of that group can see and join */ public Guid? GroupId { get; set; }
     /// <summary>One of EventRules.Categories.</summary>
     public string Category { get; set; } = "outros";
@@ -137,3 +137,21 @@ public sealed class Storefront
     public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset? DeletedAt { get; set; }
 }
+
+/// <summary>The picture of an island from above that the world map draws: made from the saved terrain and the objects, kept with what it was made from so it is only made again when that changes.</summary>
+public sealed class MapTile
+{
+    public Guid IslandId { get; set; }
+    /// <summary>The version of the saved terrain it was made from.</summary>
+    public long SnapshotVersion { get; set; }
+    /// <summary>A short mark of the objects on the island when it was made (their number and places).</summary>
+    public string ObjectsStamp { get; set; } = string.Empty;
+    public int Size { get; set; }
+    public byte[] Png { get; set; } = [];
+    /// <summary>What a client can send back to ask "has it changed?".</summary>
+    public string Etag { get; set; } = string.Empty;
+    public DateTimeOffset GeneratedAt { get; set; }
+}
+
+/// <summary>A folder of a person's landmarks on the map.</summary>
+public sealed class LandmarkFolder { public Guid Id { get; set; } public Guid OwnerUserId { get; set; } public required string Name { get; set; } public DateTimeOffset CreatedAt { get; set; } }

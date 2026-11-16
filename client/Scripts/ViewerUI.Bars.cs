@@ -50,7 +50,7 @@ public partial class ViewerUI
             ("Voz: microfone aberto (cadeado)  liga/desliga", ToggleOpenMic, false),
             ("Voz: silenciar tudo  liga/desliga", ToggleVoice, false));
         var world = AddMenu(row, "Mundo",
-            ("Mapa e destinos…", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle(), false),
+            ("Mapa do Mundo…", () => _world.GetNodeOrNull<Map.WorldMapWindow>("WorldMapWindow")?.Toggle(), false),
             ("Mini-mapa", () => ToggleWindow(_miniMapWindow), false),
             ("Ir para a Ilha de Boas-vindas", () => GoToWelcome(), false),
             ("Ir para uma ilha…", () => { _joinWindow.Visible = true; _joinWindow.MoveToFront(); }, false),
@@ -229,7 +229,7 @@ public partial class ViewerUI
         Reg("construir", "Construir", ToolButton(row, "hammer", "Construir", "Ferramentas de construção (B)", () => BuildHost.SetActive(_world, true)));
         Reg("buscar", "Buscar", ToolButton(row, "search", "Buscar", "Buscar ilhas, pessoas, amigos, grupos, lojas, eventos e lugares", () => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.Toggle()));
         _peopleButton = Reg("pessoas", "Pessoas", ToolButton(row, "people", "Pessoas", "Buscar pessoas, amigos e grupos", () => _people?.Toggle(), toggle: true));
-        Reg("mapa", "Mapa", ToolButton(row, "pin", "Mapa", "Mapa, busca e destinos", () => _world.GetNodeOrNull<DiscoveryPanel>("DiscoveryPanel")?.Toggle()));
+        Reg("mapa", "Mapa", ToolButton(row, "pin", "Mapa", "Mapa do Mundo: ilhas, busca e teletransporte", () => _world.GetNodeOrNull<Map.WorldMapWindow>("WorldMapWindow")?.Toggle()));
         _inventoryButton = Reg("inventario", "Inventário", ToolButton(row, "bag", "Inventário", "Seu inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), toggle: true, orange: true));
         _miniMapButton = Reg("minimapa", "Mini-mapa", ToolButton(row, "map", "Mini-mapa", "Mostrar ou ocultar o mini-mapa", () => ToggleWindow(_miniMapWindow), toggle: true));
         _miniMapButton.ButtonPressed = true;
@@ -489,31 +489,35 @@ public partial class ViewerUI
     {
         _miniMapWindow = new FloatingWindow("Mini-mapa", icon: "target", expandable: true);
         _miniMapWindow.Place(1, 0, -352, 84, -12, 448);
-        // The map is clipped to a rounded frame; the frame's own drawing is the mask.
-        var frame = new Panel { CustomMinimumSize = new Vector2(220, 220), ClipChildren = CanvasItem.ClipChildrenMode.Only, SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-        frame.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color("#133F73"), new Color(0, 0, 0, 0), 16, 0, 0, 0));
-        var map = new MiniMap(); map.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        frame.AddChild(map);
+        // A square holds the round map: the disc clips the map, the corner buttons sit outside the circle.
+        var square = new AspectRatioContainer { Ratio = 1f, StretchMode = AspectRatioContainer.StretchModeEnum.Fit, CustomMinimumSize = new Vector2(220, 220), SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var frame = new Control(); square.AddChild(frame);
+        var disc = new Panel { ClipChildren = CanvasItem.ClipChildrenMode.Only }; disc.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        disc.AddThemeStyleboxOverride("panel", UiStyle.Box(new Color("#133F73"), new Color(0, 0, 0, 0), 1000, 0, 0, 0)); frame.AddChild(disc);
+        var map = new MiniMap(); map.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect); _miniMap = map;
+        disc.AddChild(map);
         map.BuildOverlay(frame);
-        _miniMapWindow.Content.AddChild(frame);
+        _miniMapWindow.Content.AddChild(square);
         // below the map: how see-through the window is, and the full map
         var tools = new HBoxContainer(); tools.AddThemeConstantOverride("separation", 8);
         tools.AddChild(new Label { Text = "Opacidade", TooltipText = "Transparência desta janela" });
         _miniMapOpacity = new HSlider { MinValue = 30, MaxValue = 100, Step = 5, Value = Math.Round(_interface.MiniMapOpacity * 100), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(120, 24), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, FocusMode = Control.FocusModeEnum.None };
         _miniMapOpacity.ValueChanged += value => SetMiniMapOpacity((float)value / 100f);
         tools.AddChild(_miniMapOpacity);
-        var full = new Button { Text = "Mapa completo", Icon = UiStyle.Icon("expand", UiStyle.Text, 18), ExpandIcon = false, TooltipText = "Abrir o mapa de terrenos e busca", FocusMode = Control.FocusModeEnum.None };
-        full.Pressed += () => _world.GetNodeOrNull<LandMapWindow>("LandMapWindow")?.Open();
+        var full = new Button { Text = "Mapa completo", Icon = UiStyle.Icon("expand", UiStyle.Text, 18), ExpandIcon = false, TooltipText = "Abrir o Mapa do Mundo", FocusMode = Control.FocusModeEnum.None };
+        full.Pressed += () => _world.GetNodeOrNull<Map.WorldMapWindow>("WorldMapWindow")?.Open();
         _miniMapWindow.Content.AddChild(tools);
         _miniMapWindow.Content.AddChild(full);
         SetMiniMapOpacity(_interface.MiniMapOpacity, save: false);
         if (_terrain is not null) map.Bind(_terrain, _player, _network);
         _miniMapWindow.CloseRequested += () => _miniMapButton.ButtonPressed = false;
-        _miniMapWindow.ExpandToggled += large => { frame.CustomMinimumSize = large ? new Vector2(520, 520) : new Vector2(220, 220); _miniMapWindow.ResetSize(); };
+        _miniMapWindow.ExpandToggled += large => { square.CustomMinimumSize = large ? new Vector2(520, 520) : new Vector2(220, 220); _miniMapWindow.ResetSize(); };
         _root.AddChild(_miniMapWindow);
     }
 
     private HSlider _miniMapOpacity = null!;
+    private MiniMap? _miniMap;
+    public MiniMap? MiniMapForTesting => _miniMap;
     public FloatingWindow MiniMapWindowForTesting => _miniMapWindow;
     public HSlider MiniMapOpacitySliderForTesting => _miniMapOpacity;
 

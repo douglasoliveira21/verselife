@@ -112,6 +112,10 @@ A janela "LifeVerse — Busca" (`client/Scripts/SearchWindow*.cs`, menu Mundo > 
 
 **Testes.** `SearchBrowseTests`, `SearchPeopleGroupsTests`, `EventsAndPlacesTests`, `ItemsAndStoresTests` (backend) e `SearchSmoke` (cliente, contra um servidor de mentira), mais as capturas de `SearchCapture` (`artifacts/busca`).
 
+## Mapa do Mundo e mini-mapa
+
+Tem documento próprio: [MAPA.md](MAPA.md).
+
 ## Limites conhecidos
 - "Locais recentes" são lugares criados ou alterados há pouco; o jogo só guarda a última posição de cada pessoa, não um histórico de visitas.
 - A prévia mostra o ponto em texto, não um mini-mapa.

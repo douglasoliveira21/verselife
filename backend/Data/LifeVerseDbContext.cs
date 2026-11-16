@@ -71,6 +71,8 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<SearchStat> SearchStats => Set<SearchStat>();
     public DbSet<DiscoveryEvent> DiscoveryEvents => Set<DiscoveryEvent>();
     public DbSet<Storefront> Storefronts => Set<Storefront>();
+    public DbSet<MapTile> MapTiles => Set<MapTile>();
+    public DbSet<LandmarkFolder> LandmarkFolders => Set<LandmarkFolder>();
     public DbSet<EventAttendee> EventAttendees => Set<EventAttendee>();
     public DbSet<PhotoSnapshot> PhotoSnapshots => Set<PhotoSnapshot>();
     public DbSet<TeleportReservation> TeleportReservations => Set<TeleportReservation>();
@@ -177,6 +179,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         {
             b.ToTable("islands", "world");
             b.HasKey(x => x.Id);
+            b.HasIndex(x => new { x.AtlasX, x.AtlasY }).IsUnique().HasFilter("atlas_x IS NOT NULL");
             b.Property(x => x.Name).HasMaxLength(80);
             b.Property(x => x.Slug).HasMaxLength(80);
             b.Property(x => x.Description).HasMaxLength(4000);
@@ -316,8 +319,10 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
         modelBuilder.Entity<SearchStat>(b => { b.ToTable("search_stats", "discovery"); b.HasKey(x => new { x.Day, x.Query }); b.Property(x => x.Query).HasMaxLength(100); });
         modelBuilder.Entity<SearchInterest>(b => { b.ToTable("search_interests", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Term).HasMaxLength(64); b.HasIndex(x => new { x.UserId, x.Term }).IsUnique(); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<SearchState>(b => { b.ToTable("search_state", "discovery"); b.HasKey(x => x.Kind); b.Property(x => x.Kind).HasMaxLength(16); });
-        modelBuilder.Entity<Landmark>(b => { b.ToTable("landmarks", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<Landmark>(b => { b.ToTable("landmarks", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(120); b.Property(x => x.Description).HasMaxLength(300); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<DiscoveryEvent>(b => { b.ToTable("events", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(160); b.Property(x => x.Description).HasMaxLength(4000); b.Property(x => x.Category).HasMaxLength(24); b.Property(x => x.ImageUrl).HasMaxLength(1024); b.Property(x => x.ContentRating).HasMaxLength(12); b.HasIndex(x => new { x.IslandId, x.StartsAt }); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.OrganizerUserId).OnDelete(DeleteBehavior.Restrict); });
+        modelBuilder.Entity<LandmarkFolder>(b => { b.ToTable("landmark_folders", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(40); b.HasIndex(x => x.OwnerUserId); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<MapTile>(b => { b.ToTable("map_tiles", "discovery"); b.HasKey(x => x.IslandId); b.Property(x => x.ObjectsStamp).HasMaxLength(64); b.Property(x => x.Etag).HasMaxLength(64); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<Storefront>(b => { b.ToTable("storefronts", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Name).HasMaxLength(60); b.Property(x => x.Description).HasMaxLength(600); b.Property(x => x.Category).HasMaxLength(24); b.Property(x => x.LogoUrl).HasMaxLength(1024); b.Property(x => x.BannerUrl).HasMaxLength(1024); b.HasIndex(x => new { x.OwnerUserId, x.DeletedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<EventAttendee>(b => { b.ToTable("event_attendees", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.Going).HasDefaultValue(true); b.HasIndex(x => new { x.EventId, x.UserId }).IsUnique(); b.HasOne<DiscoveryEvent>().WithMany().HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade); b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<PhotoSnapshot>(b => { b.ToTable("photos", "discovery"); b.HasKey(x => x.Id); b.Property(x => x.StorageKey).HasMaxLength(512); b.Property(x => x.MetadataJson).HasColumnType("jsonb"); b.HasIndex(x => new { x.OwnerUserId, x.CreatedAt }); b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Cascade); b.HasOne<Island>().WithMany().HasForeignKey(x => x.IslandId).OnDelete(DeleteBehavior.SetNull); });

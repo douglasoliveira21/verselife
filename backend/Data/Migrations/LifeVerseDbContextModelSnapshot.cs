@@ -1945,6 +1945,14 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("allow_guest_events");
 
+                    b.Property<int?>("AtlasX")
+                        .HasColumnType("integer")
+                        .HasColumnName("atlas_x");
+
+                    b.Property<int?>("AtlasY")
+                        .HasColumnType("integer")
+                        .HasColumnName("atlas_y");
+
                     b.Property<string>("Category")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -2159,6 +2167,10 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("Slug")
                         .IsUnique()
                         .HasFilter("deleted_at IS NULL");
+
+                    b.HasIndex("AtlasX", "AtlasY")
+                        .IsUnique()
+                        .HasFilter("atlas_x IS NOT NULL");
 
                     b.HasIndex("IsPublic", "Category", "DeletedAt");
 
@@ -3303,6 +3315,16 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("deleted_at");
 
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid?>("FolderId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("folder_id");
+
                     b.Property<bool>("IsPublic")
                         .HasColumnType("boolean")
                         .HasColumnName("is_public");
@@ -3348,6 +3370,34 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("OwnerUserId", "DeletedAt");
 
                     b.ToTable("landmarks", "discovery");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.LandmarkFolder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.ToTable("landmark_folders", "discovery");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.LedgerAccount", b =>
@@ -3479,6 +3529,46 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("InitiatorUserId", "CreatedAt");
 
                     b.ToTable("transactions", "economy");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.MapTile", b =>
+                {
+                    b.Property<Guid>("IslandId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("island_id");
+
+                    b.Property<string>("Etag")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("etag");
+
+                    b.Property<DateTimeOffset>("GeneratedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("generated_at");
+
+                    b.Property<string>("ObjectsStamp")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("objects_stamp");
+
+                    b.Property<byte[]>("Png")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("png");
+
+                    b.Property<int>("Size")
+                        .HasColumnType("integer")
+                        .HasColumnName("size");
+
+                    b.Property<long>("SnapshotVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("snapshot_version");
+
+                    b.HasKey("IslandId");
+
+                    b.ToTable("map_tiles", "discovery");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.MarketplaceOrder", b =>
@@ -6656,6 +6746,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.LandmarkFolder", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.LedgerAccount", b =>
                 {
                     b.HasOne("LifeVerse.Api.Data.User", null)
@@ -6675,6 +6774,15 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasOne("LifeVerse.Api.Data.LedgerTransaction", null)
                         .WithMany()
                         .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.MapTile", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Island", null)
+                        .WithMany()
+                        .HasForeignKey("IslandId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
