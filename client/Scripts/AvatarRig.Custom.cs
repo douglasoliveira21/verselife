@@ -193,7 +193,7 @@ public partial class AvatarRig
     public void RetargetCustom()
     {
         if (_customSkeleton is null || !IsInstanceValid(_customSkeleton) || _customRoot is not Node3D root || _retarget.Length == 0) return;
-        var skeleton = _customSkeleton;
+        var skeleton = _customSkeleton; if (FirstPersonView) RestoreFirstPersonBones();
         var flip = new Quaternion(Vector3.Up, Mathf.Pi);
         var skeletonInModel = (((Node3D)root).GlobalBasis.Inverse() * skeleton.GlobalBasis).Orthonormalized().GetRotationQuaternion();
         var delta = new Dictionary<int, Quaternion>(); var clipDeltas = ClipDeltas(skeleton, skeletonInModel, _standardBones, out var hipsLift);
@@ -227,6 +227,7 @@ public partial class AvatarRig
         }
         Array.Clear(_globalDone);
         for (var bone = 0; bone < _restGlobal.Length; bone++) GlobalOf(skeleton, bone, delta);
+        if (FirstPersonView) CollapseUpperBody(skeleton);
     }
 
     private Quaternion GlobalOf(Skeleton3D skeleton, int bone, Dictionary<int, Quaternion> delta)

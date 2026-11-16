@@ -52,7 +52,7 @@ public partial class AvatarRig
         }
         var above = _standardBones.ContainsKey("chest") ? "chest" : _standardBones.ContainsKey("neck") ? "neck" : "";
         if (above.Length > 0) ScaleLimb(skeleton, "spine", above, 1f, torso);
-        if (_standardBones.TryGetValue("head", out var headBone)) skeleton.SetBonePoseScale(headBone, FirstPersonView ? Vector3.One * HiddenHeadScale : Vector3.One * head);
+        if (_standardBones.TryGetValue("head", out var headBone)) skeleton.SetBonePoseScale(headBone, Vector3.One * head);
         var size = _customScale;
         _customBody.Scale = new Vector3(size * shoulder, size * height, size * shoulder);
         _customBody.Position = new Vector3(0, (-_customLow + _legExtra) * size * height, 0);
