@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.IdentityModel.Tokens.Jwt;
 using LifeVerse.Api.Data;
+using LifeVerse.Api.Modules.Assets;
+using LifeVerse.Api.Modules.Inventory;
 using LifeVerse.Shared.Avatar;
 using LifeVerse.Shared.Items;
 using Microsoft.EntityFrameworkCore;
@@ -63,6 +65,26 @@ public static class AvatarAttachments
         var rows = await (from a in db.AvatarAttachments.AsNoTracking() join i in db.InventoryItems.AsNoTracking() on a.InventoryItemId equals i.Id
                           where a.AvatarId == avatarId && a.Equipped && i.OwnerUserId == owner && i.Status == "active" && i.DeletedAt == null orderby a.AttachmentPoint, a.SortOrder select new { a, i.DisplayName }).ToListAsync(ct);
         return [.. rows.Select(r => View(r.a, r.DisplayName))];
+    }
+
+    /// <summary>What can be worn on the body: a 3D model, a picture (shown as a flat sign) or a saved construction (a set of shapes).</summary>
+    public static bool IsAttachableMime(string? mime) => mime is not null && (mime.StartsWith("model/", StringComparison.Ordinal) || MaterialAssets.IsImage(mime) || mime == BuildPackageEndpoints.MimeType);
+
+    /// <summary>Whether a file is a picture or a construction (and not a model): those are seen as what is worn, too.</summary>
+    public static bool IsPictureOrConstruction(string? mime) => mime is not null && (MaterialAssets.IsImage(mime) || mime == BuildPackageEndpoints.MimeType);
+
+    /// <summary>Whether a worn construction uses this asset (a picture on one of its shapes, a model of one of its meshes): whoever sees the construction must be able to get it.</summary>
+    public static async Task<bool> WornConstructionUsesAsync(LifeVerseDbContext db, AssetStorageService storage, Guid assetId, CancellationToken ct)
+    {
+        var needle = assetId.ToString().ToLowerInvariant();
+        var worn = await (from a in db.AvatarAttachments.AsNoTracking() where a.Equipped join v in db.AssetVersions.AsNoTracking() on a.AssetId equals v.AssetId join s in db.Assets.AsNoTracking() on a.AssetId equals s.Id
+                          where v.Version == s.CurrentVersion && v.MimeType == BuildPackageEndpoints.MimeType select v.StorageKey).Distinct().Take(50).ToListAsync(ct);
+        foreach (var key in worn)
+        {
+            var stream = await storage.OpenReadAsync(key, ct); if (stream is null) continue;
+            using (stream) { using var reader = new StreamReader(stream); if ((await reader.ReadToEndAsync(ct)).Contains(needle, StringComparison.OrdinalIgnoreCase)) return true; }
+        }
+        return false;
     }
 
     /// <summary>Whether somebody wears this asset on the body: everybody on an island may then get the file, because they all see it.</summary>
@@ -168,7 +190,9 @@ public static class AvatarAttachments
         if (item is null || item.OwnerUserId != user) return (null, "item_not_found");
         if (item.Status != "active") return (null, "item_unavailable");
         var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(a => a.Id == item.AssetId && a.DeletedAt == null, ct);
-        return asset is null || asset.Status != "ready" ? (null, "asset_unavailable") : (item, null);
+        if (asset is null || asset.Status != "ready") return (null, "asset_unavailable");
+        var mime = await db.AssetVersions.AsNoTracking().Where(v => v.AssetId == asset.Id && v.Version == asset.CurrentVersion).Select(v => v.MimeType).SingleOrDefaultAsync(ct);
+        return IsAttachableMime(mime) ? (item, null) : (null, "not_attachable");
     }
 
     private static bool Hud(string key) => AttachmentPoints.Find(key)?.IsHud == true;
@@ -315,7 +339,7 @@ public static class AvatarAttachments
         {
             "not_found" or "item_not_found" or "avatar_not_found" => Results.NotFound(new { error = r.Error }),
             "no_modify_right" => Results.Json(new { error = r.Error }, statusCode: 403),
-            "already_attached" or "too_many_attachments" or "too_many_at_point" or "too_many_huds" or "item_unavailable" or "asset_unavailable" or "not_attached" => Results.Conflict(new { error = r.Error }),
+            "already_attached" or "too_many_attachments" or "too_many_at_point" or "too_many_huds" or "item_unavailable" or "asset_unavailable" or "not_attachable" or "not_attached" => Results.Conflict(new { error = r.Error }),
             _ => Results.BadRequest(new { error = r.Error })
         };
     }

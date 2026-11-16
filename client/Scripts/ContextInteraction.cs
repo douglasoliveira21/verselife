@@ -326,10 +326,10 @@ public static class InteractionRegistry
         ];
     }
 
-    /// What can be done to put an object of the inventory on the body, or to take it off. Only 3D models can be attached.
+    /// What can be done to put an object of the inventory on the body, or to take it off. 3D models, pictures and saved constructions can be attached.
     private static List<RadialItem> AttachSlices(InventoryItemTarget item, Decision wear, ContextServices s)
     {
-        var can = item.Category == "models" ? wear : new Decision(false, "Só modelos 3D podem ser anexados ao corpo.");
+        var can = item.Category is "models" or "packages" or "textures" ? Decision.Yes : new Decision(false, "Só modelos 3D, imagens e construções podem ser anexados ao corpo.");
         void Run(int action) => s.InventoryAction(action);
         if (s.IsAttached(item.ItemId))
             return

@@ -25,11 +25,11 @@ public sealed class AvatarAttachmentsTests : IDisposable
         _db.Avatars.Add(new Avatar { Id = Guid.NewGuid(), UserId = id, DisplayName = name, BaseModel = "human_a", CreatedAt = _now, UpdatedAt = _now }); _db.SaveChanges(); return id;
     }
 
-    private Guid Item(Guid? owner = null, int rights = ItemRights.All, string status = "active", string assetStatus = "ready", string name = "Chapéu")
+    private Guid Item(Guid? owner = null, int rights = ItemRights.All, string status = "active", string assetStatus = "ready", string name = "Chapéu", string mime = "model/gltf-binary")
     {
         var asset = new Asset { Id = Guid.NewGuid(), OwnerUserId = owner ?? _me, CreatorUserId = owner ?? _me, Name = name, Category = "models", Status = assetStatus, CreatedAt = _now, UpdatedAt = _now };
         var item = new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = owner ?? _me, AssetId = asset.Id, DisplayName = name, OwnerRights = rights, Status = status, CreatedAt = _now, UpdatedAt = _now };
-        _db.Assets.Add(asset); _db.InventoryItems.Add(item); _db.SaveChanges(); return item.Id;
+        _db.Assets.Add(asset); _db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = "h", StorageKey = "k", MimeType = mime, ByteSize = 1, CreatedAt = _now }); _db.InventoryItems.Add(item); _db.SaveChanges(); return item.Id;
     }
 
     private async Task<Guid> Attach(Guid item, string point = "head_top", string? mode = null, float[]? pos = null, float[]? rot = null, float[]? scale = null, Guid? user = null)
@@ -104,6 +104,14 @@ public sealed class AvatarAttachmentsTests : IDisposable
         Assert.Equal("item_unavailable", (await TryAttach(Item(status: "offered"))).Error); Assert.Equal("asset_unavailable", (await TryAttach(Item(assetStatus: "processing"))).Error);
         Assert.Equal("unknown_point", (await TryAttach(Item(), "orelha")).Error); Assert.Equal("point_unavailable", (await TryAttach(Item(), "tail")).Error); Assert.Equal("bad_mode", (await TryAttach(Item(), mode: "xx")).Error);
         Assert.Empty(await _db.AvatarAttachments.ToListAsync());
+    }
+
+    [Fact]
+    public async Task PicturesAndConstructionsCanBeWornToo_ButASoundCannot()
+    {
+        Assert.Null((await TryAttach(Item(mime: "image/png"), "chest")).Error);
+        Assert.Null((await TryAttach(Item(mime: "application/vnd.lifeverse.build+json"), "pelvis")).Error);
+        Assert.Equal("not_attachable", (await TryAttach(Item(mime: "audio/mpeg"))).Error); Assert.Equal("not_attachable", (await TryAttach(Item(mime: "text/plain"))).Error);
     }
 
     [Fact]
@@ -276,7 +284,7 @@ public sealed class AttachmentsReplicationTests : IDisposable
     {
         var asset = new Asset { Id = Guid.NewGuid(), OwnerUserId = owner, CreatorUserId = owner, Name = name, Category = "models", CreatedAt = _now, UpdatedAt = _now };
         var item = new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = owner, AssetId = asset.Id, DisplayName = name, CreatedAt = _now, UpdatedAt = _now };
-        _db.Assets.Add(asset); _db.InventoryItems.Add(item); _db.SaveChanges(); return (item.Id, asset.Id);
+        _db.Assets.Add(asset); _db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = "h", StorageKey = "k", MimeType = "model/gltf-binary", ByteSize = 1, CreatedAt = _now }); _db.InventoryItems.Add(item); _db.SaveChanges(); return (item.Id, asset.Id);
     }
 
     private async Task<(Guid Row, Guid Asset)> Wear(string point = "skull")
@@ -347,7 +355,7 @@ public sealed class AttachmentOutfitsTests : IDisposable
     {
         var asset = new Asset { Id = Guid.NewGuid(), OwnerUserId = owner, CreatorUserId = owner, Name = name, Category = "models", CreatedAt = _now, UpdatedAt = _now };
         var item = new InventoryItem { Id = Guid.NewGuid(), OwnerUserId = owner, AssetId = asset.Id, DisplayName = name, OwnerRights = rights, CreatedAt = _now, UpdatedAt = _now };
-        _db.Assets.Add(asset); _db.InventoryItems.Add(item); _db.SaveChanges(); return item.Id;
+        _db.Assets.Add(asset); _db.AssetVersions.Add(new AssetVersion { Id = Guid.NewGuid(), AssetId = asset.Id, Version = 1, ContentHash = "h", StorageKey = "k", MimeType = "model/gltf-binary", ByteSize = 1, CreatedAt = _now }); _db.InventoryItems.Add(item); _db.SaveChanges(); return item.Id;
     }
 
     private async Task<Guid> Wear(Guid item, string point, float[]? pos = null, float[]? rot = null, float[]? scale = null)

@@ -130,8 +130,8 @@ public partial class AttachmentsSmoke : Node
             free[0].Run!(); free[1].Run!(); free[2].Run!(); Require(actions.SequenceEqual([30, 31, 32]), $"the slices run the inventory's attach actions: {string.Join(",", actions)}");
             var worn2 = InteractionRegistry.Build(new InventoryItemTarget(itemId, "Chapéu", "models", LifeVerse.Shared.Items.ItemRights.All), services).Single(x => x.Label == "Mais opções").Children!;
             Require(worn2.Take(4).Select(x => x.Label).SequenceEqual(["Editar anexo", "Alterar ponto", "Substituir anexo", "Remover do corpo"]), "a worn object offers to edit, change its point or come off");
-            var texture = InteractionRegistry.Build(new InventoryItemTarget(Guid.NewGuid(), "Areia", "textures", LifeVerse.Shared.Items.ItemRights.All), services).Single(x => x.Label == "Mais opções").Children!;
-            Require(!texture[0].Enabled, "only 3D models can be attached");
+            var texture = InteractionRegistry.Build(new InventoryItemTarget(Guid.NewGuid(), "Trovão", "sounds", LifeVerse.Shared.Items.ItemRights.All), services).Single(x => x.Label == "Mais opções").Children!;
+            Require(!texture[0].Enabled, "a sound cannot be attached");
 
             GD.Print("event=attachments_smoke result=passed");
             AvatarRig.AttachmentModelProvider = null; avatars.Transport = previous;

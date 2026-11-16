@@ -14,7 +14,7 @@ public partial class BuildEditorWindow : Node
 {
     private FloatingWindow _window = null!;
     private readonly Dictionary<BuildTool, Button> _toolButtons = [];
-    private Button _camera = null!, _save = null!, _take = null!;
+    private Button _camera = null!, _save = null!, _take = null!, _wear = null!;
     private LineEdit _packageName = null!;
     private Button _return = null!, _history = null!, _duplicate = null!, _delete = null!, _undo = null!, _redo = null!, _link = null!, _unlink = null!;
     private Tree _tree = null!;
@@ -43,11 +43,14 @@ public partial class BuildEditorWindow : Node
     public event Action<Guid>? HierarchyPicked;
     public event Action? ReturnRequested, HistoryRequested, CameraRequested, TerrainRequested;
     public event Action<string, bool>? SavePackageRequested;
+    /// <summary>The selection is saved, taken out of the world and then worn on the body (the name of the construction).</summary>
+    public event Action<string>? WearPackageRequested;
     public event Action<string>? PresetRequested;
     public void SetCameraPressed(bool on) => _camera.SetPressedNoSignal(on);
+    public void PressWearForTesting() => _wear.EmitSignal(BaseButton.SignalName.Pressed);
     public void PressSaveForTesting(bool take) => (take ? _take : _save).EmitSignal(BaseButton.SignalName.Pressed);
     public void SetPackageNameForTesting(string name) => _packageName.Text = name;
-    public void SetCollabEnabled(int selected) { _return.Disabled = selected == 0; _history.Disabled = selected != 1; _save.Disabled = selected == 0; _take.Disabled = selected == 0; }
+    public void SetCollabEnabled(int selected) { _return.Disabled = selected == 0; _history.Disabled = selected != 1; _save.Disabled = selected == 0; _take.Disabled = selected == 0; _wear.Disabled = selected == 0; }
     public bool LinkEnabledForTesting => !_link.Disabled;
     public bool UnlinkEnabledForTesting => !_unlink.Disabled;
     public void PressLinkForTesting() => _link.EmitSignal(BaseButton.SignalName.Pressed);
@@ -117,7 +120,8 @@ public partial class BuildEditorWindow : Node
         _packageName = new LineEdit { PlaceholderText = "Nome da construção", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MaxLength = 80 }; packageRow.AddChild(_packageName);
         _save = ActionButton(packageRow, "download", "Guardar", "Guarda a seleção como construção no seu inventário", () => SavePackageRequested?.Invoke(_packageName.Text, false));
         _take = ActionButton(packageRow, "box", "Retirar", "Guarda no inventário e tira do mundo (Ctrl+Z traz de volta)", () => SavePackageRequested?.Invoke(_packageName.Text, true));
-        _save.Disabled = true; _take.Disabled = true;
+        _wear = ActionButton(packageRow, "user", "Anexar", "Guarda a seleção no inventário, tira do mundo e escolhe o ponto do corpo onde ela fica presa (Ctrl+Z traz de volta ao mundo)", () => WearPackageRequested?.Invoke(_packageName.Text));
+        _save.Disabled = true; _take.Disabled = true; _wear.Disabled = true;
         _return.Disabled = true; _history.Disabled = true;
 
         var options = new HBoxContainer(); options.AddThemeConstantOverride("separation", 8); content.AddChild(options);

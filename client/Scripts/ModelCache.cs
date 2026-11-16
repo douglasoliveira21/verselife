@@ -11,7 +11,7 @@ public readonly record struct ModelInstance(Node3D Node, Vector3 Size, Vector3 R
 public partial class ModelCache : Node
 {
     private const int MaxNodes = 2000;
-    private sealed record Entry(Node3D? Prototype, Vector3 Size, Vector3 Real = default);
+    private sealed record Entry(Node3D? Prototype, Vector3 Size, Vector3 Real = default, Func<Node3D>? Factory = null);
     private readonly Dictionary<Guid, Entry> _ready = [];
     private readonly Dictionary<Guid, List<Action<ModelInstance?>>> _waiting = [];
 
@@ -31,7 +31,7 @@ public partial class ModelCache : Node
         var entry = Prepare(bytes);
         _ready[assetId] = entry;
         Resolve(assetId, entry);
-        return entry.Prototype is not null;
+        return entry.Prototype is not null || entry.Factory is not null;
     }
 
     public override void _ExitTree() { foreach (var entry in _ready.Values) entry.Prototype?.Free(); _ready.Clear(); }
@@ -66,10 +66,10 @@ public partial class ModelCache : Node
         foreach (var callback in callbacks) callback(Instance(entry));
     }
 
-    private static ModelInstance? Instance(Entry entry) => entry.Prototype is null ? null : new ModelInstance((Node3D)entry.Prototype.Duplicate(), entry.Size, entry.Real);
+    private static ModelInstance? Instance(Entry entry) => entry.Factory is { } make ? new ModelInstance(make(), entry.Size, entry.Real) : entry.Prototype is null ? null : new ModelInstance((Node3D)entry.Prototype.Duplicate(), entry.Size, entry.Real);
 
     /// The model in a glTF/GLB buffer, centred and normalised to one metre, with the size it really has (null when it cannot be read).
-    public static ModelInstance? ParseInstance(byte[] bytes) { var entry = Prepare(bytes); return entry.Prototype is null ? null : new ModelInstance(entry.Prototype, entry.Size, entry.Real); }
+    public static ModelInstance? ParseInstance(byte[] bytes) { var entry = Prepare(bytes); return entry.Factory is { } make ? new ModelInstance(make(), entry.Size, entry.Real) : entry.Prototype is null ? null : new ModelInstance(entry.Prototype, entry.Size, entry.Real); }
 
     /// Parses a glTF/GLB buffer into a centred, one-metre prototype. Failures yield an entry without a model.
     public static (Node3D? Node, Vector3 Size) Parse(byte[] bytes)
@@ -80,6 +80,7 @@ public partial class ModelCache : Node
 
     private static Entry Prepare(byte[] bytes)
     {
+        switch (KindOf(bytes)) { case ContentKind.Picture: return PreparePicture(bytes); case ContentKind.Construction: return PrepareConstruction(bytes); }
         var document = new GltfDocument();
         var state = new GltfState();
         // No base path: references to external files cannot resolve, so a model can only use what it embeds.

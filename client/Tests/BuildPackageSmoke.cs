@@ -37,6 +37,13 @@ public partial class BuildPackageSmoke : Node3D
             Require(saved.Count == 2 && commands.Count(c => Op(c) == "delete") == 2, "Retirar saves and then deletes the objects from the world");
             editor.Synchronizer.OnOperation(JsonSerializer.Serialize(new { operation = "delete", objectId = a })); editor.Synchronizer.OnOperation(JsonSerializer.Serialize(new { operation = "delete", objectId = b })); await Frames(2);
 
+            // --- Anexar: saved, taken out of the world, and handed to the body
+            var wornItem = Guid.NewGuid(); packages.SavedItemForTesting = wornItem; (Guid Item, string Name)? ready = null; packages.WearReady += (item, name) => ready = (item, name);
+            editor.Synchronizer.OnOperation(StateJson(a, 1, 1, "create", group)); await Frames(2); commands.Clear(); editor.Selection.Set([a]); await Frames(2); window.SetPackageNameForTesting("Lanterna"); window.PressWearForTesting();
+            Require(saved.Count == 3 && BuildPackages.Parse(saved[2], out _) is { Name: "Lanterna" } && commands.Count(c => Op(c) == "delete") == 1, "Anexar saves the selection as a construction and takes it out of the world");
+            Require(ready is { } r && r.Item == wornItem && r.Name == "Lanterna", "and asks for the point of the body, for the item that was saved");
+            editor.Synchronizer.OnOperation(JsonSerializer.Serialize(new { operation = "delete", objectId = a })); await Frames(2);
+
             // --- placing with a preview ----------------------------------------------------------------------------------
             var preset = BuildPresets.All[0]; commands.Clear();
             window.Creation.PickPresetForTesting(preset.Id); await Frames(2);

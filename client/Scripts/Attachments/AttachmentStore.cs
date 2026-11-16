@@ -104,6 +104,7 @@ public sealed class AttachmentStore(AvatarManager owner)
         {
             "item_not_found" => "Este item não está mais no seu inventário.",
             "item_unavailable" => "Este item está em uma oferta e não pode ser usado agora.",
+            "not_attachable" => "Este tipo de item não pode ser anexado ao corpo.",
             "asset_unavailable" => "O arquivo deste item ainda não está pronto.",
             "unknown_point" or "point_unavailable" => "Este ponto do corpo não existe no seu avatar.",
             "already_attached" => "Este objeto já está no corpo. Use “Alterar ponto” para movê-lo.",

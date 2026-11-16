@@ -340,6 +340,9 @@ public partial class BuildObjectView : Node3D
         Position = position; Quaternion = rotation;
     }
 
+    /// <summary>Builds the shape again from its state (what the shape asks of the scene, such as pictures, is asked again).</summary>
+    public void Rebuild() { _shapeKey = string.Empty; Apply(State); }
+
     public void Apply(BuildObjectState state)
     {
         State = state; var stored = new Vector3(state.PositionX, state.PositionY, state.PositionZ);

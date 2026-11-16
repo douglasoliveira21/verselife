@@ -28,3 +28,14 @@ Outros: `/platform/avatars/{id}/appearance` e a admissão na ilha trazem `bodyAt
 - O balanço é um movimento leve (inclinação), não física de corpo rígido.
 - Perfis de cauda/asas/dedos dependem do nome dos ossos do modelo.
 - A janela de escolha e o editor só foram testados em modo headless.
+
+## O que pode ser anexado
+
+Além dos modelos 3D, dois outros tipos de item do inventário podem ser anexados ao corpo, em qualquer ponto, com os mesmos limites, direitos e edição de posição:
+
+- **Imagens** (PNG, JPEG, WebP): viram uma plaquinha plana de uns 30 cm, com a proporção da imagem, visível dos dois lados.
+- **Construções** (pacotes salvos com Guardar/Retirar no editor de construção): trazem todas as formas, com cor, textura, brilho e luz. Scripts e conteúdo do objeto não rodam no corpo.
+
+O arquivo diz o que é: quem vê o avatar baixa o mesmo arquivo (a rota de arquivos da ilha libera tudo o que alguém veste, e as imagens e modelos usados dentro de uma construção vestida) e o cliente reconhece o tipo pelo conteúdo. Sons, animações e scripts não são anexáveis (`not_attachable`).
+
+Do mundo: no editor de construção, selecione os objetos e use **Anexar** (ao lado de Guardar e Retirar). A seleção é guardada como construção, sai do mundo (Ctrl+Z devolve) e a janela de pontos do corpo abre para escolher onde ela fica presa.

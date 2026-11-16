@@ -658,6 +658,8 @@ public partial class InventoryPanel : Node3D
     // ---- placing models --------------------------------------------------------------------------------------
 
     private static bool IsPackage(ItemInfo info) => info.Category == "packages";
+    /// <summary>What can be worn on the body: a 3D model, a picture (a flat sign) or a saved construction.</summary>
+    private static bool IsAttachable(ItemInfo info) => IsModel(info) || IsPackage(info) || info.Category == "textures" || info.Mime is "image/png" or "image/jpeg" or "image/webp";
     private static bool IsModel(ItemInfo info) => info.Mime.StartsWith("model/", StringComparison.Ordinal) || info.Category == "models";
 
     private void Place()

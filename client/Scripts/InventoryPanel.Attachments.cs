@@ -24,7 +24,7 @@ public partial class InventoryPanel
     {
         item = null!;
         if (_selectedItem == Guid.Empty || !_items.TryGetValue(_selectedItem, out var found)) return false;
-        if (!IsModel(found)) { _status.Text = "Só modelos 3D podem ser anexados ao corpo."; return false; }
+        if (!IsAttachable(found)) { _status.Text = "Só modelos 3D, imagens e construções podem ser anexados ao corpo."; return false; }
         item = found; return true;
     }
 
@@ -39,6 +39,13 @@ public partial class InventoryPanel
         {
             if (worn is not null) store.Move(worn.Id, point, replaceHere, Report); else store.Attach(item.ItemId, point, replaceHere, Report);
         }, replace, store.Profiles);
+    }
+
+    /// <summary>An item that has just been saved (from the world): the window of points, and the choice puts it there.</summary>
+    public void AttachNew(Guid itemId, string name)
+    {
+        if (Store is not { } store) return;
+        PointWindow().Open(name, string.Empty, store.WornAt, (point, replaceHere) => store.Attach(itemId, point, replaceHere, Report), false, store.Profiles);
     }
 
     /// <summary>"Adicionar ao corpo": the point the item had last time (keeping what is there), or the window when it never was worn.</summary>

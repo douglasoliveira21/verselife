@@ -40,6 +40,11 @@ public partial class BuildPackageManager : Node
     public Vector3 PreviewAt => _previewRoot?.Position ?? Vector3.Zero;
     public int Pending => _queue.Count;
     public event Action? Saved;
+    /// <summary>A construction saved to be worn: the item in the inventory and its name.</summary>
+    public event Action<Guid, string>? WearReady;
+    /// <summary>Tests: the item the pretend server says it stored.</summary>
+    public Guid SavedItemForTesting { get; set; }
+    private bool _wearAfterSave; private Guid _savedItem;
 
     public void Initialize(BuildNetworkSynchronizer sync, BuildSelectionManager selection, BuildUndoRedoManager history, Func<Vector2, Vector3?> spotAt, Action<string> say, Action deleteSelection, Action ensureActive)
     { _sync = sync; _selection = selection; _history = history; _spotAt = spotAt; _say = say; _deleteSelection = deleteSelection; _ensureActive = ensureActive; }
@@ -57,8 +62,9 @@ public partial class BuildPackageManager : Node
     // ---- saving ---------------------------------------------------------------------------------------------------------
 
     /// <summary>Guardar (and Retirar, which also takes the objects out of the world once they are safe in the inventory). Only the person's own objects.</summary>
-    public void SaveSelection(string name, bool take)
+    public void SaveSelection(string name, bool take, bool wear = false)
     {
+        _wearAfterSave = wear;
         if (_busy) { _say("Aguarde: o envio anterior ainda não terminou."); return; }
         var views = _selection.Views().ToList();
         if (views.Count == 0) { _say("Selecione os objetos que quer guardar."); return; }
@@ -69,7 +75,7 @@ public partial class BuildPackageManager : Node
         var sources = views.Select(v => { var s = v.State; return new SourceObject(s.PrimitiveType, s.Name, s.Description, s.PositionX, s.PositionY, s.PositionZ, s.RotationX, s.RotationY, s.RotationZ, s.ScaleX, s.ScaleY, s.ScaleZ, s.MaterialJson, s.GeometryJson, s.PhysicsJson, s.ContentJson, s.GroupId, s.Id, s.ParentObjectId, s.PivotX, s.PivotY, s.PivotZ); }).ToList();
         var json = BuildPackages.Serialize(BuildPackages.Create(name, sources));
         _takeAfterSave = take; _takeIds = take ? views.Select(v => v.State.Id).ToList() : null;
-        if (PackageSink is not null) { if (PackageSink(json)) OnSaved(name, sources.Count); return; }
+        if (PackageSink is not null) { if (PackageSink(json)) { _savedItem = SavedItemForTesting; OnSaved(name, sources.Count); } return; }
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager"); var app = GetNodeOrNull<AppManager>("/root/AppManager");
         if (session is not { IsAuthenticated: true } || app is null) { _say("Entre na sua conta para guardar no inventário."); return; }
         if (_http is null) { _http = new HttpRequest { Timeout = 30 }; AddChild(_http); _http.RequestCompleted += OnResponse; }
@@ -81,7 +87,12 @@ public partial class BuildPackageManager : Node
     private void OnResponse(long result, long code, string[] headers, byte[] body)
     {
         _busy = false;
-        if (code is >= 200 and < 300) { OnSaved(_pendingName, _pendingCount); return; }
+        if (code is >= 200 and < 300)
+        {
+            try { using var saved = JsonDocument.Parse(body.GetStringFromUtf8()); _savedItem = saved.RootElement.TryGetProperty("itemId", out var id) && id.TryGetGuid(out var guid) ? guid : Guid.Empty; } catch (JsonException) { _savedItem = Guid.Empty; }
+            OnSaved(_pendingName, _pendingCount); return;
+        }
+        _wearAfterSave = false;
         _takeIds = null; var reason = "";
         try { using var doc = JsonDocument.Parse(body.GetStringFromUtf8()); if (doc.RootElement.TryGetProperty("errors", out var errors)) reason = string.Join(" ", errors.EnumerateObject().SelectMany(x => x.Value.EnumerateArray()).Select(x => x.GetString())); }
         catch (JsonException) { }
@@ -97,6 +108,8 @@ public partial class BuildPackageManager : Node
             _say($"\"{name}\" retirada do mundo e guardada no inventário ({count} objeto(s)). Ctrl+Z traz de volta ao mundo.");
         }
         _takeAfterSave = false; _takeIds = null; Saved?.Invoke();
+        if (_wearAfterSave && _savedItem != Guid.Empty) WearReady?.Invoke(_savedItem, name);
+        _wearAfterSave = false; _savedItem = Guid.Empty;
         GetParent()?.GetParent()?.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Refresh();
     }
 

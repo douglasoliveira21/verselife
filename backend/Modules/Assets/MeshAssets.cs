@@ -82,16 +82,17 @@ public static class MeshAssets
         var canEnter = island.IsPublic || island.OwnerUserId == user || await db.IslandPermissions.AnyAsync(x => x.IslandId == islandId && x.UserId == user && x.RevokedAt == null && (x.Permission == "enter" || x.Permission == "admin"), ct);
         if (!canEnter) return Results.Forbid();
         var needle = assetId.ToString().ToLowerInvariant();
-        var usedAsMesh = await UsedAsync(db, islandId, needle, geometry: true, ct) || await LifeVerse.Api.Modules.Users.AvatarAttachments.AssetIsWornAsync(db, assetId, ct); // an object worn on a body is seen by everybody who is there
+        var worn = await LifeVerse.Api.Modules.Users.AvatarAttachments.AssetIsWornAsync(db, assetId, ct); var usedAsMesh = worn || await UsedAsync(db, islandId, needle, geometry: true, ct); // an object worn on a body is seen by everybody who is there
         var usedAsTexture = !usedAsMesh && await UsedAsync(db, islandId, needle, geometry: false, ct);
+        var inWornConstruction = !usedAsMesh && !usedAsTexture && await LifeVerse.Api.Modules.Users.AvatarAttachments.WornConstructionUsesAsync(db, storage, assetId, ct); // a picture or a model of a construction that somebody wears
         var usedAsSound = !usedAsMesh && !usedAsTexture && await UsedAsSoundAsync(db, islandId, needle, ct); // a sound that an object carries can be heard by whoever is on the island
         // the picture that represents the island is shown to everybody who may enter it (and to the people who manage it), even though no object uses it
         var wanted = $"asset:{assetId:D}"; var usedAsCover = !usedAsMesh && !usedAsTexture && !usedAsSound && (string.Equals(island.CoverImageUrl, wanted, StringComparison.OrdinalIgnoreCase) || await db.IslandParcels.AnyAsync(p => p.IslandId == islandId && p.DeletedAt == null && p.ImageUrl == wanted, ct)); // or the picture of one of its parcels
-        if (!usedAsMesh && !usedAsTexture && !usedAsSound && !usedAsCover) return Results.NotFound();
+        if (!usedAsMesh && !usedAsTexture && !usedAsSound && !usedAsCover && !inWornConstruction) return Results.NotFound();
         var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == assetId && x.DeletedAt == null, ct);
         if (asset is null) return Results.NotFound();
         var version = await db.AssetVersions.AsNoTracking().SingleAsync(x => x.AssetId == assetId && x.Version == asset.CurrentVersion, ct);
-        if (usedAsMesh ? !version.MimeType.StartsWith("model/", StringComparison.Ordinal) : usedAsSound ? !version.MimeType.StartsWith("audio/", StringComparison.Ordinal) : !MaterialAssets.IsImage(version.MimeType)) return Results.NotFound();
+        if (inWornConstruction ? !(version.MimeType.StartsWith("model/", StringComparison.Ordinal) || MaterialAssets.IsImage(version.MimeType)) : usedAsMesh ? !(version.MimeType.StartsWith("model/", StringComparison.Ordinal) || (worn && LifeVerse.Api.Modules.Users.AvatarAttachments.IsPictureOrConstruction(version.MimeType))) : usedAsSound ? !version.MimeType.StartsWith("audio/", StringComparison.Ordinal) : !MaterialAssets.IsImage(version.MimeType)) return Results.NotFound();
         var stream = await storage.OpenReadAsync(version.StorageKey, ct);
         // the hash is the entity tag: a client that already has these bytes asks again with it and gets "not modified" instead of the file
         return stream is null ? Results.NotFound() : Results.File(stream, version.MimeType, entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue("\"" + version.ContentHash + "\""));
