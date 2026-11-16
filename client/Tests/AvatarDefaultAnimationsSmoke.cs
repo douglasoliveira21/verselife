@@ -25,7 +25,7 @@ public partial class AvatarDefaultAnimationsSmoke : Node
         try
         {
             DefaultAvatarAnimations.BytesForTesting = null; DefaultAvatarAnimations.Reset();
-            Require(DefaultAvatarAnimations.Count == 12, $"the file carries the twelve clips the game uses (got {DefaultAvatarAnimations.Count})");
+            Require(DefaultAvatarAnimations.Count == 13, $"the file carries the twelve clips the game uses, and the typing clip comes from its own file (got {DefaultAvatarAnimations.Count})");
             foreach (var state in new[] { "Idle", "Walk", "Run", "Jump", "Fall", "FlyIdle", "FlyMove", "WalkBack", "FlatImpact", "FallDown", "Swim", "SwimIdle" }) Require(DefaultAvatarAnimations.For(state) is { Duration: > .2f }, $"there is a clip for {state}");
             foreach (var state in new[] { "Sit", "Dance", "Wave", "Landing", "StandUp" }) Require(DefaultAvatarAnimations.For(state) is null, $"{state} keeps the game's own animation");
 

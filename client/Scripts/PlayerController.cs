@@ -245,6 +245,7 @@ public partial class PlayerController : CharacterBody3D
         if (_flying || _swimming ? jumpPressed : jumpJustPressed) flags |= InputFlags.Jump;
         if (_mirror || _detached) flags = InputFlags.None; // in front of the mirror the avatar stands still: no jumping, running or flying from the keys typed into the window
         if (descendPressed) flags |= InputFlags.Descend;
+        if (ChatTypingActive) flags |= InputFlags.Typing;
         _network.SendInput(++_inputSequence, SentDirection(direction), flags);
         var velocity = Velocity;
 
@@ -462,7 +463,7 @@ public partial class PlayerController : CharacterBody3D
             _landingTime > 0, direction.LengthSquared() > .01f && inputAmount >= .05f, RunHeld);
         // S or the back arrow with W not held: the body keeps facing forward while it moves back (walk or run), so it plays the backwards walk
         var backwards = !_flying && !_swimming && !IsTyping() && Input.IsActionPressed("move_back") && !Input.IsActionPressed("move_forward") && direction.LengthSquared() > .01f;
-        var resolved = WaterStill.Apply(BackwardsWalk.Apply(MovementStateResolver.Resolve(snapshot), backwards), snapshot.IsMoving);
+        var resolved = TypingState.Apply(WaterStill.Apply(BackwardsWalk.Apply(MovementStateResolver.Resolve(snapshot), backwards), snapshot.IsMoving), ChatTypingActive);
         _rig.SetMotionState(_flatImpactTime > 0 ? AvatarMotionState.FlatImpact : resolved);
     }
 
@@ -600,6 +601,15 @@ public partial class PlayerController : CharacterBody3D
         Scripts.Camera.CameraCollision.Apply(_springArm, collision);
         if (!_mirror) SetZoom(distance);
     }
+
+    // ---- typing in the chat: the avatar types on a keyboard, for everybody -------------------------------------------------------------------------------------
+    /// <summary>How long after the last key the avatar goes on typing (a person pauses between words).</summary>
+    public const ulong ChatTypingHoldMs = 1500;
+    private ulong _chatTypingUntil;
+    /// <summary>True while the person is typing a message in the chat: standing still, the avatar types (and tells the island, so everybody sees and hears it).</summary>
+    public bool ChatTypingActive => Time.GetTicksMsec() < _chatTypingUntil;
+    /// <summary>The chat field changed (a key was typed): typing goes on for a moment. False: it is over (sent, emptied, left).</summary>
+    public void SetChatTyping(bool active) => _chatTypingUntil = active ? Time.GetTicksMsec() + ChatTypingHoldMs : 0;
 
     public bool ControlsLocked { get; set; }
     private bool IsTyping() => ControlsLocked || GetViewport().GuiGetFocusOwner() is LineEdit or TextEdit;

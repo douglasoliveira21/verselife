@@ -31,7 +31,9 @@ public enum InputFlags : byte
     Descend = 8,
     Sit = 16,
     Wave = 32,
-    Dance = 64
+    Dance = 64,
+    /// <summary>The person is typing in the chat: standing still, the avatar types on a keyboard for everybody to see.</summary>
+    Typing = 128
 }
 
 public enum NetworkMotionState : byte
@@ -45,7 +47,9 @@ public enum NetworkMotionState : byte
     Sit,
     Wave,
     Dance,
-    Swim
+    Swim,
+    /// <summary>Standing and typing a message (everybody sees and hears it).</summary>
+    Typing
 }
 
 public readonly record struct MovementInput(uint Sequence, float X, float Z, InputFlags Flags);

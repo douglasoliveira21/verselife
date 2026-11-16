@@ -112,7 +112,7 @@ public partial class AvatarRig
         if (ActiveClip is not { } clip) { _clipState = _state; return null; }
         if (_clipState != _state) { _clipState = _state; _clipTime = 0; }
         var plainFall = _state == AvatarMotionState.Fall && !_fallFromFlight;      // the short clip of coming down after a jump: it holds its last pose until the avatar lands
-        var loop = _state is AvatarMotionState.WalkBack or AvatarMotionState.SwimIdle || (!plainFall && AnimationStates.All.TryGetValue(_state.ToString(), out var loops) && loops);
+        var loop = _state is AvatarMotionState.WalkBack or AvatarMotionState.SwimIdle or AvatarMotionState.Typing || (!plainFall && AnimationStates.All.TryGetValue(_state.ToString(), out var loops) && loops);
         var sample = clip.SampleDeltas((float)_clipTime, loop); var result = new Dictionary<int, Quaternion>();
         foreach (var (standard, rotation) in sample)
         {

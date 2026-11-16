@@ -204,8 +204,10 @@ public partial class ViewerUI
         _chat.AddThemeStyleboxOverride("normal", new StyleBoxEmpty()); _chat.AddThemeStyleboxOverride("focus", new StyleBoxEmpty());
         _chat.AddThemeFontSizeOverride("font_size", 15);
         _chat.TextSubmitted += OnChatSubmit;
+        _chat.TextChanged += text => _player?.SetChatTyping(text.Length > 0);   // every key: the avatar types for everybody
+        _chat.TextSubmitted += _ => _player?.SetChatTyping(false);
         _chat.FocusEntered += () => { field.AddThemeStyleboxOverride("panel", fieldFocus); OpenChatHistory(); };
-        _chat.FocusExited += () => { field.AddThemeStyleboxOverride("panel", fieldNormal); CloseChatInput(); };
+        _chat.FocusExited += () => { _player?.SetChatTyping(false); field.AddThemeStyleboxOverride("panel", fieldNormal); CloseChatInput(); };
         inner.AddChild(_chat);
         var send = new Button { Icon = UiStyle.Icon("send", UiStyle.Text, 18), Flat = true, FocusMode = Control.FocusModeEnum.None, TooltipText = "Enviar", CustomMinimumSize = new Vector2(28, 0), ExpandIcon = false };
         send.Pressed += () => { OnChatSubmit(_chat.Text); _chat.Clear(); };

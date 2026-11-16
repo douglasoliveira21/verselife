@@ -141,14 +141,14 @@ public partial class AvatarRig : Node3D
         if (state == AvatarMotionState.Fall) _fallFromFlight = _state is AvatarMotionState.FlyIdle or AvatarMotionState.FlyMove || (_fallFromFlight && _state == AvatarMotionState.Fall); else _fallFromFlight = false;
         _state = state;
         if (_playback is not null) _playback.Travel(Effective(state));
-        UpdateFootsteps();
+        UpdateFootsteps(); UpdateTypingSound();
     }
 
     public bool SetAnimationOverride(AvatarMotionState state, float duration, int priority = 1)
     {
         if (duration <= 0 || priority < _overridePriority) return false;
         _overrideState = state; _overridePriority = priority; _overrideUntil = Time.GetTicksMsec() / 1000.0 + Math.Clamp(duration, .05f, 30f);
-        _state = state; _playback?.Travel(Effective(state)); UpdateFootsteps();
+        _state = state; _playback?.Travel(Effective(state)); UpdateFootsteps(); UpdateTypingSound();
         return true;
     }
 
@@ -214,6 +214,7 @@ public partial class AvatarRig : Node3D
         library.AddAnimation("Point", Pose(.8, ("Visual/Hips/Torso/RightUpperArm:rotation", new Vector3(0, 0, -1.5f))));
         library.AddAnimation("Greet", Clip(1.2, true, ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { V(1.1f), V(1.7f), V(1.1f) })));
         library.AddAnimation("Laugh", Clip(1.0, true, ("Visual/Hips/Torso:rotation", new[] { V(.12f), V(-.12f), V(.12f) })));
+        library.AddAnimation("Typing", Clip(.5, true, ("Visual/Hips/Torso:rotation", new[] { V(.1f), V(.12f), V(.1f) }), ("Visual/Hips/Torso/Neck/Head:rotation", new[] { V(.22f), V(.18f), V(.22f) }), ("Visual/Hips/Torso/LeftUpperArm:rotation", new[] { V(-.7f), V(-.72f), V(-.7f) }), ("Visual/Hips/Torso/RightUpperArm:rotation", new[] { V(-.7f), V(-.72f), V(-.7f) }), ("Visual/Hips/Torso/LeftUpperArm/LeftLowerArm:rotation", new[] { V(-1f), V(-1.25f), V(-1f) }), ("Visual/Hips/Torso/RightUpperArm/RightLowerArm:rotation", new[] { V(-1.25f), V(-1f), V(-1.25f) })));
         library.AddAnimation("SitFloor", Pose(.5, ("Visual/Hips/LeftUpperLeg:rotation", V(-1.1f)), ("Visual/Hips/RightUpperLeg:rotation", V(-1.1f))));
         AddAlternativeAnimations(library);
     }

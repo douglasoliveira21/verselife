@@ -94,7 +94,7 @@ public static class AuthoritativeMovement
         if (state.Flying) return NetworkMotionState.Fly;
         if (state.Swimming) return NetworkMotionState.Swim;
         if (!state.Grounded) return state.VelocityY > 0 ? NetworkMotionState.Jump : NetworkMotionState.Fall;
-        if (length < .05f) return NetworkMotionState.Idle;
+        if (length < .05f) return input.Flags.HasFlag(InputFlags.Typing) ? NetworkMotionState.Typing : NetworkMotionState.Idle;
         return input.Flags.HasFlag(InputFlags.Run) ? NetworkMotionState.Run : NetworkMotionState.Walk;
     }
 

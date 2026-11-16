@@ -11,6 +11,8 @@ namespace LifeVerse.Client.Scripts;
 public static class DefaultAvatarAnimations
 {
     public const string Path = "res://Assets/animations/default_avatar_animations.bin";
+    /// <summary>The clip of typing on a keyboard (from a mocap of a person standing and talking, cut at the stretch that loops best): its own small file.</summary>
+    public const string TypingPath = "res://Assets/animations/typing_animation.bin";
     /// <summary>Set the environment variable LIFEVERSE_NO_DEFAULT_ANIMATIONS=1 to play without the game's own clips (to tell whether they matter for a slowdown).</summary>
     /// <summary>Off: custom bodies play only the game's own animations (Configurações › Avatar), or the environment variable of the tests.</summary>
     public static bool Disabled { get; set; } = System.Environment.GetEnvironmentVariable("LIFEVERSE_NO_DEFAULT_ANIMATIONS") == "1";
@@ -18,13 +20,14 @@ public static class DefaultAvatarAnimations
     /// <summary>The state of the game → the name of the clip in the file. The flying clip serves both flying states; the file also carries "WalkBackwards", "FallFlat" and "DynamicPose", which no state of the game asks for yet.</summary>
     public static readonly IReadOnlyDictionary<string, string> ClipOfState = new Dictionary<string, string>
     {
-        ["Idle"] = "Idle", ["Walk"] = "Walk", ["Run"] = "Run", ["Jump"] = "Jump", ["Fall"] = "Fall", ["FlyIdle"] = "FlyIdle", ["FlyMove"] = "FlyMove", ["Swim"] = "Swim", ["SwimIdle"] = "SwimIdle", ["WalkBack"] = "WalkBackwards", ["FlatImpact"] = "FallFlat", ["FallDown"] = "JumpDown"
+        ["Typing"] = "Typing", ["Idle"] = "Idle", ["Walk"] = "Walk", ["Run"] = "Run", ["Jump"] = "Jump", ["Fall"] = "Fall", ["FlyIdle"] = "FlyIdle", ["FlyMove"] = "FlyMove", ["Swim"] = "Swim", ["SwimIdle"] = "SwimIdle", ["WalkBack"] = "WalkBackwards", ["FlatImpact"] = "FallFlat", ["FallDown"] = "JumpDown"
     };
 
     private static Dictionary<string, SkeletonClip>? _clips;
     private static readonly object Gate = new(); private static bool _loading;
     /// <summary>Tests: bytes to use instead of the resource (null reads the resource). With bytes given, everything loads at once.</summary>
     public static byte[]? BytesForTesting { get; set; }
+    public static byte[]? TypingBytesForTesting { get; set; }
 
     public static void Reset() { lock (Gate) { _clips = null; _loading = false; } }
 
@@ -32,7 +35,9 @@ public static class DefaultAvatarAnimations
     {
         var loaded = new Dictionary<string, SkeletonClip>();
         var bytes = BytesForTesting ?? (Godot.FileAccess.FileExists(Path) ? Godot.FileAccess.GetFileAsBytes(Path) : null);
-        if (bytes is { Length: > 0 }) foreach (var name in ClipOfState.Values.Distinct()) if (SkeletonClip.Read(bytes, name) is { } clip) loaded[name] = clip;
+        if (bytes is { Length: > 0 }) foreach (var name in ClipOfState.Values.Distinct().Where(n => n != "Typing")) if (SkeletonClip.Read(bytes, name) is { } clip) loaded[name] = clip;
+        var typing = TypingBytesForTesting ?? (BytesForTesting is null && Godot.FileAccess.FileExists(TypingPath) ? Godot.FileAccess.GetFileAsBytes(TypingPath) : null);
+        if (typing is { Length: > 0 } && SkeletonClip.Read(typing, "Typing") is { } typed) loaded["Typing"] = typed;
         return loaded;
     }
 

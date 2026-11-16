@@ -8,7 +8,9 @@ public enum AvatarMotionState
     /// <summary>Hitting the ground flat after a fall that began when the flight stopped in the air: a long fall-and-lie animation, then the avatar gets up. Only on the player's own avatar, like WalkBack.</summary>
     FlatImpact,
     /// <summary>Treading water: in the water and not swimming anywhere. The network only says "swimming"; every client tells the two apart by how fast the avatar moves.</summary>
-    SwimIdle
+    SwimIdle,
+    /// <summary>Standing still while typing in the chat: the avatar types on a keyboard. Last in the list, so no number changes.</summary>
+    Typing
 }
 
 public readonly record struct MovementSnapshot(
@@ -45,4 +47,10 @@ public static class WaterStill
 {
     /// <summary>Swimming without going anywhere is treading water; every other state stays as it is.</summary>
     public static AvatarMotionState Apply(AvatarMotionState state, bool moving) => state == AvatarMotionState.Swim && !moving ? AvatarMotionState.SwimIdle : state;
+}
+
+public static class TypingState
+{
+    /// <summary>Standing still while typing is typing; every other state stays as it is (walking, jumping, flying, sitting… win over it).</summary>
+    public static AvatarMotionState Apply(AvatarMotionState state, bool typing) => typing && state == AvatarMotionState.Idle ? AvatarMotionState.Typing : state;
 }

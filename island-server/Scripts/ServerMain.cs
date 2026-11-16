@@ -212,7 +212,7 @@ public partial class ServerMain : Node
     {
         if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated || sequence <= player.LatestInput.Sequence || sequence > uint.MaxValue) return;
         if (!float.IsFinite(x) || !float.IsFinite(z)) return;
-        var allowed = InputFlags.Run | InputFlags.Jump | InputFlags.Fly | InputFlags.Descend | InputFlags.Sit | InputFlags.Wave | InputFlags.Dance;
+        var allowed = InputFlags.Run | InputFlags.Jump | InputFlags.Fly | InputFlags.Descend | InputFlags.Sit | InputFlags.Wave | InputFlags.Dance | InputFlags.Typing;
         player.LatestInput = new MovementInput((uint)sequence, Math.Clamp(x, -1f, 1f), Math.Clamp(z, -1f, 1f), (InputFlags)flags & allowed);
     }
 
