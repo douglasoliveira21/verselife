@@ -180,7 +180,7 @@ public static partial class SettingsCatalog
         ["audio.master"] = ("Volume", 0)
     };
 
-    public static readonly IReadOnlyList<SettingDefinition> All = [.. Raw.Concat(Stage3()).Concat(Stage4()).Select(d => Layout.TryGetValue(d.Id, out var place) ? d with { Group = place.Group, Column = place.Column } : d)];
+    public static readonly IReadOnlyList<SettingDefinition> All = [.. Raw.Concat(Stage3()).Concat(Stage4()).Concat(CameraFree()).Select(d => Layout.TryGetValue(d.Id, out var place) ? d with { Group = place.Group, Column = place.Column } : d)];
 
     public static SettingDefinition? Find(string id) => All.FirstOrDefault(d => d.Id == id);
 
@@ -238,6 +238,7 @@ public static partial class SettingsAppliers
     {
         RegisterStage3(store);
         RegisterStage4(store);
+        RegisterCameraFree(store);
         foreach (var id in QualityIds) store.RegisterApplier(id, _ => ApplyQuality(store));
         store.RegisterApplier("graphics.texture_quality", value => { GraphicsQuality.TextureMipmapBias = (string)value switch { "medium" => 1f, "low" => 2f, _ => 0f }; GraphicsQuality.Reapply(); });
         store.RegisterApplier("graphics.anisotropic", value => { GraphicsQuality.Anisotropic = (string)value switch { "0" => Viewport.AnisotropicFiltering.Disabled, "4" => Viewport.AnisotropicFiltering.Anisotropy4X, "8" => Viewport.AnisotropicFiltering.Anisotropy8X, "16" => Viewport.AnisotropicFiltering.Anisotropy16X, _ => Viewport.AnisotropicFiltering.Anisotropy2X }; GraphicsQuality.Reapply(); });

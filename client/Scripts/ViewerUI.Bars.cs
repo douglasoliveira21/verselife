@@ -360,6 +360,7 @@ public partial class ViewerUI
         };
         _context = new ContextInteractionManager { Name = "ContextInteraction" }; AddChild(_context);
         _context.Setup(_world, _player, menu, services);
+        if (_player is not null) _player.CameraTargetResolver = position => _context.Resolve(position); // the camera looks at what a right click would have found
         if (_world.GetNodeOrNull<InventoryPanel>("InventoryPanel") is { } inventoryPanel) inventoryPanel.ContextRequested += (position, target) => _context?.OpenFor(target, position);
         if (_player is not null) _player.ContextRequested += position => { if (!ToolsOwnTheMouse()) _context.OpenAt(position); };
         people.Known += name => _context?.RefreshFor(name);

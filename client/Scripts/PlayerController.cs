@@ -73,6 +73,7 @@ public partial class PlayerController : CharacterBody3D
         FloorSnapLength = .35f;
         FloorStopOnSlope = true;
         _rig = GetNode<AvatarRig>("AvatarRig"); _rig.OwnAvatar = true;
+        _cameraController = new Scripts.Camera.CameraController { Name = "CameraController", Player = this }; AddChild(_cameraController);
         _network = GetNode<NetworkManager>("/root/NetworkManager");
         _network.RegisterLocalPlayer(this);
         _cameraPivot = GetNode<Node3D>("CameraPivot");
@@ -110,14 +111,18 @@ public partial class PlayerController : CharacterBody3D
 
     public override void _Process(double delta)
     {
-        var weight = 1f - Mathf.Exp(-14f * (float)delta);
+        var weight = 1f - Mathf.Exp(-Scripts.Camera.CameraSettings.Current.Smoothing * (float)delta);
         Rotation = new Vector3(0, Mathf.LerpAngle(Rotation.Y, _targetBodyYaw, weight), 0);
         // The pivot is a child of the body, so its local yaw is the camera yaw relative to the avatar.
         _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
         var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : 1.55f) + _cameraHeightOffset;
-        _cameraPivot.Position = _editView ? _cameraPivot.Position.Lerp(_editFocus, weight * .6f) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
+        if (_detached) { if (!Scripts.Camera.CameraSettings.Current.AllowDetached) ExitDetached(); else { UpdateDetached((float)delta); return; } }
+        if (_focusNode is not null) { if (IsInstanceValid(_focusNode) && _focusNode.IsInsideTree()) _editFocus = ToLocal(_focusNode.ToGlobal(_focusOffset)); else _focusNode = null; }
+        _cameraPivot.Position = _editView || _freeView ? _cameraPivot.Position.Lerp(_editFocus, weight * (_freeView ? 1f : .6f)) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
+        // the distance glides too: a notch of the wheel or a drag never jumps
+        _springArm.SpringLength = LifeVerse.Shared.Camera.CameraZoomController.Glide(_springArm.SpringLength, _firstPerson ? .05f : _cameraDistance, (float)delta, Scripts.Camera.CameraSettings.Current.Smoothing);
     }
 
     public override void _UnhandledInput(InputEvent input)
@@ -195,7 +200,7 @@ public partial class PlayerController : CharacterBody3D
         }
         if (_landingTime > 0) _landingTime -= dt;
         if (_flatImpactTime > 0) _flatImpactTime -= dt;      // lying on the ground after a fall from the sky: no walking, jumping or flying until the avatar is up
-        var blocked = IsTyping() || _contextMenu.Visible || _mirror || _flatImpactTime > 0;
+        var blocked = IsTyping() || _contextMenu.Visible || _mirror || _detached || _flatImpactTime > 0;
         UpdateDoubleTapRun(blocked);
         UpdateHoldToFly(blocked, dt);
         var input = blocked ? Vector2.Zero : Input.GetVector("move_left", "move_right", "move_forward", "move_back");
@@ -204,6 +209,7 @@ public partial class PlayerController : CharacterBody3D
         // Viewer-style controls in third person. First person follows the mouse like a
         // crosshair: W/S go along the view and A/D strafe without changing that heading.
         if (steering) _walkTarget = null;
+        if (_freeView && steering && Scripts.Camera.CameraSettings.Current.RestoreAutomatically) ExitFreeView();
         if (_firstPerson) _targetBodyYaw = _targetYaw;
         else _targetBodyYaw = Mathf.Wrap(_targetBodyYaw - input.X * TurnRate * dt, -Mathf.Pi, Mathf.Pi);
         var forward = new Vector3(-Mathf.Sin(_targetBodyYaw), 0, -Mathf.Cos(_targetBodyYaw));
@@ -225,19 +231,19 @@ public partial class PlayerController : CharacterBody3D
             }
         }
         // Swing the camera behind the avatar while it walks or turns, unless the user is orbiting.
-        if ((moving || Mathf.Abs(input.X) > .01f) && !_rightDragging && _cameraMode is CameraMode.ThirdPerson or CameraMode.FirstPerson)
+        if ((moving || Mathf.Abs(input.X) > .01f) && !_rightDragging && !_freeView && _cameraMode is CameraMode.ThirdPerson or CameraMode.FirstPerson)
             _targetYaw += Mathf.Wrap(_targetBodyYaw - _targetYaw, -Mathf.Pi, Mathf.Pi) * (1f - Mathf.Exp(-CameraFollowRate * dt));
         // Ocean: same rule as the server (water over the ground at least chest deep means swimming).
         _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
         _oceanSwimming = !_flying && _terrainNode is not null && _terrainNode.Map.WaterDepth(_terrainNode.Map.SampleHeight(GlobalPosition.X, GlobalPosition.Z)) >= AuthoritativeMovement.WadeDepth;
         var flags = InputFlags.None;
-        if (_mirror) _walkTarget = null;
+        if (_mirror || _detached) _walkTarget = null;
         var jumpPressed = !blocked && Input.IsActionPressed("jump");
         var jumpJustPressed = !blocked && Input.IsActionJustPressed("jump");
         var descendPressed = !blocked && Input.IsActionPressed("descend");
         if (!blocked && RunHeld) flags |= InputFlags.Run;
         if (_flying || _swimming ? jumpPressed : jumpJustPressed) flags |= InputFlags.Jump;
-        if (_mirror) flags = InputFlags.None; // in front of the mirror the avatar stands still: no jumping, running or flying from the keys typed into the window
+        if (_mirror || _detached) flags = InputFlags.None; // in front of the mirror the avatar stands still: no jumping, running or flying from the keys typed into the window
         if (descendPressed) flags |= InputFlags.Descend;
         _network.SendInput(++_inputSequence, SentDirection(direction), flags);
         var velocity = Velocity;
@@ -371,7 +377,7 @@ public partial class PlayerController : CharacterBody3D
 
     public void SetSwimming(bool value) => _volumeSwimming = value;
     /// Turns the avatar and the camera to face a heading at once (after a teleport to an arrival point).
-    public void FaceYaw(float radians) { _targetBodyYaw = radians; _targetYaw = radians; _cameraYaw = radians; Rotation = new Vector3(0, radians, 0); }
+    public void FaceYaw(float radians) { ExitFreeView(); ExitDetached(); _targetBodyYaw = radians; _targetYaw = radians; _cameraYaw = radians; Rotation = new Vector3(0, radians, 0); }
 
     private ulong _builtSupportUntil;
     /// <summary>How long after standing on built geometry a jump is still treated as being from it (longer than a jump lasts).</summary>
@@ -430,7 +436,7 @@ public partial class PlayerController : CharacterBody3D
     public void Sit(InteractableSeat seat)
     {
         if (_flying || _swimming || _seat is not null || !seat.TryOccupy(this)) return;
-        _seat = seat; Velocity = Vector3.Zero; GlobalTransform = seat.SeatTransform;
+        ExitFreeView(); ExitDetached(); _seat = seat; Velocity = Vector3.Zero; GlobalTransform = seat.SeatTransform;
         _network.SendInput(++_inputSequence, Vector2.Zero, InputFlags.Sit);
         _rig.SetAnimationOverride(AvatarMotionState.Sit, .45f, 3); _contextMenu.Visible = false;
     }
@@ -512,7 +518,7 @@ public partial class PlayerController : CharacterBody3D
     {
         var car = _network.IsAuthenticated ? _network.Vehicles.DrivenBy(_network.OwnPeerId) : null;
         if (car is null) { if (_inVehicle) { _inVehicle = false; Velocity = Vector3.Zero; } return false; }
-        if (!_inVehicle) { _inVehicle = true; _flying = false; _walkTarget = null; _contextMenu.Visible = false; }
+        if (!_inVehicle) { _inVehicle = true; _flying = false; _walkTarget = null; _contextMenu.Visible = false; ExitFreeView(); ExitDetached(); }
         GlobalTransform = car.SeatTransform; Velocity = Vector3.Zero; _rig.SetMotionState(AvatarMotionState.Sit);
         var typing = IsTyping();
         _network.SendVehicleInput(typing ? 0f : Input.GetAxis("move_back", "move_forward"), typing ? 0f : Input.GetAxis("move_left", "move_right"), !typing && Input.IsActionPressed("jump"));
@@ -567,7 +573,7 @@ public partial class PlayerController : CharacterBody3D
     private bool _avatarHidden;
     /// Hides the avatar while the build camera is in use (and shows it again afterwards).
     public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
-    private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, _editView ? .2f : _mirror ? .7f : 1.5f, _mirror ? 5f : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
+    private void SetZoom(float value) { var options = Scripts.Camera.CameraSettings.Current; _cameraDistance = Mathf.Clamp(value, _editView ? .2f : _mirror ? .7f : _freeView ? options.MinDistance : 1.5f, _mirror ? 5f : _freeView ? options.MaxDistance : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     /// <summary>True while a loading screen covers the world: the avatar ignores the keyboard and the mouse until the world is ready.</summary>
     // ---- the person's own settings (Configurações › Controles e Câmera) ----
     /// <summary>Multiplies the camera sensitivity of the avatar; and flips the vertical axis on top of what the avatar says.</summary>
@@ -591,7 +597,7 @@ public partial class PlayerController : CharacterBody3D
         _cameraHeightOffset = Mathf.Clamp(height, -1f, 1.5f);      // the pivot follows it smoothly (see _Process)
         _camera.HOffset = Mathf.Clamp(shoulder, -2f, 2f);
         CameraFollowRate = Mathf.Clamp(follow, .5f, 12f);
-        _springArm.CollisionMask = collision ? 1u : 0u;
+        Scripts.Camera.CameraCollision.Apply(_springArm, collision);
         if (!_mirror) SetZoom(distance);
     }
 
@@ -630,7 +636,7 @@ public partial class PlayerController : CharacterBody3D
     public void EnterMirror(bool face = true)
     {
         if (!_mirror) _beforeMirror = (_cameraMode, _cameraDistance, _targetYaw, _targetPitch);
-        _mirror = true; _walkTarget = null; _rightDragging = false;
+        _mirror = true; _walkTarget = null; _rightDragging = false; _freeView = false; _focusNode = null; _detached = false;
         SetCameraMode(CameraMode.ThirdPerson);
         SetMirrorView(face);
     }
@@ -658,22 +664,151 @@ public partial class PlayerController : CharacterBody3D
     public void EnterEditView(Vector3 world, float distance = 1.2f)
     {
         if (!_mirror) _beforeMirror = (_cameraMode, _cameraDistance, _targetYaw, _targetPitch);
-        _mirror = true; _walkTarget = null; _rightDragging = false;
+        _mirror = true; _walkTarget = null; _rightDragging = false; _freeView = false; _focusNode = null; _detached = false;
         SetCameraMode(CameraMode.ThirdPerson);
         _editView = true; _editFocus = ToLocal(world); _cameraDistance = Mathf.Clamp(distance, .2f, 5f); _springArm.SpringLength = _cameraDistance;
         if (!_editViewStarted) { _targetPitch = -.05f; _targetYaw = _targetBodyYaw + Mathf.Pi; _editViewStarted = true; }
     }
     private bool _editViewStarted;
 
+    /// <summary>Keeps the edit view on a thing while it moves (an object worn on the body moves with every step of the animation).</summary>
+    public void FollowInEditView(Node3D? thing, Vector3 localOffset = default) { if (!_editView) return; _focusNode = thing; _focusOffset = localOffset; }
+
+    /// <summary>Leaves the edit view. With <paramref name="restore"/> the camera goes back to how it was before; otherwise it stays where the editing left it, as a free view.</summary>
+    public void ExitEditView(bool restore)
+    {
+        if (!_editView) return;
+        if (restore) { ExitMirror(); return; }
+        _editView = false; _editViewStarted = false; _mirror = false; _freeView = true; SetCameraMode(CameraMode.ThirdPerson);
+    }
+
     /// <summary>Looks at another point (the camera glides to it).</summary>
     public void FocusEditView(Vector3 world, float? distance = null) { if (!_editView) return; _editFocus = ToLocal(world); if (distance is { } d) { _cameraDistance = Mathf.Clamp(d, .2f, 5f); _springArm.SpringLength = _cameraDistance; } }
 
     /// <summary>Slides the point looked at sideways and up or down, along the screen (what a drag with the middle button does).</summary>
-    public void PanEditView(Vector2 screen)
+    public void PanEditView(Vector2 screen) { if (_editView) PanCamera(screen.X, screen.Y); }
+
+    // ---- the free camera: orbit, zoom and pan around any point without moving the avatar (ALT, CTRL+ALT, CTRL+ALT+SHIFT, CTRL and the wheel) ----------
+
+    private bool _freeView;
+    private Node3D? _focusNode;
+    private Vector3 _focusOffset;
+    private Scripts.Camera.CameraController? _cameraController;
+
+    /// <summary>True while the camera looks at a point of its own choosing instead of following the avatar.</summary>
+    public bool FreeViewActive => _freeView;
+    /// <summary>True when the camera can be turned, zoomed and moved freely (the free view, the mirror, the edit view).</summary>
+    public bool CameraIsFree => _freeView || _editView;
+    /// <summary>Where the camera looks (the world point it is going to).</summary>
+    public Vector3 FocusWorld => ToGlobal(_freeView || _editView ? _editFocus : _cameraPivot.Position);
+    public float CameraYaw => _targetYaw;
+    public float CameraPitch => _targetPitch;
+    public float CameraDistanceGoal => _cameraDistance;
+    /// <summary>How far from the focus the camera really is right now (a wall in the way makes it shorter).</summary>
+    public float CameraDistanceNow => Scripts.Camera.CameraCollision.ActualDistance(_springArm);
+    public Camera3D ViewCamera => _camera;
+    public Node3D? FocusedNode => _focusNode;
+
+    /// <summary>Lets go of the avatar: the camera stays where it is and can be moved on its own.</summary>
+    public void EnterFreeView()
     {
-        if (!_editView || GetViewport().GetCamera3D() is not { } camera) return;
-        var scale = _cameraDistance * .0016f; var world = ToGlobal(_editFocus) + (-camera.GlobalBasis.X * screen.X + camera.GlobalBasis.Y * screen.Y) * scale;
-        _editFocus = ToLocal(world);
+        if (_freeView || _mirror || _detached) return;
+        if (_firstPerson) SetCameraMode(CameraMode.ThirdPerson);
+        _freeView = true; _focusNode = null; _editFocus = _cameraPivot.Position;
+    }
+
+    /// <summary>Back behind the avatar (the way it was before the free view).</summary>
+    public void ExitFreeView()
+    {
+        if (!_freeView) return;
+        _freeView = false; _focusNode = null; _targetYaw = _targetBodyYaw; SetZoom(_cameraDistance);
+    }
+
+    /// <summary>A camera gesture starts: the avatar's camera becomes free (unless the mirror or the edit view already holds it).</summary>
+    public void BeginCameraGesture() { if (!_mirror && !_editView && !_detached) EnterFreeView(); }
+
+    public void OrbitCamera(float dx, float dy, bool horizontalOnly = false)
+    {
+        var orbit = new LifeVerse.Shared.Camera.CameraOrbitController(Scripts.Camera.CameraSettings.Current) { Yaw = _targetYaw, Pitch = _targetPitch };
+        if (horizontalOnly) orbit.OrbitHorizontal(dx); else orbit.Orbit(dx, dy);
+        _targetYaw = orbit.Yaw; _targetPitch = orbit.Pitch;
+    }
+
+    private LifeVerse.Shared.Camera.CameraZoomController ZoomState() { var zoom = new LifeVerse.Shared.Camera.CameraZoomController(Scripts.Camera.CameraSettings.Current); zoom.Set(_cameraDistance, true); return zoom; }
+    /// <summary>A vertical drag with ALT: closer when dragging down.</summary>
+    public void DollyCamera(float dy) { if (_mirror && !_editView) return; SetZoom(ZoomState().Dolly(dy)); }
+    /// <summary>The wheel in the free camera: proportional, and a small part of a notch with CTRL (precision).</summary>
+    public void ZoomCamera(float notches, bool precision) { if (_mirror && !_editView) return; SetZoom(ZoomState().Zoom(notches, precision)); }
+
+    /// <summary>Slides the point looked at along the screen. Starts the free view when nothing else holds the camera.</summary>
+    public void PanCamera(float dx, float dy)
+    {
+        if (_mirror && !_editView) return;
+        if (!_freeView && !_editView) EnterFreeView();
+        var basis = _camera.GlobalBasis; var from = ToGlobal(_editFocus);
+        var panned = LifeVerse.Shared.Camera.CameraPanController.Pan(new System.Numerics.Vector3(from.X, from.Y, from.Z), new System.Numerics.Vector3(basis.X.X, basis.X.Y, basis.X.Z), new System.Numerics.Vector3(basis.Y.X, basis.Y.Y, basis.Y.Z), dx, dy, _cameraDistance);
+        var to = new Vector3(panned.X, panned.Y, panned.Z);
+        if (_focusNode is not null && IsInstanceValid(_focusNode)) _focusOffset = _focusNode.ToLocal(to); else _editFocus = ToLocal(to);
+    }
+
+    // ---- the detached camera: it flies on its own, the avatar stays where it is ---------------------------------------------------------------------------------
+
+    private bool _detached;
+    private Vector3 _detachedPos;
+    /// <summary>The camera is somewhere of its own, not tied to the avatar (turned on by the person, and only when the options allow it).</summary>
+    public bool DetachedActive => _detached;
+    public Vector3 DetachedPosition => _detachedPos;
+    /// <summary>Tests and the interface: what a right click would have found at a place of the screen (set by the interface).</summary>
+    public Func<Vector2, ContextTarget?>? CameraTargetResolver { get; set; }
+
+    /// <summary>Lets the camera go. False when the options do not allow it or something else holds the camera (the mirror, the editors).</summary>
+    public bool EnterDetached()
+    {
+        if (_detached) return true;
+        if (!Scripts.Camera.CameraSettings.Current.AllowDetached || _mirror || _editView) return false;
+        if (_firstPerson) SetCameraMode(CameraMode.ThirdPerson);
+        _freeView = false; _focusNode = null; _detachedPos = _camera.GlobalPosition; _walkTarget = null; _detached = true; return true;
+    }
+
+    /// <summary>The camera comes back behind the avatar.</summary>
+    public void ExitDetached()
+    {
+        if (!_detached) return;
+        _detached = false; _targetYaw = _targetBodyYaw; SetZoom(_cameraDistance);
+    }
+
+    private void UpdateDetached(float dt)
+    {
+        var options = Scripts.Camera.CameraSettings.Current;
+        if (!IsTyping() && _contextMenu is { Visible: false })
+        {
+            var axis = Input.GetVector("move_left", "move_right", "move_forward", "move_back"); var strafe = Input.GetAxis("strafe_left", "strafe_right");
+            var up = (Input.IsActionPressed("jump") ? 1f : 0f) - (Input.IsActionPressed("descend") ? 1f : 0f);
+            var basis = _cameraPivot.GlobalBasis; var forward = -basis.Z; var right = basis.X;
+            var move = new System.Numerics.Vector3(Mathf.Clamp(axis.X + strafe, -1f, 1f), up, -axis.Y);
+            var next = LifeVerse.Shared.Camera.CameraDetachedRules.Move(new System.Numerics.Vector3(_detachedPos.X, _detachedPos.Y, _detachedPos.Z), new System.Numerics.Vector3(forward.X, forward.Y, forward.Z), new System.Numerics.Vector3(right.X, right.Y, right.Z), move, options.DetachedSpeed * (RunHeld ? 3f : 1f), dt);
+            _detachedPos = new Vector3(next.X, next.Y, next.Z);
+        }
+        _terrainNode ??= GetParent()?.GetNodeOrNull<IslandTerrain>("IslandTerrain");
+        var ground = _terrainNode?.Map is { } map ? map.SampleHeight(_detachedPos.X, _detachedPos.Z) : GlobalPosition.Y - 2f; var half = _terrainNode?.Map.HalfExtent ?? 0f;
+        var here = GlobalPosition; var kept = LifeVerse.Shared.Camera.CameraDetachedRules.Constrain(new System.Numerics.Vector3(_detachedPos.X, _detachedPos.Y, _detachedPos.Z), new System.Numerics.Vector3(here.X, here.Y, here.Z), options.DetachedRange, half, ground);
+        _detachedPos = new Vector3(kept.X, kept.Y, kept.Z);
+        _cameraPivot.GlobalPosition = _detachedPos;
+        _springArm.SpringLength = .02f;
+    }
+
+    /// <summary>Looks at a point of the world (the camera glides to it) and, when given, goes to that distance.</summary>
+    public void FocusOnPoint(Vector3 world, float? distance = null)
+    {
+        if (!_freeView && !_editView) EnterFreeView();
+        _focusNode = null; _editFocus = ToLocal(world); if (distance is { } d) SetZoom(d);
+    }
+
+    /// <summary>Looks at a thing and keeps looking at it while it moves (an object, another avatar, a watch on an arm); the offset is a point of the thing, in its own space.</summary>
+    public void FocusOn(Node3D thing, Vector3 localOffset = default, float? distance = null)
+    {
+        if (!_freeView && !_editView) EnterFreeView();
+        _focusNode = thing; _focusOffset = localOffset; _editFocus = ToLocal(thing.ToGlobal(localOffset)); if (distance is { } d) SetZoom(d);
     }
 
     public void ExitMirror()

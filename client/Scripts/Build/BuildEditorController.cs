@@ -437,6 +437,7 @@ public partial class BuildEditorController : Node3D
         if (input is InputEventKey { Pressed: true, Echo: false } key && HandleKey(key)) { GetViewport().SetInputAsHandled(); return; }
         if (input is InputEventMouseButton { ButtonIndex: MouseButton.Left } click)
         {
+            if (click.Pressed && LifeVerse.Shared.Camera.CameraInputRules.IsCameraGesture(click.CtrlPressed || click.MetaPressed, click.AltPressed, click.ShiftPressed, Scripts.Camera.CameraSettings.Current)) return; // ALT and the like are the camera's: no selecting, no handle grabbed
             if (click.Pressed && !click.DoubleClick) { if (HandleClick(click.Position, click.ShiftPressed, click.CtrlPressed || click.MetaPressed)) GetViewport().SetInputAsHandled(); }
             else if (!click.Pressed && _dragging) { EndDrag(); GetViewport().SetInputAsHandled(); }
         }

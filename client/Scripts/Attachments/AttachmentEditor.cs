@@ -1,6 +1,8 @@
 using Godot;
 using LifeVerse.Client.Autoloads;
 using LifeVerse.Client.Build;
+using LifeVerse.Client.Scripts.Camera;
+using LifeVerse.Shared.Camera;
 
 namespace LifeVerse.Client.Scripts.Attachments;
 
@@ -77,7 +79,7 @@ public sealed partial class AttachmentEditor : Node
         _title.Text = string.IsNullOrWhiteSpace(data.Name) ? "Objeto" : data.Name; _where.Text = $"Anexado em: {data.PointName}";
         _proportions.ButtonPressed = Model.KeepProportions;
         _swayStart = data.Sway; _filling = true; _sway.Value = data.Sway; _filling = false;
-        Player?.EnterEditView(rig.AttachmentWorldPosition(data.Id) ?? Vector3.Zero, Mathf.Clamp(rig.AttachmentSize(data.Id) * 3.2f, .45f, 2.6f));
+        Player?.EnterEditView(rig.AttachmentWorldPosition(data.Id) ?? Vector3.Zero, Mathf.Clamp(rig.AttachmentSize(data.Id) * 3.2f, .45f, 2.6f)); Player?.FollowInEditView(rig.AttachmentHolder(data.Id));
         rig.SoloAttachment(_solo.ButtonPressed ? data.Id : null);
         _window.Visible = true; _window.MoveToFront(); SetTool(AttachmentTool.Move); Fill(); return true;
     }
@@ -90,7 +92,7 @@ public sealed partial class AttachmentEditor : Node
         if (Target is null) return; var id0 = Target.Id;
         EndDrag(); if (revert && _sentLive) SendLive(Model!.Saved); _sentLive = false; _liveDirty = false; Model!.Changed -= OnChanged;
         Target = null; Model = null; _gizmo.HideGizmo(); _window.Visible = false;
-        if (Player is { EditViewActive: true }) Player.ExitMirror();
+        if (Player is { EditViewActive: true }) Player.ExitEditView(CameraSettings.Current.RestoreAfterEdit);
         if (Rig is { } rig) { rig.SetAttachmentSway(id0, null); rig.SoloAttachment(null); if (revert && Store is { } store) rig.ApplyAttachments(store.Items); }
     }
 
@@ -232,6 +234,7 @@ public sealed partial class AttachmentEditor : Node
         if (input is not InputEventMouseButton { ButtonIndex: MouseButton.Left } click) return;
         if (!click.Pressed) { if (Dragging) { EndDrag(); GetViewport().SetInputAsHandled(); } return; }
         if (GetViewport().GuiGetHoveredControl() is not null) return; // a click on the panel is the panel's
+        if (CameraInputRules.IsCameraGesture(click.CtrlPressed, click.AltPressed, click.ShiftPressed, CameraSettings.Current)) return; // the camera's gesture: the object is not touched
         var origin = camera.ProjectRayOrigin(click.Position); var direction = camera.ProjectRayNormal(click.Position);
         if (Tool == AttachmentTool.Select) { PickOther(origin, direction); GetViewport().SetInputAsHandled(); return; }
         if (BeginDrag(HandleAt(origin, direction), origin, direction)) GetViewport().SetInputAsHandled();
@@ -327,7 +330,7 @@ public sealed partial class AttachmentEditor : Node
         _gizmo = new BuildGizmoController { Name = "AttachmentGizmo", TopLevel = true }; AddChild(_gizmo);
     }
 
-    private void FocusCamera() { if (Target is not null && Rig?.AttachmentWorldPosition(Target.Id) is { } p) Player?.FocusEditView(p, Mathf.Clamp(Rig.AttachmentSize(Target.Id) * 3.2f, .45f, 2.6f)); }
+    private void FocusCamera() { if (Target is not null && Rig?.AttachmentWorldPosition(Target.Id) is { } p) { Player?.FocusEditView(p, Mathf.Clamp(Rig.AttachmentSize(Target.Id) * 3.2f, .45f, 2.6f)); Player?.FollowInEditView(Rig.AttachmentHolder(Target.Id)); } }
 
     // ---- tests ---------------------------------------------------------------------------------------------------------------------
 

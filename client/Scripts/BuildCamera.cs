@@ -42,6 +42,10 @@ public partial class BuildCamera : Camera3D
     public void Focus(Vector3 target, float radius) { _goalTarget = target; _goalDistance = OrbitMath.FocusDistance(radius, Fov); }
 
     public void ZoomSteps(float steps) => _goalDistance = OrbitMath.Zoom(_goalDistance, steps);
+    /// <summary>A vertical drag with ALT: dragging down brings the camera closer (the same as the free camera of the avatar).</summary>
+    public void Dolly(float dy) => _goalDistance = Math.Clamp(_goalDistance * Mathf.Exp(-dy * .005f), OrbitMath.MinDistance, OrbitMath.MaxDistance);
+    public float Yaw => _yaw;
+    public float Pitch => _pitch;
     public void OrbitBy(float yaw, float pitch) { _yaw -= yaw; _pitch = OrbitMath.ClampPitch(_pitch - pitch); }
     public void PanBy(float dx, float dy) { var moved = OrbitMath.Pan(Convert(_goalTarget), Convert(GlobalBasis.X), Convert(GlobalBasis.Y), dx, dy, _goalDistance); _goalTarget = new Vector3(moved.X, moved.Y, moved.Z); }
 
@@ -68,7 +72,7 @@ public partial class BuildCamera : Camera3D
         if (input is InputEventMouseButton button)
         {
             var overWindow = GetViewport().GuiGetHoveredControl() is not null;
-            if (button.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown && button.Pressed && !overWindow) { ZoomSteps(button.ButtonIndex == MouseButton.WheelUp ? 1 : -1); GetViewport().SetInputAsHandled(); return; }
+            if (button.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown && button.Pressed && !overWindow) { { var camera = Scripts.Camera.CameraSettings.Current; ZoomSteps((button.ButtonIndex == MouseButton.WheelUp ? 1f : -1f) * camera.ZoomSpeed * (button.CtrlPressed ? camera.PrecisionZoomSpeed : 1f)); } GetViewport().SetInputAsHandled(); return; }
             if (button.ButtonIndex == MouseButton.Right) { if (!button.Pressed || !overWindow) { _orbiting = button.Pressed && !button.ShiftPressed; _panning = button.Pressed && button.ShiftPressed; } if (button.Pressed && !overWindow) GetViewport().SetInputAsHandled(); }
             if (button.ButtonIndex == MouseButton.Middle) { _panning = button.Pressed && !overWindow; if (_panning) GetViewport().SetInputAsHandled(); }
         }

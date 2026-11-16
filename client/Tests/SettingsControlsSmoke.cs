@@ -118,7 +118,7 @@ public partial class SettingsControlsSmoke : Node
             foreach (var id in new[] { "audio.master", "audio.ambient", "audio.effects", "audio.music", "audio.media", "audio.interface", "audio.output_device", "audio.mute_background" }) Require(window.RowOf(id) is not null, $"Áudio has {id}");
             Require(Find<HSlider>(window.RowOf("audio.interface")!) is { Editable: false }, "the interface volume is shown unavailable");
             window.SelectCategory(SettingCategory.Camera, null); await Frames(2);
-            Require(window.Tabs.Count == 2 && window.RowOf("camera.fov") is not null && window.RowOf("camera.collision") is not null, "Câmera has its settings");
+            Require(window.Tabs.Count == 3 && window.RowOf("camera.fov") is not null && window.RowOf("camera.collision") is not null, "Câmera has its settings");
             window.SelectCategory(SettingCategory.Camera, "Foto"); await Frames(2);
             Require(window.RowOf("camera.photo_format") is not null && window.RowOf("camera.photo_include_ui") is not null, "and the photo options");
 
