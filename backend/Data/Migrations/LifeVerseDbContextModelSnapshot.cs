@@ -899,9 +899,33 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<float?>("ArrivalX")
+                        .HasColumnType("real")
+                        .HasColumnName("arrival_x");
+
+                    b.Property<float?>("ArrivalZ")
+                        .HasColumnType("real")
+                        .HasColumnName("arrival_z");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
                     b.Property<int>("Capacity")
                         .HasColumnType("integer")
                         .HasColumnName("capacity");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("category");
+
+                    b.Property<string>("ContentRating")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("content_rating");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -921,6 +945,12 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("group_id");
 
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("image_url");
+
                     b.Property<bool>("IsPublic")
                         .HasColumnType("boolean")
                         .HasColumnName("is_public");
@@ -939,9 +969,17 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("organizer_user_id");
 
+                    b.Property<long>("PriceCoins")
+                        .HasColumnType("bigint")
+                        .HasColumnName("price_coins");
+
                     b.Property<DateTimeOffset>("StartsAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("starts_at");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.HasKey("Id");
 
@@ -1003,6 +1041,16 @@ namespace LifeVerse.Api.Data.Migrations
                     b.Property<Guid>("EventId")
                         .HasColumnType("uuid")
                         .HasColumnName("event_id");
+
+                    b.Property<bool>("Going")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("going");
+
+                    b.Property<bool>("InCalendar")
+                        .HasColumnType("boolean")
+                        .HasColumnName("in_calendar");
 
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1892,6 +1940,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false)
                         .HasColumnName("access_closed");
+
+                    b.Property<bool>("AllowGuestEvents")
+                        .HasColumnType("boolean")
+                        .HasColumnName("allow_guest_events");
 
                     b.Property<string>("Category")
                         .IsRequired()
@@ -4699,6 +4751,12 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(48)")
                         .HasColumnName("category");
 
+                    b.Property<string>("Creator")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("creator");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(400)
@@ -4735,9 +4793,23 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("popularity");
 
+                    b.Property<long?>("PriceCoins")
+                        .HasColumnType("bigint")
+                        .HasColumnName("price_coins");
+
+                    b.Property<string>("Rating")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("character varying(12)")
+                        .HasColumnName("rating");
+
                     b.Property<Guid>("RefId")
                         .HasColumnType("uuid")
                         .HasColumnName("ref_id");
+
+                    b.Property<int?>("Rights")
+                        .HasColumnType("integer")
+                        .HasColumnName("rights");
 
                     b.Property<string>("SearchText")
                         .IsRequired()
@@ -5353,6 +5425,74 @@ namespace LifeVerse.Api.Data.Migrations
                     b.HasIndex("Status", "CreatedAt");
 
                     b.ToTable("reports", "social");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.Storefront", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("BannerUrl")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("banner_url");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)")
+                        .HasColumnName("category");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("description");
+
+                    b.Property<Guid?>("GroupId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("group_id");
+
+                    b.Property<bool>("IsOpen")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_open");
+
+                    b.Property<string>("LogoUrl")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("logo_url");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId", "DeletedAt");
+
+                    b.ToTable("storefronts", "discovery");
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.TeleportInvite", b =>
@@ -6873,6 +7013,15 @@ namespace LifeVerse.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("ReporterUserId")
                         .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.Storefront", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 

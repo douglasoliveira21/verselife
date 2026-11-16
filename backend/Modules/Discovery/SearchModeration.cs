@@ -132,7 +132,7 @@ public static class SearchModerationEndpoints
 {
     public static IEndpointRouteBuilder MapSearchModerationEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v1/search").WithTags("Search").RequireAuthorization();
+        var group = endpoints.MapGroup("/api/v1/search").WithTags("Search").RequireAuthorization().RequireRateLimiting("search");
         group.MapPost("/report/{kind}/{id:guid}", async (string kind, Guid id, ReportResultRequest body, HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
         {
             if (!Guid.TryParse(c.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var me)) return Results.Unauthorized();

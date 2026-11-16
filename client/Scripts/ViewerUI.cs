@@ -139,7 +139,7 @@ public partial class ViewerUI : CanvasLayer
             var land = _world.GetNodeOrNull<LandManager>("LandManager");
             _world.AddChild(new SearchWindow
             {
-                Name = "SearchWindow", OpenProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), JoinIsland = JoinIslandById, CurrentIsland = () => _network.CurrentIslandId,
+                Name = "SearchWindow", ShowOnMap = (island, x, z) => { var current = _network.CurrentIslandId; if (island == current) { var map = _world.GetNodeOrNull<LandMapWindow>("LandMapWindow"); map?.Open(); map?.Pick(x, z); } else Toast("O mapa mostra a ilha onde você está. Entre nela para ver este lugar no mapa."); }, PeopleSource = () => GetNodeOrNull<PersonActions>("PersonActions"), OpenGroupTab = (id, tab) => _ = _world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow")?.OpenAsync(id, tab), OpenGroup = id => _ = _world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow")?.OpenAsync(id), OpenProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), JoinIsland = JoinIslandById, CurrentIsland = () => _network.CurrentIslandId,
                 TeleportToPoint = (x, z) => land?.TeleportToPoint(x, z),
                 TeleportToParcel = id => { if (land?.Parcels.FirstOrDefault(p => p.Id == id) is { } parcel) { land.TeleportTo(parcel); return true; } return false; },
             });

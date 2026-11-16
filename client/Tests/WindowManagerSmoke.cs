@@ -23,6 +23,7 @@ public partial class WindowManagerSmoke : Node
             var root = new Control(); root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect); AddChild(root);
             WindowManager.Settings = InterfaceSettings.Load("wm", File, null);
             var w = await Make(root, "Janela de teste");
+            { var first = await Make(root, "Frente A"); var second = await Make(root, "Frente B"); first.Visible = false; await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); first.Visible = true; await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); Require(first.GetIndex() > second.GetIndex(), "a window that opens comes up in front of the ones already open"); first.QueueFree(); second.QueueFree(); await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); }
             Require(WindowManager.Count == 1 && w.Position == new Vector2(200, 100) && w.Size == new Vector2(320, 300), $"registered where the game placed it ({w.Position} {w.Size})");
 
             var right = w.GetNode("EdgeHandles").GetChildCount(); Require(right == 8, "four edges and four corners");

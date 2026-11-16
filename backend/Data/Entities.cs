@@ -183,6 +183,8 @@ public sealed class Island
     public string Language { get; set; } = "pt-BR";
     public bool ShowInSearch { get; set; } = true;
     public bool ShowOnMap { get; set; } = true;
+    /// <summary>Whether people who are not the owner may announce events on this island (the owner always may).</summary>
+    public bool AllowGuestEvents { get; set; }
     /// <summary>Temporarily closed: only the owner and administrators can come in. Whether the island is public is kept, so opening it again brings it back as it was.</summary>
     public bool AccessClosed { get; set; }
     /// <summary>The look of the whole island (hour, weather, fog, light, sky) where no parcel sets its own, as clean ParcelEnvironment JSON. Kept apart from EnvironmentJson, which the island server rewrites when it saves.</summary>

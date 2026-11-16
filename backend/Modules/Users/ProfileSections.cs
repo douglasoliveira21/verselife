@@ -54,7 +54,7 @@ public static class ProfileSections
 
         var gallery = await db.ProfileGallery.AsNoTracking().Where(g => g.UserId == user.Id).OrderBy(g => g.CreatedAt).Select(g => g.CreatedAt).ToListAsync(ct);
         if (gallery.Count >= 3) found.Add(new("photographer", "Fotógrafo(a)", "Montou uma galeria com três imagens ou mais.", "camera", gallery[2]));
-        var firstEvent = await db.EventAttendees.AsNoTracking().Where(a => a.UserId == user.Id).OrderBy(a => a.JoinedAt).Select(a => (DateTimeOffset?)a.JoinedAt).FirstOrDefaultAsync(ct);
+        var firstEvent = await db.EventAttendees.AsNoTracking().Where(a => a.UserId == user.Id && a.Going).OrderBy(a => a.JoinedAt).Select(a => (DateTimeOffset?)a.JoinedAt).FirstOrDefaultAsync(ct);
         if (firstEvent is { } went) found.Add(new("event_goer", "Frequentador(a) de eventos", "Confirmou presença em um evento.", "bell", went));
         var firstProduct = await db.MarketplaceProducts.AsNoTracking().Where(p => p.SellerUserId == user.Id && p.Status == "active").OrderBy(p => p.CreatedAt).Select(p => (DateTimeOffset?)p.CreatedAt).FirstOrDefaultAsync(ct);
         if (firstProduct is { } listed) found.Add(new("creator", "Criador(a)", "Colocou um produto à venda no mercado.", "hammer", listed));
@@ -69,7 +69,7 @@ public static class ProfileSections
         var groups = self || !privacy.GroupsHidden ? await db.GroupMembers.AsNoTracking().Where(m => m.UserId == user.Id && (self || m.ShowInProfile)).Join(db.SocialGroups.AsNoTracking().Where(g => g.DeletedAt == null && (self || g.Privacy == "public")), m => m.GroupId, g => g.Id, (m, g) => g.Id).CountAsync(ct) : (int?)null;
         var parcels = self || !privacy.ParcelsHidden ? await db.IslandParcels.AsNoTracking().CountAsync(p => p.OwnerUserId == user.Id && p.GroupId == null && p.DeletedAt == null && (self || p.ShowInProfile), ct) : (int?)null;
         var products = await db.MarketplaceProducts.AsNoTracking().CountAsync(p => p.SellerUserId == user.Id && p.Status == "active", ct);
-        var events = await db.EventAttendees.AsNoTracking().CountAsync(a => a.UserId == user.Id, ct);
+        var events = await db.EventAttendees.AsNoTracking().CountAsync(a => a.UserId == user.Id && a.Going, ct);
         var pictures = await db.ProfileGallery.AsNoTracking().CountAsync(g => g.UserId == user.Id, ct);
         return new { joinedAt = joined, daysMember = Math.Max(0, (int)(now - joined).TotalDays), groups, parcels, creations = products, events, pictures };
     }

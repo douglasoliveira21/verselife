@@ -45,9 +45,17 @@ public partial class PersonActions : Node
         if (http.Request($"{app.ApiBaseUrl}{path}", [.. headers], method, body ?? string.Empty) != Error.Ok) { http.QueueFree(); Say("Não foi possível falar com o servidor."); }
     }
 
+    private Guid? _direct;
+    /// Runs an action on exactly this account instead of looking a name up (two people can share a name; an id cannot be confused). The action must start inside the call.
+    /// A purchase went through somewhere else (the search window): the balance on the top bar should be asked for again.
+    public void NotifyPaymentMade() => PaymentMade?.Invoke();
+
+    public void Using(Guid? id, Action action) { _direct = id; try { action(); } finally { _direct = null; } }
+
     /// Finds the account behind a name shown over an avatar.
     public void Find(string name, Action<Guid> found)
     {
+        if (_direct is { } forced) { found(forced); return; } // the caller already knows exactly who (a search result): no guessing by name
         if (_known.TryGetValue(name, out var cached)) { found(cached); return; }
         Call(Godot.HttpClient.Method.Get, "/api/v1/social/people?q=" + Uri.EscapeDataString(name), null, (status, body) =>
         {
@@ -76,7 +84,7 @@ public partial class PersonActions : Node
 
     public void SendMessage(string name, string text) => Find(name, id => Call(Godot.HttpClient.Method.Post, "/api/v1/social/messages",
         JsonSerializer.Serialize(new { content = text, recipientUserId = id, groupId = (Guid?)null, islandId = (Guid?)null }), (status, _) =>
-        Say(status is >= 200 and < 300 ? $"Mensagem enviada para {name}." : status == 429 ? "Mensagens demais seguidas; espere um instante." : $"Não foi possível enviar (HTTP {status}).")));
+        Say(status is >= 200 and < 300 ? $"Mensagem enviada para {name}." : status == 429 ? "Mensagens demais seguidas; espere um instante." : status == 403 ? "Você não pode enviar mensagens para esta pessoa." : $"Não foi possível enviar (HTTP {status}).")));
 
     public void Block(string name) => Find(name, id => Call(Godot.HttpClient.Method.Post, $"/api/v1/social/blocks/{id}", null, (status, _) =>
         Say(status is >= 200 and < 300 ? $"{name} foi bloqueado: não pode mais falar com você." : $"Não foi possível bloquear (HTTP {status}).")));
@@ -125,7 +133,7 @@ public partial class PersonActions : Node
     });
 
     /// The payment window: balance, amount and a confirmation. One key per window, so pressing twice cannot pay twice.
-    public void AskPayment(string name)
+    public void AskPayment(string name, Guid? id = null)
     {
         if (_ui is null) return;
         _ask?.QueueFree();
@@ -144,7 +152,7 @@ public partial class PersonActions : Node
             if (!long.TryParse(field.Text.Trim(), out var coins) || coins <= 0) { info.Text = "Digite um valor inteiro maior que zero."; return; }
             if (have is { } available && coins > available) { info.Text = $"Saldo insuficiente: você tem L$ {available:N0}."; return; }
             sent = true; pay.Disabled = true; info.Text = "Enviando…";
-            Pay(name, coins, key, ok => { if (!IsInstanceValid(window)) return; if (ok) { window.QueueFree(); _ask = null; } else { sent = false; pay.Disabled = false; info.Text = "O pagamento não foi feito. Confira e tente de novo."; key = Guid.NewGuid().ToString("N"); } });
+            Using(id, () => Pay(name, coins, key, ok => { if (!IsInstanceValid(window)) return; if (ok) { window.QueueFree(); _ask = null; } else { sent = false; pay.Disabled = false; info.Text = "O pagamento não foi feito. Confira e tente de novo."; key = Guid.NewGuid().ToString("N"); } }));
         }
         UiStyle.StyleButton(pay, UiStyle.ButtonKind.Primary); pay.Pressed += Send; row.AddChild(pay);
         var cancel = new Button { Text = "Cancelar", CustomMinimumSize = new Vector2(0, 44), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None };
@@ -307,6 +315,22 @@ public partial class PersonActions : Node
         _ui.AddChild(window); window.MoveToFront(); field.GrabFocus();
     }
 
-    public void AskMessage(string name) => Ask($"Mensagem para {name}", "Escreva a mensagem…", "Enviar", text => SendMessage(name, text));
-    public void AskReport(string name) => Ask($"Denunciar {name}", "Conte o que aconteceu…", "Denunciar", reason => Report(name, reason));
+    public void AskMessage(string name, Guid? id = null) => Ask($"Mensagem para {name}", "Escreva a mensagem…", "Enviar", text => Using(id, () => SendMessage(name, text)));
+    public void AskReport(string name, Guid? id = null) => Ask($"Denunciar {name}", "Conte o que aconteceu…", "Denunciar", reason => Using(id, () => Report(name, reason)));
+
+    /// A small window that asks yes or no before something that cannot be taken back easily (blocking a person).
+    public void Confirm(string title, string message, string button, Action confirmed)
+    {
+        if (_ui is null) return;
+        _ask?.QueueFree();
+        var window = _ask = new FloatingWindow(title, icon: "lock") { Name = "AskConfirm" };
+        window.Place(.5f, .5f, -250, -90, 250, 90);
+        window.Content.AddChild(new Label { Text = message, AutowrapMode = TextServer.AutowrapMode.WordSmart });
+        var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 8); window.Content.AddChild(row);
+        var yes = new Button { Text = button, CustomMinimumSize = new Vector2(0, 44), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None };
+        UiStyle.StyleButton(yes, UiStyle.ButtonKind.Primary); yes.Pressed += () => { window.QueueFree(); _ask = null; confirmed(); }; row.AddChild(yes);
+        var no = new Button { Text = "Cancelar", CustomMinimumSize = new Vector2(0, 44), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None };
+        UiStyle.StyleButton(no, UiStyle.ButtonKind.Secondary); no.Pressed += () => { window.QueueFree(); _ask = null; }; row.AddChild(no);
+        _ui.AddChild(window); window.MoveToFront();
+    }
 }

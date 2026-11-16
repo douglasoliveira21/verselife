@@ -5,8 +5,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace LifeVerse.Api.Modules.Discovery;
 
-public sealed record SearchRequest(string? Q, string[]? Types = null, int Page = 1, int PageSize = 20, string? Category = null, Guid? IslandId = null, string? Sort = null);
-public sealed record SearchResultItem(string Kind, string KindLabel, Guid Id, string Title, string Subtitle, string Description, string Category, string? ThumbnailUrl, Guid? IslandId, float? X, float? Z, double Score, double Popularity, DateTimeOffset UpdatedAt, DateTimeOffset? StartsAt, bool Favorite = false);
+public sealed record SearchRequest(string? Q, string[]? Types = null, int Page = 1, int PageSize = 20, string? Category = null, Guid? IslandId = null, string? Sort = null, DateTimeOffset? From = null, DateTimeOffset? To = null, bool? Free = null, string[]? Ratings = null, long? MinPrice = null, long? MaxPrice = null, int? Rights = null, string? Creator = null, Guid? Owner = null, bool? Located = null);
+public sealed record SearchResultItem(string Kind, string KindLabel, Guid Id, string Title, string Subtitle, string Description, string Category, string? ThumbnailUrl, Guid? IslandId, float? X, float? Z, double Score, double Popularity, DateTimeOffset UpdatedAt, DateTimeOffset? StartsAt, bool Favorite = false, DateTimeOffset? EndsAt = null, long? PriceCoins = null, string Rating = "", int? Rights = null);
 public sealed record SearchPage(string Query, int Total, int Page, int PageSize, IReadOnlyList<SearchResultItem> Items, IReadOnlyDictionary<string, int> Counts, IReadOnlyDictionary<string, int>? Categories = null, string Sort = GlobalSearch.SortRelevance);
 public sealed record InterestsRequest(string?[]? Interests);
 public sealed record Suggestion(string Text, string Kind, Guid Id);
@@ -19,10 +19,24 @@ public sealed record Suggestion(string Text, string Kind, Guid Id);
 public static class GlobalSearch
 {
     public const int CandidateLimit = 400, MaxPageSize = 50, MinQueryLength = 2, MaxFavorites = 500, MaxInterests = 20;
-    public const string SortRelevance = "relevance", SortPopularity = "popularity", SortUpdated = "updated";
+    public const string SortRelevance = "relevance", SortPopularity = "popularity", SortUpdated = "updated", SortName = "name", SortStart = "start", SortPriceAsc = "price_asc", SortPriceDesc = "price_desc";
 
     /// <summary>The order asked for; anything that is not known means by relevance.</summary>
-    public static string NormalizeSort(string? sort) => sort?.Trim().ToLowerInvariant() switch { SortPopularity or "popular" => SortPopularity, SortUpdated or "recent" => SortUpdated, _ => SortRelevance };
+    public static string NormalizeSort(string? sort) => sort?.Trim().ToLowerInvariant() switch { SortPopularity or "popular" => SortPopularity, SortUpdated or "recent" => SortUpdated, SortName or "az" => SortName, SortStart or "soon" => SortStart, SortPriceAsc => SortPriceAsc, SortPriceDesc => SortPriceDesc, _ => SortRelevance };
+
+    /// <summary>The filters that are not text: the time an event is on (overlapping From..To), free or paid, and the content ratings wanted. Lines that have no such fact (an island has no start) do not pass a filter about it.</summary>
+    private static bool Passes(SearchEntry e, SearchRequest r)
+    {
+        if ((r.From is not null || r.To is not null) && (e.StartsAt is null || e.ExpiresAt is null || (r.To is { } to && e.StartsAt > to) || (r.From is { } from && e.ExpiresAt < from))) return false;
+        if (r.Free is { } free && (e.PriceCoins is null ? !free : free != (e.PriceCoins <= 0))) return false;
+        if (r.Ratings is { Length: > 0 } ratings && !ratings.Contains(e.Rating.Length == 0 ? "livre" : e.Rating, StringComparer.OrdinalIgnoreCase)) return false;
+        if ((r.MinPrice is not null || r.MaxPrice is not null) && (e.PriceCoins is not { } price || price < (r.MinPrice ?? 0) || price > (r.MaxPrice ?? long.MaxValue))) return false;
+        if (r.Rights is { } mask and > 0 && ((e.Rights ?? 0) & mask) != mask) return false;
+        if (SearchText.Normalize(r.Creator) is { Length: > 0 } creator && !e.Creator.Contains(creator, StringComparison.Ordinal)) return false;
+        if (r.Owner is { } owner && e.OwnerUserId != owner) return false;
+        if (r.Located is { } located && (e.IslandId is not null) != located) return false;
+        return true;
+    }
 
     /// <summary>The kinds asked for; names that mean nothing are ignored, and when none is left the search is over everything.</summary>
     private static string[] Kinds(string[]? types) => types is { Length: > 0 } && SearchKinds.All.Where(k => types.Contains(k, StringComparer.OrdinalIgnoreCase)).ToArray() is { Length: > 0 } wanted ? wanted : SearchKinds.All;
@@ -38,6 +52,13 @@ public static class GlobalSearch
         }
         var all = await db.SearchEntries.AsNoTracking().Where(e => !e.Hidden && kinds.Contains(e.Kind) && (island == null || e.IslandId == island)).ToListAsync(ct);
         return [.. all.Where(e => (category is null || string.Equals(e.Category, category, StringComparison.OrdinalIgnoreCase)) && SearchText.MatchesAll(e.SearchText, terms)).OrderByDescending(e => e.Popularity).ThenBy(e => e.Id).Take(limit)];
+    }
+
+    /// <summary>The most popular lines of these kinds (no text typed): what the tabs of the search window show before anything is searched.</summary>
+    private static async Task<List<SearchEntry>> BrowseAsync(LifeVerseDbContext db, string[] kinds, int limit, string? category, Guid? island, CancellationToken ct)
+    {
+        var all = await db.SearchEntries.AsNoTracking().Where(e => !e.Hidden && kinds.Contains(e.Kind) && (island == null || e.IslandId == island)).OrderByDescending(e => e.Popularity).ThenByDescending(e => e.SourceUpdatedAt).Take(limit * 2).ToListAsync(ct);
+        return [.. all.Where(e => category is null || string.Equals(e.Category, category, StringComparison.OrdinalIgnoreCase)).Take(limit)];
     }
 
     /// <summary>The people whose things the viewer must not see: they blocked the viewer, or the viewer blocked them.</summary>
@@ -62,7 +83,7 @@ public static class GlobalSearch
         var parcels = Ids(SearchKinds.Parcel); if (parcels.Count > 0) await Keep(SearchKinds.Parcel, db.IslandParcels.AsNoTracking().Where(p => parcels.Contains(p.Id) && p.DeletedAt == null && p.AccessMode == "public" && open.Contains(p.IslandId)).Select(p => p.Id));
         var people = Ids(SearchKinds.Person); if (people.Count > 0) await Keep(SearchKinds.Person, db.Users.AsNoTracking().Where(u => people.Contains(u.Id) && u.Id != viewer && u.DeletedAt == null && u.Status == "active" && u.PasswordHash != "!" && !u.PrivacyJson.Contains("\"profile\":\"private\"") && !u.PrivacyJson.Contains("\"searchable\":\"no\"")).Select(u => u.Id));
         var groups = Ids(SearchKinds.Group); if (groups.Count > 0) await Keep(SearchKinds.Group, db.SocialGroups.AsNoTracking().Where(g => groups.Contains(g.Id) && g.DeletedAt == null && g.Privacy == "public").Select(g => g.Id));
-        var stores = Ids(SearchKinds.Store); if (stores.Count > 0) await Keep(SearchKinds.Store, db.WorldStores.AsNoTracking().Where(s => stores.Contains(s.Id) && s.DeletedAt == null && open.Contains(s.IslandId) && db.MarketplaceProducts.Any(p => p.Id == s.ProductId && p.Status == "active")).Select(s => s.Id));
+        var stores = Ids(SearchKinds.Store); if (stores.Count > 0) await Keep(SearchKinds.Store, db.WorldStores.AsNoTracking().Where(s => stores.Contains(s.Id) && s.DeletedAt == null && open.Contains(s.IslandId) && db.MarketplaceProducts.Any(p => p.Id == s.ProductId && p.Status == "active")).Select(s => s.Id).Union(db.Storefronts.AsNoTracking().Where(f => stores.Contains(f.Id) && f.DeletedAt == null && f.IsOpen && db.MarketplaceProducts.Any(p => p.SellerUserId == f.OwnerUserId && p.GroupId == f.GroupId && p.Status == "active")).Select(f => f.Id)));
         var products = Ids(SearchKinds.Product); if (products.Count > 0) await Keep(SearchKinds.Product, db.MarketplaceProducts.AsNoTracking().Where(p => products.Contains(p.Id) && p.Status == "active").Select(p => p.Id));
         var events = Ids(SearchKinds.Event); if (events.Count > 0) await Keep(SearchKinds.Event, db.DiscoveryEvents.AsNoTracking().Where(e => events.Contains(e.Id) && e.IsPublic && e.GroupId == null && e.EndsAt >= now && open.Contains(e.IslandId)).Select(e => e.Id));
         var places = Ids(SearchKinds.Place); if (places.Count > 0) await Keep(SearchKinds.Place, db.Landmarks.AsNoTracking().Where(l => places.Contains(l.Id) && l.IsPublic && l.DeletedAt == null && open.Contains(l.IslandId)).Select(l => l.Id));
@@ -71,7 +92,7 @@ public static class GlobalSearch
     }
 
     private static SearchResultItem Item(SearchEntry e, double score, bool favorite = false) =>
-        new(e.Kind, SearchKinds.Label(e.Kind), e.RefId, e.Title, e.Subtitle, e.Description, e.Category, e.ThumbnailUrl, e.IslandId, e.X, e.Z, score, e.Popularity, e.SourceUpdatedAt, e.StartsAt, favorite);
+        new(e.Kind, SearchKinds.Label(e.Kind), e.RefId, e.Title, e.Subtitle, e.Description, e.Category, e.ThumbnailUrl, e.IslandId, e.X, e.Z, score, e.Popularity, e.SourceUpdatedAt, e.StartsAt, favorite, e.ExpiresAt, e.PriceCoins, e.Rating, e.Rights);
 
     private static async Task<HashSet<(string Kind, Guid Id)>> FavoriteKeysAsync(LifeVerseDbContext db, Guid viewer, CancellationToken ct) =>
         [.. (await db.SearchFavorites.AsNoTracking().Where(f => f.UserId == viewer).Select(f => new { f.Kind, f.RefId }).ToListAsync(ct)).Select(f => (f.Kind, f.RefId))];
@@ -84,14 +105,20 @@ public static class GlobalSearch
     {
         var page = Math.Max(1, request.Page); var size = Math.Clamp(request.PageSize <= 0 ? 20 : request.PageSize, 1, MaxPageSize); var sort = NormalizeSort(request.Sort);
         var text = (request.Q ?? string.Empty).Trim(); var terms = SearchText.Terms(text);
-        if (terms.Length == 0 || SearchText.Normalize(text).Length < MinQueryLength) return new SearchPage(text, 0, page, size, [], new Dictionary<string, int>(), new Dictionary<string, int>(), sort);
+        var requested = Kinds(request.Types); var browse = text.Length == 0 && request.Types is { Length: > 0 } && !requested.Contains(SearchKinds.Person); // no text but a kind chosen: the most popular of that kind (people are only found by name)
+        if (!browse && (terms.Length == 0 || SearchText.Normalize(text).Length < MinQueryLength)) return new SearchPage(text, 0, page, size, [], new Dictionary<string, int>(), new Dictionary<string, int>(), sort);
         var category = string.IsNullOrWhiteSpace(request.Category) ? null : request.Category.Trim();
-        var found = await AllowedAsync(db, viewer, await CandidatesAsync(db, terms, Kinds(request.Types), CandidateLimit, ct, category, request.IslandId), now, ct);
-        var ranked = found.Select(e => (Entry: e, Score: SearchText.Relevance(e.Title, e.SearchText, text, terms, e.Popularity, e.SourceUpdatedAt, now))).ToList();
+        var candidates = browse ? await BrowseAsync(db, requested, CandidateLimit, category, request.IslandId, ct) : await CandidatesAsync(db, terms, requested, CandidateLimit, ct, category, request.IslandId);
+        var found = (await AllowedAsync(db, viewer, candidates, now, ct)).Where(e => Passes(e, request)).ToList();
+        var ranked = found.Select(e => (Entry: e, Score: browse ? 0.0 : SearchText.Relevance(e.Title, e.SearchText, text, terms, e.Popularity, e.SourceUpdatedAt, now))).ToList();
         var ordered = sort switch
         {
             SortPopularity => ranked.OrderByDescending(r => r.Entry.Popularity).ThenByDescending(r => r.Score),
             SortUpdated => ranked.OrderByDescending(r => r.Entry.SourceUpdatedAt).ThenByDescending(r => r.Score),
+            SortName => ranked.OrderBy(r => r.Entry.Title, StringComparer.OrdinalIgnoreCase),
+            SortStart => ranked.OrderBy(r => r.Entry.StartsAt ?? DateTimeOffset.MaxValue),
+            SortPriceAsc => ranked.OrderBy(r => r.Entry.PriceCoins ?? long.MaxValue),
+            SortPriceDesc => ranked.OrderByDescending(r => r.Entry.PriceCoins ?? -1),
             _ => ranked.OrderByDescending(r => r.Score).ThenByDescending(r => r.Entry.Popularity),
         };
         var list = ordered.ThenBy(r => r.Entry.Title, StringComparer.Ordinal).ThenBy(r => r.Entry.Id).ToList();
@@ -211,11 +238,11 @@ public static class GlobalSearchEndpoints
 {
     public static IEndpointRouteBuilder MapGlobalSearchEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v1/search").WithTags("Search").RequireAuthorization();
-        group.MapGet("", async (string? q, string? types, int? page, int? pageSize, string? category, Guid? islandId, string? sort, HttpContext c, LifeVerseDbContext db, SearchMetrics metrics, TimeProvider t, CancellationToken ct) =>
+        var group = endpoints.MapGroup("/api/v1/search").WithTags("Search").RequireAuthorization().RequireRateLimiting("search");
+        group.MapGet("", async (string? q, string? types, int? page, int? pageSize, string? category, Guid? islandId, string? sort, DateTimeOffset? from, DateTimeOffset? to, bool? free, string? ratings, long? minPrice, long? maxPrice, string? rights, string? creator, Guid? owner, bool? located, HttpContext c, LifeVerseDbContext db, SearchMetrics metrics, TimeProvider t, CancellationToken ct) =>
         {
             if (!Who(c, out var me)) return Results.Unauthorized();
-            var clock = System.Diagnostics.Stopwatch.StartNew(); var result = await GlobalSearch.SearchAsync(db, me, new SearchRequest(q, Split(types), page ?? 1, pageSize ?? 20, category, islandId, sort), t.GetUtcNow(), ct);
+            var clock = System.Diagnostics.Stopwatch.StartNew(); var result = await GlobalSearch.SearchAsync(db, me, new SearchRequest(q, Split(types), page ?? 1, pageSize ?? 20, category, islandId, sort, from, to, free, Split(ratings), minPrice, maxPrice, RightsMask(rights), creator, owner, located), t.GetUtcNow(), ct);
             if ((page ?? 1) <= 1) metrics.Searched(q, result.Total, clock.ElapsedMilliseconds, t.GetUtcNow()); // the first page is the search; the next pages are the same search read further
             return Results.Ok(result);
         });
@@ -246,6 +273,9 @@ public static class GlobalSearchEndpoints
             !Modules.Platform.PlatformEndpoints.HasValidServiceKey(c, config) ? Results.Unauthorized() : Results.Ok(await SearchIndexer.RebuildAsync(db, t.GetUtcNow(), ct))).WithTags("Platform");
         return endpoints;
     }
+
+    /// <summary>"copy,modify" as the bits of ItemRights (unknown words count for nothing).</summary>
+    private static int? RightsMask(string? words) { if (string.IsNullOrWhiteSpace(words)) return null; var mask = 0; foreach (var w in Split(words) ?? []) mask |= w.ToLowerInvariant() switch { "copy" => LifeVerse.Shared.Items.ItemRights.Copy, "modify" => LifeVerse.Shared.Items.ItemRights.Modify, "transfer" => LifeVerse.Shared.Items.ItemRights.Transfer, _ => 0 }; return mask == 0 ? null : mask; }
 
     private static string[]? Split(string? types) => types?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 

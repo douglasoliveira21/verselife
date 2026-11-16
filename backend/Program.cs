@@ -91,6 +91,14 @@ builder.Services.AddAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    // the search is asked often (suggestions while typing), so the limit is generous, and it is per person, not per address
+    options.AddPolicy("search", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 240, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // what is announced or opened (events, shops) is limited harder
+    options.AddPolicy("announce", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
@@ -110,9 +118,9 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Correlation-ID"] = correlationId;
     await next();
 });
-app.UseRateLimiter();
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(30) });
 app.UseAuthentication();
+app.UseRateLimiter(); // after the sign-in, so the "search" and "announce" limits count each person
 app.Use(async (context, next) =>
 {
     if (context.User.Identity?.IsAuthenticated == true)

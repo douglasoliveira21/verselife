@@ -196,7 +196,7 @@ public static partial class GroupService
         var (_, error) = await MemberAsync(db, me, groupId, now, ct); if (error is not null) return error;
         var events = await db.DiscoveryEvents.AsNoTracking().Where(e => e.GroupId == groupId && e.EndsAt > now).OrderBy(e => e.StartsAt).Take(50).ToListAsync(ct);
         var ids = events.Select(e => e.Id).ToList();
-        var attendees = await db.EventAttendees.AsNoTracking().Where(a => ids.Contains(a.EventId)).Select(a => new { a.EventId, a.UserId }).ToListAsync(ct);
+        var attendees = await db.EventAttendees.AsNoTracking().Where(a => ids.Contains(a.EventId) && a.Going).Select(a => new { a.EventId, a.UserId }).ToListAsync(ct);
         var islandIds = events.Select(e => e.IslandId).Distinct().ToList();
         var islands = await db.Islands.AsNoTracking().Where(i => islandIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, i => i.Name, ct);
         var names = await NamesAsync(db, events.Select(e => e.OrganizerUserId), ct);
@@ -232,9 +232,10 @@ public static partial class GroupService
     {
         var (_, error) = await MemberAsync(db, me, groupId, now, ct); if (error is not null) return error;
         var (e, missing) = await FindEventAsync(db, groupId, eventId, now, ct); if (missing is not null) return missing;
-        if (await db.EventAttendees.AnyAsync(a => a.EventId == eventId && a.UserId == me, ct)) return GroupResult.Done();
-        if (await db.EventAttendees.CountAsync(a => a.EventId == eventId, ct) >= e!.Capacity) return GroupResult.Fail("event_full");
-        db.EventAttendees.Add(new EventAttendee { Id = Guid.NewGuid(), EventId = eventId, UserId = me, JoinedAt = now });
+        if (await db.EventAttendees.AnyAsync(a => a.EventId == eventId && a.UserId == me && a.Going, ct)) return GroupResult.Done();
+        if (await db.EventAttendees.CountAsync(a => a.EventId == eventId && a.Going, ct) >= e!.Capacity) return GroupResult.Fail("event_full");
+        var saved = await db.EventAttendees.SingleOrDefaultAsync(a => a.EventId == eventId && a.UserId == me, ct); // a calendar-only line becomes a sign-up
+        if (saved is not null) { saved.Going = true; saved.JoinedAt = now; } else db.EventAttendees.Add(new EventAttendee { Id = Guid.NewGuid(), EventId = eventId, UserId = me, JoinedAt = now });
         return await SaveAsync(db, ct);
     }
 

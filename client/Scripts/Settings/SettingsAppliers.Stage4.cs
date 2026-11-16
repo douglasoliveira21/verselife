@@ -29,6 +29,7 @@ public static partial class SettingsAppliers
         store.RegisterApplier("chat.show_time", v => ViewerUI.ChatTimes = (bool)v);
         store.RegisterApplier("chat.visible_seconds", v => ViewerUI.ChatSeconds = (int)v);
 
+        store.RegisterApplier("privacy.search_history", v => { SearchWindow.KeepHistory = (bool)v; if (!(bool)v) SearchWindow.ForgetHistoryFile(); });
         store.RegisterApplier("privacy.external_media", v => { if (BuildObjectView.MediaSettings.Enabled != (bool)v) BuildObjectView.MediaSettings.Enabled = (bool)v; });
 
         foreach (var (key, category) in new[] { ("notifications.toast_grupos", "grupos"), ("notifications.toast_convites", "convites"), ("notifications.toast_sistema", "sistema") })

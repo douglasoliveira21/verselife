@@ -315,8 +315,8 @@ public partial class ViewerUI
         var services = new ContextServices
         {
             InviteToGroup = name => { var invite = _world.GetNodeOrNull<Groups.GroupInviteWindow>("GroupInviteWindow"); if (invite is null) { invite = new Groups.GroupInviteWindow { Name = "GroupInviteWindow", Said = text => Toast(text) }; _world.AddChild(invite); } _ = invite.OpenAsync(name); },
-            AddFriend = people.AddFriend, Message = people.AskMessage, Block = people.Block, Report = people.AskReport,
-            Relation = people.RelationOf, Pay = people.AskPayment, Teleport = (name, kind) => people.SendTeleportInvite(name, _network.CurrentIslandId, kind), RemoveFriend = people.RemoveFriend, AcceptFriend = people.AcceptFriend, CopyPersonId = people.CopyId, Prefetch = name => { people.Prefetch(name); people.ProbeAdmin(_network.CurrentIslandId); },
+            AddFriend = people.AddFriend, Message = name => people.AskMessage(name), Block = people.Block, Report = name => people.AskReport(name),
+            Relation = people.RelationOf, Pay = name => people.AskPayment(name), Teleport = (name, kind) => people.SendTeleportInvite(name, _network.CurrentIslandId, kind), RemoveFriend = people.RemoveFriend, AcceptFriend = people.AcceptFriend, CopyPersonId = people.CopyId, Prefetch = name => { people.Prefetch(name); people.ProbeAdmin(_network.CurrentIslandId); },
             IsIslandAdmin = () => people.IsIslandAdmin(_network.CurrentIslandId),
             EjectFromParcel = (name, position) => { if (_world.GetNodeOrNull<LandManager>("LandManager")?.ParcelAt(position.X, position.Z) is { } parcel) people.EjectFromParcel(name, _network.CurrentIslandId, parcel.Id); else Toast("Esta pessoa não está num terreno."); },
             BanFromParcel = (name, position, minutes) => { if (_world.GetNodeOrNull<LandManager>("LandManager")?.ParcelAt(position.X, position.Z) is { } parcel) people.BanFromParcel(name, _network.CurrentIslandId, parcel.Id, minutes); else Toast("Esta pessoa não está num terreno."); },
@@ -615,6 +615,7 @@ public partial class ViewerUI
         _chatLog.AddThemeFontSizeOverride("normal_font_size", 17); _chatLog.AddThemeFontSizeOverride("bold_font_size", 17);
         _chatLog.AddThemeFontOverride("normal_font", UiStyle.Regular); _chatLog.AddThemeFontOverride("bold_font", UiStyle.Bold);
         _chatLog.AddThemeConstantOverride("line_separation", 4);
+        _chatLog.MetaClicked += meta => { if (SearchLinks.TryParse(meta.AsString(), out _, out _, out _, out _)) _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.OpenLink(meta.AsString()); }; // only our own links open anything
         column.AddChild(_chatLog);
 
         VBoxContainer Page(string message, string buttonText, string icon, Action open)
@@ -704,10 +705,10 @@ public partial class ViewerUI
     {
         var close = line.IndexOf("] ", StringComparison.Ordinal);
         var colon = close >= 0 ? line.IndexOf(": ", close, StringComparison.Ordinal) : -1;
-        if (close < 0 || colon < 0) { AppendLine(Esc(line)); ShowChatTemporarily(); return; }
+        if (close < 0 || colon < 0) { AppendLine(SearchLinks.Linkify(Esc(line))); ShowChatTemporarily(); return; }
         var name = line[(close + 2)..colon];
         if (!string.Equals(name, GetNodeOrNull<SessionManager>("/root/SessionManager")?.Username, StringComparison.OrdinalIgnoreCase)) NoteUnreadChat();
-        AppendLine($"{(ChatTimes ? $"[color=#A9B3BD]{Esc(line[..(close + 1)])}[/color] " : "")}[b][color=#{ColorForName(name).ToHtml(false)}]{Esc(name)}:[/color][/b] {Esc(line[(colon + 2)..])}");
+        AppendLine($"{(ChatTimes ? $"[color=#A9B3BD]{Esc(line[..(close + 1)])}[/color] " : "")}[b][color=#{ColorForName(name).ToHtml(false)}]{Esc(name)}:[/color][/b] {SearchLinks.Linkify(Esc(line[(colon + 2)..]))}");
         ShowChatTemporarily();
     }
 }

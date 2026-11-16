@@ -84,8 +84,37 @@ Uma busca única (`GET /api/v1/search`) sobre **oito tipos de coisa**: ilhas, te
 
 **Decisão sobre motor externo (Elasticsearch, Meilisearch…): continua não.** Os números acima sustentam a escala atual com folga e a busca fica no PostgreSQL, o que mantém **um só lugar** onde a privacidade é aplicada (um motor externo seria uma segunda cópia a proteger, manter em dia e remover quando algo vira privado). Reavaliar se: (1) o índice passar de alguns milhões de linhas ou o p95 passar de ~500 ms sob carga real; (2) "sem resultado" nas métricas mostrar muita busca com erro de digitação, caso em que o primeiro passo é a extensão `pg_trgm` do próprio PostgreSQL, ainda sem serviço novo; (3) surgir pedido de busca por significado (sinônimos, "praia" achando "litoral"), que aí sim justifica um motor próprio. O endpoint de métricas (`/api/v1/platform/search/metrics`) mostra os dois primeiros sinais.
 
+## Busca global — fase 5: a janela de sete abas (Tudo, Pessoas, Lugares, Eventos, Grupos, Itens, Lojas)
+
+A janela "LifeVerse — Busca" (`client/Scripts/SearchWindow*.cs`, menu Mundo > Buscar e botão Buscar da HUD) foi refeita sobre o mesmo índice. Uma só janela: reabrir traz a que já existe para a frente, com a aba e o termo que ficaram. Esc fecha (o jogador continua conectado), Ctrl+Tab (com Shift volta) troca de aba, Cima/Baixo percorrem os resultados e Enter abre o escolhido. Em janela estreita vira uma coluna (resultados ou detalhes, com "Voltar"). Posição e tamanho são lembrados pelo gerenciador de janelas.
+
+**Arquivos do cliente.** `SearchWindow.cs` (casca, abas, estado, rede), `.Results.cs` (busca, cartões, miniaturas, estados de carregando/vazio/erro, tela inicial), `.Details.cs` (a coluna da direita), `.People.cs`, `.Groups.cs`, `.Places.cs`, `.Events.cs`, `.Market.cs` (itens e lojas) e `.Links.cs` (links, histórico, teclado). `SearchModels.cs` guarda o contrato com a API e os links internos.
+
+**Comportamento comum.** A busca roda na aba escolhida; com texto vazio a aba Tudo mostra a tela inicial (lugares em destaque, novidades, "para você", interesses e pesquisas recentes), Pessoas pede um nome e as outras listam o mais popular do tipo. Durante a busca o botão vira "Cancelar"; a mesma requisição não é enviada duas vezes; sugestões saem 250 ms depois da última tecla. Resultados vêm de 20 em 20 (50 em Tudo, separados por tipo com "Ver todos"). Erro mostra "Tentar novamente".
+
+**Pessoas.** Cartão com foto e estado da amizade (`GET /api/v1/social/relations?ids=` responde a página inteira de uma vez). Detalhes vêm do perfil (`/users/{id}/profile/full`), então a privacidade é a do perfil. Ações: ver perfil, amigo, mensagem, oferecer teleporte, pagar, bloquear, copiar nome ou id, pedir teleporte e denunciar, sempre sobre a conta exata encontrada (`PersonActions.Using(id, …)`).
+
+**Grupos.** Detalhes do serviço de grupos (`GET /groups/{id}`); participar (livre, com taxa confirmada, mediante aprovação), chat só para membros, membros e abrir o grupo. Grupos privados nunca entram no índice.
+
+**Lugares.** `GET /api/v1/discovery/islands/{id}/info` (`PlaceDirectory`): dono, categoria, classificação, visitantes agora, e se esta pessoa entra (`open`, `full`, `closed`, `private`, `banned`); o teleporte só liga quando entra. Mostrar no mapa (só a ilha onde se está), favoritar, copiar o link e, para o dono, permitir ou não eventos de convidados.
+
+**Eventos.** `EventDirectory`: detalhe, anunciar, cancelar, inscrever, sair, calendário pessoal e "meus eventos". Quem anuncia: o dono da ilha, ou qualquer pessoa se o dono ligar `AllowGuestEvents` em ilha pública e aberta. Regras: nome 3–100, descrição até 1500, categoria conhecida, início entre agora e 1 ano, duração de 10 min a 24 h, até 5 eventos ativos por pessoa e 50 por ilha, imagem https. O preço é informativo ("cobrado na entrada"). Filtros do índice: período (`from`/`to`), `free`, `ratings`, ordens `start` e `name`. Cancelado ou terminado sai do índice e das listas.
+
+**Itens e lojas.** `MarketDirectory`: detalhe do item (criador, vendedor, o que o comprador pode fazer e passar adiante, se já tem) e da loja. Filtros do índice: `minPrice`, `maxPrice`, `rights`, `creator`, `owner`, `located`; ordens `price_asc` e `price_desc`. A compra é a do módulo de economia (`POST /economy/products/{id}/purchase`, idempotente e conferida no servidor); a janela mostra preço e permissões, consulta o saldo, pergunta uma vez e manda uma chave por tentativa (sem resposta, a mesma chave é reaproveitada). Lojas: físicas (objeto no mundo, `WorldStore`) e virtuais (`Storefront`, abertas pela própria pessoa, até 3, só aparecem na busca enquanto abertas e com algo à venda).
+
+**Links internos.** `lifeverse://person|group|event|item|store|island/<id>[?x=&z=]`, sempre por id estável. `SearchLinks.TryParse` só aceita esse formato exato; no chat, `SearchLinks.Linkify` transforma links válidos em "↗ Evento" clicáveis e `OpenLink` abre o painel certo (o servidor diz se aquela pessoa pode ver). Link para algo que não existe mais diz isso. Vale para o chat principal; chats de grupo e mensagens privadas ainda mostram o texto puro.
+
+**Preferência.** Preferências > Privacidade > "Histórico de buscas" (`privacy.search_history`, ligado por padrão). Desligado, nada é lembrado ou sugerido e o arquivo guardado é apagado. O histórico nunca vai ao servidor.
+
+**Segurança e limites.** Tudo é conferido no servidor. Políticas de limite por pessoa (o limitador roda depois do login): `search` 240/min e `announce` 20/min (anunciar/cancelar evento, abrir/alterar loja). Ações sensíveis (evento anunciado ou cancelado, política de eventos de convidados, loja aberta, alterada ou apagada) vão para o log de auditoria `LifeVerse.Audit` com quem, o quê, qual e o resultado.
+
+**Migrações** (não aplicadas até esta data): `Phase92`–`Phase96` (terrenos e galeria do perfil, feed, eventos e lugares, itens e lojas). Depois de aplicar, reindexar com `POST /api/v1/platform/search/reindex` para que eventos, produtos e pessoas antigos ganhem os campos novos.
+
+**Testes.** `SearchBrowseTests`, `SearchPeopleGroupsTests`, `EventsAndPlacesTests`, `ItemsAndStoresTests` (backend) e `SearchSmoke` (cliente, contra um servidor de mentira), mais as capturas de `SearchCapture` (`artifacts/busca`).
+
 ## Limites conhecidos
 - "Locais recentes" são lugares criados ou alterados há pouco; o jogo só guarda a última posição de cada pessoa, não um histórico de visitas.
 - A prévia mostra o ponto em texto, não um mini-mapa.
 - A denúncia coordenada de 5 contas pode esconder algo injustamente até a operação decidir; a decisão é humana e reversível.
 - O teleporte para outra ilha depende do servidor da ilha aceitar a posição pedida (as regras do terreno valem); isso foi testado no cliente com um servidor de mentira, não com um servidor de ilha de verdade.
+- Janela de busca (fase 5): "Mostrar no mapa" só desenha a ilha onde o avatar está; o preço de um evento não é cobrado na inscrição; lojas virtuais ainda são só de pessoas (o campo de grupo existe, sem tela); links internos só são clicáveis no chat principal; "Silenciar" pessoa não existe (só há silêncio de voz por conexão).

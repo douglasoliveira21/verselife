@@ -131,6 +131,7 @@ public partial class FloatingWindow : PanelContainer
         bar.GuiInput += OnBarInput;
         TreeEntered += () => { _layoutId = Interface.WindowManager.IdOf(Name); Callable.From(() => Interface.WindowManager.Register(this)).CallDeferred(); };
         GuiInput += input => { if (input is InputEventMouseButton { Pressed: true }) MoveToFront(); };
+        VisibilityChanged += () => { if (Visible && IsInsideTree()) MoveToFront(); }; // any window that opens comes up in front of the ones already open
     }
 
     private static Button ChromeButton(string icon, string tooltip, Action action)

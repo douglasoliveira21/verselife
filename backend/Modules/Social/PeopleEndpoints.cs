@@ -39,6 +39,25 @@ public static class PeopleQueries
         }).ToList();
     }
 
+    public const int MaxRelationIds = 50;
+
+    /// <summary>How the caller is related to each of these people (none, friend, pending_out, pending_in, blocked). Only ids of people the caller can already see in a search are asked; unknown or deleted ids are simply not answered.</summary>
+    public static async Task<Dictionary<Guid, string>> RelationsAsync(LifeVerseDbContext db, Guid me, IReadOnlyCollection<Guid> ids, CancellationToken ct)
+    {
+        var wanted = ids.Where(i => i != me).Distinct().Take(MaxRelationIds).ToList(); if (wanted.Count == 0) return [];
+        var alive = await db.Users.AsNoTracking().Where(u => wanted.Contains(u.Id) && u.DeletedAt == null && u.Status == "active").Select(u => u.Id).ToListAsync(ct);
+        var blocked = await db.UserBlocks.AsNoTracking().Where(b => (b.UserId == me && wanted.Contains(b.BlockedUserId)) || (b.BlockedUserId == me && wanted.Contains(b.UserId))).Select(b => b.UserId == me ? b.BlockedUserId : b.UserId).ToListAsync(ct);
+        var links = await db.Friendships.AsNoTracking().Where(f => (f.UserId == me && wanted.Contains(f.FriendUserId)) || (f.FriendUserId == me && wanted.Contains(f.UserId))).ToListAsync(ct);
+        var result = new Dictionary<Guid, string>();
+        foreach (var id in alive)
+        {
+            if (blocked.Contains(id)) { result[id] = "blocked"; continue; }
+            var link = links.FirstOrDefault(f => (f.UserId == me && f.FriendUserId == id) || (f.UserId == id && f.FriendUserId == me));
+            result[id] = link is null ? "none" : link.Status == "accepted" ? "friend" : link.UserId == me ? "pending_out" : "pending_in";
+        }
+        return result;
+    }
+
     public static async Task<IReadOnlyList<FriendRequestItem>> FriendRequestsAsync(LifeVerseDbContext db, Guid me, CancellationToken ct)
     {
         var rows = await db.Friendships.AsNoTracking().Where(f => f.Status == "pending" && (f.UserId == me || f.FriendUserId == me)).OrderByDescending(f => f.CreatedAt).Take(100).ToListAsync(ct);
@@ -105,6 +124,12 @@ public static class PeopleEndpoints
         var social = endpoints.MapGroup("/api/v1/social").WithTags("People").RequireAuthorization();
         social.MapGet("/people", async (string? q, HttpContext context, LifeVerseDbContext db, CancellationToken ct) =>
             User(context, out var me) ? Results.Ok(await PeopleQueries.SearchAsync(db, me, q, ct)) : Results.Unauthorized());
+        social.MapGet("/relations", async (string? ids, HttpContext context, LifeVerseDbContext db, CancellationToken ct) =>
+        {
+            if (!User(context, out var me)) return Results.Unauthorized();
+            var parsed = (ids ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(s => Guid.TryParse(s, out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).ToList();
+            return Results.Ok((await PeopleQueries.RelationsAsync(db, me, parsed, ct)).ToDictionary(p => p.Key.ToString(), p => p.Value));
+        });
         social.MapGet("/summary", async (HttpContext context, LifeVerseDbContext db, CancellationToken ct) =>
             User(context, out var me) ? Results.Ok(await PeopleQueries.SummaryAsync(db, me, ct)) : Results.Unauthorized());
         social.MapGet("/friends/requests", async (HttpContext context, LifeVerseDbContext db, CancellationToken ct) =>

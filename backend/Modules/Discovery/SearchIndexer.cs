@@ -27,9 +27,10 @@ public static class SearchIndexer
         written += await PumpAsync(db, "person", now, (wm, done) => db.Users.AsNoTracking().Where(u => u.UpdatedAt >= wm && !done.Contains(u.Id)).OrderBy(u => u.UpdatedAt).ThenBy(u => u.Id).Select(u => new Stamped(u.Id, u.UpdatedAt)), ApplyPeopleAsync, ct);
         written += await PumpAsync(db, "person.avatar", now, (wm, done) => db.Avatars.AsNoTracking().Where(a => a.UpdatedAt >= wm && !done.Contains(a.UserId)).OrderBy(a => a.UpdatedAt).ThenBy(a => a.UserId).Select(a => new Stamped(a.UserId, a.UpdatedAt)), ApplyPeopleAsync, ct);
         written += await PumpAsync(db, "group", now, (wm, done) => db.SocialGroups.AsNoTracking().Where(g => g.UpdatedAt >= wm && !done.Contains(g.Id)).OrderBy(g => g.UpdatedAt).ThenBy(g => g.Id).Select(g => new Stamped(g.Id, g.UpdatedAt)), ApplyGroupsAsync, ct);
+        written += await PumpAsync(db, "storefront", now, (wm, done) => db.Storefronts.AsNoTracking().Where(s => s.UpdatedAt >= wm && !done.Contains(s.Id)).OrderBy(s => s.UpdatedAt).ThenBy(s => s.Id).Select(s => new Stamped(s.Id, s.UpdatedAt)), ApplyStorefrontsAsync, ct);
         written += await PumpAsync(db, "store", now, (wm, done) => db.WorldStores.AsNoTracking().Where(s => s.UpdatedAt >= wm && !done.Contains(s.Id)).OrderBy(s => s.UpdatedAt).ThenBy(s => s.Id).Select(s => new Stamped(s.Id, s.UpdatedAt)), ApplyStoresAsync, ct);
         written += await PumpAsync(db, "product", now, (wm, done) => db.MarketplaceProducts.AsNoTracking().Where(p => p.UpdatedAt >= wm && !done.Contains(p.Id)).OrderBy(p => p.UpdatedAt).ThenBy(p => p.Id).Select(p => new Stamped(p.Id, p.UpdatedAt)), ApplyProductsAsync, ct);
-        written += await PumpAsync(db, "event", now, (wm, done) => db.DiscoveryEvents.AsNoTracking().Where(e => e.CreatedAt >= wm && !done.Contains(e.Id)).OrderBy(e => e.CreatedAt).ThenBy(e => e.Id).Select(e => new Stamped(e.Id, e.CreatedAt)), ApplyEventsAsync, ct);
+        written += await PumpAsync(db, "event", now, (wm, done) => db.DiscoveryEvents.AsNoTracking().Where(e => e.UpdatedAt >= wm && !done.Contains(e.Id)).OrderBy(e => e.UpdatedAt).ThenBy(e => e.Id).Select(e => new Stamped(e.Id, e.UpdatedAt)), ApplyEventsAsync, ct);
         written += await PumpAsync(db, "poi", now, (wm, done) => db.Landmarks.AsNoTracking().Where(l => l.UpdatedAt >= wm && !done.Contains(l.Id)).OrderBy(l => l.UpdatedAt).ThenBy(l => l.Id).Select(l => new Stamped(l.Id, l.UpdatedAt)), ApplyPlacesAsync, ct);
         removed += await SweepAsync(db, now, ct);
         written += await RefreshPopularityAsync(db, now, ct);
@@ -99,7 +100,7 @@ public static class SearchIndexer
             if (Put(db, existing, SearchKinds.Island, i.Id, findable, now, i.UpdatedAt, e =>
             {
                 e.Title = i.Name; e.Subtitle = "Ilha · " + i.Category; e.Category = i.Category; e.Description = SearchText.Snippet(i.Description, 400); e.SearchText = Words(i.Name, i.Category, i.Description);
-                e.IslandId = i.Id; e.X = i.SpawnX; e.Z = i.SpawnZ; e.ThumbnailUrl = i.CoverImageUrl; e.OwnerUserId = i.OwnerUserId;
+                e.IslandId = i.Id; e.X = i.SpawnX; e.Z = i.SpawnZ; e.ThumbnailUrl = i.CoverImageUrl; e.OwnerUserId = i.OwnerUserId; e.Rating = i.ContentRating;
             })) written++;
         }
         await db.SaveChangesAsync(ct);
@@ -140,7 +141,7 @@ public static class SearchIndexer
             var display = u.Avatar?.DisplayName is { Length: > 0 } name ? name : u.Username;
             if (Put(db, existing, SearchKinds.Person, u.Id, Discoverable(u), now, u.Avatar is { } a && a.UpdatedAt > u.UpdatedAt ? a.UpdatedAt : u.UpdatedAt, e =>
             {
-                e.Title = display; e.Subtitle = "@" + u.Username; e.Description = SearchText.Snippet(u.Bio, 400); e.SearchText = Words(display, u.Username, u.Bio); e.ThumbnailUrl = u.ProfilePhotoUrl; e.OwnerUserId = u.Id;
+                e.Title = display; e.Subtitle = "@" + u.Username; e.Description = SearchText.Snippet(u.Bio, 400); e.SearchText = Words(display, u.Username, u.Bio); e.ThumbnailUrl = u.ProfilePhotoAssetId is not null ? $"/api/v1/users/{u.Id}/profile/photo" : u.ProfilePhotoUrl; e.OwnerUserId = u.Id;
             })) written++;
         }
         foreach (var gone in ids.Except(users.Select(u => u.Id))) if (Put(db, existing, SearchKinds.Person, gone, false, now, now, _ => { })) written++;
@@ -157,7 +158,7 @@ public static class SearchIndexer
             if (Put(db, existing, SearchKinds.Group, g.Id, g.DeletedAt == null && g.Privacy == "public", now, g.UpdatedAt, e =>
             {
                 e.Title = g.Name; e.Subtitle = (g.Tag is { Length: > 0 } ? $"[{g.Tag}] " : string.Empty) + "Grupo"; e.Description = SearchText.Snippet(g.Description, 400); e.SearchText = Words(g.Name, g.Tag, "grupo", g.Description);
-                e.ThumbnailUrl = g.ImageUrl; e.OwnerUserId = g.OwnerUserId;
+                e.ThumbnailUrl = g.ImageUrl; e.Category = g.Category; e.Rating = g.ContentRating; e.OwnerUserId = g.OwnerUserId;
             })) written++;
         foreach (var gone in ids.Except(groups.Select(g => g.Id))) if (Put(db, existing, SearchKinds.Group, gone, false, now, now, _ => { })) written++;
         await db.SaveChangesAsync(ct); return written;
@@ -184,21 +185,48 @@ public static class SearchIndexer
         await db.SaveChangesAsync(ct); return written;
     }
 
+    /// <summary>Virtual shops: found when open and not deleted and when the owner really has something to sell. They have no place to visit.</summary>
+    private static async Task<int> ApplyStorefrontsAsync(LifeVerseDbContext db, List<Guid> ids, DateTimeOffset now, CancellationToken ct)
+    {
+        if (ids.Count == 0) return 0;
+        var shops = await db.Storefronts.AsNoTracking().Where(s => ids.Contains(s.Id)).ToListAsync(ct); var existing = await EntriesAsync(db, SearchKinds.Store, ids, ct); var written = 0;
+        var owners = shops.Select(s => s.OwnerUserId).Distinct().ToList();
+        var selling = (await db.MarketplaceProducts.AsNoTracking().Where(p => owners.Contains(p.SellerUserId) && p.Status == "active").Select(p => new { p.SellerUserId, p.GroupId }).ToListAsync(ct)).ToList();
+        var names = await db.Users.AsNoTracking().Include(u => u.Avatar).Where(u => owners.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Avatar != null ? u.Avatar.DisplayName : u.Username, ct);
+        foreach (var s in shops)
+        {
+            var count = selling.Count(p => p.SellerUserId == s.OwnerUserId && p.GroupId == s.GroupId); var owner = names.GetValueOrDefault(s.OwnerUserId, string.Empty);
+            if (Put(db, existing, SearchKinds.Store, s.Id, s.DeletedAt == null && s.IsOpen && count > 0, now, s.UpdatedAt, e =>
+            {
+                e.Title = s.Name; e.Subtitle = "Loja virtual · " + owner; e.Category = s.Category; e.Description = SearchText.Snippet(s.Description, 400); e.SearchText = Words(s.Name, s.Category, s.Description, owner, "loja virtual");
+                e.ThumbnailUrl = s.LogoUrl.Length > 0 ? s.LogoUrl : null; e.OwnerUserId = s.OwnerUserId; e.IslandId = null; e.X = null; e.Z = null; e.Popularity = count;
+            })) written++;
+        }
+        foreach (var gone in ids.Except(shops.Select(s => s.Id))) if (Put(db, existing, SearchKinds.Store, gone, false, now, now, _ => { })) written++;
+        await db.SaveChangesAsync(ct); return written;
+    }
+
     private static async Task<int> ApplyProductsAsync(LifeVerseDbContext db, List<Guid> ids, DateTimeOffset now, CancellationToken ct)
     {
         var products = await db.MarketplaceProducts.AsNoTracking().Where(p => ids.Contains(p.Id)).ToListAsync(ct); var existing = await EntriesAsync(db, SearchKinds.Product, ids, ct);
         var groupIds = products.Where(p => p.GroupId != null).Select(p => p.GroupId!.Value).Distinct().ToList();
         var groups = groupIds.Count == 0 ? [] : await db.SocialGroups.AsNoTracking().Where(g => groupIds.Contains(g.Id)).ToDictionaryAsync(g => g.Id, g => g.Name, ct); var written = 0;
+        var assetIds = products.Select(p => p.AssetId).Distinct().ToList(); var creatorOf = await db.Assets.AsNoTracking().Where(a => assetIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.CreatorUserId, ct);
+        var peopleIds = creatorOf.Values.Concat(products.Select(p => p.SellerUserId)).Distinct().ToList();
+        var names = await db.Users.AsNoTracking().Include(u => u.Avatar).Where(u => peopleIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Avatar != null ? u.Avatar.DisplayName : u.Username, ct);
         foreach (var p in products)
         {
             var seller = p.GroupId is { } g && groups.TryGetValue(g, out var gn) ? gn : null;
             if (Put(db, existing, SearchKinds.Product, p.Id, p.Status == "active", now, p.UpdatedAt, e =>
             {
                 e.Title = p.Name; e.Subtitle = $"{p.PriceCoins:N0} moedas · {p.Category}" + (seller is null ? string.Empty : $" · por {seller}"); e.Category = p.Category; e.Description = SearchText.Snippet(p.Description, 400);
-                e.SearchText = Words(p.Name, p.Category, p.Description, seller); e.ThumbnailUrl = p.ImageUrl; e.OwnerUserId = p.SellerUserId;
+                var creator = creatorOf.TryGetValue(p.AssetId, out var cu) && names.TryGetValue(cu, out var cn) ? cn : string.Empty; var seller2 = names.GetValueOrDefault(p.SellerUserId, string.Empty);
+                e.SearchText = Words(p.Name, p.Category, p.Description, seller, creator, seller2); e.ThumbnailUrl = p.ImageUrl; e.OwnerUserId = p.SellerUserId; e.PriceCoins = p.PriceCoins; e.Rights = p.BuyerRights; e.Creator = SearchText.Normalize(creator);
             })) written++;
         }
         foreach (var gone in ids.Except(products.Select(p => p.Id))) if (Put(db, existing, SearchKinds.Product, gone, false, now, now, _ => { })) written++;
+        // a shop is only found while its owner sells something: when products change, the shops of those sellers are read again on the next pass
+        var sellers = products.Select(p => p.SellerUserId).Distinct().ToList(); if (sellers.Count > 0) foreach (var shop in await db.Storefronts.Where(s => sellers.Contains(s.OwnerUserId) && s.DeletedAt == null).ToListAsync(ct)) shop.UpdatedAt = now;
         await db.SaveChangesAsync(ct); return written;
     }
 
@@ -210,10 +238,10 @@ public static class SearchIndexer
         foreach (var r in rows)
         {
             var ev = r.Event;
-            if (Put(db, existing, SearchKinds.Event, ev.Id, ev.IsPublic && ev.GroupId == null && ev.EndsAt >= now && r.Open, now, ev.CreatedAt, e =>
+            if (Put(db, existing, SearchKinds.Event, ev.Id, ev.IsPublic && ev.GroupId == null && ev.CancelledAt == null && ev.EndsAt >= now && r.Open, now, ev.UpdatedAt, e =>
             {
-                e.Title = ev.Name; e.Subtitle = "Evento em " + r.IslandName; e.Description = SearchText.Snippet(ev.Description, 400); e.SearchText = Words(ev.Name, r.IslandName, "evento", ev.Description);
-                e.IslandId = ev.IslandId; e.StartsAt = ev.StartsAt; e.ExpiresAt = ev.EndsAt; e.OwnerUserId = ev.OrganizerUserId;
+                e.Title = ev.Name; e.Subtitle = "Evento em " + r.IslandName; e.Description = SearchText.Snippet(ev.Description, 400); e.SearchText = Words(ev.Name, r.IslandName, "evento", EventRules.LabelOf(ev.Category), ev.Description);
+                e.IslandId = ev.IslandId; e.StartsAt = ev.StartsAt; e.ExpiresAt = ev.EndsAt; e.OwnerUserId = ev.OrganizerUserId; e.Category = ev.Category; e.ThumbnailUrl = ev.ImageUrl.Length > 0 ? ev.ImageUrl : null; e.PriceCoins = ev.PriceCoins; e.Rating = ev.ContentRating; e.X = ev.ArrivalX; e.Z = ev.ArrivalZ;
             })) written++;
         }
         foreach (var gone in ids.Except(rows.Select(r => r.Event.Id))) if (Put(db, existing, SearchKinds.Event, gone, false, now, now, _ => { })) written++;
@@ -248,9 +276,9 @@ public static class SearchIndexer
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Parcel && !db.IslandParcels.Any(p => p.Id == e.RefId && p.DeletedAt == null && p.AccessMode == "public" && db.Islands.Any(i => i.Id == p.IslandId && i.IsPublic && i.DeletedAt == null))));
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Person && !db.Users.Any(u => u.Id == e.RefId && u.DeletedAt == null && u.Status == "active")));
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Group && !db.SocialGroups.Any(g => g.Id == e.RefId && g.DeletedAt == null && g.Privacy == "public")));
-        await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Store && !db.WorldStores.Any(s => s.Id == e.RefId && s.DeletedAt == null && db.Islands.Any(i => i.Id == s.IslandId && i.IsPublic && i.DeletedAt == null) && db.MarketplaceProducts.Any(p => p.Id == s.ProductId && p.Status == "active"))));
+        await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Store && !db.Storefronts.Any(f => f.Id == e.RefId && f.DeletedAt == null && f.IsOpen) && !db.WorldStores.Any(s => s.Id == e.RefId && s.DeletedAt == null && db.Islands.Any(i => i.Id == s.IslandId && i.IsPublic && i.DeletedAt == null) && db.MarketplaceProducts.Any(p => p.Id == s.ProductId && p.Status == "active"))));
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Product && !db.MarketplaceProducts.Any(p => p.Id == e.RefId && p.Status == "active")));
-        await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Event && (e.ExpiresAt < now || !db.DiscoveryEvents.Any(v => v.Id == e.RefId && v.IsPublic && v.GroupId == null))));
+        await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Event && (e.ExpiresAt < now || !db.DiscoveryEvents.Any(v => v.Id == e.RefId && v.IsPublic && v.GroupId == null && v.CancelledAt == null))));
         await Drop(db.SearchEntries.Where(e => e.Kind == SearchKinds.Place && !db.Landmarks.Any(l => l.Id == e.RefId && l.IsPublic && l.DeletedAt == null && db.Islands.Any(i => i.Id == l.IslandId && i.IsPublic && i.DeletedAt == null))));
         return removed;
     }
@@ -273,7 +301,7 @@ public static class SearchIndexer
         await Set(SearchKinds.Island, favourites.Keys.Union(present.Keys).ToDictionary(k => k, k => favourites.GetValueOrDefault(k) + present.GetValueOrDefault(k) * 2));
         await Set(SearchKinds.Group, await db.GroupMembers.AsNoTracking().GroupBy(m => m.GroupId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(g => g.Key, g => (double)g.N, ct));
         await Set(SearchKinds.Product, await db.MarketplaceOrders.AsNoTracking().Where(o => o.Status == "completed").GroupBy(o => o.ProductId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(g => g.Key, g => (double)g.N, ct));
-        await Set(SearchKinds.Event, await db.EventAttendees.AsNoTracking().GroupBy(a => a.EventId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(g => g.Key, g => (double)g.N, ct));
+        await Set(SearchKinds.Event, await db.EventAttendees.AsNoTracking().Where(a => a.Going).GroupBy(a => a.EventId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(g => g.Key, g => (double)g.N, ct));
         return changed;
     }
 }

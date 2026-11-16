@@ -71,6 +71,8 @@ public static partial class SettingsCatalog
         // ---- Privacidade e segurança
         yield return new("privacy.external_media", SettingCategory.Privacy, "Geral", "Mídia externa (imagens e vídeos)", "Mostra imagens e vídeos que objetos e terrenos carregam de endereços da internet. Desligado, nada é baixado nem tocado e você não revela o seu endereço a esses sites.", SettingKind.Bool, true)
             { Group = "Conteúdo", Column = 0, Keywords = ["mídia", "vídeo", "imagem", "internet", "privacidade"] };
+        yield return new("privacy.search_history", SettingCategory.Privacy, "Geral", "Histórico de buscas", "Guarda neste computador o que você buscou, para sugerir de novo. Desligado, nada é lembrado e o histórico guardado é apagado. O servidor nunca recebe essa lista.", SettingKind.Bool, true)
+            { Group = "Conteúdo", Column = 0, Keywords = ["busca", "histórico", "pesquisas", "recentes", "privacidade"] };
         yield return Unavail("privacy.online_visibility", SettingCategory.Privacy, "Geral", "Quem vê você", 0, "Visibilidade online", "Quem vê que você está online.", SettingKind.Choice, "a", "Depende de uma preferência de conta no servidor, que ainda não existe.");
         yield return Unavail("privacy.private_messages", SettingCategory.Privacy, "Geral", "Quem fala com você", 1, "Mensagens privadas", "Quem pode lhe mandar mensagens.", SettingKind.Choice, "a", "Depende de uma preferência de conta no servidor, que ainda não existe.");
         yield return Unavail("privacy.group_invites", SettingCategory.Privacy, "Geral", "Quem fala com você", 1, "Convites de grupo", "Quem pode convidar você para grupos.", SettingKind.Choice, "a", "Depende de uma preferência de conta no servidor, que ainda não existe.");
