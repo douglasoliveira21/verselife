@@ -363,8 +363,6 @@ public partial class ContextInteractionManager : Node
         var target = Resolve(screen);
         if (target is null) return null;
         _selectedObject = target as ObjectTarget;
-        // A right click is an explicit object selection, even with the build window closed.
-        if (_selectedObject is { } selected) _services.SelectObject(selected.View.State.Id);
         _target = target;
         _menu.Open(screen, target.Title, target.Icon, InteractionRegistry.Build(target, _services));
         if (target is AvatarTarget person) _services.Prefetch(person.Name);

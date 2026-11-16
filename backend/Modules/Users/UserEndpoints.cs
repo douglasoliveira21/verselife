@@ -45,7 +45,7 @@ public static class UserEndpoints
         await AvatarWearables.ReconcileForUserAsync(db, userId, ct);
         var avatar = await db.Avatars.AsNoTracking().Include(x => x.Appearance).Include(x => x.EquippedItems)
             .SingleOrDefaultAsync(x => x.UserId == userId, ct);
-        return avatar is null ? Results.NotFound() : Results.Ok(ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct)));
+        return avatar is null ? Results.NotFound() : Results.Ok(ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct), LifeVerse.Api.Modules.Groups.GroupService.LabelOf(await LifeVerse.Api.Modules.Groups.GroupService.ActiveOfAsync(db, avatar.UserId, ct))));
     }
 
     private static async Task<IResult> SaveAvatarAsync(SaveAvatarRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider timeProvider, CancellationToken ct)
@@ -60,7 +60,7 @@ public static class UserEndpoints
         if (errors.Count > 0) return Results.ValidationProblem(errors);
         ApplyAvatar(db, avatar, request, timeProvider.GetUtcNow());
         await db.SaveChangesAsync(ct);
-        return Results.Ok(ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct)));
+        return Results.Ok(ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct), LifeVerse.Api.Modules.Groups.GroupService.LabelOf(await LifeVerse.Api.Modules.Groups.GroupService.ActiveOfAsync(db, avatar.UserId, ct))));
     }
 
     /// <summary>Writes an already validated appearance into the avatar (the caller saves). Used by saving and by applying a saved look.</summary>
@@ -106,7 +106,7 @@ public static class UserEndpoints
     private static bool TryGetUserId(HttpContext context, out Guid userId) =>
         Guid.TryParse(context.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out userId);
 
-    public static AvatarResponse ToResponse(Avatar avatar, AvatarModel? model = null, string wornJson = "[]", string animationFilesJson = "[]")
+    public static AvatarResponse ToResponse(Avatar avatar, AvatarModel? model = null, string wornJson = "[]", string animationFilesJson = "[]", string groupLabel = "")
     {
         var appearance = avatar.Appearance;
         return new AvatarResponse(avatar.Id, avatar.DisplayName, avatar.BaseModel,
@@ -115,7 +115,7 @@ public static class UserEndpoints
             appearance?.FaceSettingsJson ?? "{}", appearance?.OutfitsJson ?? "[]", appearance?.AttachmentsJson ?? "[]",
             appearance?.CameraSensitivity ?? 0.003f, appearance?.InvertCameraY ?? false,
             avatar.EquippedItems.OrderBy(x => x.Slot).Select(x => new EquippedItemRequest(x.Slot, x.ItemKey, x.TintColor)).ToList(),
-            model?.Id, model?.ContentHash, model?.ScaleToStandard ?? 1f, model?.BoneMapJson ?? "{}", wornJson, appearance?.AnimationOverridesJson ?? "{}", animationFilesJson);
+            model?.Id, model?.ContentHash, model?.ScaleToStandard ?? 1f, model?.BoneMapJson ?? "{}", wornJson, appearance?.AnimationOverridesJson ?? "{}", animationFilesJson, null, groupLabel);
     }
     private static string ValidJsonOrDefault(string? value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value;
 }

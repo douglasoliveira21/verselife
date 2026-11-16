@@ -152,7 +152,7 @@ public static class AvatarLooks
         UserEndpoints.ApplyAvatar(db, avatar, request, now);
         if (overrides is not null && avatar.Appearance is not null) { avatar.Appearance.AnimationOverridesJson = AvatarAnimations.WriteOverrides(overrides); avatar.Appearance.UpdatedAt = now; }
         if (snapshot.WithBodyAndAnimations) avatar.UpdatedAt = now;
-        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct)) with { LookSkipped = skipped });
+        return await SaveAsync(db, ct, UserEndpoints.ToResponse(avatar, await AvatarModels.ActiveAsync(db, avatar, ct), await AvatarWearables.WornInfoAsync(db, avatar, ct), await AvatarAnimations.FilesInfoAsync(db, avatar, ct), LifeVerse.Api.Modules.Groups.GroupService.LabelOf(await LifeVerse.Api.Modules.Groups.GroupService.ActiveOfAsync(db, avatar.UserId, ct))) with { LookSkipped = skipped });
     }
 
     public static async Task<LookResult> DuplicateAsync(LifeVerseDbContext db, Guid user, Guid id, DateTimeOffset now, CancellationToken ct)
