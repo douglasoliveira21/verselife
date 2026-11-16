@@ -18,6 +18,8 @@ public sealed record InventoryItemTarget(Guid ItemId, string Name, string Catego
 /// A folder of the inventory tree.
 public sealed record InventoryFolderTarget(Guid FolderId, string Name) : ContextTarget(Name, "folder-filled");
 /// A panel a script of an object shows on this player's screen.
+/// An object of the inventory worn on the avatar (right click on it on the body).
+public sealed record AttachmentTarget(Guid Id, Guid ItemId, string Name, string Point, string PointName, bool CanModify, string Details) : ContextTarget(string.IsNullOrWhiteSpace(Name) ? "Objeto" : Name, "cube");
 public sealed record HudTarget(Guid Script, string Name) : ContextTarget(string.IsNullOrWhiteSpace(Name) ? "Painel" : Name, "layers");
 
 /// What the menu can do, handed in by the window that owns each thing (so this file depends on none of them).
@@ -84,6 +86,10 @@ public sealed class ContextServices
     public Func<int, bool> IsDriving { get; init; } = _ => false;
     /// Runs an action of the inventory's own menu (the number it uses) on the selected item or folder.
     public Action<int> InventoryAction { get; init; } = _ => { };
+    /// Whether this item of the inventory is on the avatar right now (an attachment).
+    public Func<Guid, bool> IsAttached { get; init; } = _ => false;
+    /// What to do with an object worn on the body: edit, detach, move, properties, locate.
+    public Action<string, AttachmentTarget> AttachmentAction { get; init; } = (_, _) => { };
     /// Closes a panel a script put on the screen.
     public Action<Guid> CloseHud { get; init; } = _ => { };
 }
@@ -92,7 +98,7 @@ public sealed class ContextServices
 /// <see cref="ContextPermissions"/>: a slice that is not allowed stays in place, grey, with the reason as its tip (nothing is hidden by surprise).
 public static class InteractionRegistry
 {
-    public const int InvNew = 11, InvRename = 12, InvDeleteFolder = 2, InvPlace = 3, InvEquip = 4, InvFavorite = 5, InvRestore = 6, InvRights = 8, InvOffer = 9, InvCopy = 10, InvDelete = 13, InvPurge = 14, InvPreview = 16, InvVersions = 21;
+    public const int InvNew = 11, InvRename = 12, InvDeleteFolder = 2, InvPlace = 3, InvEquip = 4, InvFavorite = 5, InvRestore = 6, InvRights = 8, InvOffer = 9, InvCopy = 10, InvDelete = 13, InvPurge = 14, InvPreview = 16, InvVersions = 21, InvAttachTo = 30, InvAttachAdd = 31, InvAttachReplace = 32, InvDetach = 33, InvChangePoint = 34, InvEditAttachment = 35;
 
     public static List<RadialItem> Build(ContextTarget target, ContextServices s) => target switch
     {
@@ -105,6 +111,7 @@ public static class InteractionRegistry
         InventoryItemTarget item => ForItem(item, s),
         InventoryFolderTarget folder => ForFolder(folder, s),
         HudTarget hud => ForHud(hud, s),
+        AttachmentTarget worn => ForAttachment(worn, s),
         _ => []
     };
 
@@ -311,10 +318,45 @@ public static class InteractionRegistry
             Slice("Favoritar", "star", Decision.Yes, () => Run(InvFavorite), "Marca ou desmarca como favorito"),
             Slice("Mais opções", "dots", Decision.Yes, null, "Versões, direitos e lixeira", side: true, children:
             [
+                .. AttachSlices(item, D(Capability.ItemWear), s),
                 Slice("Direitos e propriedades", "settings", D(Capability.ItemRights), () => Run(InvRights)),
                 Slice("Versões", "history", Decision.Yes, () => Run(InvVersions)),
                 Slice("Enviar à lixeira", "trash", D(Capability.ItemDelete), () => Run(InvDelete), "Dá para restaurar depois", destructive: true)
             ])
+        ];
+    }
+
+    /// What can be done to put an object of the inventory on the body, or to take it off. Only 3D models can be attached.
+    private static List<RadialItem> AttachSlices(InventoryItemTarget item, Decision wear, ContextServices s)
+    {
+        var can = item.Category == "models" ? wear : new Decision(false, "Só modelos 3D podem ser anexados ao corpo.");
+        void Run(int action) => s.InventoryAction(action);
+        if (s.IsAttached(item.ItemId))
+            return
+            [
+                Slice("Editar anexo", "move", item.Rights is var r && LifeVerse.Shared.Items.ItemRights.Has(r, LifeVerse.Shared.Items.Right.Modify) ? Decision.Yes : new Decision(false, "Você não tem o direito de modificar este item."), () => Run(InvEditAttachment), "Muda a posição, a rotação e o tamanho no corpo"),
+                Slice("Alterar ponto", "rotate", can, () => Run(InvChangePoint), "Leva o objeto para outro ponto do corpo"),
+                Slice("Substituir anexo", "rotate", can, () => Run(InvAttachReplace), "Troca o que está no ponto pelo objeto de outro item"),
+                Slice("Remover do corpo", "close", Decision.Yes, () => Run(InvDetach), "Tira o objeto do corpo; o item continua no inventário")
+            ];
+        return
+        [
+            Slice("Anexar em…", "user", can, () => Run(InvAttachTo), "Escolhe o ponto do corpo"),
+            Slice("Adicionar ao corpo", "plus", can, () => Run(InvAttachAdd), "Põe no último ponto usado, sem tirar o que já está lá"),
+            Slice("Substituir anexo", "rotate", can, () => Run(InvAttachReplace), "Põe no ponto escolhido e tira o que estava lá")
+        ];
+    }
+
+    private static List<RadialItem> ForAttachment(AttachmentTarget worn, ContextServices s)
+    {
+        var edit = worn.CanModify ? Decision.Yes : new Decision(false, "Você não tem o direito de modificar este item.");
+        return
+        [
+            Slice("Editar", "move", edit, () => s.AttachmentAction("edit", worn), "Muda a posição, a rotação e o tamanho no corpo"),
+            Slice("Remover", "close", Decision.Yes, () => s.AttachmentAction("detach", worn), "Tira do corpo; o item continua no inventário"),
+            Slice("Alterar ponto", "rotate", Decision.Yes, () => s.AttachmentAction("move", worn), "Leva o objeto para outro ponto do corpo"),
+            Slice("Propriedades", "info", Decision.Yes, () => s.AttachmentAction("properties", worn), "Nome, ponto e transformação"),
+            Slice("Localizar no inventário", "bag", Decision.Yes, () => s.AttachmentAction("locate", worn), "Abre o inventário no item")
         ];
     }
 
@@ -413,6 +455,10 @@ public partial class ContextInteractionManager : Node
         var hit = _player is null ? new Godot.Collections.Dictionary() : _player.GetWorld3D().DirectSpaceState.IntersectRay(query);
         var hitDistance = hit.Count > 0 ? origin.DistanceTo(hit["position"].AsVector3()) : float.PositiveInfinity;
 
+        // an object worn on the body wins over the body behind it
+        if (_player?.Rig is { } worn && worn.PickAttachment(origin, direction) is { } wornId && GetNodeOrNull<AvatarManager>("/root/AvatarManager")?.Attachments.Items.FirstOrDefault(a => a.Id == wornId && a.Equipped) is { } data)
+            return new AttachmentTarget(data.Id, data.InventoryItemId, data.Name, data.Point, data.PointName, data.CanModify,
+                $"{(string.IsNullOrWhiteSpace(data.Name) ? "Objeto" : data.Name)} · {data.PointName} · posição {data.Position[0]:0.###}, {data.Position[1]:0.###}, {data.Position[2]:0.###} m · rotação {data.Rotation[0]:0.##}°, {data.Rotation[1]:0.##}°, {data.Rotation[2]:0.##}° · escala {data.Scale[0]:0.###}, {data.Scale[1]:0.###}, {data.Scale[2]:0.###}{(data.CanModify ? string.Empty : " · sem direito de modificar")}");
         // avatars have no collision shape: match the ray against each body from the feet to the head
         ContextTarget? person = null; var nearest = float.PositiveInfinity;
         void Consider(ContextTarget candidate, Vector3 feet)

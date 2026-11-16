@@ -143,7 +143,7 @@ public partial class InventoryPanel : Node3D
         StyleSquare(plus, false);
         var menu = plus.GetPopup();
         menu.AddItem("Importar modelo 3D…", 7); menu.AddItem("Importar arquivo…", 0); menu.AddItem("Nova pasta…", 1); menu.AddItem("Nova subpasta na pasta selecionada…", 11); menu.AddItem("Renomear pasta selecionada…", 12); menu.AddItem("Excluir pasta selecionada (vai para a lixeira)", 2); menu.AddSeparator();
-        menu.AddItem("Pré-visualizar…", 16); menu.AddItem("Versões…", 21); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5); menu.AddItem("Excluir (vai para a lixeira)", 13); menu.AddItem("Restaurar da lixeira", 6); menu.AddItem("Excluir definitivamente", 14); menu.AddItem("Esvaziar a lixeira", 15); menu.AddSeparator(); menu.AddItem("Verificar duplicações e itens presos", 17); menu.AddItem("Corrigir itens presos por ofertas", 18); menu.AddSeparator(); menu.AddItem("Importar pacote (.zip)…", 19); menu.AddItem("Objetos apagados…", 20);
+        menu.AddItem("Pré-visualizar…", 16); menu.AddItem("Versões…", 21); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Anexar em…", 30); menu.AddItem("Adicionar ao corpo", 31); menu.AddItem("Substituir anexo", 32); menu.AddItem("Editar anexo", 35); menu.AddItem("Remover do corpo", 33); menu.AddItem("Favoritar", 5); menu.AddItem("Excluir (vai para a lixeira)", 13); menu.AddItem("Restaurar da lixeira", 6); menu.AddItem("Excluir definitivamente", 14); menu.AddItem("Esvaziar a lixeira", 15); menu.AddSeparator(); menu.AddItem("Verificar duplicações e itens presos", 17); menu.AddItem("Corrigir itens presos por ofertas", 18); menu.AddSeparator(); menu.AddItem("Importar pacote (.zip)…", 19); menu.AddItem("Objetos apagados…", 20);
         menu.IdPressed += OnMenu;
         top.AddChild(plus);
 
@@ -224,6 +224,12 @@ public partial class InventoryPanel : Node3D
             case 2: DeleteFolder(); break;
             case 3: Place(); break;
             case 4: Equip(); break;
+            case 30: AttachTo(); break;
+            case 31: AttachAdd(); break;
+            case 32: AttachTo(replace: true); break;
+            case 33: Detach(); break;
+            case 34: AttachTo(); break;
+            case 35: EditAttachment(); break;
             case 5: Favorite(); break;
             case 6: RestoreFromBin(); break;
             case 11: _folderMode = FolderMode.Sub; OpenFolderDialog("Nova subpasta", "Criar"); break;
@@ -473,6 +479,7 @@ public partial class InventoryPanel : Node3D
         foreach (var card in _cards) { _grid.RemoveChild(card); card.QueueFree(); }
         _cards.Clear();
         _grid.Columns = _listLayout ? 1 : 3; _loadMore.Visible = _hasMore;
+        if (_locate != Guid.Empty && _items.ContainsKey(_locate)) { _selectedItem = _locate; _locate = Guid.Empty; }
         foreach (var info in ShownItems())
         {
             var card = new ItemCard(this, info, _listLayout) { Selected = info.ItemId == _selectedItem };
@@ -870,7 +877,7 @@ public partial class InventoryPanel : Node3D
             return;
         }
         var menu = new PopupMenu();
-        menu.AddItem("Pré-visualizar…", 16); menu.AddItem("Versões…", 21); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Favoritar", 5);
+        menu.AddItem("Pré-visualizar…", 16); menu.AddItem("Versões…", 21); menu.AddItem("Colocar no mundo", 3); menu.AddItem("Equipar", 4); menu.AddItem("Anexar em…", 30); menu.AddItem("Adicionar ao corpo", 31); menu.AddItem("Substituir anexo", 32); menu.AddItem("Editar anexo", 35); menu.AddItem("Remover do corpo", 33); menu.AddItem("Favoritar", 5);
         menu.AddSeparator(); if (_trash) { menu.AddItem("Restaurar da lixeira", 6); menu.AddItem("Excluir definitivamente", 14); } else menu.AddItem("Excluir (vai para a lixeira)", 13);
         menu.AddSeparator(); menu.AddItem("Direitos e propriedades…", 8); menu.AddItem("Oferecer a alguém…", 9); menu.AddItem("Fazer uma cópia", 10);
         menu.IdPressed += id => { OnMenu(id); menu.QueueFree(); };

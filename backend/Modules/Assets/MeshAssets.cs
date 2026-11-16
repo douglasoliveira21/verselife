@@ -82,7 +82,7 @@ public static class MeshAssets
         var canEnter = island.IsPublic || island.OwnerUserId == user || await db.IslandPermissions.AnyAsync(x => x.IslandId == islandId && x.UserId == user && x.RevokedAt == null && (x.Permission == "enter" || x.Permission == "admin"), ct);
         if (!canEnter) return Results.Forbid();
         var needle = assetId.ToString().ToLowerInvariant();
-        var usedAsMesh = await UsedAsync(db, islandId, needle, geometry: true, ct);
+        var usedAsMesh = await UsedAsync(db, islandId, needle, geometry: true, ct) || await LifeVerse.Api.Modules.Users.AvatarAttachments.AssetIsWornAsync(db, assetId, ct); // an object worn on a body is seen by everybody who is there
         var usedAsTexture = !usedAsMesh && await UsedAsync(db, islandId, needle, geometry: false, ct);
         var usedAsSound = !usedAsMesh && !usedAsTexture && await UsedAsSoundAsync(db, islandId, needle, ct); // a sound that an object carries can be heard by whoever is on the island
         // the picture that represents the island is shown to everybody who may enter it (and to the people who manage it), even though no object uses it

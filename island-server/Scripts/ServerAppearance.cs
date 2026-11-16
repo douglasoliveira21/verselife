@@ -12,13 +12,29 @@ public partial class ServerMain
     private static readonly TimeSpan AppearanceCooldown = TimeSpan.FromSeconds(3);
     private const int MaxAppearanceBytes = 96 * 1024;
 
+    private readonly HashSet<int> _lateAppearance = [];
+
     public void RefreshAppearance(int peerId)
     {
         if (!_players.TryGetValue(peerId, out var player) || !player.Authenticated) return;
         var now = DateTimeOffset.UtcNow;
-        if (_lastAppearance.TryGetValue(peerId, out var last) && now - last < AppearanceCooldown) return;
+        if (_lastAppearance.TryGetValue(peerId, out var last) && now - last < AppearanceCooldown)
+        {
+            // too soon after the last one: it is not dropped, it is done as soon as the wait is over (a change right after another would otherwise never reach the others)
+            if (_lateAppearance.Add(peerId)) _ = RefreshLaterAsync(peerId, AppearanceCooldown - (now - last));
+            return;
+        }
         _lastAppearance[peerId] = now;
         _ = RefreshAppearanceAsync(peerId, player.AvatarId);
+    }
+
+    private async Task RefreshLaterAsync(int peerId, TimeSpan wait)
+    {
+        try { await Task.Delay(wait + TimeSpan.FromMilliseconds(50), _shutdown.Token); }
+        catch (OperationCanceledException) { return; }
+        if (!_lateAppearance.Remove(peerId) || !_players.TryGetValue(peerId, out var player) || !player.Authenticated) return;
+        _lastAppearance[peerId] = DateTimeOffset.UtcNow;
+        await RefreshAppearanceAsync(peerId, player.AvatarId);
     }
 
     private async Task RefreshAppearanceAsync(int peerId, Guid avatarId)

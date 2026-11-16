@@ -72,7 +72,7 @@ public partial class PlayerController : CharacterBody3D
         FloorMaxAngle = Mathf.DegToRad(50);
         FloorSnapLength = .35f;
         FloorStopOnSlope = true;
-        _rig = GetNode<AvatarRig>("AvatarRig");
+        _rig = GetNode<AvatarRig>("AvatarRig"); _rig.OwnAvatar = true;
         _network = GetNode<NetworkManager>("/root/NetworkManager");
         _network.RegisterLocalPlayer(this);
         _cameraPivot = GetNode<Node3D>("CameraPivot");
@@ -92,6 +92,8 @@ public partial class PlayerController : CharacterBody3D
         Input.MouseMode = Input.MouseModeEnum.Visible;
         var avatars = GetNode<AvatarManager>("/root/AvatarManager");
         avatars.AvatarLoaded += OnAvatarLoaded;
+        avatars.Attachments.Changed += OnAttachmentsChanged;
+        if (avatars.Attachments.Loaded) _rig.ApplyAttachments(avatars.Attachments.Items);
         var error = avatars.Load();
         if (error != Error.Ok) GD.PushWarning($"event=avatar_load_start_failed error={error}");
     }
@@ -102,7 +104,7 @@ public partial class PlayerController : CharacterBody3D
         _seat = null;
         Input.MouseMode = Input.MouseModeEnum.Visible;
         var avatars = GetNodeOrNull<AvatarManager>("/root/AvatarManager");
-        if (avatars is not null) avatars.AvatarLoaded -= OnAvatarLoaded;
+        if (avatars is not null) { avatars.AvatarLoaded -= OnAvatarLoaded; avatars.Attachments.Changed -= OnAttachmentsChanged; }
         _network?.UnregisterLocalPlayer(this);
     }
 
@@ -115,7 +117,7 @@ public partial class PlayerController : CharacterBody3D
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
         var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : 1.55f) + _cameraHeightOffset;
-        _cameraPivot.Position = new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
+        _cameraPivot.Position = _editView ? _cameraPivot.Position.Lerp(_editFocus, weight * .6f) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
     }
 
     public override void _UnhandledInput(InputEvent input)
@@ -167,7 +169,7 @@ public partial class PlayerController : CharacterBody3D
                 else if (_rightDragging)
                 {
                     _rightDragging = false;
-                    if (!_rightDragMoved) OpenContextMenu(button.Position);
+                    if (!_rightDragMoved && !_editView) OpenContextMenu(button.Position);
                 }
             }
             if (button.ButtonIndex == MouseButton.Left && button.Pressed && button.DoubleClick && !IsTyping()) SetWalkTarget(button.Position);
@@ -565,7 +567,7 @@ public partial class PlayerController : CharacterBody3D
     private bool _avatarHidden;
     /// Hides the avatar while the build camera is in use (and shows it again afterwards).
     public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden && !_firstPerson; }
-    private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, _mirror ? .7f : 1.5f, _mirror ? 5f : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
+    private void SetZoom(float value) { _cameraDistance = Mathf.Clamp(value, _editView ? .2f : _mirror ? .7f : 1.5f, _mirror ? 5f : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     /// <summary>True while a loading screen covers the world: the avatar ignores the keyboard and the mouse until the world is ready.</summary>
     // ---- the person's own settings (Configurações › Controles e Câmera) ----
     /// <summary>Multiplies the camera sensitivity of the avatar; and flips the vertical axis on top of what the avatar says.</summary>
@@ -636,6 +638,7 @@ public partial class PlayerController : CharacterBody3D
     public void SetMirrorView(bool face)
     {
         if (!_mirror) return;
+        _editView = false; _editViewStarted = false;
         _mirrorFace = face; _cameraDistance = face ? 1.15f : 3.1f; _springArm.SpringLength = _cameraDistance;
         _targetPitch = face ? -.02f : -.1f; _targetYaw = _targetBodyYaw + Mathf.Pi;
     }
@@ -643,9 +646,40 @@ public partial class PlayerController : CharacterBody3D
     /// <summary>Turns the camera around the avatar (radians), so every side can be seen.</summary>
     public void TurnMirror(float radians) { if (_mirror) _targetYaw += radians; }
 
+    // ---- the edit view: the camera close to a part of the body while an attachment is being placed -----------------------------------
+
+    private bool _editView;
+    private Vector3 _editFocus;
+    /// <summary>True while the camera is on a part of the body for the attachment editor; the avatar stands still.</summary>
+    public bool EditViewActive => _editView;
+    public AvatarRig Rig => _rig;
+
+    /// <summary>Puts the camera close to a point of the body (in the world), looking at it from the front, with the avatar still. The camera before is kept for <see cref="ExitMirror"/>.</summary>
+    public void EnterEditView(Vector3 world, float distance = 1.2f)
+    {
+        if (!_mirror) _beforeMirror = (_cameraMode, _cameraDistance, _targetYaw, _targetPitch);
+        _mirror = true; _walkTarget = null; _rightDragging = false;
+        SetCameraMode(CameraMode.ThirdPerson);
+        _editView = true; _editFocus = ToLocal(world); _cameraDistance = Mathf.Clamp(distance, .2f, 5f); _springArm.SpringLength = _cameraDistance;
+        if (!_editViewStarted) { _targetPitch = -.05f; _targetYaw = _targetBodyYaw + Mathf.Pi; _editViewStarted = true; }
+    }
+    private bool _editViewStarted;
+
+    /// <summary>Looks at another point (the camera glides to it).</summary>
+    public void FocusEditView(Vector3 world, float? distance = null) { if (!_editView) return; _editFocus = ToLocal(world); if (distance is { } d) { _cameraDistance = Mathf.Clamp(d, .2f, 5f); _springArm.SpringLength = _cameraDistance; } }
+
+    /// <summary>Slides the point looked at sideways and up or down, along the screen (what a drag with the middle button does).</summary>
+    public void PanEditView(Vector2 screen)
+    {
+        if (!_editView || GetViewport().GetCamera3D() is not { } camera) return;
+        var scale = _cameraDistance * .0016f; var world = ToGlobal(_editFocus) + (-camera.GlobalBasis.X * screen.X + camera.GlobalBasis.Y * screen.Y) * scale;
+        _editFocus = ToLocal(world);
+    }
+
     public void ExitMirror()
     {
         if (!_mirror) return;
+        _editView = false; _editViewStarted = false;
         _mirror = false;
         _cameraDistance = _beforeMirror.Distance; _targetYaw = _beforeMirror.Yaw; _targetPitch = _beforeMirror.Pitch;
         SetCameraMode(_beforeMirror.Mode);
@@ -653,12 +687,14 @@ public partial class PlayerController : CharacterBody3D
 
     public void ResetCamera() { SetCameraMode(CameraMode.ThirdPerson); _targetPitch = -.15f; _targetYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; }
     /// Shows a new look on our own avatar (it came from the island after a refresh); the camera preferences stay as they are.
-    public void ShowAppearance(AvatarAppearanceData value) => _rig.ApplyAppearance(value);
+    public void ShowAppearance(AvatarAppearanceData value) { _rig.ApplyAppearance(value); var store = GetNodeOrNull<AvatarManager>("/root/AvatarManager")?.Attachments; if (store is { Loaded: true }) _rig.ApplyAttachments(store.Items); } // our own list is the one we just read from the API: it is never older than what the island sent
+    private void OnAttachmentsChanged() => _rig.ApplyAttachments(GetNode<AvatarManager>("/root/AvatarManager").Attachments.Items);
 
     private void OnAvatarLoaded(bool success, string message)
     {
         if (!success) { _status.Text = message; return; }
         var value = GetNode<AvatarManager>("/root/AvatarManager").Current;
         _cameraSensitivity = value.CameraSensitivity; _invertY = value.InvertCameraY; _rig.ApplyAppearance(value);
+        GetNode<AvatarManager>("/root/AvatarManager").Attachments.Refresh();
     }
 }

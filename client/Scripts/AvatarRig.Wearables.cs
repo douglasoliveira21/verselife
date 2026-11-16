@@ -22,7 +22,7 @@ public partial class AvatarRig
 
     private static readonly Dictionary<string, string> ProceduralBones = new()
     {
-        ["hips"] = "Hips", ["spine"] = "Hips/Torso", ["chest"] = "Hips/Torso", ["neck"] = "Hips/Torso/Neck", ["head"] = "Hips/Torso/Neck/Head",
+        ["root"] = "Hips", ["hips"] = "Hips", ["spine"] = "Hips/Torso", ["chest"] = "Hips/Torso", ["neck"] = "Hips/Torso/Neck", ["head"] = "Hips/Torso/Neck/Head",
         ["upper_arm_l"] = "Hips/Torso/LeftUpperArm", ["lower_arm_l"] = "Hips/Torso/LeftUpperArm/LeftLowerArm", ["hand_l"] = "Hips/Torso/LeftUpperArm/LeftLowerArm/LeftHand",
         ["upper_arm_r"] = "Hips/Torso/RightUpperArm", ["lower_arm_r"] = "Hips/Torso/RightUpperArm/RightLowerArm", ["hand_r"] = "Hips/Torso/RightUpperArm/RightLowerArm/RightHand",
         ["upper_leg_l"] = "Hips/LeftUpperLeg", ["lower_leg_l"] = "Hips/LeftUpperLeg/LeftLowerLeg", ["foot_l"] = "Hips/LeftUpperLeg/LeftLowerLeg/LeftFoot",
@@ -32,7 +32,7 @@ public partial class AvatarRig
     private sealed class Follower
     {
         public Node3D Item = null!; public Node3D? Proxy; public Skeleton3D? Skeleton; public int Bone;
-        public Basis RestRot, RigRot, ItemRot; public Vector3 Corr, Offset; public float Scale;
+        public Basis RestRot, RigRot, ItemRot, Frame = Basis.Identity; public Vector3 Corr, Offset, ScaleVec; public float Scale;
     }
 
     private readonly Dictionary<Guid, byte[]> _fetched = [];
@@ -140,23 +140,39 @@ public partial class AvatarRig
         var holder = new Node3D { Name = "Wearable_" + item.Slot }; AddChild(holder); holder.AddChild(scene); _placed.Add(holder);
         var k = VisibleHeight / StandardHeight;
         var follower = new Follower { Item = holder, Offset = Vec(item.Offset), ItemRot = EulerDegrees(item.Rotation), Scale = k * (item.Scale > 0 ? item.Scale : 1f), RigRot = GlobalBasis.Orthonormalized() };
-        var flip = Basis.FromEuler(new Vector3(0, Mathf.Pi, 0));
+        if (BindToBone(follower, bone) is { } problem) { holder.QueueFree(); _placed.Remove(holder); return problem; }
+        _followers.Add(follower); Follow(follower);
+        return null;
+    }
+
+    /// <summary>
+    /// Ties a follower to a standard bone of the body that is shown (the custom skeleton, or the part of the standard body that plays that bone) and records the rest pose it is measured from.
+    /// Null when bound, otherwise why not.
+    /// </summary>
+    private string? BindToBone(Follower follower, string bone)
+    {
+        var k = VisibleHeight / StandardHeight; var flip = Basis.FromEuler(new Vector3(0, Mathf.Pi, 0));
         if (CustomBodyActive && _customSkeleton is { } skeleton)
         {
-            var index = -1; for (var i = 0; i < skeleton.GetBoneCount() && index < 0; i++) if (BoneMapper.Map(skeleton.GetBoneName(i)) == bone) index = i;
-            if (index < 0) { holder.QueueFree(); _placed.Remove(holder); return $"O corpo personalizado não tem o osso “{bone}”."; }
+            var index = BoneIndex(skeleton, bone);
+            if (index < 0) return $"O corpo personalizado não tem o osso “{bone}”.";
             follower.Skeleton = skeleton; follower.Bone = index; follower.RestRot = (skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(index)).Basis.Orthonormalized();
         }
         else
         {
-            if (!ProceduralBones.TryGetValue(bone, out var path) || _visual.GetNodeOrNull<Node3D>(path) is not { } proxy) { holder.QueueFree(); _placed.Remove(holder); return $"O corpo padrão não tem o osso “{bone}”."; }
+            if (!ProceduralBones.TryGetValue(bone, out var path) || _visual.GetNodeOrNull<Node3D>(path) is not { } proxy) return $"O corpo padrão não tem o osso “{bone}”.";
             // the procedural parts are not where the standard bones are (the head node is the middle of the head), so the difference is kept
             var standard = Vec(WearableValidator.ReferencePosition(bone)) * k;
             var target = GlobalPosition + follower.RigRot * flip * standard;
             follower.Proxy = proxy; follower.RestRot = proxy.GlobalBasis.Orthonormalized(); follower.Corr = target - proxy.GlobalPosition;
         }
-        _followers.Add(follower); Follow(follower);
         return null;
+    }
+
+    private static int BoneIndex(Skeleton3D skeleton, string bone)
+    {
+        for (var i = 0; i < skeleton.GetBoneCount(); i++) if (BoneMapper.Map(skeleton.GetBoneName(i)) == bone) return i;
+        return -1;
     }
 
     private void FollowWearables() { foreach (var follower in _followers) if (IsInstanceValid(follower.Item)) Follow(follower); }
@@ -170,7 +186,8 @@ public partial class AvatarRig
         var flip = Basis.FromEuler(new Vector3(0, Mathf.Pi, 0));
         var delta = rot * f.RestRot.Inverse();
         var k = VisibleHeight / StandardHeight;
-        var basis = (delta * f.RigRot * flip * f.ItemRot).Scaled(Vector3.One * f.Scale);
+        f.Frame = delta * f.RigRot * flip;
+        var basis = (delta * f.RigRot * flip * f.ItemRot).Scaled((f.ScaleVec == Vector3.Zero ? Vector3.One : f.ScaleVec) * f.Scale);
         f.Item.GlobalTransform = new Transform3D(basis, origin + delta * (f.Corr + f.RigRot * flip * f.Offset * k));
     }
 

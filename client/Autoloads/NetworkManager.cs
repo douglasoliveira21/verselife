@@ -342,6 +342,20 @@ public partial class NetworkManager : Node
         if (_remote.TryGetValue(peerId, out var remote)) { remote.Rig.ApplyAppearance(data); remote.Name = displayName; EmitSignal(SignalName.AppearanceRefreshed, peerId, displayName); }
     }
 
+    /// While an object worn on the body is being dragged: tells the island where it is now, so the others see it move. Only a preview; the saved placement reaches everybody when it is saved.
+    public void SendAttachmentLive(Guid attachmentId, Scripts.Attachments.Placement placement)
+    {
+        if (!IsAuthenticated) return;
+        _bridge.RpcId(1, NetworkBridge.MethodName.AttachmentLive, attachmentId.ToString(), new float[] { placement.Position.X, placement.Position.Y, placement.Position.Z, placement.Rotation.X, placement.Rotation.Y, placement.Rotation.Z, placement.Scale.X, placement.Scale.Y, placement.Scale.Z });
+    }
+
+    /// Somebody is dragging an object they wear: show it where they have it now (not kept; the saved look replaces it).
+    public void OnAttachmentLive(int peerId, string id, float[] values)
+    {
+        if (values.Length != 9 || !Guid.TryParse(id, out var attachment) || !_remote.TryGetValue(peerId, out var remote)) return;
+        remote.Rig.PreviewRemoteAttachment(attachment, new Vector3(values[0], values[1], values[2]), new Vector3(values[3], values[4], values[5]), new Vector3(values[6], values[7], values[8]));
+    }
+
     public void OnPlayerDespawned(int peerId, bool suspended) { Voice.Forget(peerId); HiddenPeers.Remove(peerId); VoiceChat.MutedPeers.Remove(peerId); if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }
     public void OnChatReceived(int peerId, string displayName, string message, long unixMilliseconds)
     {

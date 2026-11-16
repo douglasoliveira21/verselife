@@ -3,7 +3,7 @@ using LifeVerse.Client.Autoloads;
 
 namespace LifeVerse.Client.Scripts;
 
-public readonly record struct ModelInstance(Node3D Node, Vector3 Size);
+public readonly record struct ModelInstance(Node3D Node, Vector3 Size, Vector3 Real = default);
 
 /// Downloads and prepares the imported 3D models (glTF/GLB) that "mesh" objects show. Each model is fetched once
 /// from the island's asset endpoint, normalised so its longest side is one metre (the object's scale then sets its
@@ -11,7 +11,7 @@ public readonly record struct ModelInstance(Node3D Node, Vector3 Size);
 public partial class ModelCache : Node
 {
     private const int MaxNodes = 2000;
-    private sealed record Entry(Node3D? Prototype, Vector3 Size);
+    private sealed record Entry(Node3D? Prototype, Vector3 Size, Vector3 Real = default);
     private readonly Dictionary<Guid, Entry> _ready = [];
     private readonly Dictionary<Guid, List<Action<ModelInstance?>>> _waiting = [];
 
@@ -66,7 +66,10 @@ public partial class ModelCache : Node
         foreach (var callback in callbacks) callback(Instance(entry));
     }
 
-    private static ModelInstance? Instance(Entry entry) => entry.Prototype is null ? null : new ModelInstance((Node3D)entry.Prototype.Duplicate(), entry.Size);
+    private static ModelInstance? Instance(Entry entry) => entry.Prototype is null ? null : new ModelInstance((Node3D)entry.Prototype.Duplicate(), entry.Size, entry.Real);
+
+    /// The model in a glTF/GLB buffer, centred and normalised to one metre, with the size it really has (null when it cannot be read).
+    public static ModelInstance? ParseInstance(byte[] bytes) { var entry = Prepare(bytes); return entry.Prototype is null ? null : new ModelInstance(entry.Prototype, entry.Size, entry.Real); }
 
     /// Parses a glTF/GLB buffer into a centred, one-metre prototype. Failures yield an entry without a model.
     public static (Node3D? Node, Vector3 Size) Parse(byte[] bytes)
@@ -92,7 +95,7 @@ public partial class ModelCache : Node
         scene.Scale = Vector3.One * factor;
         scene.Position = -(box.Position + box.Size / 2f) * factor;
         wrapper.AddChild(scene);
-        return new Entry(wrapper, box.Size * factor);
+        return new Entry(wrapper, box.Size * factor, box.Size);
     }
 
     private static int Count(Node node) { var total = 1; foreach (var child in node.GetChildren()) total += Count(child); return total; }

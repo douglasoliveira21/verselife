@@ -52,6 +52,8 @@ public sealed partial class AppearanceWindow : Node
 
     /// <summary>The player whose camera is the mirror and whose avatar shows the changes (set by the world screen).</summary>
     public PlayerController? Player { get; set; }
+    /// <summary>The page "Anexos" (tests).</summary>
+    public Attachments.AttachmentsPage? AttachmentsPageNode { get; private set; }
     /// <summary>Tests: answers requests without a network (path after /api/v1/users/me/avatar), instead of the avatar manager's own transport.</summary>
     public Func<Godot.HttpClient.Method, string, string?, (int Status, string Body)>? Transport { get; set; }
 
@@ -243,6 +245,7 @@ public sealed partial class AppearanceWindow : Node
         Call(Godot.HttpClient.Method.Post, $"/looks/{look.Id}/apply", "{}", (status, body) =>
         {
             if (status is < 200 or >= 300) { Say(Problem(status, body)); return; }
+            Manager().Attachments.Refresh(); // the objects of the look are on the body now
             if (Adopt(body)) Say($"Look “{look.Name}” aplicado e salvo." + CharacterCreator.SkippedText(body)); else Say("Resposta inesperada do servidor.");
         });
     }
@@ -289,7 +292,7 @@ public sealed partial class AppearanceWindow : Node
             Act("◀ Girar", UiStyle.ButtonKind.Secondary, () => Player?.TurnMirror(-Mathf.Pi / 4)), Act("Girar ▶", UiStyle.ButtonKind.Secondary, () => Player?.TurnMirror(Mathf.Pi / 4)));
         content.AddChild(camera);
 
-        _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 15 }; foreach (var t in new[] { "Corpo", "Rosto", "Roupas", "Looks" }) _tabs.AddTab(t); content.AddChild(_tabs);
+        _tabs = new UiTabs { EqualWidth = true, Flat = true, FontSize = 15 }; foreach (var t in new[] { "Corpo", "Rosto", "Roupas", "Looks", "Anexos" }) _tabs.AddTab(t); content.AddChild(_tabs);
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(420, 310) }; content.AddChild(stack);
 
         // body
@@ -323,6 +326,8 @@ public sealed partial class AppearanceWindow : Node
         looks.AddChild(Act("Aplicar o look escolhido", UiStyle.ButtonKind.Primary, () => { var p = _looks.GetSelectedItems(); if (p.Length > 0) ApplyLook(p[0]); else Say("Escolha um look na lista."); }));
         _lookName = new LineEdit { PlaceholderText = "Nome do novo look", MaxLength = 40, CustomMinimumSize = new Vector2(0, 34), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; looks.AddChild(Row(_lookName, Act("Salvar como look", UiStyle.ButtonKind.Secondary, SaveAsLook)));
 
+        // attachments: everything worn on the body
+        var attachments = Page(); var attachmentsPage = new Attachments.AttachmentsPage { Name = "AttachmentsPage", World = GetParent(), BeforeEdit = () => Close() }; attachments.AddChild(attachmentsPage); AttachmentsPageNode = attachmentsPage;
         foreach (var page in _pages) { page.SetAnchorsPreset(Control.LayoutPreset.FullRect); stack.AddChild(page); }
         _pages[0].Visible = true;
         _tabs.TabChanged += i => { for (var p = 0; p < _pages.Count; p++) _pages[p].Visible = p == i; };

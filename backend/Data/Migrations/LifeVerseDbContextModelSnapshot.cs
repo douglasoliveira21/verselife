@@ -451,6 +451,109 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("avatar_appearances", "identity");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
+
+                    b.Property<string>("AttachmentPoint")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("attachment_point");
+
+                    b.Property<Guid>("AvatarId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("avatar_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("Equipped")
+                        .HasColumnType("boolean")
+                        .HasColumnName("equipped");
+
+                    b.Property<Guid>("InventoryItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("inventory_item_id");
+
+                    b.Property<double>("PositionX")
+                        .HasColumnType("double precision")
+                        .HasColumnName("position_x");
+
+                    b.Property<double>("PositionY")
+                        .HasColumnType("double precision")
+                        .HasColumnName("position_y");
+
+                    b.Property<double>("PositionZ")
+                        .HasColumnType("double precision")
+                        .HasColumnName("position_z");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("revision");
+
+                    b.Property<double>("RotationX")
+                        .HasColumnType("double precision")
+                        .HasColumnName("rotation_x");
+
+                    b.Property<double>("RotationY")
+                        .HasColumnType("double precision")
+                        .HasColumnName("rotation_y");
+
+                    b.Property<double>("RotationZ")
+                        .HasColumnType("double precision")
+                        .HasColumnName("rotation_z");
+
+                    b.Property<double>("ScaleX")
+                        .HasColumnType("double precision")
+                        .HasColumnName("scale_x");
+
+                    b.Property<double>("ScaleY")
+                        .HasColumnType("double precision")
+                        .HasColumnName("scale_y");
+
+                    b.Property<double>("ScaleZ")
+                        .HasColumnType("double precision")
+                        .HasColumnName("scale_z");
+
+                    b.Property<string>("SettingsJson")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("settings_json");
+
+                    b.Property<int>("SkeletonProfileVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("skeleton_profile_version");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer")
+                        .HasColumnName("sort_order");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InventoryItemId");
+
+                    b.HasIndex("AvatarId", "Equipped");
+
+                    b.HasIndex("AvatarId", "InventoryItemId")
+                        .IsUnique();
+
+                    b.ToTable("avatar_attachments", "identity");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.AvatarLook", b =>
                 {
                     b.Property<Guid>("Id")
@@ -6321,6 +6424,21 @@ namespace LifeVerse.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Avatar");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.AvatarAttachment", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.Avatar", null)
+                        .WithMany()
+                        .HasForeignKey("AvatarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeVerse.Api.Data.InventoryItem", null)
+                        .WithMany()
+                        .HasForeignKey("InventoryItemId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("LifeVerse.Api.Data.AvatarLook", b =>

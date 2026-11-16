@@ -10,6 +10,9 @@ public partial class AvatarManager : Node
     [Signal] public delegate void AvatarLoadedEventHandler(bool success, string message);
     [Signal] public delegate void AvatarSavedEventHandler(bool success, string message);
     public AvatarAppearanceData Current { get; private set; } = CreateDefault();
+    private Scripts.Attachments.AttachmentStore? _attachments;
+    /// What this person wears on the body (objects of the inventory), kept in step with the server.
+    public Scripts.Attachments.AttachmentStore Attachments => _attachments ??= new Scripts.Attachments.AttachmentStore(this);
     private HttpRequest _http = null!;
     private bool _saving;
 

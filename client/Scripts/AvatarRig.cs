@@ -96,6 +96,8 @@ public partial class AvatarRig : Node3D
         RememberBuild(data);
         _bodyShape = body; StartCustomBody(data);
         StartWearables(data);
+        if (data.BodyAttachmentsJson is { } bodyJson) { _attachData = Attachments.AttachmentData.ParseArray(bodyJson); _previews.Clear(); }
+        RebuildAttachments();
         StartAnimations(data);
     }
 

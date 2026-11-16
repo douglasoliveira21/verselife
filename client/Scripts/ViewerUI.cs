@@ -162,6 +162,9 @@ public partial class ViewerUI : CanvasLayer
             });
         }
         if (_world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow") is null) _world.AddChild(new AppearanceWindow { Name = "AppearanceWindow", Player = _player });
+        if (GetNodeOrNull<Attachments.HudAttachmentLayer>("HudAttachments") is null) AddChild(new Attachments.HudAttachmentLayer { Name = "HudAttachments", Cache = _world });
+        if (_world.GetNodeOrNull<Attachments.AttachPointWindow>("AttachPointWindow") is null) _world.AddChild(new Attachments.AttachPointWindow { Name = "AttachPointWindow" });
+        if (_world.GetNodeOrNull<Attachments.AttachmentEditor>("AttachmentEditor") is null) _world.AddChild(new Attachments.AttachmentEditor { Name = "AttachmentEditor", Player = _player, Tell = text => Toast(text) });
         if (_world.GetNodeOrNull<GroupsWindow>("GroupsWindow") is null) _world.AddChild(new GroupsWindow { Name = "GroupsWindow" });
         if (_world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow") is null)
             _world.AddChild(new Groups.GroupProfileWindow { Name = "GroupProfileWindow", Said = text => Toast(text), Visit = JoinIslandById, OpenProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), OpenAdmin = (id, tab) => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OpenAt(id, tab), ManageLand = id => _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OpenAt(id, 4), Changed = () => _ = _world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow")?.LoadAsync(true) });

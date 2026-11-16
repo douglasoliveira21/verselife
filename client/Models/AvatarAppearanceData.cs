@@ -30,6 +30,8 @@ public sealed class AvatarAppearanceData
     [JsonPropertyName("customModelBonesJson")] public string CustomModelBonesJson { get; set; } = "{}";
     /// The custom items worn (what to download, the slot, the kind, the bone and placement of a rigid piece), as the server describes them.
     [JsonPropertyName("customWearablesJson")] public string CustomWearablesJson { get; set; } = "[]";
+    /// The objects of the inventory worn on the body, as the island sends them. Null when this look did not come from an island (then the objects the avatar already wears stay as they are).
+    [JsonPropertyName("bodyAttachmentsJson")] public string? BodyAttachmentsJson { get; set; }
     /// Which animation plays for which state when it is not the default ("Walk": "builtin:happy" or "custom:{file}#{name}"), and the files the custom ones come from.
     [JsonPropertyName("animationOverridesJson")] public string AnimationOverridesJson { get; set; } = "{}";
     [JsonPropertyName("animationFilesJson")] public string AnimationFilesJson { get; set; } = "[]";
@@ -71,7 +73,7 @@ public sealed class AvatarAppearanceData
     {
         Id = Id, DisplayName = DisplayName, BaseModel = BaseModel, SkinColor = SkinColor,
         HairColor = HairColor, HairStyle = HairStyle, EyeColor = EyeColor, BeardStyle = BeardStyle,
-        BodySettingsJson = BodySettingsJson, FaceSettingsJson = FaceSettingsJson, OutfitsJson = OutfitsJson, AttachmentsJson = AttachmentsJson,
+        BodyAttachmentsJson = BodyAttachmentsJson, BodySettingsJson = BodySettingsJson, FaceSettingsJson = FaceSettingsJson, OutfitsJson = OutfitsJson, AttachmentsJson = AttachmentsJson,
         CameraSensitivity = CameraSensitivity, InvertCameraY = InvertCameraY, CustomModelId = CustomModelId, CustomModelHash = CustomModelHash, CustomModelScale = CustomModelScale, CustomModelTriangles = CustomModelTriangles, CustomModelBonesJson = CustomModelBonesJson, CustomWearablesJson = CustomWearablesJson, AnimationOverridesJson = AnimationOverridesJson, AnimationFilesJson = AnimationFilesJson,
         EquippedItems = EquippedItems.Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.ItemKey, TintColor = x.TintColor }).ToList()
     };

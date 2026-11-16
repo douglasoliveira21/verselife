@@ -125,6 +125,39 @@ public sealed class AvatarWearable
     public DateTimeOffset? DeletedAt { get; set; }
 }
 
+/// <summary>
+/// An object from the inventory attached to the avatar at a point of the body, with where it sits relative to that point. The row stays when the object is taken off (Equipped false) so putting it back
+/// brings it back to where the person had set it. Rotation is kept as Euler angles in degrees (X, Y, Z) in double precision.
+/// </summary>
+public sealed class AvatarAttachment
+{
+    public Guid Id { get; set; }
+    public Guid AvatarId { get; set; }
+    public Guid InventoryItemId { get; set; }
+    public Guid AssetId { get; set; }
+    /// <summary>The stable key of the point (see LifeVerse.Shared.Avatar.AttachmentPoints).</summary>
+    public required string AttachmentPoint { get; set; }
+    public double PositionX { get; set; }
+    public double PositionY { get; set; }
+    public double PositionZ { get; set; }
+    public double RotationX { get; set; }
+    public double RotationY { get; set; }
+    public double RotationZ { get; set; }
+    public double ScaleX { get; set; } = 1;
+    public double ScaleY { get; set; } = 1;
+    public double ScaleZ { get; set; } = 1;
+    public bool Equipped { get; set; }
+    /// <summary>The order of the objects that share a point.</summary>
+    public int SortOrder { get; set; }
+    /// <summary>Extra settings of this attachment (free for later stages: visibility, physics…).</summary>
+    public string SettingsJson { get; set; } = "{}";
+    public int SkeletonProfileVersion { get; set; } = 1;
+    /// <summary>Goes up with every change, so clients and other servers can tell which copy is newer.</summary>
+    public long Revision { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 /// <summary>A file of animations a person uploaded (checked, stored by hash). Each animation in it can replace the default of a state.</summary>
 public sealed class AvatarAnimationFile
 {

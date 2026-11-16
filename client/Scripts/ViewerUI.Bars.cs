@@ -354,6 +354,8 @@ public partial class ViewerUI
             ParcelOwner = point => Toast(_world.GetNodeOrNull<LandManager>("LandManager")?.ParcelAt(point.X, point.Z) is { } owned ? (owned.State == "public" ? "Terreno público da ilha." : $"Terreno «{owned.Name}» de {owned.OwnerName}.") : "Terreno sem dono."),
             TakeObject = (id, name, remove) => BuildHost.TakeObject(_world, id, name, remove),
             InventoryAction = action => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.RunMenuAction(action),
+            IsAttached = item => GetNodeOrNull<AvatarManager>("/root/AvatarManager")?.Attachments.IsWorn(item) == true,
+            AttachmentAction = (action, target) => OnAttachmentAction(action, target),
             CloseHud = script => _world.GetNodeOrNull<ScriptHudLayer>("ScriptHudLayer")?.CloseFromMenu(script)
         };
         _context = new ContextInteractionManager { Name = "ContextInteraction" }; AddChild(_context);
@@ -368,7 +370,7 @@ public partial class ViewerUI
     }
 
 
-    private bool ToolsOwnTheMouse() => BuildHost.OwnsTheMouse(_world) || (_world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.Active ?? false);
+    private bool ToolsOwnTheMouse() => (_world.GetNodeOrNull<Attachments.AttachmentEditor>("AttachmentEditor")?.IsOpen ?? false) || BuildHost.OwnsTheMouse(_world) || (_world.GetNodeOrNull<TerrainEditor>("TerrainEditor")?.Active ?? false);
 
     private static string LandDemo()
     {

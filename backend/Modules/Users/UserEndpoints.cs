@@ -20,6 +20,7 @@ public static class UserEndpoints
         group.MapAccountPreferenceEndpoints();
         group.MapAvatarModelEndpoints();
         group.MapAvatarWearableEndpoints();
+        group.MapAvatarAttachmentEndpoints();
         group.MapAvatarAnimationEndpoints();
         endpoints.MapAnimationDownload();
         endpoints.MapWearableDownload();

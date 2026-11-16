@@ -85,6 +85,8 @@ public sealed class AvatarModelReport
     public float LegRatio { get; set; }
     public float ArmRatio { get; set; }
     public float ShoulderRatio { get; set; }
+    /// <summary>Extra skeleton profiles the model offers for attachment points (see AttachmentPoints.Profiles): a tail, wings, fingers. Found from the names of the bones.</summary>
+    public List<string> Profiles { get; } = [];
 
     public void Error(string code, string message) => Issues.Add(new ModelIssue(code, message, true));
     public void Warn(string code, string message) => Issues.Add(new ModelIssue(code, message, false));
@@ -92,7 +94,7 @@ public sealed class AvatarModelReport
     public string ToJson() => JsonSerializer.Serialize(new
     {
         ok = Ok, sizeBytes = SizeBytes, joints = Joints, vertices = Vertices, triangles = Triangles, materials = Materials, images = Images,
-        height = Height, scaleToStandard = ScaleToStandard, legRatio = LegRatio, armRatio = ArmRatio, shoulderRatio = ShoulderRatio, boneMap = BoneMap,
+        height = Height, scaleToStandard = ScaleToStandard, legRatio = LegRatio, armRatio = ArmRatio, shoulderRatio = ShoulderRatio, boneMap = BoneMap, profiles = Profiles,
         issues = Issues.Select(i => new { code = i.Code, message = i.Message, error = i.IsError })
     }, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 }
@@ -143,6 +145,7 @@ public static class AvatarModelValidator
         var skin = gltf.At("skins", skinsUsed[0])!.Value;
         var joints = skin.TryGetProperty("joints", out var jointList) && jointList.ValueKind == JsonValueKind.Array ? jointList.EnumerateArray().Select(j => j.GetInt32()).ToArray() : [];
         report.Joints = joints.Length;
+        report.Profiles.AddRange(AttachmentProfiles.Detect(joints.Select(j => gltf.At("nodes", j)!.Value.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty)));
         if (joints.Length == 0) { report.Error("no_joints", "The skeleton has no bones."); return report; }
         if (joints.Length > MaxJoints) report.Error("too_many_joints", $"The skeleton has {joints.Length} bones; the limit is {MaxJoints}.");
         if (joints.Any(j => j < 0 || j >= parents.Length)) { report.Error("bad_hierarchy", "A bone points to a node that does not exist."); return report; }
@@ -234,5 +237,31 @@ public static class AvatarModelValidator
         }
         else report.Error("no_bounds", "The size of the model could not be measured.");
         return report;
+    }
+}
+
+/// <summary>Which extra skeleton profiles (tail, wings, fingers) a skeleton offers, from the names of its bones. Only what is really there unlocks attachment points.</summary>
+public static class AttachmentProfiles
+{
+    private static readonly string[] Finger = ["thumb", "index", "middle", "ring", "pinky", "little"];
+
+    public static List<string> Detect(IEnumerable<string> boneNames)
+    {
+        var names = boneNames.Select(n => n.ToLowerInvariant()).ToList(); var found = new List<string>();
+        if (names.Any(n => n.Contains("tail"))) found.Add(AttachmentPoints.Tail);
+        if (names.Count(n => n.Contains("wing")) >= 2) found.Add(AttachmentPoints.Wings);
+        if (names.Count(n => Finger.Any(f => n.Contains(f))) >= 5) found.Add(AttachmentPoints.Fingers);
+        return found;
+    }
+
+    /// <summary>The profiles a stored report of a model lists (none when it has none, or is not a report).</summary>
+    public static List<string> FromReport(string? reportJson)
+    {
+        try
+        {
+            using var d = System.Text.Json.JsonDocument.Parse(string.IsNullOrEmpty(reportJson) ? "{}" : reportJson);
+            return d.RootElement.TryGetProperty("profiles", out var p) && p.ValueKind == System.Text.Json.JsonValueKind.Array ? [.. p.EnumerateArray().Select(x => x.GetString() ?? string.Empty).Where(x => AttachmentPoints.Profiles.Contains(x))] : [];
+        }
+        catch (System.Text.Json.JsonException) { return []; }
     }
 }

@@ -213,6 +213,7 @@ public static class AvatarAppearanceJson
         return JsonSerializer.Serialize(new
         {
             customWearablesJson = await AvatarWearables.WornInfoAsync(db, avatar, ct),
+            bodyAttachmentsJson = JsonSerializer.Serialize(await AvatarAttachments.WornAsync(db, avatar.Id, ct)),
             animationOverridesJson = avatar.Appearance?.AnimationOverridesJson ?? "{}",
             animationFilesJson = await AvatarAnimations.FilesInfoAsync(db, avatar, ct),
             customModelId = customModel?.Id, customModelHash = customModel?.ContentHash, customModelTriangles = customModel?.Triangles ?? 0, customModelScale = customModel?.ScaleToStandard ?? 1f, customModelBonesJson = customModel?.BoneMapJson ?? "{}",
