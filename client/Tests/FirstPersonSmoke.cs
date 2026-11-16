@@ -26,38 +26,43 @@ public partial class FirstPersonSmoke : Node
                 if (custom) rig.ApplyAppearance(new LifeVerse.Client.Models.AvatarAppearanceData { DisplayName = "Corpo", CustomModelId = modelId, CustomModelHash = HashOf(body), CustomModelScale = 1f });
                 await Frames(40); var name = custom ? "custom body" : "standard body";
                 Require(rig.CustomBodyActive == custom, $"the {name} is the one shown");
-                var hat = Data("head_top", Guid.NewGuid()); var ring = Data("hand_r", Guid.NewGuid()); var collar = Data("neck", Guid.NewGuid()); var belt = Data("pelvis", Guid.NewGuid()); var badge = Data("chest", Guid.NewGuid());
-                rig.ApplyAttachments([hat, ring, collar, belt, badge]); await Frames(8);
-                Require(rig.AttachmentsShown == 5 && new[] { hat, ring, collar, belt, badge }.All(a => rig.AttachmentShownForTesting(a.Id)), $"{name}: everything worn is shown in third person");
-                if (custom) Require(rig.EyeHeight is > 1.2f and < 2.3f, $"{name}: the camera has a place at the eyes: {rig.EyeHeight}"); else Require(rig.EyeHeight is null, "the standard body keeps its camera");
-                var handBefore = rig.CustomBonePositionForTesting("hand_l"); var elbowBefore = rig.CustomBonePositionForTesting("lower_arm_l"); var kneeBefore = rig.CustomBonePositionForTesting("lower_leg_l"); var thighBefore = rig.CustomBoneSizeForTesting("upper_leg_l");
+                var hat = Data("head_top", Guid.NewGuid()); var ring = Data("hand_r", Guid.NewGuid()); var collar = Data("neck", Guid.NewGuid()); var belt = Data("pelvis", Guid.NewGuid()); var badge = Data("chest", Guid.NewGuid()); var sleeve = Data("lower_arm_l", Guid.NewGuid());
+                rig.ApplyAttachments([hat, ring, collar, belt, badge, sleeve]); await Frames(8);
+                Require(rig.AttachmentsShown == 6 && new[] { hat, ring, collar, belt, badge, sleeve }.All(a => rig.AttachmentShownForTesting(a.Id)), $"{name}: everything worn is shown in third person");
+                var eyesBefore = rig.EyeWorldPosition(Vector3.Forward); Require(eyesBefore is { } e0 && e0.Y > 1.3f && e0.Y < 2.2f, $"{name}: the eyes have a place at about the height of the head: {eyesBefore}");
+                Require(rig.EyeHeight is > 1.3f and < 2.2f, $"{name}: and a height: {rig.EyeHeight}");
+                var parts = custom ? new[] { "hips", "spine", "chest", "upper_arm_l", "lower_arm_l", "hand_l", "hand_r", "upper_leg_l", "lower_leg_r", "foot_l", "foot_r" } : [];
+                var before = parts.ToDictionary(p => p, p => rig.CustomBonePositionForTesting(p)!.Value);
 
                 rig.SetFirstPersonView(true); await Frames(8);
                 Require(rig.Visible, $"{name}: the avatar is still drawn in first person");
                 if (custom)
                 {
-                    foreach (var gone in new[] { "head", "neck", "chest", "spine", "upper_arm_l", "upper_arm_r" }) Require(rig.CustomBoneSizeForTesting(gone) < .01f, $"{name}: the {gone} is not drawn");
-                    foreach (var kept in new[] { "hips", "upper_leg_l", "lower_leg_r", "lower_arm_l", "hand_l", "hand_r" }) Require(rig.CustomBoneSizeForTesting(kept) > .3f, $"{name}: the {kept} is drawn");
-                    Require(rig.CustomBonePositionForTesting("hand_l")!.Value.DistanceTo(handBefore!.Value) < .03f && rig.CustomBonePositionForTesting("lower_arm_l")!.Value.DistanceTo(elbowBefore!.Value) < .03f, $"{name}: the forearm and the hand stay exactly where they are");
-                    Require(rig.CustomBonePositionForTesting("lower_leg_l")!.Value.DistanceTo(kneeBefore!.Value) < .03f, $"{name}: and so do the legs");
+                    foreach (var gone in new[] { "head", "neck" }) Require(rig.CustomBoneSizeForTesting(gone) < .01f, $"{name}: the {gone} is not drawn");
+                    foreach (var kept in parts) Require(rig.CustomBoneSizeForTesting(kept) > .3f, $"{name}: the {kept} is drawn (size {rig.CustomBoneSizeForTesting(kept)})");
+                    foreach (var kept in parts) Require(rig.CustomBonePositionForTesting(kept)!.Value.DistanceTo(before[kept]) < .04f, $"{name}: the {kept} stays where it is");
                 }
                 else
                 {
-                    Require(!rig.StandardHeadShownForTesting && !rig.StandardChestShownForTesting && !rig.StandardPartShownForTesting("Hips/Torso/LeftUpperArm"), $"{name}: the head, the chest and the upper arms are not drawn");
-                    Require(rig.StandardPartShownForTesting("Hips/Torso/LeftUpperArm/LeftLowerArm") && rig.StandardPartShownForTesting("Hips/Torso/RightUpperArm/RightLowerArm") && rig.StandardPartShownForTesting("Hips") && rig.StandardPartShownForTesting("Hips/LeftUpperLeg"), $"{name}: the forearms, the hips and the legs are");
+                    Require(!rig.StandardPartShownForTesting("Hips/Torso/Neck") && !rig.StandardPartShownForTesting("Hips/Torso/Neck/Head"), $"{name}: the neck and the head are not drawn");
+                    foreach (var kept in new[] { "Hips", "Hips/Torso", "Hips/Torso/LeftUpperArm", "Hips/Torso/LeftUpperArm/LeftLowerArm", "Hips/Torso/RightUpperArm/RightLowerArm", "Hips/LeftUpperLeg", "Hips/LeftUpperLeg/LeftLowerLeg", "Hips/RightUpperLeg/RightLowerLeg" }) Require(rig.StandardPartShownForTesting(kept), $"{name}: {kept} is drawn");
                 }
-                Require(rig.AttachmentShownForTesting(ring.Id) && rig.AttachmentShownForTesting(belt.Id), $"{name}: what is worn on the hand and on the waist is seen");
-                Require(!rig.AttachmentShownForTesting(hat.Id) && !rig.AttachmentShownForTesting(collar.Id) && !rig.AttachmentShownForTesting(badge.Id), $"{name}: what is worn on the head, the neck and the chest is out of the way");
+                Require(new[] { ring, belt, badge, sleeve }.All(a => rig.AttachmentShownForTesting(a.Id)), $"{name}: what is worn on the hand, the waist, the chest and the arm is seen");
+                Require(!rig.AttachmentShownForTesting(hat.Id) && !rig.AttachmentShownForTesting(collar.Id), $"{name}: what is worn on the head and the neck is out of the way");
+                Require(rig.EyeWorldPosition(Vector3.Forward)!.Value.DistanceTo(eyesBefore!.Value) < .05f, $"{name}: the eyes are where they were");
+
+                var forwardEyes = rig.EyeWorldPosition(Vector3.Forward)!.Value; var backEyes = rig.EyeWorldPosition(Vector3.Back)!.Value;
+                Require(forwardEyes.Z < backEyes.Z - .05f, $"{name}: the camera sits in front of the neck, whichever way the avatar faces");
 
                 var later = Data("thigh_l", Guid.NewGuid()); var onHead = Data("skull", Guid.NewGuid());
                 rig.ApplyAttachments([hat, ring, collar, later, onHead]); await Frames(8);
                 Require(rig.AttachmentShownForTesting(later.Id) && !rig.AttachmentShownForTesting(onHead.Id), $"{name}: what is put on while in first person follows the same rule");
                 rig.ApplyAppearance(new LifeVerse.Client.Models.AvatarAppearanceData { DisplayName = custom ? "Corpo" : "Teste", CustomModelId = custom ? modelId : null, CustomModelHash = custom ? HashOf(body) : null, CustomModelScale = 1f }); await Frames(40);
-                if (custom) Require(rig.CustomBoneSizeForTesting("head") < .01f && rig.CustomBoneSizeForTesting("hand_l") > .3f, $"{name}: a look applied again keeps the same rule"); else Require(!rig.StandardHeadShownForTesting && !rig.StandardChestShownForTesting, $"{name}: a look applied again keeps the same rule");
+                if (custom) Require(rig.CustomBoneSizeForTesting("head") < .01f && rig.CustomBoneSizeForTesting("hand_l") > .3f, $"{name}: a look applied again keeps the same rule"); else Require(!rig.StandardPartShownForTesting("Hips/Torso/Neck/Head") && rig.StandardPartShownForTesting("Hips/Torso"), $"{name}: a look applied again keeps the same rule");
 
                 rig.SetFirstPersonView(false); await Frames(8);
-                if (custom) Require(rig.CustomBoneSizeForTesting("head") > .3f && rig.CustomBoneSizeForTesting("spine") > .3f && rig.CustomBoneSizeForTesting("upper_arm_l") > .3f, $"{name}: back to third person the whole body returns");
-                else Require(rig.StandardHeadShownForTesting && rig.StandardChestShownForTesting && rig.StandardPartShownForTesting("Hips/Torso/LeftUpperArm"), $"{name}: back to third person the whole body returns");
+                if (custom) Require(rig.CustomBoneSizeForTesting("head") > .3f && rig.CustomBoneSizeForTesting("neck") > .3f, $"{name}: back to third person the head returns");
+                else Require(rig.StandardPartShownForTesting("Hips/Torso/Neck/Head"), $"{name}: back to third person the head returns");
                 Require(rig.AttachmentShownForTesting(hat.Id) && rig.AttachmentShownForTesting(collar.Id), $"{name}: and so do the objects of the head");
                 rig.QueueFree(); await Frames(2);
             }

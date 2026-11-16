@@ -227,7 +227,7 @@ public partial class AvatarRig
         }
         Array.Clear(_globalDone);
         for (var bone = 0; bone < _restGlobal.Length; bone++) GlobalOf(skeleton, bone, delta);
-        if (FirstPersonView) CollapseUpperBody(skeleton);
+        if (FirstPersonView) CollapseHead(skeleton);
     }
 
     private Quaternion GlobalOf(Skeleton3D skeleton, int bone, Dictionary<int, Quaternion> delta)

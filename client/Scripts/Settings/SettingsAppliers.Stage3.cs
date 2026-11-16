@@ -49,6 +49,7 @@ public static partial class SettingsAppliers
 
         // camera
         foreach (var id in new[] { "camera.fov", "camera.default_distance", "camera.height", "camera.shoulder", "camera.smoothing", "camera.collision" }) store.RegisterApplier(id, _ => ApplyCamera(store));
+        store.RegisterApplier("camera.fp_fov", v => Player?.SetFirstPersonFov((int)v));
         store.RegisterApplier("camera.zoom_step", v => PlayerController.ZoomStep = (float)v);
         store.RegisterApplier("camera.default_mode", v => Player?.SetCameraMode((string)v == "first" ? "FirstPerson" : "ThirdPerson"));
     }

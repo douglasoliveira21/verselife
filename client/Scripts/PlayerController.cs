@@ -79,7 +79,7 @@ public partial class PlayerController : CharacterBody3D
         _cameraPivot = GetNode<Node3D>("CameraPivot");
         _springArm = GetNode<SpringArm3D>("CameraPivot/SpringArm3D");
         _camera = GetNode<Camera3D>("CameraPivot/SpringArm3D/Camera3D");
-        AddToGroup("lifeverse_player"); _pivotBaseY = _cameraPivot.Position.Y;
+        AddToGroup("lifeverse_player"); _pivotBaseY = _cameraPivot.Position.Y; _thirdPersonFov = _camera.Fov;
         _targetYaw = Rotation.Y; _cameraYaw = Rotation.Y; _targetBodyYaw = Rotation.Y; _targetPitch = _cameraPivot.Rotation.X;
         _contextMenu = GetNode<Control>("HUD/ContextMenu");
         _status = GetNode<Label>("HUD/Status");
@@ -117,13 +117,14 @@ public partial class PlayerController : CharacterBody3D
         _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
-        var eyes = _firstPerson && !_oceanSwimming && _rig.EyeHeight is { } eyeHeight ? Mathf.Clamp(eyeHeight, .5f, 4f) : 1.55f; // in first person the camera is where the eyes of the body are
-        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : eyes) + _cameraHeightOffset;
+        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : 1.55f) + _cameraHeightOffset;
+        // in first person the camera is at the eyes of the body (its own head, wherever the animation takes it), a little in front of the neck, so it never sees the inside of the head and never cuts the chest
+        Vector3? eyes = _firstPerson && !_oceanSwimming && !_mirror && !_editView && !_freeView && _rig.EyeWorldPosition(-GlobalBasis.Z) is { } world ? ToLocal(world) : null;
         if (_detached) { if (!Scripts.Camera.CameraSettings.Current.AllowDetached) ExitDetached(); else { UpdateDetached((float)delta); return; } }
         if (_focusNode is not null) { if (IsInstanceValid(_focusNode) && _focusNode.IsInsideTree()) _editFocus = ToLocal(_focusNode.ToGlobal(_focusOffset)); else _focusNode = null; }
-        _cameraPivot.Position = _editView || _freeView ? _cameraPivot.Position.Lerp(_editFocus, weight * (_freeView ? 1f : .6f)) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
+        _cameraPivot.Position = _editView || _freeView ? _cameraPivot.Position.Lerp(_editFocus, weight * (_freeView ? 1f : .6f)) : eyes is { } at ? _cameraPivot.Position.Lerp(at + Vector3.Up * _cameraHeightOffset, Mathf.Min(1f, weight * 2f)) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
         // the distance glides too: a notch of the wheel or a drag never jumps
-        _springArm.SpringLength = LifeVerse.Shared.Camera.CameraZoomController.Glide(_springArm.SpringLength, _firstPerson ? .05f : _cameraDistance, (float)delta, Scripts.Camera.CameraSettings.Current.Smoothing);
+        _springArm.SpringLength = LifeVerse.Shared.Camera.CameraZoomController.Glide(_springArm.SpringLength, _firstPerson ? FirstPersonArm : _cameraDistance, (float)delta, Scripts.Camera.CameraSettings.Current.Smoothing);
     }
 
     public override void _UnhandledInput(InputEvent input)
@@ -158,7 +159,7 @@ public partial class PlayerController : CharacterBody3D
             var sensitivity = _cameraSensitivity * SensitivityScale;
             _targetYaw -= motion.Relative.X * sensitivity;
             var direction = _invertY ^ InvertYExtra ? 1f : -1f;
-            _targetPitch = Mathf.Clamp(_targetPitch + motion.Relative.Y * sensitivity * direction, -1.25f, .85f);
+            _targetPitch = _firstPerson ? Mathf.Clamp(_targetPitch + motion.Relative.Y * sensitivity * direction, FirstPersonPitchDown, FirstPersonPitchUp) : Mathf.Clamp(_targetPitch + motion.Relative.Y * sensitivity * direction, -1.25f, .85f);
             if (_firstPerson) _targetBodyYaw = _targetYaw;
         }
         if (input is InputEventMouseButton button)
@@ -561,7 +562,8 @@ public partial class PlayerController : CharacterBody3D
     private void SetCameraMode(CameraMode mode)
     {
         _cameraMode = mode; _firstPerson = mode == CameraMode.FirstPerson;
-        _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance;
+        _springArm.SpringLength = _firstPerson ? FirstPersonArm : _cameraDistance;
+        _camera.Fov = _firstPerson ? _firstPersonFov : _thirdPersonFov;
         _camera.Near = _firstPerson ? FirstPersonNear : NormalNear;   // from inside the head, whatever is closer than this is not drawn: the head, its hair, glasses and hats
         _rig.Visible = !_avatarHidden; _rig.SetFirstPersonView(_firstPerson);
         if (_firstPerson)
@@ -587,7 +589,15 @@ public partial class PlayerController : CharacterBody3D
     /// <summary>How far one notch of the mouse wheel moves the camera, in meters.</summary>
     public static float ZoomStep { get; set; } = .5f;
     private float _pivotBaseY, _cameraHeightOffset;
-    private const float NormalNear = .05f, FirstPersonNear = .17f;
+    private const float NormalNear = .05f, FirstPersonNear = .06f, FirstPersonArm = .02f;
+    /// <summary>How far the person can look down (at their own feet) and up in first person.</summary>
+    public const float FirstPersonPitchDown = -1.5f, FirstPersonPitchUp = 1.35f;
+    public const float FirstPersonFovMin = 60f, FirstPersonFovMax = 100f, FirstPersonFovDefault = 75f;
+    private float _firstPersonFov = FirstPersonFovDefault, _thirdPersonFov = 75f;
+    public float FirstPersonFov => _firstPersonFov;
+
+    /// <summary>The field of view of first person (60 to 100 degrees).</summary>
+    public void SetFirstPersonFov(float fov) { _firstPersonFov = Mathf.Clamp(fov, FirstPersonFovMin, FirstPersonFovMax); if (_firstPerson) _camera.Fov = _firstPersonFov; }
     public string CameraModeName => _cameraMode.ToString();
     public float FieldOfView => _camera.Fov;
     public float PivotOffset => _cameraHeightOffset;
@@ -597,7 +607,7 @@ public partial class PlayerController : CharacterBody3D
     /// <summary>The camera as the person likes it: field of view, how far behind, how high, a little to one side, how soon it follows a turn, whether walls stop it. Not while the mirror is in use.</summary>
     public void ApplyCameraSettings(float fov, float distance, float height, float shoulder, float follow, bool collision)
     {
-        _camera.Fov = Mathf.Clamp(fov, 40f, 120f);
+        _thirdPersonFov = Mathf.Clamp(fov, 40f, 120f); if (!_firstPerson) _camera.Fov = _thirdPersonFov;
         _cameraHeightOffset = Mathf.Clamp(height, -1f, 1.5f);      // the pivot follows it smoothly (see _Process)
         _camera.HOffset = Mathf.Clamp(shoulder, -2f, 2f);
         CameraFollowRate = Mathf.Clamp(follow, .5f, 12f);

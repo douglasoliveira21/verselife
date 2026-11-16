@@ -4,19 +4,22 @@ using LifeVerse.Shared.Avatar;
 namespace LifeVerse.Client.Scripts;
 
 /// <summary>
-/// First person: the camera sits where the head is, so the person sees only their own body from the waist down and the arms from the elbows to the hands (what is worn on the legs and the hands, and its effects,
-/// included). The head, the chest and the upper arms are not drawn: they would be in the way of the camera.
+/// First person, "true first person": the camera is at the eyes of the avatar's own head and the whole body is drawn, so looking down shows chest, belly, arms and hands, legs, knees and feet with the clothes and the
+/// objects worn. Only the head (and the neck that carries it, and what is worn there) is left out of what the owner sees; everybody else still sees it, because this only changes how this one avatar is drawn for its own camera.
 /// </summary>
 public sealed partial class AvatarRig
 {
     /// <summary>True while the camera of the person who owns this avatar is inside its head.</summary>
     public bool FirstPersonView { get; private set; }
 
-    /// <summary>Bones whose worn objects are left out of the view (everything above the waist except the forearms and hands).</summary>
-    private static bool HiddenInFirstPerson(string bone) => bone is "head" or "neck" or "chest" or "spine" or "upper_arm_l" or "upper_arm_r";
+    /// <summary>Bones whose worn objects are left out of the view (they would fill the screen from inside the head).</summary>
+    private static bool HiddenInFirstPerson(string bone) => bone is "head" or "neck";
 
-    /// <summary>The part of a bone that is left out: a bone cannot be switched off, so it is shrunk to a speck where it stands (not exactly nothing: what follows it is measured from its pose).</summary>
+    /// <summary>A bone cannot be switched off, so the head is shrunk to a speck where it stands (not exactly nothing: what follows it is measured from its pose).</summary>
     private const float HiddenBoneScale = .001f;
+
+    /// <summary>Where the eyes are relative to the head bone (the base of the head), for a body that is as tall as the standard one: up and forward, in metres.</summary>
+    public const float EyesAboveHeadBone = .10f, EyesForwardOfHeadBone = .09f;
 
     public void SetFirstPersonView(bool on)
     {
@@ -27,82 +30,81 @@ public sealed partial class AvatarRig
     private void ApplyFirstPersonView()
     {
         ApplyStandardFirstPerson();
-        if (FirstPersonView) PlanFirstPersonBones(); else RestoreFirstPersonBones(clear: true);
+        if (FirstPersonView) PlanFirstPersonBones(); else RestoreFirstPersonBones();
         RefreshFirstPersonHolders();
     }
 
-    // ---- the standard body: its parts are plain nodes -----------------------------------------------------------------------------------
+    // ---- where the camera goes -----------------------------------------------------------------------------------------------------------
 
-    private static MeshInstance3D? OwnMesh(Node3D? part) => part?.GetChildren().OfType<MeshInstance3D>().FirstOrDefault();
+    /// <summary>
+    /// The point of the world where the eyes are: at the head of the body as it is posed right now (so crouching, sitting, leaning and the bob of a step carry the camera), a little in front of the neck.
+    /// <paramref name="forward"/> is where the avatar faces. Null when there is no head to follow.
+    /// </summary>
+    public Vector3? EyeWorldPosition(Vector3 forward)
+    {
+        forward = new Vector3(forward.X, 0, forward.Z); forward = forward.LengthSquared() < 1e-6f ? Vector3.Forward : forward.Normalized();
+        if (CustomBodyActive && _customSkeleton is { } skeleton && IsInstanceValid(skeleton) && _standardBones.TryGetValue("head", out var headBone))
+        {
+            var head = skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(headBone).Origin;
+            var k = Mathf.Clamp((head.Y - GlobalPosition.Y) / 1.55f, .5f, 2f);          // taller or shorter bodies carry their eyes proportionally
+            return head + Vector3.Up * (EyesAboveHeadBone * k) + forward * (EyesForwardOfHeadBone * k);
+        }
+        if (_visual?.GetNodeOrNull<Node3D>("Hips/Torso/Neck/Head") is { } sphere) return sphere.GlobalPosition + Vector3.Up * .03f + forward * .12f;   // the middle of the standard head; the face is in front of it
+        return null;
+    }
+
+    /// <summary>The eyes' height above the feet (null with no head).</summary>
+    public float? EyeHeight => EyeWorldPosition(Vector3.Forward) is { } eyes ? eyes.Y - GlobalPosition.Y : null;
+
+    // ---- the standard body: its parts are plain nodes -----------------------------------------------------------------------------------
 
     private void ApplyStandardFirstPerson()
     {
-        var hide = FirstPersonView;
-        if (_visual?.GetNodeOrNull<Node3D>("Hips/Torso") is not { } torso) return;
-        if (OwnMesh(torso) is { } chest) chest.Visible = !hide;                       // the chest (its own box; the arms and the neck are other nodes)
-        if (torso.GetNodeOrNull<Node3D>("Neck") is { } neck) neck.Visible = !hide;    // the neck, the head and all it carries
-        foreach (var arm in new[] { "LeftUpperArm", "RightUpperArm" }) if (OwnMesh(torso.GetNodeOrNull<Node3D>(arm)) is { } upper) upper.Visible = !hide;   // the upper arm; the forearm hangs from it as another node
+        if (_visual?.GetNodeOrNull<Node3D>("Hips/Torso/Neck") is { } neck) neck.Visible = !FirstPersonView;    // the neck, the head and all it carries
     }
 
     // ---- a custom body: bones ----------------------------------------------------------------------------------------------------------
 
     private Skeleton3D? _fpSkeleton;
-    private int[] _fpHidden = [], _fpShown = [], _fpOrder = [];
+    private int[] _fpHidden = [];
     private readonly Dictionary<int, (Vector3 Position, Vector3 Scale)> _fpSaved = [];
 
-    /// <summary>Which bones go and which stay: the spine and everything above it go, except the forearms and what hangs from them.</summary>
+    /// <summary>Which bones go: the neck and everything under it (head, eyes, jaw, hair).</summary>
     private void PlanFirstPersonBones()
     {
-        _fpSaved.Clear(); _fpHidden = []; _fpShown = []; _fpOrder = []; _fpSkeleton = null;
+        _fpSaved.Clear(); _fpHidden = []; _fpSkeleton = null;
         if (_customSkeleton is not { } skeleton || !IsInstanceValid(skeleton)) return;
-        if (!_standardBones.TryGetValue("spine", out var spine)) { HideCustomHead(); return; }      // no spine to count from: only the head can be told apart
-        var forearms = new[] { "lower_arm_l", "lower_arm_r" }.Where(_standardBones.ContainsKey).Select(n => _standardBones[n]).ToArray();
+        if (!_standardBones.TryGetValue("neck", out var top) && !_standardBones.TryGetValue("head", out top)) return;
         var hidden = new List<int>();
-        void Walk(int bone) { if (forearms.Contains(bone)) return; hidden.Add(bone); foreach (var child in skeleton.GetBoneChildren(bone)) Walk(child); }
-        Walk(spine);
-        _fpSkeleton = skeleton; _fpHidden = [.. hidden]; _fpShown = forearms;
+        void Walk(int bone) { hidden.Add(bone); foreach (var child in skeleton.GetBoneChildren(bone)) Walk(child); }
+        Walk(top);
         int Depth(int bone) { var d = 0; for (var p = skeleton.GetBoneParent(bone); p >= 0; p = skeleton.GetBoneParent(p)) d++; return d; }
-        _fpOrder = [.. _fpHidden.Concat(_fpShown).OrderBy(Depth)];                              // parents first
-        foreach (var bone in _fpOrder) _fpSaved[bone] = (skeleton.GetBonePosePosition(bone), skeleton.GetBonePoseScale(bone));
+        _fpSkeleton = skeleton; _fpHidden = [.. hidden.OrderBy(Depth)];                            // parents first
+        foreach (var bone in _fpHidden) _fpSaved[bone] = (skeleton.GetBonePosePosition(bone), skeleton.GetBonePoseScale(bone));
     }
 
     /// <summary>Puts the pose of the bones that were shrunk back as it was (each frame before the animation, and when the person steps out of first person).</summary>
-    private void RestoreFirstPersonBones(bool clear = false)
+    private void RestoreFirstPersonBones()
     {
         if (_fpSkeleton is { } skeleton && IsInstanceValid(skeleton))
             foreach (var (bone, saved) in _fpSaved) { skeleton.SetBonePosePosition(bone, saved.Position); skeleton.SetBonePoseScale(bone, saved.Scale); }
-        if (clear) { _fpSaved.Clear(); _fpHidden = []; _fpShown = []; _fpOrder = []; _fpSkeleton = null; if (_customSkeleton is { } head && _standardBones.TryGetValue("head", out _)) ApplyCustomShape(); }
+        if (!FirstPersonView) { _fpSaved.Clear(); _fpHidden = []; _fpSkeleton = null; }
     }
 
-    /// <summary>Called when the animation has posed the bones: the hidden ones shrink where they stand, and the forearms keep exactly the place they had.</summary>
-    private void CollapseUpperBody(Skeleton3D skeleton)
+    /// <summary>Called when the animation has posed the bones: the head shrinks where it stands.</summary>
+    private void CollapseHead(Skeleton3D skeleton)
     {
-        if (_fpOrder.Length == 0 || skeleton != _fpSkeleton) { if (skeleton != _fpSkeleton) PlanFirstPersonBones(); if (_fpOrder.Length == 0) return; }
-        var wanted = new Dictionary<int, Transform3D>(); var hidden = _fpHidden.ToHashSet();
-        foreach (var bone in _fpOrder)
-        {
-            var now = skeleton.GetBoneGlobalPose(bone);
-            wanted[bone] = hidden.Contains(bone) ? new Transform3D(now.Basis * Basis.FromScale(Vector3.One * HiddenBoneScale), now.Origin) : now;
-        }
-        foreach (var bone in _fpOrder) skeleton.SetBoneGlobalPose(bone, wanted[bone]);
+        if (skeleton != _fpSkeleton) PlanFirstPersonBones();
+        if (_fpHidden.Length == 0) return;
+        var wanted = new Dictionary<int, Transform3D>();
+        foreach (var bone in _fpHidden) { var now = skeleton.GetBoneGlobalPose(bone); wanted[bone] = new Transform3D(now.Basis * Basis.FromScale(Vector3.One * HiddenBoneScale), now.Origin); }
+        foreach (var bone in _fpHidden) skeleton.SetBoneGlobalPose(bone, wanted[bone]);
     }
-
-    private void HideCustomHead()
-    {
-        if (_customSkeleton is { } skeleton && IsInstanceValid(skeleton) && _standardBones.TryGetValue("head", out var headBone)) skeleton.SetBonePoseScale(headBone, Vector3.One * HiddenBoneScale);
-    }
-
-    /// <summary>Where the eyes are, in metres above the feet, for a custom body (the camera sits there in first person, whatever the height of the body); null for the standard body, whose camera height is already right.</summary>
-    public float? EyeHeight => CustomBodyActive && _customSkeleton is { } skeleton && IsInstanceValid(skeleton) && _standardBones.TryGetValue("head", out var headBone)
-        ? (skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(headBone).Origin).Y - GlobalPosition.Y + EyesAboveHeadBone : null;
-
-    /// <summary>The eyes are a little above where the head bone starts (the base of the head).</summary>
-    public const float EyesAboveHeadBone = .1f;
 
     /// <summary>Every frame in first person: a look applied again rebuilds the standard body, which must stay out of the way.</summary>
     private void KeepFirstPersonView() => ApplyStandardFirstPerson();
 
-    /// <summary>Shows or hides what is worn above the waist, and shows everything else (also what has just been put on).</summary>
+    /// <summary>Shows or hides what is worn on the head and the neck, and shows everything else (also what has just been put on).</summary>
     private void RefreshFirstPersonHolders()
     {
         foreach (var follower in _followers) if (IsInstanceValid(follower.Item)) follower.Item.Visible = !(FirstPersonView && HiddenInFirstPerson(follower.BoneName));
@@ -117,9 +119,7 @@ public sealed partial class AvatarRig
     // ---- tests ---------------------------------------------------------------------------------------------------------------------------
 
     /// <summary>Tests: which parts of the standard body are drawn.</summary>
-    public bool StandardPartShownForTesting(string path) => _visual?.GetNodeOrNull<Node3D>(path) is { } part && part.IsVisibleInTree() && (OwnMesh(part) is not { } mesh || mesh.Visible);
-    public bool StandardHeadShownForTesting => StandardPartShownForTesting("Hips/Torso/Neck/Head");
-    public bool StandardChestShownForTesting => OwnMesh(_visual?.GetNodeOrNull<Node3D>("Hips/Torso")) is { Visible: true };
+    public bool StandardPartShownForTesting(string path) => _visual?.GetNodeOrNull<Node3D>(path) is { } part && part.IsVisibleInTree();
     /// <summary>Tests: the size of the part of a custom body that a bone moves (1 = as it is, tiny = not drawn).</summary>
     public float CustomBoneSizeForTesting(string standardBone) => _customSkeleton is { } k && _standardBones.TryGetValue(standardBone, out var b) ? k.GetBoneGlobalPose(b).Basis.Scale.X : 1f;
     public Vector3? CustomBonePositionForTesting(string standardBone) => _customSkeleton is { } k && _standardBones.TryGetValue(standardBone, out var b) ? k.GlobalTransform * k.GetBoneGlobalPose(b).Origin : null;
