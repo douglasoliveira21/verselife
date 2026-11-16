@@ -59,9 +59,15 @@ public partial class BuildResourcesSmoke : Node3D
             Require(faceLamp!.Position.Y > .4f && Mathf.Abs(faceLamp.Position.X) < .1f, $"it sits on the top face: {faceLamp.Position}");
             Require((spot!.GlobalTransform.Basis * Vector3.Forward).Dot(Vector3.Up) > .95f, "and shines out of it (up)");
             Require(tab.LightFaceForTesting == 0, "the controls show the face again");
+            Require(Mathf.Abs(spot.SpotAngle - 30f) < .1f, $"the beam opens 60 degrees by default: {spot.SpotAngle}");
+            commands.Clear(); tab.SetConeForTesting(20); tab.FlushForTesting(); Require(Material(commands).GetProperty("light").GetProperty("cone").GetDouble() == 20, "the opening of the beam is sent");
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 6, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2);
+            Require(Mathf.Abs(editor.Synchronizer.Views[id].GetNode<OmniLight3D>("ObjectLight").GetNode<SpotLight3D>("ObjectFaceLight").SpotAngle - 10f) < .1f, "a narrow beam, like a torch");
+            var cubeView = editor.Synchronizer.Views[id]; var looks = new HashSet<string>(); foreach (var face in cubeView.FaceIds.Take(6)) { var (centre, normal) = cubeView.FaceSurface(face)!.Value; Require(centre.Dot(normal) > .4f, $"face {face}: the light sits on the outside of its face"); looks.Add($"{normal.X:0}/{normal.Y:0}/{normal.Z:0}"); }
+            Require(looks.Count == 6, $"each of the six faces of a cube looks its own way: {string.Join(" ", looks)}");
             commands.Clear(); tab.UseFaceForTesting(-1); tab.FlushForTesting();
             Require(!Material(commands).GetProperty("light").TryGetProperty("face", out _), "Objeto inteiro takes the face away");
-            editor.Synchronizer.OnOperation(StateJson(id, "cube", 5, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2);
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 7, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2);
             Require(editor.Synchronizer.Views[id].GetNodeOrNull("ObjectLight")?.GetNodeOrNull("ObjectFaceLight") is null, "and the whole object lights again");
             lamp = editor.Synchronizer.Views[id].GetNodeOrNull<OmniLight3D>("ObjectLight");
 

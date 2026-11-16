@@ -445,7 +445,7 @@ public partial class BuildObjectView : Node3D
         {
             var (centre, normal) = FaceSurface(faceId)!.Value; lamp.Position = centre + normal * .03f;
             var basis = Basis.LookingAt(normal, Mathf.Abs(normal.Y) > .95f ? Vector3.Forward : Vector3.Up);
-            lamp.FaceSpot = new SpotLight3D { Name = "ObjectFaceLight", LightColor = color, LightEnergy = energy * ambient, SpotRange = range, SpotAngle = 89f, SpotAngleAttenuation = .6f, SpotAttenuation = falloff, ShadowEnabled = false, Basis = basis };
+            lamp.FaceSpot = new SpotLight3D { Name = "ObjectFaceLight", LightColor = color, LightEnergy = energy * ambient, SpotRange = range, SpotAngle = Mathf.Clamp(Read("cone", 60f), 10f, 180f) / 2f, SpotAngleAttenuation = .5f, SpotAttenuation = falloff, ShadowEnabled = false, Basis = basis };
             lamp.AddChild(lamp.FaceSpot);
         }
         if (!hasImage) return;

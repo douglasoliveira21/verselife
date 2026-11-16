@@ -64,6 +64,7 @@ public static class MaterialAssets
             if (root.TryGetProperty("light", out var light) && light.ValueKind == JsonValueKind.Object)
             {
                 if (light.TryGetProperty("face", out var lightFace) && !(lightFace.ValueKind == JsonValueKind.Number && lightFace.TryGetInt32(out var faceId) && faceId is >= 0 and < 4096)) return "The face of a light must be a face number.";
+                if (!InRange(light, "cone", 10f, 180f)) return "The cone of a light must be 10 to 180 degrees.";
                 if (!InRange(light, "energy", 0f, 8f) || !InRange(light, "range", .5f, 30f)) return "Light intensity must be 0 to 8 and range 0.5 to 30 metres.";
             }
         }

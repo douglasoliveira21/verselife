@@ -21,7 +21,7 @@ public partial class BuildResourcesTab : VBoxContainer
     private ColorPickerButton _color = null!;
     private SpinBox _energy = null!, _range = null!, _falloff = null!, _reflectIntensity = null!, _reflectRange = null!, _speed = null!, _mass = null!, _friction = null!, _bounce = null!;
     private OptionButton _shape = null!, _surface = null!, _clip = null!;
-    private Label _faceLabel = null!;
+    private Label _faceLabel = null!; private SpinBox _cone = null!; private Control _coneRow = null!;
     private int _lightFace = -1;
     public BuildFaceSelectionManager? Faces { get; set; }
     public event Action? FaceToolRequested;
@@ -99,6 +99,7 @@ public partial class BuildResourcesTab : VBoxContainer
         faceButtons.AddChild(FaceButton("Usar a face escolhida", "A luz passa a sair só da face escolhida com a ferramenta Face", UseChosenFace));
         faceButtons.AddChild(FaceButton("Objeto inteiro", "A luz sai do objeto todo", () => SetLightFace(-1)));
         light.AddChild(Row("SAI DA FACE", _faceLabel)); light.AddChild(faceButtons);
+        _cone = Spin(10, 180, 5, 60, "Abertura do feixe, em graus: 15 é uma lanterna estreita, 60 um poste, 180 ilumina toda a frente da face"); _cone.ValueChanged += _ => Pend(ref _pendingLight); _coneRow = Row("ABERTURA (°)", _cone); light.AddChild(_coneRow);
         light.AddChild(Row("INTENSIDADE", _energy)); light.AddChild(Row("ALCANCE (m)", _range)); light.AddChild(Row("ATENUAÇÃO", _falloff));
         foreach (var spin in new[] { _energy, _range, _falloff }) spin.ValueChanged += _ => Pend(ref _pendingLight);
         _shadow = Check("Sombras", "A luz projeta sombras (só as 4 luzes com sombra mais próximas funcionam ao mesmo tempo; custa mais)"); _shadow.Toggled += _ => Pend(ref _pendingLight); light.AddChild(_shadow);
@@ -190,11 +191,13 @@ public partial class BuildResourcesTab : VBoxContainer
 
     private void ShowLightFace(int face)
     {
+        _coneRow.Visible = face >= 0;
         var view = _selection?.Views().LastOrDefault();
         _faceLabel.Text = face < 0 ? "Objeto inteiro" : view is not null && view.FaceIds.Contains(face) ? BuildFaceSelectionManager.NameOf(view.State.PrimitiveType, face) : $"Face {face}";
     }
 
     public int LightFaceForTesting => _lightFace;
+    public void SetConeForTesting(double degrees) { _cone.Value = degrees; }
     public void UseFaceForTesting(int face) => SetLightFace(face);
 
     // ---- showing the selection ----------------------------------------------------------------------------------------------
@@ -209,7 +212,7 @@ public partial class BuildResourcesTab : VBoxContainer
         if (any)
         {
             var state = active!.State; var light = BuildResourceManager.ReadLight(state); var reflection = BuildResourceManager.ReadReflection(state); var physics = BuildResourceManager.ReadPhysics(state);
-            _lightOn.SetPressedNoSignal(light.On); _lightRows.Visible = light.On; _lightFace = light.Face; ShowLightFace(light.Face); _color.Color = Color.FromHtml(light.Color); _energy.SetValueNoSignal(light.Energy); _range.SetValueNoSignal(light.Range); _falloff.SetValueNoSignal(light.Falloff); _shadow.SetPressedNoSignal(light.Shadow);
+            _lightOn.SetPressedNoSignal(light.On); _lightRows.Visible = light.On; _lightFace = light.Face; _cone.SetValueNoSignal(light.Cone); ShowLightFace(light.Face); _color.Color = Color.FromHtml(light.Color); _energy.SetValueNoSignal(light.Energy); _range.SetValueNoSignal(light.Range); _falloff.SetValueNoSignal(light.Falloff); _shadow.SetPressedNoSignal(light.Shadow);
             _reflectionOn.SetPressedNoSignal(reflection.On); _reflectionRows.Visible = reflection.On; _reflectIntensity.SetValueNoSignal(reflection.Intensity); _reflectRange.SetValueNoSignal(reflection.Range);
             var mesh = views.All(v => v.State.PrimitiveType == "mesh");
             for (var i = 0; i < _shape.ItemCount; i++) { _shape.SetItemDisabled(i, _shape.GetItemMetadata(i).AsString() == "triangle" && !mesh); if (_shape.GetItemMetadata(i).AsString() == physics.Shape) _shape.Select(i); }
@@ -280,7 +283,7 @@ public partial class BuildResourcesTab : VBoxContainer
         _timer = 0;
         var projector = _pendingProjector; var flex = _pendingFlex; _pendingProjector = _pendingFlex = false;
         var light = _pendingLight; var reflection = _pendingReflection; var animation = _pendingAnimation; var numbers = _pendingNumbers; _pendingLight = _pendingReflection = _pendingAnimation = _pendingNumbers = false;
-        if (light && _resources.SetLight(new BuildResourceManager.LightModel(_lightOn.ButtonPressed, "#" + _color.Color.ToHtml(false), (float)_energy.Value, (float)_range.Value, (float)_falloff.Value, _shadow.ButtonPressed, _lightFace)) > 0) Said?.Invoke(_lightOn.ButtonPressed ? "Luz enviada ao servidor." : "Luz desligada.");
+        if (light && _resources.SetLight(new BuildResourceManager.LightModel(_lightOn.ButtonPressed, "#" + _color.Color.ToHtml(false), (float)_energy.Value, (float)_range.Value, (float)_falloff.Value, _shadow.ButtonPressed, _lightFace, (float)_cone.Value)) > 0) Said?.Invoke(_lightOn.ButtonPressed ? "Luz enviada ao servidor." : "Luz desligada.");
         if (projector && _resources.SetProjector(new BuildResourceManager.ProjectorModel(_projOn.ButtonPressed, _projAsset is null && _projTexture.Selected > 0 ? _projTexture.GetItemMetadata(_projTexture.Selected).AsString() : null, _projAsset, (float)_projFov.Value, (float)_projFocus.Value, (float)_projAmbiance.Value)) > 0) Said?.Invoke(_projOn.ButtonPressed ? "Projetor enviado ao servidor." : "Projetor desligado.");
         if (flex && _resources.SetFlex(_flexOn.ButtonPressed ? new FlexSettings(F("softness"), F("gravity"), F("drag"), F("wind"), F("tension"), F("forceX"), F("forceY"), F("forceZ")) : null) > 0) Said?.Invoke(_flexOn.ButtonPressed ? "Flexibilidade enviada ao servidor." : "Flexibilidade desligada.");
         if (reflection && _resources.SetReflection(new BuildResourceManager.ReflectionModel(_reflectionOn.ButtonPressed, (float)_reflectIntensity.Value, (float)_reflectRange.Value)) > 0) Said?.Invoke(_reflectionOn.ButtonPressed ? "Reflexo enviado ao servidor." : "Reflexo desligado.");
