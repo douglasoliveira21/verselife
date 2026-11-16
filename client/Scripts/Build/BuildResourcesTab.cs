@@ -21,6 +21,10 @@ public partial class BuildResourcesTab : VBoxContainer
     private ColorPickerButton _color = null!;
     private SpinBox _energy = null!, _range = null!, _falloff = null!, _reflectIntensity = null!, _reflectRange = null!, _speed = null!, _mass = null!, _friction = null!, _bounce = null!;
     private OptionButton _shape = null!, _surface = null!, _clip = null!;
+    private Label _faceLabel = null!;
+    private int _lightFace = -1;
+    public BuildFaceSelectionManager? Faces { get; set; }
+    public event Action? FaceToolRequested;
     private Button _play = null!;
     private Label _animationNote = null!, _physicsNote = null!, _note = null!;
     private Control _lightRows = null!, _reflectionRows = null!, _animationRows = null!;
@@ -89,6 +93,12 @@ public partial class BuildResourcesTab : VBoxContainer
         var light = new VBoxContainer(); light.AddThemeConstantOverride("separation", 6); _lightRows = light; AddChild(light);
         _color = new ColorPickerButton { Color = new Color("#FFE0A8"), CustomMinimumSize = new Vector2(120, 38), EditAlpha = false }; _color.ColorChanged += _ => Pend(ref _pendingLight); light.AddChild(Row("COR", _color));
         _energy = Spin(0, 8, .1, 1.5, "Quanto ilumina (0 a 8)"); _range = Spin(.5, 30, .5, 8, "Até onde a luz chega, em metros"); _falloff = Spin(.1, 4, .1, 1, "Atenuação: quanto a luz some com a distância");
+        _faceLabel = new Label { Text = "Objeto inteiro", AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = SizeFlags.ExpandFill }; _faceLabel.AddThemeFontSizeOverride("font_size", 16);
+        var faceButtons = new HBoxContainer(); faceButtons.AddThemeConstantOverride("separation", 6);
+        faceButtons.AddChild(FaceButton("Escolher face", "Muda para a ferramenta Face: clique na face de onde a luz deve sair", () => FaceToolRequested?.Invoke()));
+        faceButtons.AddChild(FaceButton("Usar a face escolhida", "A luz passa a sair só da face escolhida com a ferramenta Face", UseChosenFace));
+        faceButtons.AddChild(FaceButton("Objeto inteiro", "A luz sai do objeto todo", () => SetLightFace(-1)));
+        light.AddChild(Row("SAI DA FACE", _faceLabel)); light.AddChild(faceButtons);
         light.AddChild(Row("INTENSIDADE", _energy)); light.AddChild(Row("ALCANCE (m)", _range)); light.AddChild(Row("ATENUAÇÃO", _falloff));
         foreach (var spin in new[] { _energy, _range, _falloff }) spin.ValueChanged += _ => Pend(ref _pendingLight);
         _shadow = Check("Sombras", "A luz projeta sombras (só as 4 luzes com sombra mais próximas funcionam ao mesmo tempo; custa mais)"); _shadow.Toggled += _ => Pend(ref _pendingLight); light.AddChild(_shadow);
@@ -163,6 +173,30 @@ public partial class BuildResourcesTab : VBoxContainer
         row.AddChild(label); control.SizeFlagsHorizontal = SizeFlags.ExpandFill; row.AddChild(control); return row;
     }
 
+    private Button FaceButton(string text, string tip, Action pressed)
+    {
+        var button = new Button { Text = text, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 34), SizeFlagsHorizontal = SizeFlags.ExpandFill, TooltipText = tip, ClipText = true }; UiStyle.StyleButton(button, UiStyle.ButtonKind.Secondary, 8, 5, 12); button.Pressed += pressed; return button;
+    }
+
+    /// <summary>The light comes out of the face chosen with the Face tool (the first one, when several are chosen).</summary>
+    private void UseChosenFace()
+    {
+        var view = _selection.Views().LastOrDefault();
+        if (Faces is null || view is null || Faces.ObjectId != view.State.Id || Faces.Count == 0) { _faceLabel.Text = "Escolha antes uma face com a ferramenta Face."; return; }
+        SetLightFace(Faces.Faces.First());
+    }
+
+    private void SetLightFace(int face) { _lightFace = face; _pendingLight = true; ShowLightFace(face); Flush(); }
+
+    private void ShowLightFace(int face)
+    {
+        var view = _selection?.Views().LastOrDefault();
+        _faceLabel.Text = face < 0 ? "Objeto inteiro" : view is not null && view.FaceIds.Contains(face) ? BuildFaceSelectionManager.NameOf(view.State.PrimitiveType, face) : $"Face {face}";
+    }
+
+    public int LightFaceForTesting => _lightFace;
+    public void UseFaceForTesting(int face) => SetLightFace(face);
+
     // ---- showing the selection ----------------------------------------------------------------------------------------------
 
     public void Refresh()
@@ -175,7 +209,7 @@ public partial class BuildResourcesTab : VBoxContainer
         if (any)
         {
             var state = active!.State; var light = BuildResourceManager.ReadLight(state); var reflection = BuildResourceManager.ReadReflection(state); var physics = BuildResourceManager.ReadPhysics(state);
-            _lightOn.SetPressedNoSignal(light.On); _lightRows.Visible = light.On; _color.Color = Color.FromHtml(light.Color); _energy.SetValueNoSignal(light.Energy); _range.SetValueNoSignal(light.Range); _falloff.SetValueNoSignal(light.Falloff); _shadow.SetPressedNoSignal(light.Shadow);
+            _lightOn.SetPressedNoSignal(light.On); _lightRows.Visible = light.On; _lightFace = light.Face; ShowLightFace(light.Face); _color.Color = Color.FromHtml(light.Color); _energy.SetValueNoSignal(light.Energy); _range.SetValueNoSignal(light.Range); _falloff.SetValueNoSignal(light.Falloff); _shadow.SetPressedNoSignal(light.Shadow);
             _reflectionOn.SetPressedNoSignal(reflection.On); _reflectionRows.Visible = reflection.On; _reflectIntensity.SetValueNoSignal(reflection.Intensity); _reflectRange.SetValueNoSignal(reflection.Range);
             var mesh = views.All(v => v.State.PrimitiveType == "mesh");
             for (var i = 0; i < _shape.ItemCount; i++) { _shape.SetItemDisabled(i, _shape.GetItemMetadata(i).AsString() == "triangle" && !mesh); if (_shape.GetItemMetadata(i).AsString() == physics.Shape) _shape.Select(i); }
@@ -246,7 +280,7 @@ public partial class BuildResourcesTab : VBoxContainer
         _timer = 0;
         var projector = _pendingProjector; var flex = _pendingFlex; _pendingProjector = _pendingFlex = false;
         var light = _pendingLight; var reflection = _pendingReflection; var animation = _pendingAnimation; var numbers = _pendingNumbers; _pendingLight = _pendingReflection = _pendingAnimation = _pendingNumbers = false;
-        if (light && _resources.SetLight(new BuildResourceManager.LightModel(_lightOn.ButtonPressed, "#" + _color.Color.ToHtml(false), (float)_energy.Value, (float)_range.Value, (float)_falloff.Value, _shadow.ButtonPressed)) > 0) Said?.Invoke(_lightOn.ButtonPressed ? "Luz enviada ao servidor." : "Luz desligada.");
+        if (light && _resources.SetLight(new BuildResourceManager.LightModel(_lightOn.ButtonPressed, "#" + _color.Color.ToHtml(false), (float)_energy.Value, (float)_range.Value, (float)_falloff.Value, _shadow.ButtonPressed, _lightFace)) > 0) Said?.Invoke(_lightOn.ButtonPressed ? "Luz enviada ao servidor." : "Luz desligada.");
         if (projector && _resources.SetProjector(new BuildResourceManager.ProjectorModel(_projOn.ButtonPressed, _projAsset is null && _projTexture.Selected > 0 ? _projTexture.GetItemMetadata(_projTexture.Selected).AsString() : null, _projAsset, (float)_projFov.Value, (float)_projFocus.Value, (float)_projAmbiance.Value)) > 0) Said?.Invoke(_projOn.ButtonPressed ? "Projetor enviado ao servidor." : "Projetor desligado.");
         if (flex && _resources.SetFlex(_flexOn.ButtonPressed ? new FlexSettings(F("softness"), F("gravity"), F("drag"), F("wind"), F("tension"), F("forceX"), F("forceY"), F("forceZ")) : null) > 0) Said?.Invoke(_flexOn.ButtonPressed ? "Flexibilidade enviada ao servidor." : "Flexibilidade desligada.");
         if (reflection && _resources.SetReflection(new BuildResourceManager.ReflectionModel(_reflectionOn.ButtonPressed, (float)_reflectIntensity.Value, (float)_reflectRange.Value)) > 0) Said?.Invoke(_reflectionOn.ButtonPressed ? "Reflexo enviado ao servidor." : "Reflexo desligado.");

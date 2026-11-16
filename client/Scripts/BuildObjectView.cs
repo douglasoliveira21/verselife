@@ -406,6 +406,19 @@ public partial class BuildObjectView : Node3D
         return result;
     }
 
+    /// <summary>The middle of a face of the shape and the way it looks out, in the object's own space (null when the shape has no such face). A curved face looks away from the middle of the shape.</summary>
+    public (Vector3 Centre, Vector3 Normal)? FaceSurface(int faceId)
+    {
+        var slot = _faceIds.IndexOf(faceId); if (slot < 0 || GetNodeOrNull<MeshInstance3D>("PrimitiveMesh") is not { Mesh: { } mesh } visual || slot >= mesh.GetSurfaceCount()) return null;
+        var arrays = mesh.SurfaceGetArrays(slot); var points = arrays[(int)Mesh.ArrayType.Vertex].AsVector3Array(); var normals = arrays[(int)Mesh.ArrayType.Normal].AsVector3Array();
+        if (points.Length == 0) return null;
+        var centre = Vector3.Zero; var normal = Vector3.Zero; for (var i = 0; i < points.Length; i++) { centre += points[i]; if (i < normals.Length) normal += normals[i]; }
+        centre /= points.Length;
+        if (normal.Length() < .35f * points.Length) normal = centre - mesh.GetAabb().GetCenter(); // curved or closed face: the average of its normals cancels out
+        normal = normal.LengthSquared() < 1e-8f ? Vector3.Up : normal.Normalized();
+        return (visual.Transform * centre, (visual.Transform.Basis * normal).Normalized());
+    }
+
     /// A glowing object lights its surroundings: a light with the colour, strength and reach saved with the material.
     private void AddObjectLight(JsonObject material) { AddFlex(material); AddLightAndResources(material, null); }
 
@@ -422,14 +435,26 @@ public partial class BuildObjectView : Node3D
         float Projector(string key, float fallback) => projector?[key] is JsonValue v && v.TryGetValue<double>(out var n) && double.IsFinite(n) ? (float)n : fallback;
         // with a projector the round light is only the "ambiance" (the share of the light that falls outside the image)
         var ambient = hasImage ? Mathf.Clamp(Projector("ambiance", .1f), 0f, 1f) : 1f;
-        AddChild(new ObjectLight { Name = "ObjectLight", LightColor = color, LightEnergy = energy * ambient, OmniRange = range, OmniAttenuation = Mathf.Clamp(Read("falloff", 1f), .1f, 4f), ShadowEnabled = false, WantsShadow = light["shadow"] is JsonValue shadow && shadow.TryGetValue<bool>(out var casts) && casts });
+        var falloff = Mathf.Clamp(Read("falloff", 1f), .1f, 4f); var wantsShadow = light["shadow"] is JsonValue shadow && shadow.TryGetValue<bool>(out var casts) && casts;
+        // a light chosen for one face comes out of that face only: a half-sphere of light in front of it, not a round light around the whole object
+        var faceId = light["face"] is JsonValue faceNode && faceNode.TryGetValue<int>(out var chosen) ? chosen : -1;
+        var onFace = faceId >= 0 && FaceSurface(faceId) is { } place;
+        var lamp = new ObjectLight { Name = "ObjectLight", LightColor = color, LightEnergy = onFace ? 0 : energy * ambient, OmniRange = range, OmniAttenuation = falloff, ShadowEnabled = false, WantsShadow = wantsShadow };
+        AddChild(lamp);
+        if (onFace)
+        {
+            var (centre, normal) = FaceSurface(faceId)!.Value; lamp.Position = centre + normal * .03f;
+            var basis = Basis.LookingAt(normal, Mathf.Abs(normal.Y) > .95f ? Vector3.Forward : Vector3.Up);
+            lamp.FaceSpot = new SpotLight3D { Name = "ObjectFaceLight", LightColor = color, LightEnergy = energy * ambient, SpotRange = range, SpotAngle = 89f, SpotAngleAttenuation = .6f, SpotAttenuation = falloff, ShadowEnabled = false, Basis = basis };
+            lamp.AddChild(lamp.FaceSpot);
+        }
         if (!hasImage) return;
         var spot = new SpotLight3D
         {
             Name = "ObjectProjector", LightColor = color, LightEnergy = energy, SpotAngle = Mathf.Clamp(Projector("fov", 45f) / 2f, 5f, 60f), SpotRange = Mathf.Max(range, Mathf.Clamp(Projector("focus", 0f), 0f, 30f)),
             SpotAttenuation = Mathf.Clamp(Read("falloff", 1f), .1f, 4f), ShadowEnabled = false
         };
-        AddChild(spot);
+        AddChild(spot); if (onFace) { var (centre, normal) = FaceSurface(faceId)!.Value; spot.Position = centre + normal * .03f; spot.Basis = Basis.LookingAt(normal, Mathf.Abs(normal.Y) > .95f ? Vector3.Forward : Vector3.Up); }
         if (material["projectorBuiltin"] is JsonValue builtin && builtin.TryGetValue<string>(out var name)) spot.LightProjector = BuiltInTextures.Get(name);
         else if (material["projectorTexture"] is JsonValue asset && asset.TryGetValue<string>(out var text2) && Guid.TryParse(text2, out var assetId))
             Textures?.Request(assetId, texture => { if (texture is not null && IsInstanceValid(spot)) spot.LightProjector = texture; });
@@ -468,6 +493,8 @@ public partial class BuildObjectView : Node3D
         public static int MaxShadows { get; private set; } = 4;
         private static readonly List<ObjectLight> All = [];
         public bool WantsShadow { get; set; }
+        /// <summary>The light of a single face (a spot in front of it); this round light is then only its place in the budget of lights and of shadows.</summary>
+        public SpotLight3D? FaceSpot { get; set; }
         public override void _EnterTree() { All.Add(this); RefreshAll(); }
         public override void _ExitTree() { All.Remove(this); ShadowEnabled = false; RefreshAll(); }
         public static int ActiveForTesting => All.Count;
@@ -484,7 +511,7 @@ public partial class BuildObjectView : Node3D
             {
                 var light = All[i]; light.Visible = i < MaxLights;
                 var casts = light.Visible && light.WantsShadow && shadows < MaxShadows; if (casts) shadows++;
-                light.ShadowEnabled = casts;
+                if (light.FaceSpot is { } spot && IsInstanceValid(spot)) { spot.ShadowEnabled = casts; light.ShadowEnabled = false; } else light.ShadowEnabled = casts;
             }
         }
     }

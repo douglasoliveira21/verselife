@@ -49,6 +49,22 @@ public partial class BuildResourcesSmoke : Node3D
             var lamp = editor.Synchronizer.Views[id].GetNodeOrNull<OmniLight3D>("ObjectLight");
             Require(lamp is { OmniRange: 12f, LightEnergy: 3f } && lamp.ShadowEnabled, "the world really lights the scene, with a shadow");
 
+            // --- the light of one face -------------------------------------------------------------------------------
+            Require(light.TryGetProperty("face", out _) == false && lamp!.GetNodeOrNull("ObjectFaceLight") is null, "with no face chosen the whole object lights");
+            commands.Clear(); tab.UseFaceForTesting(0); tab.FlushForTesting();
+            Require(Material(commands).GetProperty("light").GetProperty("face").GetInt32() == 0, "the chosen face is sent with the light");
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 4, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2);
+            var faceLamp = editor.Synchronizer.Views[id].GetNodeOrNull<OmniLight3D>("ObjectLight"); var spot = faceLamp?.GetNodeOrNull<SpotLight3D>("ObjectFaceLight");
+            Require(spot is { SpotRange: 12f, LightEnergy: 3f } && faceLamp!.LightEnergy == 0f, "a light of one face is a spot in front of it, not a round light");
+            Require(faceLamp!.Position.Y > .4f && Mathf.Abs(faceLamp.Position.X) < .1f, $"it sits on the top face: {faceLamp.Position}");
+            Require((spot!.GlobalTransform.Basis * Vector3.Forward).Dot(Vector3.Up) > .95f, "and shines out of it (up)");
+            Require(tab.LightFaceForTesting == 0, "the controls show the face again");
+            commands.Clear(); tab.UseFaceForTesting(-1); tab.FlushForTesting();
+            Require(!Material(commands).GetProperty("light").TryGetProperty("face", out _), "Objeto inteiro takes the face away");
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 5, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2);
+            Require(editor.Synchronizer.Views[id].GetNodeOrNull("ObjectLight")?.GetNodeOrNull("ObjectFaceLight") is null, "and the whole object lights again");
+            lamp = editor.Synchronizer.Views[id].GetNodeOrNull<OmniLight3D>("ObjectLight");
+
             // the world keeps its budget: only a few lights cast shadows
             var many = new List<BuildObjectView>();
             for (var i = 0; i < 6; i++)
@@ -63,15 +79,15 @@ public partial class BuildResourcesSmoke : Node3D
 
             commands.Clear(); tab.ToggleLightForTesting(false);
             Require(!Material(commands).TryGetProperty("light", out _) && !Material(commands).TryGetProperty("projector", out _), "turning the light off takes it (and its projector) away");
-            editor.Synchronizer.OnOperation(StateJson(id, "cube", 3)); await Frames(2);
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 13)); await Frames(2);
             Require(editor.Synchronizer.Views[id].GetNodeOrNull("ObjectLight") is null, "and the world stops lighting");
 
-            commands.Clear(); tab.ToggleReflectionForTesting(true); editor.Synchronizer.OnOperation(StateJson(id, "cube", 4, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2); // confirmed by the server
+            commands.Clear(); tab.ToggleReflectionForTesting(true); editor.Synchronizer.OnOperation(StateJson(id, "cube", 14, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2); // confirmed by the server
             commands.Clear(); tab.SetReflectionForTesting(.8, 12); tab.FlushForTesting();
             commands.Clear(); tab.ToggleReflectionForTesting(true); tab.SetReflectionForTesting(.8, 12); tab.FlushForTesting();
             var reflection = Material(commands).GetProperty("reflection");
             Require(Math.Abs(reflection.GetProperty("intensity").GetDouble() - .8) < .001 && reflection.GetProperty("range").GetDouble() == 12, "Reflexo sends intensity and range");
-            editor.Synchronizer.OnOperation(StateJson(id, "cube", 4, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2);
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 14, material: Last(commands).GetProperty("object").GetProperty("materialJson").GetString()!)); await Frames(2);
             var probe = editor.Synchronizer.Views[id].GetNodeOrNull<ReflectionProbe>("ObjectReflection");
             Require(probe is { Intensity: > .79f and < .81f } && probe.Size.X == 12f && tab.ReflectionOnForTesting, "the world has a real reflection probe");
             var probes = new List<BuildObjectView>();
@@ -80,16 +96,16 @@ public partial class BuildResourcesSmoke : Node3D
             var working = probes.Concat([editor.Synchronizer.Views[id]]).Count(v => v.GetNodeOrNull<ReflectionProbe>("ObjectReflection") is { Visible: true });
             Require(working == BuildObjectView.ObjectReflection.MaxProbes, $"no more than a few probes work at once (got {working}, active {BuildObjectView.ObjectReflection.ActiveForTesting})");
             foreach (var v in probes) v.QueueFree();
-            editor.Synchronizer.OnOperation(StateJson(id, "cube", 6));
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 16));
 
             // --- physics shape and numbers ------------------------------------------------------------------------------
             await Frames(2);
             Require(tab.ShapeChoicesForTesting.SequenceEqual(["none", "box", "convex"]) && tab.ShapeForTesting == "box", "a box offers none, prim and convex hull (the exact mesh is for models)");
             commands.Clear(); tab.ChooseShapeForTesting("convex");
             Require(PhysicsRules.Read(PhysicsOf(commands)).CollisionShape == "convex", "Casco convexo is sent");
-            editor.Synchronizer.OnOperation(StateJson(id, "cube", 7, physics: PhysicsOf(commands)));
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 17, physics: PhysicsOf(commands)));
             Require(!tab.NumbersEditableForTesting && tab.PhysicsNoteForTesting.Contains("Física ligada"), "mass, friction and bounce wait for the object to be physical");
-            editor.Synchronizer.OnOperation(StateJson(id, "cube", 8, physics: "{\"collision\":true,\"shape\":\"convex\",\"mode\":\"physical\",\"mass\":1,\"friction\":0.5,\"bounce\":0}")); await Frames(2);
+            editor.Synchronizer.OnOperation(StateJson(id, "cube", 18, physics: "{\"collision\":true,\"shape\":\"convex\",\"mode\":\"physical\",\"mass\":1,\"friction\":0.5,\"bounce\":0}")); await Frames(2);
             Require(tab.NumbersEditableForTesting, "a physical object has its numbers");
             commands.Clear(); tab.SetNumbersForTesting(25, .9, .6); tab.FlushForTesting();
             var numbers = PhysicsRules.Read(PhysicsOf(commands)); Require(numbers.Mass == 25 && numbers.Friction == .9f && Math.Abs(numbers.Bounce - .6f) < .001f && numbers.Physical, "mass, friction and bounce are sent without losing the physical mode");

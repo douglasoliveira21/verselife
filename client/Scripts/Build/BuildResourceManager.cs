@@ -13,7 +13,8 @@ namespace LifeVerse.Client.Build;
 /// </summary>
 public partial class BuildResourceManager : Node
 {
-    public sealed record LightModel(bool On, string Color, float Energy, float Range, float Falloff, bool Shadow);
+    /// <summary>Face is the face of the shape the light comes out of (-1: the whole object).</summary>
+    public sealed record LightModel(bool On, string Color, float Energy, float Range, float Falloff, bool Shadow, int Face = -1);
     public sealed record ReflectionModel(bool On, float Intensity, float Range);
     public sealed record AnimationModel(bool On, string Clip, bool Playing, bool Loop, double Speed, double Offset);
     public sealed record PhysicsModel(string Shape, bool Physical, float Mass, float Friction, float Bounce, string Material);
@@ -34,7 +35,7 @@ public partial class BuildResourceManager : Node
     public static LightModel ReadLight(BuildObjectState s)
     {
         var light = Material(s)["light"] as JsonObject;
-        return new LightModel(light is not null, light?["color"] is JsonValue c && c.TryGetValue<string>(out var text) ? text : "#FFE0A8", (float)Num(light, "energy", 1.5), (float)Num(light, "range", 8), (float)Num(light, "falloff", 1), Flag(light, "shadow"));
+        return new LightModel(light is not null, light?["color"] is JsonValue c && c.TryGetValue<string>(out var text) ? text : "#FFE0A8", (float)Num(light, "energy", 1.5), (float)Num(light, "range", 8), (float)Num(light, "falloff", 1), Flag(light, "shadow"), light?["face"] is JsonValue f && f.TryGetValue<int>(out var face) && face >= 0 ? face : -1);
     }
 
     public static ReflectionModel ReadReflection(BuildObjectState s) { var r = Material(s)["reflection"] as JsonObject; return new ReflectionModel(r is not null, (float)Num(r, "intensity", .6), (float)Num(r, "range", 8)); }
@@ -71,7 +72,7 @@ public partial class BuildResourceManager : Node
     {
         if (!model.On) { material.Remove("light"); material.Remove("projector"); material.Remove("projectorTexture"); material.Remove("projectorBuiltin"); return; }
         var light = new JsonObject { ["color"] = model.Color, ["energy"] = Math.Round(Math.Clamp(model.Energy, 0, 8), 2), ["range"] = Math.Round(Math.Clamp(model.Range, .5, 30), 2), ["falloff"] = Math.Round(Math.Clamp(model.Falloff, .1, 4), 2) };
-        if (model.Shadow) light["shadow"] = true; material["light"] = light;
+        if (model.Shadow) light["shadow"] = true; if (model.Face >= 0) light["face"] = model.Face; material["light"] = light;
     });
 
     // ---- projector and Flexi ---------------------------------------------------------------------------------------------

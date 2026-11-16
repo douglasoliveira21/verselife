@@ -42,4 +42,12 @@ public sealed class MaterialAssetsTests
     [Theory]
     [InlineData("image/png", true)] [InlineData("image/jpeg", true)] [InlineData("image/webp", true)] [InlineData("image/svg+xml", false)] [InlineData("model/gltf-binary", false)] [InlineData(null, false)]
     public void OnlyRasterImagesCanBeTextures(string? mime, bool expected) => Assert.Equal(expected, MaterialAssets.IsImage(mime));
+
+    [Theory]
+    [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"face\":0}}")] [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"face\":5}}")] [InlineData("{\"light\":{\"energy\":2,\"range\":8}}")]
+    public void ALightMayComeOutOfOneFace(string json) => Assert.Null(MaterialAssets.ValidateSettings(json));
+
+    [Theory]
+    [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"face\":-1}}")] [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"face\":\"top\"}}")] [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"face\":1.5}}")] [InlineData("{\"light\":{\"energy\":2,\"range\":8,\"face\":99999}}")]
+    public void TheFaceOfALightMustBeAFaceNumber(string json) => Assert.NotNull(MaterialAssets.ValidateSettings(json));
 }

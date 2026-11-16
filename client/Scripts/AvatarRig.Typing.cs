@@ -59,3 +59,17 @@ public partial class AvatarRig
         if (!_typingWanted && _typing.Playing && _typing.VolumeDb <= TypingSilentDb + .5f) _typing.Stop();
     }
 }
+
+public sealed partial class AvatarRig
+{
+    /// <summary>
+    /// The turn of the hips around the vertical, to be taken off every bone: the recording's actor stands facing some other way, and every bone of the clip carries that turn, so the whole body is turned back
+    /// together (taking it off the hips alone would twist the spine). The avatar keeps facing where it already was.
+    /// </summary>
+    internal static Quaternion HeadingOf(Quaternion hips)
+    {
+        var along = Vector3.Up * new Vector3(hips.X, hips.Y, hips.Z).Dot(Vector3.Up);
+        var twist = new Quaternion(along.X, along.Y, along.Z, hips.W);
+        return twist.LengthSquared() < 1e-8f ? Quaternion.Identity : twist.Normalized();
+    }
+}

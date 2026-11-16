@@ -114,10 +114,12 @@ public partial class AvatarRig
         var plainFall = _state == AvatarMotionState.Fall && !_fallFromFlight;      // the short clip of coming down after a jump: it holds its last pose until the avatar lands
         var loop = _state is AvatarMotionState.WalkBack or AvatarMotionState.SwimIdle or AvatarMotionState.Typing || (!plainFall && AnimationStates.All.TryGetValue(_state.ToString(), out var loops) && loops);
         var sample = clip.SampleDeltas((float)_clipTime, loop); var result = new Dictionary<int, Quaternion>();
+        var unturn = Quaternion.Identity;
+        if (_state == AvatarMotionState.Typing) foreach (var (standard, rotation) in sample) if (standard.Equals("hips", StringComparison.OrdinalIgnoreCase)) unturn = HeadingOf(new Quaternion(rotation.X, rotation.Y, rotation.Z, rotation.W)).Inverse();
         foreach (var (standard, rotation) in sample)
         {
             if (!bones.TryGetValue(standard, out var bone)) continue;
-            var inModel = new Quaternion(rotation.X, rotation.Y, rotation.Z, rotation.W);
+            var inModel = unturn * new Quaternion(rotation.X, rotation.Y, rotation.Z, rotation.W);
             result[bone] = skeletonInModel.Inverse() * inModel * skeletonInModel; // the clip and the avatar are both glTF models, so no turning around is needed here
         }
         hipsLift = clip.SampleHipsOffset((float)_clipTime, loop).Y;

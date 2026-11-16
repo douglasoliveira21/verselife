@@ -13,6 +13,9 @@ public partial class TypingSmoke : Node3D
 {
     private static string HashOf(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
     private static Skeleton3D? Skeleton(Node node) { if (node is Skeleton3D s) return s; foreach (var c in node.GetChildren()) if (Skeleton(c) is { } f) return f; return null; }
+    static float YawOf(Vector3 v) => Mathf.Atan2(v.X, v.Z);
+    static float ShoulderYaw(Skeleton3D k) => YawOf(k.GlobalTransform * k.GetBoneGlobalPose(BoneIndex(k, "upper_arm_r")).Origin - k.GlobalTransform * k.GetBoneGlobalPose(BoneIndex(k, "upper_arm_l")).Origin);
+    static float HipYaw(Skeleton3D k) => YawOf(k.GlobalTransform * k.GetBoneGlobalPose(BoneIndex(k, "upper_leg_r")).Origin - k.GlobalTransform * k.GetBoneGlobalPose(BoneIndex(k, "upper_leg_l")).Origin);
     private static int BoneIndex(Skeleton3D skeleton, string standard) { for (var i = 0; i < skeleton.GetBoneCount(); i++) if (BoneMapper.Map(skeleton.GetBoneName(i)) == standard) return i; return -1; }
 
     public override async void _Ready()
@@ -42,10 +45,13 @@ public partial class TypingSmoke : Node3D
 
             // ---- the custom body plays the mocap clip
             var skeleton = Skeleton(custom.CustomBodyNode!)!; var hand = BoneIndex(skeleton, "hand_l"); var arm = BoneIndex(skeleton, "upper_arm_r");
-            custom.SetMotionState(AvatarMotionState.Idle, true); await Frames(30); var idleArm = skeleton.GetBonePoseRotation(arm);
+            custom.SetMotionState(AvatarMotionState.Idle, true); await Frames(30); var idleArm = skeleton.GetBonePoseRotation(arm); var idleYaw = ShoulderYaw(skeleton); var idleHip = HipYaw(skeleton);
             custom.SetMotionState(AvatarMotionState.Typing, true); await Frames(40); var typingArm = skeleton.GetBonePoseRotation(arm); var one = skeleton.GetBonePoseRotation(hand);
             Require(idleArm.AngleTo(typingArm) > .1f, $"the clip changes the pose of the custom body: {idleArm.AngleTo(typingArm)}");
             await ToSignal(GetTree().CreateTimer(1.2), SceneTreeTimer.SignalName.Timeout); await Frames(2); Require(one.AngleTo(skeleton.GetBonePoseRotation(hand)) > .02f, "and it keeps moving");
+            Require(Mathf.Abs(Mathf.AngleDifference(idleYaw, ShoulderYaw(skeleton))) < Mathf.DegToRad(25), $"the custom body keeps facing where it faced: {Mathf.RadToDeg(Mathf.AngleDifference(idleYaw, ShoulderYaw(skeleton)))} degrees off");
+            Require(Mathf.Abs(Mathf.AngleDifference(idleHip, HipYaw(skeleton))) < Mathf.DegToRad(25), $"and so do the hips: {Mathf.RadToDeg(Mathf.AngleDifference(idleHip, HipYaw(skeleton)))} degrees off");
+            Require(Mathf.Abs(Mathf.AngleDifference(ShoulderYaw(skeleton), HipYaw(skeleton))) < Mathf.DegToRad(35), "the chest is not twisted against the hips");
             if (windowed)
             {
                 await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw); GetViewport().GetTexture().GetImage().SavePng($"{capture}-typing.png");
