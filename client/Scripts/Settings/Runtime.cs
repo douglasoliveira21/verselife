@@ -45,6 +45,32 @@ public static class DisplayOptions
     /// <summary>The id to show in a dropdown for a stored value: "auto" means what the device is doing now.</summary>
     public static string Shown(string setting, string stored) => stored != "auto" ? stored : setting switch { "display.monitor" => CurrentScreen.ToString(), "display.resolution" => CurrentResolution(), _ => CurrentMode() };
 
+    /// <summary>The height of the title bar and the width of the side borders the system draws around the game window (a sensible guess while the system has not said).</summary>
+    public static (int Title, int Border) Frame()
+    {
+        var around = DisplayServer.WindowGetSizeWithDecorations() - DisplayServer.WindowGetSize(); if (around.X <= 0 || around.Y <= 0) return (31, 8);
+        var border = around.X / 2; return (Math.Max(0, around.Y - border), border);
+    }
+
+    /// <summary>Puts a windowed game on the screen with its title bar showing (minimize, maximize and close), however large it is: the size is cut to the room the desktop leaves, and the bar is never above the top of the screen.</summary>
+    public static void PlaceWindowed(int screen, int wantedWidth, int wantedHeight)
+    {
+        var usable = DisplayServer.ScreenGetUsableRect(screen); var (title, border) = Frame();
+        var w = Math.Clamp(wantedWidth, 640, Math.Max(640, usable.Size.X - border * 2)); var h = Math.Clamp(wantedHeight, 360, Math.Max(360, usable.Size.Y - title - border));
+        DisplayServer.WindowSetSize(new Vector2I(w, h));
+        DisplayServer.WindowSetPosition(new Vector2I(usable.Position.X + (usable.Size.X - w) / 2, usable.Position.Y + title + Math.Max(0, (usable.Size.Y - title - border - h) / 2)));
+    }
+
+    /// <summary>At the start (and after a change of mode): a windowed game whose title bar ended up off the screen is moved down and, if needed, made smaller.</summary>
+    public static void KeepTitleBarVisible()
+    {
+        if (DisplayServer.GetName() == "headless" || DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Windowed) return;
+        var screen = DisplayServer.WindowGetCurrentScreen(); var usable = DisplayServer.ScreenGetUsableRect(screen); var (title, border) = Frame(); var size = DisplayServer.WindowGetSize(); var position = DisplayServer.WindowGetPosition();
+        var tooBig = size.X > usable.Size.X - border * 2 || size.Y > usable.Size.Y - title - border; var barHidden = position.Y - title < usable.Position.Y;
+        if (tooBig || barHidden) PlaceWindowed(screen, size.X, size.Y);
+        GD.Print($"event=window_checked usable={usable} title={title} border={border} size={size} before={position} after={DisplayServer.WindowGetPosition()}/{DisplayServer.WindowGetSize()} moved={tooBig || barHidden}");
+    }
+
     /// <summary>Puts the window where the settings say. "auto" leaves that part as it is. Returns false when nothing was asked for.</summary>
     public static bool Apply(string monitor, string resolution, string mode)
     {
@@ -61,11 +87,9 @@ public static class DisplayOptions
                 var parts = resolution == "auto" ? [] : resolution.Split('x');
                 if (parts.Length == 2 && int.TryParse(parts[0], out var w) && int.TryParse(parts[1], out var h))
                 {
-                    var limit = DisplayServer.ScreenGetSize(screen);
-                    w = Math.Clamp(w, 640, Math.Max(640, limit.X)); h = Math.Clamp(h, 360, Math.Max(360, limit.Y));
-                    DisplayServer.WindowSetSize(new Vector2I(w, h));
-                    var origin = DisplayServer.ScreenGetPosition(screen); DisplayServer.WindowSetPosition(origin + (limit - new Vector2I(w, h)) / 2);
+                    PlaceWindowed(screen, w, h);
                 }
+                else KeepTitleBarVisible();
                 break;
         }
         return true;

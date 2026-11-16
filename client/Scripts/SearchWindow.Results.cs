@@ -235,7 +235,7 @@ public partial class SearchWindow
         };
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore }; row.AddThemeConstantOverride("separation", 10); card.AddChild(row);
         var thumb = new TextureRect { Name = "Thumb", CustomMinimumSize = new Vector2(56, 56), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered, ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, Texture = KindIcon(hit, 40) };
-        row.AddChild(thumb); if (hit.ThumbnailUrl is not null && (SearchApi.IsLoadableImageUrl(hit.ThumbnailUrl) || IsApiImage(hit.ThumbnailUrl))) _thumbQueue.Enqueue((hit.ThumbnailUrl, thumb));
+        row.AddChild(thumb); if (!TryAssetThumbnail(hit.ThumbnailUrl, hit.IslandId ?? hit.Id, thumb) && hit.ThumbnailUrl is not null && (SearchApi.IsLoadableImageUrl(hit.ThumbnailUrl) || IsApiImage(hit.ThumbnailUrl))) _thumbQueue.Enqueue((hit.ThumbnailUrl, thumb));
         var text = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; text.AddThemeConstantOverride("separation", 0); row.AddChild(text);
         var title = Text((hit.Favorite ? "★ " : "") + hit.Title, false, 16, true, wrap: false); title.MouseFilter = Control.MouseFilterEnum.Ignore; text.AddChild(title);
         var meta = Text(MetaText(hit), true, 13, wrap: false); meta.MouseFilter = Control.MouseFilterEnum.Ignore; text.AddChild(meta); _metaLabels.Add(meta);
@@ -269,6 +269,20 @@ public partial class SearchWindow
     }
 
     // ---- pictures -----------------------------------------------------------------------------------------------------------------
+
+    /// <summary>The picture an owner set for an island (or a parcel) is an uploaded asset ("asset:id"), not a web address: it comes from the texture cache, which asks the server with the island it belongs to.</summary>
+    private bool TryAssetThumbnail(string? reference, Guid island, TextureRect target)
+    {
+        if (reference is null || !reference.StartsWith("asset:", StringComparison.Ordinal) || !Guid.TryParse(reference[6..], out var asset)) return false;
+        if (_thumbnails.TryGetValue(reference, out var have)) { target.Texture = have; return true; }
+        if (GetParent()?.GetNodeOrNull<TextureCache>("TextureCache") is not { } cache) return true;
+        cache.Request(asset, texture =>
+        {
+            if (texture is null) return; _thumbnails[reference] = texture;
+            if (GodotObject.IsInstanceValid(target)) target.Texture = texture; if (Selected?.ThumbnailUrl == reference && GodotObject.IsInstanceValid(_pImage)) _pImage.Texture = texture;
+        }, island);
+        return true;
+    }
 
     /// <summary>Thumbnails come one at a time so a long page does not open twenty connections at once.</summary>
     private void NextThumbnail()

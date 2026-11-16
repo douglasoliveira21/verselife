@@ -54,6 +54,7 @@ public partial class SearchWindow
         _pTitle.Text = hit.Title; _pMeta.Text = hit.KindLabel + (hit.Subtitle.Length > 0 ? " · " + hit.Subtitle : "") + (hit.Category.Length > 0 && !hit.Subtitle.Contains(hit.Category) ? " · " + hit.Category : "");
         _pDescription.Text = hit.Description.Length > 0 ? hit.Description : "Sem descrição."; _pWhere.Text = WhereText(hit);
         _pImage.Texture = hit.ThumbnailUrl is not null && _thumbnails.TryGetValue(hit.ThumbnailUrl, out var thumb) ? thumb : KindIcon(hit, 72);
+        TryAssetThumbnail(hit.ThumbnailUrl, hit.IslandId ?? hit.Id, _pImage);
         _goButton.Visible = hit.Kind is not (SearchKinds.Person or SearchKinds.Group or SearchKinds.Product); _pWhere.Visible = _goButton.Visible;
         _goButton.Disabled = !hit.HasPlace; _goButton.Text = hit.Kind == SearchKinds.Store ? (!hit.HasPlace ? "Loja virtual (sem endereço)" : IsHere(hit) ? "Visitar loja (nesta ilha)" : "Visitar loja") : !hit.HasPlace ? "Sem lugar para visitar" : IsHere(hit) ? "Teleportar até lá" : "Ir para a ilha";
         _profile.Visible = hit.Kind == SearchKinds.Person; _groupButton.Visible = hit.Kind == SearchKinds.Group && OpenGroup is not null;
