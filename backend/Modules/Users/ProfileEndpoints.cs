@@ -8,6 +8,10 @@ using Microsoft.EntityFrameworkCore;
 namespace LifeVerse.Api.Modules.Users;
 
 public sealed record GroupShownRequest(bool Shown);
+public sealed record GalleryAddRequest(Guid AssetId);
+public sealed record GalleryOrderRequest(List<Guid>? Ids);
+public sealed record CoverRequest(Guid? AssetId);
+public sealed record PostRequest(string? Text, Guid? GalleryImageId, string? Visibility);
 public sealed record ProposeRequest(Guid UserId, string? Message);
 public sealed record AccountTypeRequest(string Type);
 
@@ -22,6 +26,18 @@ public static class ProfileEndpoints
         users.MapGet("/{userId:guid}/profile/photo", PhotoAsync);
         users.MapPut("/me/profile/details", UpdateAsync);
         users.MapPut("/me/groups/{groupId:guid}/profile", GroupShownAsync);
+        users.MapPut("/me/parcels/{parcelId:guid}/profile", ParcelShownAsync);
+        users.MapPost("/me/profile/gallery", GalleryAddAsync);
+        users.MapDelete("/me/profile/gallery/{imageId:guid}", GalleryRemoveAsync);
+        users.MapPut("/me/profile/gallery/order", GalleryOrderAsync);
+        users.MapPut("/me/profile/gallery/{imageId:guid}/main", GalleryMainAsync);
+        users.MapGet("/{userId:guid}/profile/gallery/{imageId:guid}", GalleryImageAsync);
+        users.MapPut("/me/profile/cover", CoverSetAsync);
+        users.MapGet("/{userId:guid}/profile/feed", FeedAsync);
+        users.MapPost("/me/profile/posts", PostAsync);
+        users.MapDelete("/me/profile/posts/{postId:guid}", PostDeleteAsync);
+        users.MapGet("/{userId:guid}/profile/posts/{postId:guid}/image", PostImageAsync);
+        users.MapGet("/{userId:guid}/profile/cover", CoverImageAsync);
         var marriage = endpoints.MapGroup("/api/v1/marriage").WithTags("Profile").RequireAuthorization();
         marriage.MapGet("", MineAsync); marriage.MapPost("/propose", ProposeAsync);
         marriage.MapPost("/{id:guid}/accept", (Guid id, HttpContext c, LifeVerseDbContext d, NotificationHub h, TimeProvider t, CancellationToken ct) => AnswerAsync(id, "accept", c, d, h, t, ct));
@@ -75,6 +91,86 @@ public static class ProfileEndpoints
     {
         if (!TryUser(context, out var me)) return Results.Unauthorized();
         return await ProfileService.SetGroupShownAsync(db, me, groupId, request.Shown, ct) ? Results.NoContent() : Results.NotFound();
+    }
+
+    private static async Task<IResult> Mine(HttpContext context, LifeVerseDbContext db, TimeProvider clock, Func<Guid, Task<ProfileFailure?>> change, CancellationToken ct)
+    {
+        if (!TryUser(context, out var me)) return Results.Unauthorized();
+        if (await change(me) is { } failure) return Problem(failure);
+        return Results.Ok(await ProfileService.ViewAsync(db, me, me, clock.GetUtcNow(), ct));
+    }
+
+    internal static Task<IResult> GalleryAddAsync(GalleryAddRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) => Mine(context, db, clock, me => ProfileGallery.AddAsync(db, me, request.AssetId, clock.GetUtcNow(), ct), ct);
+    internal static Task<IResult> GalleryRemoveAsync(Guid imageId, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) => Mine(context, db, clock, me => ProfileGallery.RemoveAsync(db, me, imageId, clock.GetUtcNow(), ct), ct);
+    internal static Task<IResult> GalleryMainAsync(Guid imageId, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) => Mine(context, db, clock, me => ProfileGallery.SetMainAsync(db, me, imageId, clock.GetUtcNow(), ct), ct);
+    internal static Task<IResult> GalleryOrderAsync(GalleryOrderRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) => Mine(context, db, clock, me => ProfileGallery.ReorderAsync(db, me, request.Ids ?? [], ct), ct);
+    internal static Task<IResult> CoverSetAsync(CoverRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) => Mine(context, db, clock, me => ProfileGallery.SetCoverAsync(db, me, request.AssetId, clock.GetUtcNow(), ct), ct);
+
+    /// <summary>The bytes of an image asset of <paramref name="owner"/>, for a viewer who may see that profile.</summary>
+    private static async Task<IResult> ImageOfAsync(Guid viewer, Guid owner, Guid? assetId, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
+    {
+        if (assetId is not { } id) return Results.NotFound();
+        var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == owner && x.DeletedAt == null, ct);
+        if (user is null || (viewer != owner && ProfileService.PrivacyOf(user.PrivacyJson).ProfilePrivate)) return Results.NotFound();
+        var asset = await db.Assets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id && x.OwnerUserId == owner && x.DeletedAt == null, ct);
+        if (asset is null) return Results.NotFound();
+        var version = await db.AssetVersions.AsNoTracking().SingleOrDefaultAsync(x => x.AssetId == id && x.Version == asset.CurrentVersion, ct);
+        if (version is null || version.MimeType is not ("image/png" or "image/jpeg" or "image/webp")) return Results.NotFound();
+        var stream = await storage.OpenReadAsync(version.StorageKey, ct);
+        return stream is null ? Results.NotFound() : Results.File(stream, version.MimeType);
+    }
+
+    internal static async Task<IResult> FeedAsync(Guid userId, DateTimeOffset? before, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!TryUser(context, out var viewer)) return Results.Unauthorized();
+        return await ProfileFeed.PageAsync(db, viewer, userId, before, clock.GetUtcNow(), ct) is { } page ? Results.Ok(page) : Results.NotFound();
+    }
+
+    internal static async Task<IResult> PostAsync(PostRequest request, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!TryUser(context, out var me)) return Results.Unauthorized();
+        Guid? asset = null;
+        if (request.GalleryImageId is { } image)
+        {
+            asset = (await db.ProfileGallery.AsNoTracking().SingleOrDefaultAsync(x => x.Id == image && x.UserId == me, ct))?.AssetId;
+            if (asset is null) return Problem(new("not_found", "Imagem não encontrada na sua galeria."));
+        }
+        if (await ProfileFeed.PostAsync(db, me, request.Text, asset, request.Visibility, clock.GetUtcNow(), ct) is { } failure) return Problem(failure);
+        return Results.Ok(await ProfileFeed.PageAsync(db, me, me, null, clock.GetUtcNow(), ct));
+    }
+
+    internal static async Task<IResult> PostDeleteAsync(Guid postId, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!TryUser(context, out var me)) return Results.Unauthorized();
+        if (await ProfileFeed.DeleteAsync(db, me, postId, clock.GetUtcNow(), ct) is { } failure) return Problem(failure);
+        return Results.Ok(await ProfileFeed.PageAsync(db, me, me, null, clock.GetUtcNow(), ct));
+    }
+
+    internal static async Task<IResult> PostImageAsync(Guid userId, Guid postId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
+    {
+        if (!TryUser(context, out var viewer)) return Results.Unauthorized();
+        return await ImageOfAsync(viewer, userId, await ProfileFeed.ImageOfAsync(db, viewer, userId, postId, ct), db, storage, ct);
+    }
+
+    internal static async Task<IResult> GalleryImageAsync(Guid userId, Guid imageId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
+    {
+        if (!TryUser(context, out var viewer)) return Results.Unauthorized();
+        var image = await db.ProfileGallery.AsNoTracking().SingleOrDefaultAsync(x => x.Id == imageId && x.UserId == userId, ct);
+        return await ImageOfAsync(viewer, userId, image?.AssetId, db, storage, ct);
+    }
+
+    internal static async Task<IResult> CoverImageAsync(Guid userId, HttpContext context, LifeVerseDbContext db, AssetStorageService storage, CancellationToken ct)
+    {
+        if (!TryUser(context, out var viewer)) return Results.Unauthorized();
+        var cover = await db.Users.AsNoTracking().Where(x => x.Id == userId).Select(x => x.ProfileCoverAssetId).SingleOrDefaultAsync(ct);
+        return await ImageOfAsync(viewer, userId, cover, db, storage, ct);
+    }
+
+    internal static async Task<IResult> ParcelShownAsync(Guid parcelId, GroupShownRequest request, HttpContext context, LifeVerseDbContext db, CancellationToken ct)
+    {
+        if (!TryUser(context, out var me)) return Results.Unauthorized();
+        var result = await ProfileService.SetParcelShownAsync(db, me, parcelId, request.Shown, ct);
+        return result is null ? Results.NotFound() : result == "too_many" ? Results.Json(new { error = "too_many", message = $"Você pode destacar até {ProfileService.MaxParcelsShown} terrenos." }, statusCode: 400) : Results.NoContent();
     }
 
     internal static async Task<IResult> MineAsync(HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)

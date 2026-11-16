@@ -17,6 +17,8 @@ public partial class FloatingWindow : PanelContainer
     public event Action<bool>? ExpandToggled;
 
     public bool Minimized => _minimized;
+    /// <summary>The text in the title bar (a window can say "Meu Perfil" for me and "Perfil" for somebody else).</summary>
+    public string Title { get => _title.Text; set => _title.Text = value; }
 
     private Control? _grip;
     private bool _resizing;

@@ -19,6 +19,8 @@ public sealed class User
     public string? ProfilePhotoUrl { get; set; }
     /// <summary>The picture shown on the profile: an image the person owns (shown to others through the profile, never by the asset itself).</summary>
     public Guid? ProfilePhotoAssetId { get; set; }
+    /// <summary>The wide banner at the top of the profile (an image asset of the owner), or null.</summary>
+    public Guid? ProfileCoverAssetId { get; set; }
     /// <summary>"Vida real": what the person wants to say about themselves outside the game (optional).</summary>
     public string FirstLifeBio { get; set; } = string.Empty;
     public string Interests { get; set; } = string.Empty;
@@ -341,6 +343,8 @@ public sealed class IslandParcel
     public bool AllowVoice { get; set; } = true;
     /// <summary>Whether people who build here (and are not the owner or the tenant) may put media (a picture or video on a surface) in their objects.</summary>
     public bool AllowMedia { get; set; } = true;
+    /// <summary>Whether the owner put this parcel among the featured ones on their profile (at most ProfileService.MaxParcelsShown).</summary>
+    public bool ShowInProfile { get; set; }
 }
 
 /// <summary>One line of a parcel's access list: a person allowed in (kind allow) or kept out (kind ban), for ever or until a time.</summary>
@@ -892,4 +896,27 @@ public sealed class TeleportInvite
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? RespondedAt { get; set; }
+}
+
+/// <summary>One picture of the gallery of a profile: an image asset of the owner, in the order the owner chose. The main one is the asset that is also the profile photo.</summary>
+public sealed class ProfileGalleryImage
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public Guid AssetId { get; set; }
+    public int Position { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>A publication on a profile: a short text, optionally with one picture of the owner. Visible to everybody who may see the profile, or only to friends.</summary>
+public sealed class ProfilePost
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required string Text { get; set; }
+    public Guid? AssetId { get; set; }
+    /// <summary>public or friends.</summary>
+    public string Visibility { get; set; } = "public";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? DeletedAt { get; set; }
 }

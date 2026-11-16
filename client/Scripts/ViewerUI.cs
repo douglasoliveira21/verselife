@@ -155,6 +155,17 @@ public partial class ViewerUI : CanvasLayer
         if (_world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow") is null)
             _world.AddChild(new Groups.GroupsHubWindow { Name = "GroupsHubWindow", Said = text => Toast(text), OpenGroup = (id, tab) => _ = _world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow")?.OpenAsync(id, tab == 1 ? "chat" : tab == 2 ? "avisos" : "geral"), CreateGroup = () => _world.GetNodeOrNull<Groups.GroupCreateWindow>("GroupCreateWindow")?.Open(), FindGroups = () => _world.GetNodeOrNull<Groups.GroupDiscoverWindow>("GroupDiscoverWindow")?.Open() });
         if (_world.GetNodeOrNull<ProfileWindow>("ProfileWindow") is null) _world.AddChild(new ProfileWindow { Name = "ProfileWindow" });
+        if (_world.GetNodeOrNull<ProfileWindow>("ProfileWindow") is { } profileWindow)
+        {   // the navigation column of the profile opens the modules that already exist
+            profileWindow.Shortcuts["appearance"] = () => _world.GetNodeOrNull<AppearanceWindow>("AppearanceWindow")?.Toggle();
+            profileWindow.Shortcuts["inventory"] = () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle();
+            profileWindow.Shortcuts["groups"] = () => _world.GetNodeOrNull<Groups.GroupsHubWindow>("GroupsHubWindow")?.Toggle();
+            profileWindow.Shortcuts["land"] = () => _world.GetNodeOrNull<RealEstate.MyPropertiesWindow>("MyPropertiesWindow")?.Toggle();
+            profileWindow.Shortcuts["settings"] = () => OpenSettings();
+            profileWindow.OpenGroup = id => _ = _world.GetNodeOrNull<Groups.GroupProfileWindow>("GroupProfileWindow")?.OpenAsync(id);
+            profileWindow.VisitIsland = JoinIslandById; profileWindow.VisitParcel = JoinParcel; profileWindow.CurrentIsland = () => _network.CurrentIslandId;
+            profileWindow.CaptureWorld = CaptureSnapshotAsync;
+        }
         if (_world.GetNodeOrNull<IslandLookService>("IslandLookService") is null) _world.AddChild(new IslandLookService { Name = "IslandLookService" });
         if (_world.GetNodeOrNull<IslandManagement.IslandManagementWindow>("IslandManagementWindow") is null)
             _world.AddChild(new IslandManagement.IslandManagementWindow { Name = "IslandManagementWindow", OpenLandManagement = (island, section, offer) => _ = _world.GetNodeOrNull<LandManagement.LandManagementWindow>("LandManagementWindow")?.OpenSectionAsync(island, section, offer), ViewInSearch = (_, name) => _world.GetNodeOrNull<SearchWindow>("SearchWindow")?.OpenWithQuery(name), ViewProfile = id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id), CurrentPosition = () => _player is null ? null : (_player.GlobalPosition.X, _player.GlobalPosition.Z) });
@@ -633,7 +644,14 @@ public partial class ViewerUI : CanvasLayer
 
     private async void TakeSnapshot()
     {
-        if (_snapshotBusy) return;
+        var path = await CaptureSnapshotAsync();
+        Toast(path is not null ? $"Foto salva em {path}" : "Não foi possível salvar a foto.");
+    }
+
+    /// <summary>Takes a picture of the world (the interface only when the setting says so), saves it in the snapshots folder and returns its path (null when it could not be saved).</summary>
+    private async Task<string?> CaptureSnapshotAsync()
+    {
+        if (_snapshotBusy) return null;
         _snapshotBusy = true;
         var hud = _player?.GetNodeOrNull<CanvasLayer>("HUD");
         var withInterface = Settings.SettingsService.Store.Get<bool>("camera.photo_include_ui");
@@ -645,8 +663,8 @@ public partial class ViewerUI : CanvasLayer
         DirAccess.MakeDirRecursiveAbsolute(directory);
         var jpg = (string)Settings.SettingsService.Store.Value("camera.photo_format") == "jpg";
         var path = $"{directory}/lifeverse-{DateTime.Now:yyyyMMdd-HHmmss}.{(jpg ? "jpg" : "png")}";
-        Toast((jpg ? image.SaveJpg(path, .92f) : image.SavePng(path)) == Error.Ok ? $"Foto salva em {path}" : "Não foi possível salvar a foto.");
-        _snapshotBusy = false;
+        var saved = (jpg ? image.SaveJpg(path, .92f) : image.SavePng(path)) == Error.Ok;
+        _snapshotBusy = false; return saved ? path : null;
     }
 
     private void ShowControlsHelp()

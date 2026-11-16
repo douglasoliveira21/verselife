@@ -2617,6 +2617,12 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("sale_price");
 
+                    b.Property<bool>("ShowInProfile")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("show_in_profile");
+
                     b.Property<float>("SpawnX")
                         .HasColumnType("real")
                         .HasColumnName("spawn_x");
@@ -4181,6 +4187,81 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("player_locations", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ProfileGalleryImage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer")
+                        .HasColumnName("position");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "AssetId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "Position");
+
+                    b.ToTable("profile_gallery", "social");
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ProfilePost", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("asset_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasMaxLength(600)
+                        .HasColumnType("character varying(600)")
+                        .HasColumnName("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("visibility");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("profile_posts", "social");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.PropertyNotice", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5543,6 +5624,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("privacy_json");
 
+                    b.Property<Guid?>("ProfileCoverAssetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("profile_cover_asset_id");
+
                     b.Property<Guid?>("ProfilePhotoAssetId")
                         .HasColumnType("uuid")
                         .HasColumnName("profile_photo_asset_id");
@@ -6605,6 +6690,24 @@ namespace LifeVerse.Api.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ProfileGalleryImage", b =>
+                {
+                    b.HasOne("LifeVerse.Api.Data.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("LifeVerse.Api.Data.ProfilePost", b =>
+                {
                     b.HasOne("LifeVerse.Api.Data.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")

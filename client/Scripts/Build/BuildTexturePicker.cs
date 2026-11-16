@@ -29,6 +29,8 @@ public partial class BuildTexturePicker : Node
     public void SourceForTesting(int source) => SelectSource(source);
     public void ConfirmForTesting() => Confirm();
     public void ImportForTesting(string path) => ImportImage(path);
+    /// <summary>Opens the window and sends this file (a picture just taken in the world) as a new texture; it shows up in Minhas texturas when the upload ends.</summary>
+    public void OpenAndImport(Action<Entry> picked, string path) { Open(false, picked); ImportImage(path); }
     public void LoadForTesting(string json) => ReadItems(json);
 
     private TextureCache? Cache => GetParent()?.GetNodeOrNull<TextureCache>("TextureCache");

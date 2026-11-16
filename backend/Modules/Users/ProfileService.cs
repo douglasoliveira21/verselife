@@ -9,7 +9,8 @@ namespace LifeVerse.Api.Modules.Users;
 public sealed record ProfileUpdate(
     string? Bio = null, string? FirstLifeBio = null, string? Interests = null,
     Guid? PhotoAssetId = null, bool ClearPhoto = false,
-    bool? HideGroups = null, bool? HideMarriage = null, bool? PrivateProfile = null);
+    bool? HideGroups = null, bool? HideMarriage = null, bool? PrivateProfile = null, bool? HideParcels = null,
+    bool? ShowFavorites = null, bool? HideAnniversary = null, bool? HideStats = null, bool? HideAchievements = null);
 
 public sealed record ProfileFailure(string Code, string Message);
 
@@ -19,10 +20,10 @@ public sealed record ProfileFailure(string Code, string Message);
 /// </summary>
 public static class ProfileService
 {
-    public const int MaxBio = 2000, MaxInterests = 500, MaxGroupsShown = 30;
+    public const int MaxBio = 2000, MaxInterests = 500, MaxGroupsShown = 30, MaxParcelsShown = 6;
     public static readonly string[] AccountTypes = ["standard", "donor"];
 
-    public sealed record Privacy(bool ProfilePrivate, bool GroupsHidden, bool MarriageHidden, bool PresencePrivate);
+    public sealed record Privacy(bool ProfilePrivate, bool GroupsHidden, bool MarriageHidden, bool PresencePrivate, bool ParcelsHidden = false, bool FavoritesShown = false, bool BirthdayHidden = false, bool StatsHidden = false, bool AchievementsHidden = false);
 
     public static Privacy PrivacyOf(string? json)
     {
@@ -30,7 +31,7 @@ public static class ProfileService
         {
             var root = JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json) as JsonObject ?? [];
             string Text(string key) => root[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : string.Empty;
-            return new Privacy(Text("profile") == "private", Text("groups") == "hidden", Text("marriage") == "hidden", Text("presence") == "private");
+            return new Privacy(Text("profile") == "private", Text("groups") == "hidden", Text("marriage") == "hidden", Text("presence") == "private", Text("parcels") == "hidden", Text("favorites") == "shown", Text("birthday") == "hidden", Text("stats") == "hidden", Text("achievements") == "hidden");
         }
         catch (JsonException) { return new Privacy(false, false, false, false); }
     }
@@ -41,6 +42,11 @@ public static class ProfileService
         if (update.HideGroups is { } groups) { if (groups) root["groups"] = "hidden"; else root.Remove("groups"); }
         if (update.HideMarriage is { } marriage) { if (marriage) root["marriage"] = "hidden"; else root.Remove("marriage"); }
         if (update.PrivateProfile is { } hidden) { if (hidden) root["profile"] = "private"; else root.Remove("profile"); }
+        if (update.HideParcels is { } parcels) { if (parcels) root["parcels"] = "hidden"; else root.Remove("parcels"); }
+        if (update.ShowFavorites is { } favorites) { if (favorites) root["favorites"] = "shown"; else root.Remove("favorites"); }
+        if (update.HideAnniversary is { } birthday) { if (birthday) root["birthday"] = "hidden"; else root.Remove("birthday"); }
+        if (update.HideStats is { } stats) { if (stats) root["stats"] = "hidden"; else root.Remove("stats"); }
+        if (update.HideAchievements is { } achievements) { if (achievements) root["achievements"] = "hidden"; else root.Remove("achievements"); }
         return root.ToJsonString();
     }
 
@@ -48,6 +54,8 @@ public static class ProfileService
     public static DateTimeOffset CreatedOf(User user) => user.Avatar?.CreatedAt ?? user.CreatedAt;
 
     public static string BirthdayText(User user) => CreatedOf(user).ToString("dd/MM");
+
+    internal static DateTimeOffset? MarriedSince(object? marriage) => marriage is null ? null : System.Text.Json.JsonSerializer.SerializeToElement(marriage).TryGetProperty("since", out var s) && s.TryGetDateTimeOffset(out var when) ? when : null;
 
     // ---- reading -----------------------------------------------------------------------------------------------------------
 
@@ -60,6 +68,11 @@ public static class ProfileService
         var display = user.Avatar?.DisplayName ?? user.Username;
         var marriage = open && (self || !privacy.MarriageHidden) ? await CurrentMarriageAsync(db, target, ct) : null;
         var groups = open && (self || !privacy.GroupsHidden) ? await GroupsShownAsync(db, viewer, target, ct) : [];
+        var parcels = open && (self || !privacy.ParcelsHidden) ? await ParcelsShownAsync(db, target, self, ct) : [];
+        var gallery = open ? (await ProfileGallery.ListAsync(db, target, ct)).Select(x => (object)new { id = x.Id, main = x.AssetId == user.ProfilePhotoAssetId }).ToList() : [];
+        var favorites = open && (self || privacy.FavoritesShown) ? await ProfileSections.FavoritesAsync(db, viewer, target, now, ct) : [];
+        var achievements = open && (self || !privacy.AchievementsHidden) ? await ProfileSections.AchievementsAsync(db, user, privacy, self, MarriedSince(marriage), now, ct) : [];
+        var stats = open && (self || !privacy.StatsHidden) ? await ProfileSections.StatsAsync(db, user, privacy, self, now, ct) : null;
         return new
         {
             id = user.Id, username = user.Username, displayName = display, isSelf = self, privateProfile = !open,
@@ -67,10 +80,13 @@ public static class ProfileService
             presence = self || !privacy.PresencePrivate ? user.PresenceStatus : "offline",
             bio = open ? user.Bio : string.Empty, firstLifeBio = open ? user.FirstLifeBio : string.Empty, interests = open ? user.Interests : string.Empty,
             hasPhoto = open && (user.ProfilePhotoAssetId is not null || !string.IsNullOrWhiteSpace(user.ProfilePhotoUrl)), photoUrl = open ? user.ProfilePhotoUrl : null,
-            birthday = open ? BirthdayText(user) : null, characterAgeYears = open ? Math.Max(0, (int)((now - CreatedOf(user)).TotalDays / 365.25)) : (int?)null,
+            birthday = open && (self || !privacy.BirthdayHidden) ? BirthdayText(user) : null, characterAgeYears = open ? Math.Max(0, (int)((now - CreatedOf(user)).TotalDays / 365.25)) : (int?)null,
             married = marriage is not null, marriage,
             groups,
-            settings = self ? new { hideGroups = privacy.GroupsHidden, hideMarriage = privacy.MarriageHidden, privateProfile = privacy.ProfilePrivate } : null
+            parcels,
+            gallery, hasCover = open && user.ProfileCoverAssetId is not null,
+            favorites, achievements, stats,
+            settings = self ? new { hideGroups = privacy.GroupsHidden, hideMarriage = privacy.MarriageHidden, privateProfile = privacy.ProfilePrivate, hideParcels = privacy.ParcelsHidden, showFavorites = privacy.FavoritesShown, hideAnniversary = privacy.BirthdayHidden, hideStats = privacy.StatsHidden, hideAchievements = privacy.AchievementsHidden } : null
         };
     }
 
@@ -84,6 +100,15 @@ public static class ProfileService
             .OrderBy(x => x.Name).Take(MaxGroupsShown * 2).ToListAsync(ct);
         return rows.Where(x => viewer == target || x.Privacy == "public" || mine!.Contains(x.Id)).Take(MaxGroupsShown)
             .Select(x => (object)new { id = x.Id, name = x.Name, tag = x.Tag, role = x.Role, color = x.AccentColor, shown = x.ShowInProfile }).ToList();
+    }
+
+    /// <summary>The land of a person that is shown on the profile (the owner sees all of theirs, with whether each is shown). Only land in the person's own name, never a group's.</summary>
+    private static async Task<List<object>> ParcelsShownAsync(LifeVerseDbContext db, Guid target, bool self, CancellationToken ct)
+    {
+        var rows = await db.IslandParcels.AsNoTracking().Where(p => p.OwnerUserId == target && p.GroupId == null && p.DeletedAt == null && (self || p.ShowInProfile))
+            .Join(db.Islands.AsNoTracking().Where(i => i.DeletedAt == null), p => p.IslandId, i => i.Id, (p, i) => new { p.Id, p.IslandId, IslandName = i.Name, p.Name, p.Category, p.Area, p.Code, p.ShowInProfile })
+            .OrderByDescending(x => x.ShowInProfile).ThenBy(x => x.Name).Take(self ? 60 : MaxParcelsShown).ToListAsync(ct);
+        return rows.Select(x => (object)new { id = x.Id, islandId = x.IslandId, islandName = x.IslandName, name = x.Name, category = x.Category, area = x.Area, code = x.Code, shown = x.ShowInProfile }).ToList();
     }
 
     // ---- editing -----------------------------------------------------------------------------------------------------------
@@ -120,6 +145,15 @@ public static class ProfileService
         var member = await db.GroupMembers.SingleOrDefaultAsync(x => x.UserId == userId && x.GroupId == groupId, ct);
         if (member is null) return false;
         member.ShowInProfile = shown; await db.SaveChangesAsync(ct); return true;
+    }
+
+    /// <summary>Puts one of my parcels among the featured ones (at most MaxParcelsShown) or takes it off. Only land in my own name. Returns null when it is not mine, "too_many" when the limit is reached, "" when done.</summary>
+    public static async Task<string?> SetParcelShownAsync(LifeVerseDbContext db, Guid userId, Guid parcelId, bool shown, CancellationToken ct)
+    {
+        var parcel = await db.IslandParcels.SingleOrDefaultAsync(x => x.Id == parcelId && x.OwnerUserId == userId && x.GroupId == null && x.DeletedAt == null, ct);
+        if (parcel is null) return null;
+        if (shown && !parcel.ShowInProfile && await db.IslandParcels.CountAsync(x => x.OwnerUserId == userId && x.GroupId == null && x.DeletedAt == null && x.ShowInProfile, ct) >= MaxParcelsShown) return "too_many";
+        parcel.ShowInProfile = shown; await db.SaveChangesAsync(ct); return string.Empty;
     }
 
     /// <summary>The type of account is decided by the administration only (a donor supports the game).</summary>
