@@ -223,6 +223,20 @@ public partial class ViewerUI : CanvasLayer
         if (_walletTimer >= 60 && _network.IsAuthenticated && _wallet.GetHttpClientStatus() == Godot.HttpClient.Status.Disconnected) { _walletTimer = 0; RequestWallet(); }
     }
 
+    private Control? _chatField;
+    public LineEdit ChatInputForTesting => _chat;
+    public Control? ChatFieldForTesting => _chatField;
+
+    /// <summary>A click anywhere that is not the chat (its field or its window) ends the typing at once, whatever was clicked, even the world or something that cannot take focus.</summary>
+    public override void _Input(InputEvent input)
+    {
+        if (input is not InputEventMouseButton { Pressed: true } click || _chat is null || !_chat.HasFocus()) return;
+        var point = click.GlobalPosition;
+        if (_chatField is not null && _chatField.GetGlobalRect().HasPoint(point)) return;
+        if (_chatWindow is { Visible: true } && _chatWindow.GetGlobalRect().HasPoint(point)) return;
+        _chat.ReleaseFocus();
+    }
+
     public override void _UnhandledInput(InputEvent input)
     {
         if (SettingsOpen) return;                // the settings window owns the keyboard while it is open

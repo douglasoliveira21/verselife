@@ -54,6 +54,10 @@ public partial class InterfaceWindowsSmoke : Node
             Require(people.NearbyForTesting.ItemCount == 0 && people.RecentForTesting.ItemCount == 2, "when they leave, Perto empties and Recente keeps them");
             people.SelectTabForTesting(2); await Frames(1);
 
+            // typing in the chat ends with a click anywhere else, even on the world
+            ui.ChatInputForTesting.GrabFocus(); await Frames(2); Require(ui.ChatInputForTesting.HasFocus(), "the chat field takes focus");
+            var inside = ui.ChatFieldForTesting!.GetGlobalRect().GetCenter(); ui._Input(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = inside, GlobalPosition = inside }); await Frames(2); Require(ui.ChatInputForTesting.HasFocus(), "a click inside the chat keeps typing");
+            var outside = new Vector2(ui.ChatFieldForTesting!.GetGlobalRect().Position.X + 900, 100); ui._Input(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = outside, GlobalPosition = outside }); await Frames(2); Require(!ui.ChatInputForTesting.HasFocus(), "a click anywhere else ends the typing at once");
             GD.Print("event=interface_windows_smoke result=passed");
             GetTree().Quit();
         }

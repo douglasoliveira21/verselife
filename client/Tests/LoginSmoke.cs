@@ -72,7 +72,7 @@ public partial class LoginSmoke : Control
             Require(login.Panel.Form.User.Edit.PlaceholderText == "Nome de usuário" && login.Panel.Form.Password.Edit.PlaceholderText == "Sua senha" && login.Panel.Form.Password.Edit.Secret, "placeholders and a masked password");
             Require(login.FindChildren("*", "Button", true, false).OfType<Button>().All(b => !b.Text.Contains("Google") && !b.Text.Contains("Discord") && !b.Text.Contains("Steam") && !b.Text.Contains("Apple")), "no linked accounts");
             Require(login.VersionLabel.Text == $"Versão {AppManager.Version}  •  Build dev", $"version and build (got {login.VersionLabel.Text})");
-            Require(new[] { login.Controls.Settings, login.Controls.Minimize, login.Controls.Close }.All(b => b.Visible), "settings, minimize and close");
+            Require(login.Controls.Settings.Visible && login.Controls.Minimize.Visible == WindowControlsFullScreen && login.Controls.Close.Visible == WindowControlsFullScreen, "settings always; minimize and close only in full screen");
 
             // ---- music and light ----
             Require(login.Music.Looping && login.Music.Playing == !LoginMusic.Muted && LoginMusic.TrackPath.EndsWith("login_theme.mp3", StringComparison.Ordinal), "the theme plays in a loop");
@@ -128,8 +128,7 @@ public partial class LoginSmoke : Control
             login.Panel.Recovery.Back.EmitSignal(BaseButton.SignalName.Pressed); await Frames(10); Require(login.Panel.Mode == LoginMode.Login, "and goes back");
 
             // ---- settings dialog ----
-            login.Controls.OpenSettings(); await Frames(6); var dialog = login.Controls.Dialog!; Require(dialog.FindChild("Fullscreen", true, false) is CheckBox && dialog.FindChild("Resolution", true, false) is OptionButton && dialog.FindChild("Volume", true, false) is HSlider, "settings: full screen, resolution, volume");
-            dialog.GetCancelButton().EmitSignal(BaseButton.SignalName.Pressed); await Frames(3);
+            login.Controls.OpenSettings(); await Frames(6); Require(login.Controls.SettingsPanel is { Visible: true } && login.Controls.SettingsPanel.GetParent() == login, "settings opens the game's own settings window over the login"); login.Controls.SettingsPanel!.RequestClose(); await Frames(3); Require(login.Controls.SettingsPanel is { Visible: false }, "and it closes");
 
             // ---- layout at several window sizes ----
             foreach (var (w, h) in new[] { (1366, 768), (1920, 1080), (2560, 1440), (3840, 2160), (1280, 1024), (1000, 1000) })
@@ -146,5 +145,6 @@ public partial class LoginSmoke : Control
     private async Task Wait(ServerStatus status, ServerStatus.State state) => await Until(() => status.Current == state);
     private async Task Until(Func<bool> done) { for (var i = 0; i < 600 && !done(); i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); Require(done(), "timed out waiting"); }
     private async Task Frames(int count) { for (var i = 0; i < count; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); }
+    private static bool WindowControlsFullScreen => LifeVerse.Client.Scripts.LoginUi.WindowControls.IsFullScreen;
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
 }

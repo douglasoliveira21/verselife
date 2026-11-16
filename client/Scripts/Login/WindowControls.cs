@@ -1,27 +1,37 @@
 using Godot;
 using LifeVerse.Client.Autoloads;
+using LifeVerse.Client.Scripts.Settings;
 
 namespace LifeVerse.Client.Scripts.LoginUi;
 
-/// <summary>The three buttons at the top right: configurações, minimizar and fechar. Settings use the same <see cref="ClientSettings"/> the game uses; the choice is saved by it.</summary>
+/// <summary>
+/// The buttons at the top right of the login: music, configurações, and, only in full screen, minimizar and fechar (in a window the system's own title bar does that). Configurações opens the same settings window the game uses.
+/// </summary>
 public partial class WindowControls : HBoxContainer
 {
-    public static readonly (string Text, Vector2I Size)[] Resolutions = [("1280 × 720", new(1280, 720)), ("1366 × 768", new(1366, 768)), ("1600 × 900", new(1600, 900)), ("1920 × 1080", new(1920, 1080)), ("2560 × 1440", new(2560, 1440)), ("3840 × 2160", new(3840, 2160))];
-
     public Button Settings { get; private set; } = null!;
     public Button Minimize { get; private set; } = null!;
     public Button Close { get; private set; } = null!;
     public Button Sound { get; private set; } = null!;
     /// <summary>The theme the speaker button mutes.</summary>
     public LoginMusic? Music { get; set; }
-    public ConfirmationDialog? Dialog { get; private set; }
+    /// <summary>The settings window (made on the first use).</summary>
+    public SettingsWindow? SettingsPanel { get; private set; }
+
+    /// <summary>Whether the game fills the screen: only then are minimize and close shown.</summary>
+    public static bool IsFullScreen => DisplayServer.WindowGetMode() is DisplayServer.WindowMode.Fullscreen or DisplayServer.WindowMode.ExclusiveFullscreen;
 
     public override void _Ready()
     {
         AddThemeConstantOverride("separation", 8);
         Settings = Round("settings", "Configurações", OpenSettings); Minimize = Round("minimize", "Minimizar", () => DisplayServer.WindowSetMode(DisplayServer.WindowMode.Minimized)); Close = Round("close", "Fechar o jogo", () => GetTree().Quit());
         Sound = Round(LoginMusic.Muted ? "mic-off" : "volume", LoginMusic.Muted ? "Ligar a música" : "Silenciar a música", ToggleSound); AddChild(Sound); AddChild(Settings); AddChild(Minimize); AddChild(Close);
+        Follow();
     }
+
+    public override void _Process(double delta) => Follow();
+
+    private void Follow() { var full = IsFullScreen; if (Minimize.Visible != full) Minimize.Visible = full; if (Close.Visible != full) Close.Visible = full; }
 
     private static Button Round(string icon, string tip, Action action)
     {
@@ -36,18 +46,14 @@ public partial class WindowControls : HBoxContainer
         var mute = !LoginMusic.Muted; Music?.SetMuted(mute); Sound.Icon = UiStyle.Icon(mute ? "mic-off" : "volume", UiStyle.Text, 22); Sound.TooltipText = mute ? "Ligar a música" : "Silenciar a música";
     }
 
-    /// <summary>Window or full screen, resolution and volume.</summary>
+    /// <summary>The settings window of the game, over the login screen.</summary>
     public void OpenSettings()
     {
-        if (Dialog is not null && IsInstanceValid(Dialog)) { Dialog.QueueFree(); }
-        var settings = GetNodeOrNull<ClientSettings>("/root/ClientSettings"); if (settings is null) return;
-        var content = new VBoxContainer(); content.AddThemeConstantOverride("separation", 12);
-        var full = new CheckBox { Text = " Tela cheia", ButtonPressed = DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen, Name = "Fullscreen" }; content.AddChild(full);
-        content.AddChild(new Label { Text = "Resolução da janela" }); var size = new OptionButton { Name = "Resolution", CustomMinimumSize = new Vector2(280, 36) }; var current = DisplayServer.WindowGetSize(); var chosen = 0;
-        for (var i = 0; i < Resolutions.Length; i++) { size.AddItem(Resolutions[i].Text); if (Resolutions[i].Size == current) chosen = i; } size.Select(chosen); content.AddChild(size);
-        content.AddChild(new Label { Text = "Volume geral" }); var volume = new HSlider { Name = "Volume", MinValue = 0, MaxValue = 1, Step = .01, Value = settings.MasterVolume, CustomMinimumSize = new Vector2(280, 28) }; content.AddChild(volume);
-        var dialog = new ConfirmationDialog { Title = "Configurações", OkButtonText = "Aplicar", CancelButtonText = "Cancelar", Exclusive = true, Theme = ViewerTheme.Create() }; dialog.AddChild(content); AddChild(dialog); Dialog = dialog;
-        dialog.Confirmed += () => { var pick = Resolutions[Math.Max(0, size.Selected)].Size; settings.Apply(pick.X, pick.Y, full.ButtonPressed, settings.VSync, settings.FpsLimit, settings.MouseSensitivity, settings.UiScale, (float)volume.Value); LoginMusic.ApplyBusVolume((float)volume.Value); dialog.QueueFree(); };
-        dialog.Canceled += () => dialog.QueueFree(); dialog.PopupCentered(new Vector2I(380, 280));
+        if (SettingsPanel is null || !IsInstanceValid(SettingsPanel))
+        {
+            var top = (Node)this; while (top is not LoginScreen && top.GetParent() is Control parent) top = parent; if (top is not Control host) return;
+            SettingsPanel = new SettingsWindow(SettingsService.Store); host.AddChild(SettingsPanel);
+        }
+        SettingsPanel.Open();
     }
 }

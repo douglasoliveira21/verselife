@@ -104,7 +104,7 @@ public static partial class SettingsCatalog
             { Choices = Pick(("none", "Nenhuma"), ("box", "Caixa"), ("convex", "Casco convexo"), ("triangle", "Malha exata (só parado)")), Group = "Importação", Column = 0, Keywords = ["colisão", "importar", "modelo", "casa"] };
 
         // ---- Mundo, ilhas e teleportes
-        yield return new("world.minimap_open", SettingCategory.World, "Geral", "Mini-mapa aberto", "Mostra o mini-mapa na tela.", SettingKind.Bool, true) { Group = "Mapa", Column = 0, Keywords = ["minimapa", "mapa"] };
+        yield return new("world.minimap_open", SettingCategory.World, "Geral", "Mini-mapa aberto", "Mostra o mini-mapa na tela agora. O jogo sempre começa com ele fechado.", SettingKind.Bool, false) { Group = "Mapa", Column = 0, Keywords = ["minimapa", "mapa"] };
         yield return new("world.show_coords", SettingCategory.World, "Geral", "Mostrar coordenadas", "As coordenadas do seu personagem na barra de localização.", SettingKind.Bool, true) { Group = "Mapa", Column = 0, Keywords = ["coordenadas", "posição"] };
         yield return new("world.minimap_rotate", SettingCategory.World, "Geral", "Mini-mapa gira com a câmera", "Desligado, o norte fica sempre em cima. Ligado, a direção em que você olha fica em cima.", SettingKind.Bool, false) { Group = "Mini-mapa", Column = 0, Keywords = ["mini-mapa", "norte", "girar", "orientação"] };
         yield return new("world.minimap_zoom", SettingCategory.World, "Geral", "Alcance do mini-mapa", "Quantos metros o mini-mapa mostra de ponta a ponta. A roda do mouse sobre ele também muda isso.", SettingKind.Int, 300) { Min = 40, Max = 1000, Step = 10, Unit = " m", Group = "Mini-mapa", Column = 0, Keywords = ["mini-mapa", "zoom", "alcance"] };

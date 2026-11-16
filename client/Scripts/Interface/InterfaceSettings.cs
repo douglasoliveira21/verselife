@@ -9,7 +9,7 @@ namespace LifeVerse.Client.Scripts.Interface;
 public sealed class InterfaceSettings
 {
     public const string LegacyPath = "user://viewer.cfg";
-    public const float DefaultScale = .8f;
+    public const float DefaultScale = 1f;
 
     private readonly ConfigFile _cfg = new();
     public string Path { get; }

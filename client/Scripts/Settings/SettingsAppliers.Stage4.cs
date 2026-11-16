@@ -6,6 +6,8 @@ namespace LifeVerse.Client.Scripts.Settings;
 /// <summary>What the settings of the remaining categories do, and what their buttons do.</summary>
 public static partial class SettingsAppliers
 {
+    /// <summary>False until the settings of the first start-up were applied: some (the mini-map) must not open anything then.</summary>
+    public static bool StartupDone { get; set; }
     private static ViewerUI? Viewer => Tree?.GetFirstNodeInGroup("lifeverse_viewer") as ViewerUI;
     private static readonly string[] InterfaceIds = ["interface.scale", "interface.mode", "interface.window_opacity", "interface.map_opacity", "interface.compact_toolbar", "interface.side_bar", "chat.opacity"];
 
@@ -48,7 +50,7 @@ public static partial class SettingsAppliers
             store.RegisterApplier(id, _ => { Build.BuildEditorWindow.Defaults = ((string)store.Value("build.space") == "local", store.Get<bool>("build.snap"), store.Get<float>("build.move_step"), store.Get<float>("build.rotate_step"), store.Get<float>("build.scale_step")); Tree?.CallGroup("lifeverse_build_window", "ApplyDefaults"); });
         store.RegisterApplier("build.import_collision", v => { if (ModelImportDialog.ImportedCollisionShape != (string)v) ModelImportDialog.SaveImportedCollisionShape((string)v); });
 
-        store.RegisterApplier("world.minimap_open", v => Viewer?.SetMiniMapOpen((bool)v));
+        store.RegisterApplier("world.minimap_open", v => { if (StartupDone) Viewer?.SetMiniMapOpen((bool)v); }); // at start-up the mini-map stays closed whatever was saved
         store.RegisterApplier("world.show_coords", v => Viewer?.SetCoordinatesVisible((bool)v));
         foreach (var id in Map.MapHub.SettingIds) { var captured = id; store.RegisterApplier(id, v => (Tree?.GetFirstNodeInGroup("lifeverse_map_hub") as Map.MapHub)?.ApplySetting(captured, v)); }
 

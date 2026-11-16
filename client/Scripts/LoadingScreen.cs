@@ -53,7 +53,7 @@ public partial class LoadingScreen : CanvasLayer
         var background = new ColorRect { Color = new Color("#0D141A") }; background.SetAnchorsPreset(Control.LayoutPreset.FullRect); _root.AddChild(background);
         _backdrop = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered, Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore }; _backdrop.SetAnchorsPreset(Control.LayoutPreset.FullRect); _root.AddChild(_backdrop);
         var dim = new ColorRect { Color = new Color("#0D141A", .62f), MouseFilter = Control.MouseFilterEnum.Ignore }; dim.SetAnchorsPreset(Control.LayoutPreset.FullRect); _root.AddChild(dim);
-        var glow = new ColorRect { Color = new Color(UiStyle.Accent, .05f) }; glow.SetAnchorsPreset(Control.LayoutPreset.FullRect); glow.AnchorTop = .55f; _root.AddChild(glow);
+        var gradient = new Gradient { Colors = [new Color(UiStyle.Accent, 0f), new Color(UiStyle.Accent, .07f)] }; var glow = new TextureRect { Texture = new GradientTexture2D { Gradient = gradient, Fill = GradientTexture2D.FillEnum.Linear, FillFrom = new Vector2(0, 0), FillTo = new Vector2(0, 1), Width = 8, Height = 256 }, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = Control.MouseFilterEnum.Ignore }; glow.SetAnchorsPreset(Control.LayoutPreset.FullRect); glow.AnchorTop = .4f; _root.AddChild(glow); // a soft glow at the bottom, no hard edge
 
         var column = new VBoxContainer { Alignment = BoxContainer.AlignmentMode.Center }; column.SetAnchorsPreset(Control.LayoutPreset.FullRect); column.AddThemeConstantOverride("separation", 18);
         column.OffsetLeft = 24; column.OffsetRight = -24; column.OffsetTop = 24; column.OffsetBottom = -24; _root.AddChild(column);
@@ -272,12 +272,14 @@ public partial class LoadingScreen : CanvasLayer
             var radius = Size.Y / 2f;
             DrawStyleBox(new StyleBoxFlat { BgColor = new Color("#121A20"), BorderColor = new Color("#3A4A55"), BorderWidthBottom = 1, BorderWidthTop = 1, BorderWidthLeft = 1, BorderWidthRight = 1, CornerRadiusBottomLeft = (int)radius, CornerRadiusBottomRight = (int)radius, CornerRadiusTopLeft = (int)radius, CornerRadiusTopRight = (int)radius }, new Rect2(Vector2.Zero, Size));
             var fill = new StyleBoxFlat { BgColor = UiStyle.Accent, CornerRadiusBottomLeft = (int)radius, CornerRadiusBottomRight = (int)radius, CornerRadiusTopLeft = (int)radius, CornerRadiusTopRight = (int)radius };
+            // the real progress is always drawn; when the work cannot be measured a soft light runs over the bar (left to right, again and again) to show it is alive
+            var filled = Value > 0 ? Mathf.Max(Size.Y, Size.X * Mathf.Clamp(Value, 0f, 1f)) : 0f;
+            if (filled > 0) DrawStyleBox(fill, new Rect2(0, 0, filled, Size.Y));
             if (Indeterminate)
             {
-                var width = Size.X * .28f; var travel = Size.X - width; var t = (Mathf.Sin(Phase * 2.2f) + 1f) / 2f;
-                DrawStyleBox(fill, new Rect2(travel * t, 0, width, Size.Y));
+                var width = Size.X * .22f; var x = Mathf.Lerp(-width, Size.X, (Phase * .55f) % 1f); var left = Mathf.Max(0f, x); var right = Mathf.Min(Size.X, x + width);
+                if (right - left > Size.Y * .6f) DrawStyleBox(new StyleBoxFlat { BgColor = new Color(UiStyle.Accent, x < filled ? .5f : .3f), CornerRadiusBottomLeft = (int)radius, CornerRadiusBottomRight = (int)radius, CornerRadiusTopLeft = (int)radius, CornerRadiusTopRight = (int)radius }, new Rect2(left, 0, right - left, Size.Y));
             }
-            else if (Value > 0) DrawStyleBox(fill, new Rect2(0, 0, Mathf.Max(Size.Y, Size.X * Mathf.Clamp(Value, 0f, 1f)), Size.Y));
         }
     }
 }

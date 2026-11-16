@@ -8,7 +8,9 @@ namespace LifeVerse.Client.Scripts.Interface;
 /// </summary>
 public static class InterfaceScale
 {
-    public const float Min = .6f, Max = 2f, AutoMin = .75f, AutoMax = 1.5f, ReferenceWidth = 1920f, ReferenceHeight = 1080f, ReferenceFactor = .8f, ReadableScale = .72f;
+    public const float Min = .6f, Max = 2f, AutoMin = .9f, AutoMax = 1.9f, ReferenceWidth = 1920f, ReferenceHeight = 1080f, ReferenceFactor = 1f, ReadableScale = .72f;
+    /// <summary>What "100%" means: the interface is drawn at this fraction of the design size, so 100% is a comfortable size that leaves room on the screen (it used to be 125% of this).</summary>
+    public const float Baseline = .8f;
     /// <summary>The manual choices, in the order of the menu (after "Automático").</summary>
     public static readonly float[] Choices = [.75f, .85f, .9f, 1f, 1.1f, 1.25f, 1.5f];
 
@@ -21,12 +23,12 @@ public static class InterfaceScale
     /// </summary>
     public static float Auto(float windowWidth, float windowHeight)
     {
-        var stretch = Math.Max(.1f, Math.Min(Math.Max(1f, windowWidth) / ReferenceWidth, Math.Max(1f, windowHeight) / ReferenceHeight));
+        var stretch = Math.Max(.1f, Math.Min(Math.Max(1f, windowWidth) / ReferenceWidth, Math.Max(1f, windowHeight) / ReferenceHeight)) * Baseline;
         return Mathf.Clamp(Math.Max(ReferenceFactor, ReadableScale / stretch), AutoMin, AutoMax);
     }
 
     /// <summary>What the person actually sees: window pixels per interface unit (stretch × factor).</summary>
-    public static float Effective(float windowWidth, float windowHeight, float factor) => Math.Min(windowWidth / ReferenceWidth, windowHeight / ReferenceHeight) * factor;
+    public static float Effective(float windowWidth, float windowHeight, float factor) => Math.Min(windowWidth / ReferenceWidth, windowHeight / ReferenceHeight) * factor * Baseline;
 
     public static float Resolve(bool automatic, float manual, float windowWidth, float windowHeight) => Mathf.Clamp(automatic ? Auto(windowWidth, windowHeight) : manual, Min, Max);
 
@@ -43,7 +45,7 @@ public static class InterfaceScale
     {
         // Size.Y is in real pixels, which is the height "Automático" cares about
         var factor = Resolve(automatic, manual, window.Size.X, window.Size.Y);
-        window.ContentScaleFactor = factor;
+        window.ContentScaleFactor = factor * Baseline;
         return factor;
     }
 }

@@ -191,8 +191,8 @@ public partial class ViewerUI
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 8); bar.AddChild(row);
 
         // Chat field: bubble icon, text, send arrow, all inside one rounded field.
-        var field = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.Fill, CustomMinimumSize = new Vector2(300, ToolbarButtonHeight) };
-        void ResizeChatField() => field.CustomMinimumSize = new Vector2(Mathf.Clamp(_root.Size.X * .30f, 280f, 580f), ToolbarButtonHeight);
+        var field = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(300, ToolbarButtonHeight) }; // takes what the buttons leave, so the bar is always full
+        void ResizeChatField() => field.CustomMinimumSize = new Vector2(Mathf.Clamp(_root.Size.X * .22f, 220f, 420f), ToolbarButtonHeight);
         ResizeChatField();
         _root.Resized += ResizeChatField;
         var fieldNormal = UiStyle.Box(UiStyle.FieldFill, UiStyle.Border, 12, 1, 12, 0);
@@ -210,7 +210,7 @@ public partial class ViewerUI
         var send = new Button { Icon = UiStyle.Icon("send", UiStyle.Text, 18), Flat = true, FocusMode = Control.FocusModeEnum.None, TooltipText = "Enviar", CustomMinimumSize = new Vector2(28, 0), ExpandIcon = false };
         send.Pressed += () => { OnChatSubmit(_chat.Text); _chat.Clear(); };
         inner.AddChild(send);
-        row.AddChild(field);
+        row.AddChild(field); _chatField = field;
 
         var voiceBar = new VoiceBar { Name = "VoiceBar", SizeFlagsVertical = Control.SizeFlags.ShrinkCenter }; row.AddChild(voiceBar); voiceBar.Bind(_network.Voice); voiceBar.VoiceRule = () => _world.GetNodeOrNull<LandManager>("LandManager")?.Presence is { } presence ? (presence.VoiceAllowed, presence.VoiceOffIn) : (true, "");
         row.AddChild(Divider(32));
@@ -232,7 +232,6 @@ public partial class ViewerUI
         Reg("mapa", "Mapa", ToolButton(row, "pin", "Mapa", "Mapa do Mundo: ilhas, busca e teletransporte", () => _world.GetNodeOrNull<Map.WorldMapWindow>("WorldMapWindow")?.Toggle()));
         _inventoryButton = Reg("inventario", "Inventário", ToolButton(row, "bag", "Inventário", "Seu inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), toggle: true, orange: true));
         _miniMapButton = Reg("minimapa", "Mini-mapa", ToolButton(row, "map", "Mini-mapa", "Mostrar ou ocultar o mini-mapa", () => ToggleWindow(_miniMapWindow), toggle: true));
-        _miniMapButton.ButtonPressed = true;
         BuildToolbarCustomizer(row);
         _root.Resized += () => ApplyToolbar();
         ApplyToolbar();
@@ -487,7 +486,7 @@ public partial class ViewerUI
 
     private void BuildMiniMap()
     {
-        _miniMapWindow = new FloatingWindow("Mini-mapa", icon: "target", expandable: true);
+        _miniMapWindow = new FloatingWindow("Mini-mapa", icon: "target", expandable: true) { Visible = false }; // the game always starts with the mini-map closed
         _miniMapWindow.Place(1, 0, -352, 84, -12, 448);
         // A square holds the round map: the disc clips the map, the corner buttons sit outside the circle.
         var square = new AspectRatioContainer { Ratio = 1f, StretchMode = AspectRatioContainer.StretchModeEnum.Fit, CustomMinimumSize = new Vector2(220, 220), SizeFlagsVertical = Control.SizeFlags.ExpandFill, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };

@@ -319,7 +319,7 @@ public static class SettingsService
     }
 
     /// <summary>The world was just built (a camera, the avatars of an island): what depends on it is applied again.</summary>
-    public static void ApplyWorld() { Callable.From(() => { try { Store.ApplyAll(); AccountSyncService.Instance.PullIfEnabled(); } catch (Exception exception) { GD.PushWarning($"As configurações não puderam ser reaplicadas: {exception.Message}"); } }).CallDeferred(); }
+    public static void ApplyWorld() { Callable.From(() => { try { Store.ApplyAll(); SettingsAppliers.StartupDone = true; AccountSyncService.Instance.PullIfEnabled(); } catch (Exception exception) { GD.PushWarning($"As configurações não puderam ser reaplicadas: {exception.Message}"); } }).CallDeferred(); }
 
     /// <summary>A system that saved a value of its own (the old preferences window, the volume menu) tells the store, so both agree.</summary>
     public static void Mirror(string id, object value) { try { Store.SetAndApply(id, value); } catch (Exception exception) { GD.PushWarning($"Configuração {id}: {exception.Message}"); } }
