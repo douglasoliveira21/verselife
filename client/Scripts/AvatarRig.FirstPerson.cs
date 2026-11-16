@@ -33,6 +33,13 @@ public sealed partial class AvatarRig
         RefreshFirstPersonHolders();
     }
 
+    /// <summary>Where the eyes are, in metres above the feet, for a custom body (the camera sits there in first person, whatever the height of the body); null for the standard body, whose camera height is already right.</summary>
+    public float? EyeHeight => CustomBodyActive && _customSkeleton is { } skeleton && IsInstanceValid(skeleton) && _standardBones.TryGetValue("head", out var headBone)
+        ? (skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(headBone).Origin).Y - GlobalPosition.Y + EyesAboveHeadBone : null;
+
+    /// <summary>The eyes are a little above where the head bone starts (the base of the head).</summary>
+    public const float EyesAboveHeadBone = .1f;
+
     /// <summary>Every frame in first person: a look applied again rebuilds the head and the skin, which must stay out of the way.</summary>
     private void KeepFirstPersonView()
     {

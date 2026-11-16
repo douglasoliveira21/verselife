@@ -30,6 +30,7 @@ public partial class FirstPersonSmoke : Node
                 rig.ApplyAttachments([hat, ring, collar]); await Frames(8);
                 Require(rig.AttachmentsShown == 3 && rig.AttachmentShownForTesting(hat.Id) && rig.AttachmentShownForTesting(ring.Id) && rig.AttachmentShownForTesting(collar.Id), $"{name}: everything worn is shown in third person");
 
+                if (custom) Require(rig.EyeHeight is > 1.2f and < 2.3f, $"{name}: the camera has a place at the eyes: {rig.EyeHeight}"); else Require(rig.EyeHeight is null, "the standard body keeps its camera");
                 rig.SetFirstPersonView(true); await Frames(6);
                 Require(rig.Visible, $"{name}: the avatar is still drawn in first person");
                 Require(custom ? rig.CustomHeadScaleZeroForTesting : !rig.StandardHeadShownForTesting, $"{name}: only the head is left out");

@@ -117,7 +117,8 @@ public partial class PlayerController : CharacterBody3D
         _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
-        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : 1.55f) + _cameraHeightOffset;
+        var eyes = _firstPerson && !_oceanSwimming && _rig.EyeHeight is { } eyeHeight ? Mathf.Clamp(eyeHeight, .5f, 4f) : 1.55f; // in first person the camera is where the eyes of the body are
+        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : eyes) + _cameraHeightOffset;
         if (_detached) { if (!Scripts.Camera.CameraSettings.Current.AllowDetached) ExitDetached(); else { UpdateDetached((float)delta); return; } }
         if (_focusNode is not null) { if (IsInstanceValid(_focusNode) && _focusNode.IsInsideTree()) _editFocus = ToLocal(_focusNode.ToGlobal(_focusOffset)); else _focusNode = null; }
         _cameraPivot.Position = _editView || _freeView ? _cameraPivot.Position.Lerp(_editFocus, weight * (_freeView ? 1f : .6f)) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
@@ -561,6 +562,7 @@ public partial class PlayerController : CharacterBody3D
     {
         _cameraMode = mode; _firstPerson = mode == CameraMode.FirstPerson;
         _springArm.SpringLength = _firstPerson ? .05f : _cameraDistance;
+        _camera.Near = _firstPerson ? FirstPersonNear : NormalNear;   // from inside the head, whatever is closer than this is not drawn: the head, its hair, glasses and hats
         _rig.Visible = !_avatarHidden; _rig.SetFirstPersonView(_firstPerson);
         if (_firstPerson)
         {
@@ -585,6 +587,7 @@ public partial class PlayerController : CharacterBody3D
     /// <summary>How far one notch of the mouse wheel moves the camera, in meters.</summary>
     public static float ZoomStep { get; set; } = .5f;
     private float _pivotBaseY, _cameraHeightOffset;
+    private const float NormalNear = .05f, FirstPersonNear = .17f;
     public string CameraModeName => _cameraMode.ToString();
     public float FieldOfView => _camera.Fov;
     public float PivotOffset => _cameraHeightOffset;
