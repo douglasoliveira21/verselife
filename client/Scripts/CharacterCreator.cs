@@ -47,7 +47,7 @@ public partial class CharacterCreator : Control
         _save = GetNode<Button>("Layout/Panel/Margin/Fields/Buttons/Save");
         _preview = GetNode<AvatarRig>("Layout/Preview/SubViewport/AvatarRig");
         _camera = GetNode<Camera3D>("Layout/Preview/SubViewport/Camera3D");
-        Fill(_baseModel, ("Classic", "human_a"), ("Athletic", "human_b"));
+        Fill(_baseModel, ("Homem (padrão)", LifeVerse.Shared.Avatar.AvatarRules.DefaultMan), ("Classic", "human_a"), ("Athletic", "human_b"));
         Fill(_hairStyle, ("Short", "short"), ("Bob", "bob"), ("Mohawk", "mohawk"), ("Bald", "bald"), ("Long", "long"), ("Ponytail", "ponytail"));
         Fill(_top, ("Basic tee", "tee_basic"), ("Basic jacket", "jacket_basic"), ("Vestido", "dress_basic"));
         Fill(_bottom, ("Basic pants", "pants_basic"), ("Basic shorts", "shorts_basic"), ("Saia", "skirt_basic"), ("Coberto pelo vestido", "covered"));

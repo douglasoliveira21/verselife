@@ -24,4 +24,15 @@ public sealed class AvatarValidationTests
         var value = Valid() with { EquippedItems = [new EquippedItemRequest("top", "tee_basic", "#FFFFFF"), new EquippedItemRequest("top", "jacket_basic", "#FFFFFF")] };
         Assert.Contains("equippedItems", AvatarCatalog.Validate(value));
     }
+
+    [Fact]
+    public void TheManOfLifeVerseIsTheDefaultBaseModelAndIsAccepted()
+    {
+        Assert.Equal("lifeverse_man", LifeVerse.Shared.Avatar.AvatarRules.DefaultBaseModel);
+        Assert.Contains(LifeVerse.Shared.Avatar.AvatarRules.DefaultMan, LifeVerse.Shared.Avatar.AvatarRules.BaseModels);
+        Assert.Empty(AvatarCatalog.Validate(Valid() with { BaseModel = LifeVerse.Shared.Avatar.AvatarRules.DefaultMan }));
+        Assert.Empty(AvatarCatalog.Validate(Valid() with { BaseModel = "human_b" }));                 // the older bodies stay
+        Assert.Contains("baseModel", AvatarCatalog.Validate(Valid() with { BaseModel = "somebody_else" }));
+        Assert.NotEqual(Guid.Empty, LifeVerse.Shared.Avatar.AvatarRules.DefaultManModelId);
+    }
 }

@@ -34,7 +34,12 @@ public static class AvatarRules
         ["jawWidth"] = new(.9f, 1.1f), ["browHeight"] = new(.9f, 1.1f), ["headWidth"] = new(.9f, 1.1f)
     };
 
-    public static readonly string[] BaseModels = ["human_a", "human_b"];
+    /// <summary>The body a new character starts with: the man of LifeVerse, a full 3D body that comes with the game (so nobody has to download it and everybody sees it).</summary>
+    public const string DefaultMan = "lifeverse_man";
+    public const string DefaultBaseModel = DefaultMan;
+    /// <summary>The id the man of LifeVerse goes by where a body is asked for by id (it is never stored on the server: every client has the file).</summary>
+    public static readonly Guid DefaultManModelId = new("11fe0000-0000-4000-8000-0000000000a1");
+    public static readonly string[] BaseModels = [DefaultMan, "human_a", "human_b"];
     public static readonly string[] HairStyles = ["short", "bob", "mohawk", "bald", "long", "ponytail"];
     public static readonly string[] BeardStyles = ["none", "stubble", "short", "full"];
     public static readonly string[] RequiredSlots = ["top", "bottom", "shoes"];

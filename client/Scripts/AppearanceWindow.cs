@@ -296,7 +296,7 @@ public sealed partial class AppearanceWindow : Node
         var stack = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(420, 310) }; content.AddChild(stack);
 
         // body
-        var body = Page(); _baseModel = Choice(("Clássico", "human_a"), ("Atlético", "human_b")); _baseModel.ItemSelected += _ => Changed();
+        var body = Page(); _baseModel = Choice(("Homem (padrão)", LifeVerse.Shared.Avatar.AvatarRules.DefaultMan), ("Clássico", "human_a"), ("Atlético", "human_b")); _baseModel.ItemSelected += _ => Changed();
         body.AddChild(Row(Caption("Corpo base"), _baseModel));
         foreach (var key in BodyOrder) Slider(body, _body, key, BodyLabels[key], AvatarRules.BodyRanges[key]);
         body.AddChild(Row(Caption("Pele"), _skin = Colour("#C98F65"))); _skin.ColorChanged += _ => Changed();

@@ -1,3 +1,4 @@
+using LifeVerse.Shared.Avatar;
 using LifeVerse.Api.Data;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -36,7 +37,7 @@ public sealed class AuthService(
         user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
         user.Avatar = new Avatar
         {
-            Id = Guid.NewGuid(), UserId = user.Id, DisplayName = user.Username, BaseModel = "human_a", CreatedAt = now, UpdatedAt = now
+            Id = Guid.NewGuid(), UserId = user.Id, DisplayName = user.Username, BaseModel = AvatarRules.DefaultBaseModel, CreatedAt = now, UpdatedAt = now
         };
         user.Avatar.Appearance = new AvatarAppearance
         {

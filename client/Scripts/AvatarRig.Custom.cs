@@ -53,16 +53,19 @@ public partial class AvatarRig
         var token = ++_customToken;
         if (_customBody is not null && IsInstanceValid(_customBody)) _customBody.QueueFree();
         _customBody = null; _customRoot = null; _customSkeleton = null; _lastDelta = null; _blendFrom = null; _retarget = []; CustomBodyStatus = string.Empty;
-        if (data.CustomModelId is not { } id || string.IsNullOrEmpty(data.CustomModelHash)) return;
+        // a body that comes with the game is asked for by its base model (the man a new character starts with); nothing is downloaded
+        Guid? wantedId = data.CustomModelId; var wantedHash = data.CustomModelHash;
+        if (wantedId is null && BuiltInBodies.TryFor(data.BaseModel, out var builtInId, out var builtInHash)) { wantedId = builtInId; wantedHash = builtInHash; }
+        if (wantedId is not { } id || string.IsNullOrEmpty(wantedHash)) return;
         if (_detail < AvatarDetail.Reduced) { CustomBodyStatus = "Longe demais: o corpo padrão é usado até chegar perto."; return; }
-        CustomBodyStatus = "loading"; _customScale = data.CustomModelScale > 0 ? data.CustomModelScale : 1f;
-        _ = LoadCustomAsync(id, data.CustomModelHash!, token);
+        CustomBodyStatus = "loading"; _customScale = data.CustomModelId is not null && data.CustomModelScale > 0 ? data.CustomModelScale : 1f;
+        _ = LoadCustomAsync(id, wantedHash!, token);
     }
 
     private async Task LoadCustomAsync(Guid id, string hash, int token)
     {
         byte[]? bytes;
-        try { bytes = await (ModelProvider?.Invoke(id, hash) ?? DownloadModelAsync(id, hash)); }
+        try { bytes = BuiltInBodies.Bytes(id) ?? await (ModelProvider?.Invoke(id, hash) ?? DownloadModelAsync(id, hash)); }
         catch (Exception) { bytes = null; }
         if (token != _customToken || !IsInstanceValid(this)) return; // the avatar changed while it downloaded
         if (bytes is null) { CustomBodyStatus = "Não foi possível baixar o corpo personalizado."; return; }
@@ -112,6 +115,7 @@ public partial class AvatarRig
         var document = new GltfDocument(); var state = new GltfState();
         if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) { CustomBodyStatus = "O engine não conseguiu ler o corpo personalizado."; return; }
         var scene = document.GenerateScene(state);
+        if (scene is not null) TintBuiltInOutfit(scene);
         if (scene is null || FindSkeleton(scene) is not { } skeleton) { scene?.QueueFree(); CustomBodyStatus = "O corpo personalizado não tem esqueleto."; return; }
 
         // far enough to be drawn reduced: the body keeps a fraction of its triangles (its geometry is simplified); close enough, it keeps all of them

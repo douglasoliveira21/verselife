@@ -114,6 +114,7 @@ public partial class AvatarManager : Node
 
     public static AvatarAppearanceData CreateDefault() => new()
     {
+        BaseModel = LifeVerse.Shared.Avatar.AvatarRules.DefaultBaseModel,      // a new character is the man of LifeVerse
         EquippedItems =
         [
             new EquippedItemData { Slot = "top", ItemKey = "tee_basic", TintColor = "#3AAFC1" },
