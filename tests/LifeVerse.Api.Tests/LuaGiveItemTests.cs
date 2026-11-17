@@ -12,6 +12,8 @@ public sealed class LuaGiveItemTests
     {
         public double Now { get; set; } = 100; public Dictionary<Guid, ScriptObjectState> Objects { get; } = []; public List<string> Said { get; } = []; public List<(Guid Avatar, Guid Asset, string Name)> Started { get; } = []; public bool CanStart { get; set; } = true; public List<int> Prices { get; } = [];
         public bool SetObjectPrice(ScriptDefinition script, int price) { Prices.Add(price); return true; }
+        public List<(int Default, int[] Quick)> PayPrices { get; } = [];
+        public bool SetPayPrice(ScriptDefinition script, int defaultPrice, int[] quick) { PayPrices.Add((defaultPrice, quick)); return true; }
         public ScriptObjectState? GetObject(Guid id) => Objects.GetValueOrDefault(id);
         public void ApplyChange(ScriptDefinition script, ObjectChange change) { }
         public void Say(ScriptDefinition script, string text) => Said.Add(text);
@@ -82,6 +84,20 @@ public sealed class LuaGiveItemTests
         var (host3, world3, obj3, reports3) = Rig("function on_touch() economy.setObjectPrice(5) end");
         for (var i = 0; i < ScriptHost.MaxPriceChangesPerMinute; i++) Touch(host3, obj3); Assert.Empty(reports3); Touch(host3, obj3); Assert.Contains("at most", Assert.Single(reports3).Message);
         Assert.Equal(ScriptHost.MaxPriceChangesPerMinute, world3.Prices.Count);
+    }
+
+    [Fact]
+    public void WhatAPayClickOffersIsSetWithinLimits()
+    {
+        var (host, world, obj, reports) = Rig("function on_touch() chat.say(tostring(economy.setPayPrice(25.9, {10, 25, 50, 100}))) end");
+        Touch(host, obj); Assert.Empty(reports); Assert.Equal(["true"], world.Said); var set = Assert.Single(world.PayPrices); Assert.Equal(25, set.Default); Assert.Equal([10, 25, 50, 100], set.Quick);
+        foreach (var bad in new[] { "-1, {}", "10000001, {}", "5, {1,2,3,4,5}", "5, {0}", "5, {\"a\"}" })
+        {
+            var (host2, world2, obj2, reports2) = Rig($"function on_touch() economy.setPayPrice({bad}) end"); Touch(host2, obj2); Assert.Single(reports2); Assert.Empty(world2.PayPrices);
+        }
+        var (host3, world3, obj3, reports3) = Rig("function on_touch() economy.setPayPrice() end"); Touch(host3, obj3); Assert.Empty(reports3); var cleared = Assert.Single(world3.PayPrices); Assert.Equal(0, cleared.Default); Assert.Empty(cleared.Quick);      // no arguments clears it
+        var (host4, world4, obj4, reports4) = Rig("function on_touch() economy.setPayPrice(5, {}) end");
+        for (var i = 0; i < ScriptHost.MaxPriceChangesPerMinute; i++) Touch(host4, obj4); Assert.Empty(reports4); Touch(host4, obj4); Assert.Contains("at most", Assert.Single(reports4).Message);
     }
 
     [Fact]

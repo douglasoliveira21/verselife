@@ -41,6 +41,14 @@ public partial class BuildObjectProperties : Node
         return (type, p["salePrice"] is JsonValue v && v.TryGetValue<int>(out var price) ? price : 0);
     }
 
+    /// <summary>What a Pay click offers: the amount the window starts with (0 = none) and the quick buttons (up to four).</summary>
+    public static (int Default, int[] Quick) PayOf(BuildObjectState s)
+    {
+        var p = Perms(s); var d = p["payPrice"] is JsonValue v && v.TryGetValue<int>(out var n) && n > 0 ? n : 0;
+        var quick = p["payQuick"] is JsonArray a ? a.Select(x => x is JsonValue q && q.TryGetValue<int>(out var m) ? m : 0).Where(m => m > 0).Take(4).ToArray() : [];
+        return (d, quick);
+    }
+
     public GeneralModel? Read()
     {
         var views = _selection.Views().ToList(); if (views.Count == 0) return null;

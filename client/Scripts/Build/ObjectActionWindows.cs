@@ -93,6 +93,7 @@ public partial class ObjectPaymentWindow : Node
     private Label _title = null!, _to = null!, _status = null!;
     private SpinBox _amount = null!;
     private Button _pay = null!;
+    private HBoxContainer _quick = null!;
     private HttpRequest? _http;
     private Guid _owner; private string _key = string.Empty;
 
@@ -112,7 +113,8 @@ public partial class ObjectPaymentWindow : Node
         var c = _window.Content; c.AddThemeConstantOverride("separation", 10);
         _title = new Label { Text = "Pagar" }; _title.AddThemeFontOverride("font", UiStyle.Bold); _title.AddThemeFontSizeOverride("font_size", 22); _title.AddThemeColorOverride("font_color", UiStyle.AccentText); c.AddChild(_title);
         _to = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; _to.AddThemeFontSizeOverride("font_size", 18); c.AddChild(_to);
-        _amount = new SpinBox { MinValue = 1, MaxValue = 10_000_000, Step = 1, Value = 1, Suffix = "moedas", CustomMinimumSize = new Vector2(0, 42), SelectAllOnFocus = true }; c.AddChild(_amount);
+        _amount = new SpinBox { MinValue = 1, MaxValue = 10_000_000, Step = 1, Value = 1, Suffix = "VC$", CustomMinimumSize = new Vector2(0, 42), SelectAllOnFocus = true }; c.AddChild(_amount);
+        _quick = new HBoxContainer { Name = "QuickPay" }; _quick.AddThemeConstantOverride("separation", 8); c.AddChild(_quick);
         _status = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(0, 40) }; _status.AddThemeFontSizeOverride("font_size", 16); _status.AddThemeColorOverride("font_color", UiStyle.TextMuted); c.AddChild(_status);
         _pay = new Button { Text = " Pagar", Icon = UiStyle.Icon("check", UiStyle.Text, 22), FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 46) }; UiStyle.StyleButton(_pay, UiStyle.ButtonKind.Primary, 12, 6, 14); _pay.AddThemeFontSizeOverride("font_size", 20); _pay.Pressed += Pay; c.AddChild(_pay);
         _http = new HttpRequest { Timeout = 15 }; AddChild(_http); _http.RequestCompleted += OnCompleted;
@@ -121,8 +123,18 @@ public partial class ObjectPaymentWindow : Node
     public void Open(BuildObjectState state, string ownerName)
     {
         _owner = state.OwnerUserId; _key = "pay-" + Guid.NewGuid().ToString("N"); var (mode, price) = BuildObjectProperties.SaleOf(state);
-        _title.Text = $"Pagar: {state.Name}"; _to.Text = $"Quem recebe: {ownerName}"; _amount.Value = mode != "none" && price > 0 ? price : 1; _status.Text = string.Empty; _pay.Disabled = false; _window.Visible = true; _window.MoveToFront();
+        _title.Text = $"Pagar: {state.Name}"; _to.Text = $"Quem recebe: {ownerName}"; var (payDefault, payQuick) = BuildObjectProperties.PayOf(state); _amount.Value = payDefault > 0 ? payDefault : mode != "none" && price > 0 ? price : 1; ShowQuick(payQuick); _status.Text = string.Empty; _pay.Disabled = false; _window.Visible = true; _window.MoveToFront();
     }
+
+    /// <summary>The quick amounts the owner put on the object, as buttons that fill the amount.</summary>
+    private void ShowQuick(int[] amounts)
+    {
+        foreach (var child in _quick.GetChildren()) { _quick.RemoveChild(child); child.QueueFree(); }
+        foreach (var amount in amounts) { var value = amount; var b = new Button { Text = "VC$ " + value.ToString("N0", CultureInfo.GetCultureInfo("pt-BR")), FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 36), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; UiStyle.StyleButton(b, UiStyle.ButtonKind.Tool, 8, 6, 8); b.Pressed += () => _amount.Value = value; _quick.AddChild(b); }
+        _quick.Visible = amounts.Length > 0;
+    }
+    public IReadOnlyList<string> QuickForTesting => [.. _quick.GetChildren().OfType<Button>().Select(b => b.Text)];
+    public void PressQuickForTesting(int index) => _quick.GetChild<Button>(index).EmitSignal(BaseButton.SignalName.Pressed);
 
     private void Pay()
     {
@@ -139,7 +151,7 @@ public partial class ObjectPaymentWindow : Node
 
     private void Finish(long status, string body)
     {
-        if (status is >= 200 and < 300) { _status.Text = $"Pagamento de {((long)_amount.Value).ToString("N0", CultureInfo.GetCultureInfo("pt-BR"))} moedas enviado."; return; }
+        if (status is >= 200 and < 300) { _status.Text = $"Pagamento de VC$ {((long)_amount.Value).ToString("N0", CultureInfo.GetCultureInfo("pt-BR"))} enviado."; return; }
         _pay.Disabled = false; _key = "pay-" + Guid.NewGuid().ToString("N");
         string? error = null; try { using var doc = JsonDocument.Parse(body); if (doc.RootElement.TryGetProperty("error", out var e)) error = e.GetString(); } catch (JsonException) { }
         _status.Text = error switch { "insufficient_balance" => "Saldo insuficiente.", "recipient_not_found" => "Quem receberia não foi encontrado.", "cannot_transfer_to_self" => "Este objeto é seu.", _ => status == 0 ? "Não foi possível falar com o servidor." : $"O servidor recusou o pagamento ({status})." };

@@ -29,6 +29,24 @@ public static class BuildSharing
         return (type, price);
     }
 
+    /// <summary>What a Pay click offers: the amount the window starts with (0 = none, the person types) and up to four quick buttons.</summary>
+    public const int MaxPayQuick = 4;
+    public static (int Default, int[] Quick) PayPrice(string? permissionsJson)
+    {
+        var root = Parse(permissionsJson);
+        var d = root["payPrice"] is JsonValue p && p.TryGetValue<int>(out var n) ? Math.Clamp(n, 0, MaxPrice) : 0;
+        var quick = root["payQuick"] is JsonArray a ? a.Select(x => x is JsonValue v && v.TryGetValue<int>(out var q) ? q : 0).Where(q => q > 0 && q <= MaxPrice).Take(MaxPayQuick).ToArray() : [];
+        return (d, quick);
+    }
+
+    public static string WithPay(string? permissionsJson, int? payPrice, int[]? payQuick)
+    {
+        var root = Parse(permissionsJson);
+        if (payPrice is { } d) { if (d > 0) root["payPrice"] = d; else root.Remove("payPrice"); }
+        if (payQuick is { } q) { var list = q.Where(x => x > 0 && x <= MaxPrice).Distinct().Take(MaxPayQuick).ToArray(); if (list.Length > 0) root["payQuick"] = new JsonArray([.. list.Select(x => (JsonNode)JsonValue.Create(x)!)]); else root.Remove("payQuick"); }
+        return root.ToJsonString();
+    }
+
     public static string With(string? permissionsJson, bool? groupShare, bool? anyoneMove, bool? anyoneCopy, string? saleType, int? salePrice)
     {
         var root = Parse(permissionsJson);
@@ -60,6 +78,8 @@ public static partial class BuildOperations
         var ownerRights = Int("ownerRights"); var nextRights = Int("nextOwnerRights"); var saleType = Text("saleType"); var price = Int("salePrice");
         var setGroup = p.TryGetProperty("groupId", out var groupElement); Guid? group = setGroup && groupElement.ValueKind == JsonValueKind.String && Guid.TryParse(groupElement.GetString(), out var parsedGroup) ? parsedGroup : null;
         var clickAction = Text("clickAction");
+        var payPrice = Int("payPrice"); int[]? payQuick = p.TryGetProperty("payQuick", out var quickElement) && quickElement.ValueKind == JsonValueKind.Array ? [.. quickElement.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Number && e.TryGetInt32(out _)).Select(e => e.GetInt32())] : null;
+        if (payPrice is < 0 or > BuildSharing.MaxPrice || payQuick is not null && (payQuick.Length > BuildSharing.MaxPayQuick || payQuick.Any(q => q is < 1 or > BuildSharing.MaxPrice))) return Refuse(400, "invalid_price");
         if (clickAction is not null && !BuildSharing.ClickActions.Contains(clickAction)) return Refuse(400, "invalid_click_action");
         if (saleType is not null && !BuildSharing.SaleTypes.Contains(saleType)) return Refuse(400, "invalid_sale_type");
         if (price is < 0 or > BuildSharing.MaxPrice) return Refuse(400, "invalid_price");
@@ -87,7 +107,7 @@ public static partial class BuildOperations
             if (ownerRights is { } r2) o.OwnerRights = ItemRights.Normalize(r2);
             o.NextOwnerRights = ItemRights.Clamp(nextRights ?? o.NextOwnerRights, o.OwnerRights);
             if (setGroup) o.GroupId = group;
-            o.PermissionsJson = BuildSharing.With(o.PermissionsJson, Flag("groupShare"), Flag("anyoneMove"), Flag("anyoneCopy"), saleType, price);
+            o.PermissionsJson = BuildSharing.WithPay(BuildSharing.With(o.PermissionsJson, Flag("groupShare"), Flag("anyoneMove"), Flag("anyoneCopy"), saleType, price), payPrice, payQuick);
             if (clickAction is not null) o.ClickAction = clickAction;
             if (o.ClickAction == "buy" && BuildSharing.Sale(o.PermissionsJson).Type == "none") o.ClickAction = "touch"; // taking the object off sale takes the buy click with it
             if (before == (o.OwnerRights, o.NextOwnerRights, o.GroupId, o.PermissionsJson, o.ClickAction)) continue;

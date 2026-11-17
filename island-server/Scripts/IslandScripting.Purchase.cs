@@ -15,12 +15,20 @@ public sealed partial class IslandScripting
         return true;
     }
 
-    private async Task SendPriceAsync(ScriptDefinition script, int price)
+    /// <summary>The script sets what a Pay click on its own object offers (the amount the window starts with and the quick buttons); the same "properties" operation of the build tools, as the owner of the script.</summary>
+    public bool SetPayPrice(ScriptDefinition script, int defaultPrice, int[] quick)
+    {
+        if (!_objects.ContainsKey(script.ObjectId)) return false;
+        _ = SendPriceAsync(script, defaultPrice, quick);
+        return true;
+    }
+
+    private async Task SendPriceAsync(ScriptDefinition script, int price, int[]? quick = null)
     {
         try
         {
             using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/build-operations", new { userId = script.OwnerUserId, operation = "properties", objectIds = new[] { script.ObjectId }, expectedRevision = 0, properties = new { salePrice = price } }, cancel.Token);
+            using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/build-operations", new { userId = script.OwnerUserId, operation = "properties", objectIds = new[] { script.ObjectId }, expectedRevision = 0, properties = quick is null ? (object)new { salePrice = price } : new { payPrice = price, payQuick = quick } }, cancel.Token);
             var body = await response.Content.ReadAsStringAsync(cancel.Token);
             if (!response.IsSuccessStatusCode) { _log("script_price_rejected", new { script = script.Name, status = (int)response.StatusCode, price }); return; }
             OnObjectApplied(body); _broadcastApplied(body);

@@ -1211,11 +1211,24 @@ Muda o preço do próprio objeto à venda (clique Comprar). O objeto precisa est
 
 - **Retorna:** verdadeiro se o pedido foi enviado
 - **Permissão:** —
-- **Limites:** L$ 0 a 10.000.000; 6 mudanças por minuto por script
+- **Limites:** VC$ 0 a 10.000.000; 6 mudanças por minuto por script
 - **Erros possíveis:** preço fora do limite; limite por minuto
 
 ```lua
 economy.setObjectPrice(150)
+```
+
+### `economy.setPayPrice(padrao, {rapidos})`
+
+Define o que o clique Pagar do próprio objeto oferece: o valor com que a janela de pagamento abre e até 4 botões de valor rápido. Sem argumentos, limpa. O objeto precisa ser do dono do script; a API confere. O dinheiro continua indo para o dono do objeto e quem paga confirma na janela.
+
+- **Retorna:** verdadeiro se o pedido foi enviado
+- **Permissão:** —
+- **Limites:** VC$ 1 a 10.000.000; até 4 botões; 6 mudanças por minuto por script
+- **Erros possíveis:** valor fora do limite; botões demais; limite por minuto
+
+```lua
+economy.setPayPrice(25, {10, 25, 50, 100})
 ```
 
 ## NPCs

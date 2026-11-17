@@ -493,6 +493,16 @@ public sealed partial class ScriptHost
     {
         var script = instance.Sandbox.Script; var economy = new Table(script); script.Globals["economy"] = economy;
         economy["requestPayment"] = DynValue.NewCallback((_, args) => { instance.Metrics.ApiCalls++; return RequestPayment(instance, AvatarId(args, 0), (long)Math.Floor(Number(args, 1)), args.Count > 2 && args[2].Type != DataType.Nil ? Plain(args, 2, "reason") : ""); });
+        // what a Pay click offers: the amount the window starts with and up to four quick buttons
+        economy["setPayPrice"] = DynValue.NewCallback((_, args) =>
+        {
+            instance.Metrics.ApiCalls++; var price = args.Count > 0 && args[0].Type != DataType.Nil ? (long)Math.Floor(Number(args, 0)) : 0; var quick = new List<int>();
+            if (args.Count > 1 && args[1].Type == DataType.Table) foreach (var v in args[1].Table.Values) { if (v.Type != DataType.Number) throw new ScriptRuntimeException("economy.setPayPrice: the quick buttons are numbers"); quick.Add((int)Math.Floor(v.Number)); }
+            if (price < 0 || price > MaxObjectPrice || quick.Count > 4 || quick.Any(q => q < 1 || q > MaxObjectPrice)) throw new ScriptRuntimeException($"economy.setPayPrice: a price is from VC$ 1 to VC$ {MaxObjectPrice:N0}, at most 4 quick buttons");
+            var now = world.Now; while (instance.Prices.Count > 0 && now - instance.Prices.Peek() > 60) instance.Prices.Dequeue();
+            if (instance.Prices.Count >= MaxPriceChangesPerMinute) throw new ScriptRuntimeException($"economy.setPayPrice: at most {MaxPriceChangesPerMinute} a minute"); instance.Prices.Enqueue(now);
+            return DynValue.NewBoolean(world.SetPayPrice(instance.Definition, (int)price, [.. quick]));
+        });
         // the price of the object itself, when it is for sale (Comprar): the owner's script sets what the next buyer pays
         economy["setObjectPrice"] = DynValue.NewCallback((_, args) =>
         {

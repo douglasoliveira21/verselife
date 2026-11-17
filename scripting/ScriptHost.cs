@@ -57,6 +57,8 @@ public interface IScriptWorld
     bool StartGiveItem(ScriptDefinition script, Guid avatarId, Guid assetId, string itemName) => false;
     /// <summary>Sets the sale price of the object of the script (the API decides: it must be for sale and the script owner must own it). False when this world cannot.</summary>
     bool SetObjectPrice(ScriptDefinition script, int price) => false;
+    /// <summary>Sets what a Pay click on the object of the script offers: the amount the window starts with (0 = none) and up to four quick buttons (the API decides: the script owner must own it). False when this world cannot.</summary>
+    bool SetPayPrice(ScriptDefinition script, int defaultPrice, int[] quick) => false;
     /// <summary>NPCs: makes one standing at (x, z) (its number, or 0 when there is no room or the spot is not land), walks it, stops it, makes it speak or play a gesture, tells where it is, and removes one or all of a script. All false/null/0 in a world without NPCs.</summary>
     int CreateNpc(ScriptDefinition script, string name, float x, float z) => 0;
     bool MoveNpc(ScriptDefinition script, int npc, float x, float z, float speed) => false;

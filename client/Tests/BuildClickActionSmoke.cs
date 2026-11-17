@@ -54,6 +54,11 @@ public partial class BuildClickActionSmoke : Node3D
             // pay
             var toPay = Make(world, "pay", "{\"saleType\":\"original\",\"salePrice\":40}", at: new Vector3(-8, 1, 4)); actions.Perform(toPay);
             Require(actions.Payment.IsOpen && actions.Payment.AmountForTesting == 40, "paying starts with the price of the object");
+            Require(actions.Payment.QuickForTesting.Count == 0, "without quick amounts there are no quick buttons");
+            var tip = Make(world, "pay", "{\"payPrice\":25,\"payQuick\":[10,25,50,100,999]}", at: new Vector3(-9, 1, 4)); actions.Perform(tip);
+            Require(actions.Payment.AmountForTesting == 25 && actions.Payment.QuickForTesting.SequenceEqual(["VC$ 10", "VC$ 25", "VC$ 50", "VC$ 100"]), $"the owner's default and four quick buttons (got {string.Join(",", actions.Payment.QuickForTesting)})");
+            actions.Payment.PressQuickForTesting(2); Require(actions.Payment.AmountForTesting == 50, "a quick button fills the amount");
+            actions.Perform(toPay);
             actions.Payment.TransferOverride = (to, amount, key) => (200, "{}"); actions.Payment.AmountForTesting = 55; actions.Payment.PressPayForTesting();
             Require(actions.Payment.LastRequestForTesting is { Amount: 55 } req && req.To == Ana && req.Key.Length >= 8 && actions.Payment.StatusForTesting.Contains("55"), "the payment goes to the owner with the amount chosen");
             actions.Perform(toPay); actions.Payment.TransferOverride = (_, _, _) => (409, "{\"error\":\"insufficient_balance\"}"); actions.Payment.PressPayForTesting();
