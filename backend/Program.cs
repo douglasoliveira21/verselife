@@ -203,6 +203,7 @@ app.MapMapEndpoints();
 app.MapMapPlaceEndpoints();
 app.MapEconomyEndpoints();
 app.MapAdminEndpoints();
+app.MapAdminPanel();
 
 if (!app.Environment.IsEnvironment("Testing"))
 {

@@ -93,11 +93,13 @@ public static class EconomyAdmin
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var key = $"admin-adjust:{request.IdempotencyKey}";
         if (await db.LedgerTransactions.AnyAsync(x => x.IdempotencyKey == key, ct)) return Results.Ok(new { status = "already_processed" });
-        var wallet = await db.Wallets.SingleOrDefaultAsync(x => x.UserId == userId, ct); if (wallet is null) return Results.NotFound();
+        if (!await db.Users.AnyAsync(x => x.Id == userId && x.DeletedAt == null, ct)) return Results.NotFound();
+        var wallet = await EconomyEndpoints.EnsureWallet(db, userId, ct);                      // somebody who never had coins has no wallet yet: it is made
         if (wallet.AvailableCoins + request.Amount < 0) return Results.Conflict(new { error = "would_be_negative" });
         var now = clock.GetUtcNow(); wallet.AvailableCoins += request.Amount; wallet.UpdatedAt = now;
         db.LedgerTransactions.Add(new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = "admin_adjustment", Status = "completed", Amount = request.Amount, InitiatorUserId = userId, MetadataJson = JsonSerializer.Serialize(new { admin, reason = request.Reason }), CreatedAt = now, CompletedAt = now });
         await AdminEndpoints.Audit(db, admin, "wallet_adjust", "wallet", wallet.Id, now, ct);
+        if (request.Amount > 0) Land.PropertyNotices.Add(db, userId, "admin_credit", $"Crédito da administração: {EconomyEndpoints.Coins(request.Amount)}", $"A administração enviou {EconomyEndpoints.Coins(request.Amount)} para a sua carteira. Motivo: {request.Reason.Trim()}", $"admin-adjust:{request.IdempotencyKey}", now);
         if (!await EconomyConcurrency.CommitAsync(db, tx, ct)) return Results.Conflict(new { error = EconomyConcurrency.TryAgain }); await EconomyPush.WalletChangedAsync(c.RequestServices, db, ct, userId);
         return Results.Ok(new { status = "completed", balance = wallet.AvailableCoins });
     }

@@ -30,6 +30,9 @@ public static class AuthValidation
         return errors;
     }
 
+    /// <summary>Why a password is not acceptable (null when it is): the same rule for sign-up and for a password an administrator sets.</summary>
+    public static string? PasswordProblem(string? password) => IsStrongPassword(password) ? null : "Password must be 6-128 characters and include upper, lower, and numeric characters.";
+
     private static bool IsStrongPassword(string? value) => value is not null && value.Length is >= 6 and <= 128 &&
         value.Any(char.IsUpper) && value.Any(char.IsLower) && value.Any(char.IsDigit);
 }

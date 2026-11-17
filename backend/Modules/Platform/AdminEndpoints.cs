@@ -12,7 +12,7 @@ public static class AdminEndpoints
 {
     public static IEndpointRouteBuilder MapAdminEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/admin", () => Results.Content(Html, "text/html; charset=utf-8"));
+        endpoints.MapGet("/admin", () => Results.Content(AdminPanelPage.Html, "text/html; charset=utf-8"));
         var admin = endpoints.MapGroup("/api/v1/admin").WithTags("Administration").RequireAuthorization();
         admin.MapGet("/dashboard", DashboardAsync); admin.MapGet("/users", UsersAsync); admin.MapPost("/users/{id:guid}/suspend", (Guid id, HttpContext c, LifeVerseDbContext d, TimeProvider t, CancellationToken ct) => SetUserAsync(id, "suspended", c, d, t, ct)); admin.MapPost("/users/{id:guid}/ban", (Guid id, HttpContext c, LifeVerseDbContext d, TimeProvider t, CancellationToken ct) => SetUserAsync(id, "banned", c, d, t, ct)); admin.MapPost("/users/{id:guid}/reactivate", (Guid id, HttpContext c, LifeVerseDbContext d, TimeProvider t, CancellationToken ct) => SetUserAsync(id, "active", c, d, t, ct)); admin.MapPost("/users/{id:guid}/revoke-sessions", RevokeSessionsAsync);
         admin.MapGet("/islands", IslandsAsync); admin.MapPost("/islands/{id:guid}/suspend", SuspendIslandAsync); admin.MapPost("/islands/{id:guid}/resume", ResumeIslandAsync);
