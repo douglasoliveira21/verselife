@@ -27,10 +27,12 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:7px 8px;
 <h1>Economia VerseCoin</h1><p class="sub">Circulação, carteiras e ajustes auditados. Nada aqui muda um saldo sem motivo registrado.</p>
 <div class="card"><h2>Acesso</h2><div class="row"><label>Token de acesso<input id="tok" type="password" autocomplete="off"></label><label>Token MFA<input id="mfa" type="password" autocomplete="off"></label><button class="primary" id="load">Carregar</button></div><div id="msg"></div></div>
 <div class="card"><h2>Resumo</h2><div class="grid" id="stats"></div></div>
+<div class="card"><h2>Carteiras para olhar (últimas 24 h)</h2><div id="susp" class="muted">Carregue o resumo para ver.</div></div>
 <div class="card"><h2>Carteira de um jogador</h2>
 <div class="row"><label>Buscar por nome ou e-mail<input id="q" placeholder="nome do jogador"></label><button id="find">Buscar</button></div><div id="found" class="muted"></div>
 <div id="wallet" hidden><p>Jogador: <b id="wname"></b> · saldo <b id="wbal"></b> · <span id="wstate"></span></p>
 <div class="row"><label>Motivo (obrigatório)<input id="reason" maxlength="200"></label><label>Valor do ajuste (negativo retira)<input id="amount" type="number" step="1"></label></div>
+<div class="row"><label>Limite diário de envio desta carteira (vazio = o geral)<input id="limit" type="number" min="0" step="1"></label><button id="setlimit">Salvar limite</button></div>
 <div class="row"><button class="warn" id="block">Bloquear / desbloquear carteira</button><button class="primary" id="adjust">Aplicar ajuste</button></div>
 <table><thead><tr><th>Data</th><th>Tipo</th><th>Valor</th><th>Situação</th></tr></thead><tbody id="rows"></tbody></table></div></div>
 </main><script>
@@ -44,10 +46,14 @@ async function summary(){const s=await api('economy/summary');const box=$('stats
  stat('Moedas nas carteiras',fmt(s.coinsInWallets)),stat('Carteiras',s.wallets),stat('Carteiras bloqueadas',s.blockedWallets),stat('Moedas vendidas (total)',fmt(s.coinsSoldTotal)),
  stat('Moedas estornadas (total)',fmt(s.coinsRefundedTotal)),stat('Ajustes da administração',fmt(s.adminAdjustmentsTotal)),stat('Transações em 24 h',s.transactionsLast24h),stat('Volume em 24 h',fmt(s.volumeLast24h)),
  stat('Pedidos pendentes',s.pendingCoinOrders),stat('Pedidos em revisão',s.ordersInReview),stat('Receita (R$)',(s.revenueCentsTotal/100).toLocaleString('pt-BR',{minimumFractionDigits:2})))}
-async function showWallet(u){const w=await api('economy/wallets/'+u.id);current=u;blocked=w.isBlocked;$('wallet').hidden=false;$('wname').textContent=u.username;$('wbal').textContent=fmt(w.availableCoins);$('wstate').textContent=blocked?'BLOQUEADA':'ativa';
+const WHY={sent_near_daily_limit:"enviou quase o limite do dia",many_transfers_sent:"muitas transferências enviadas",received_from_many_people:"recebeu de muita gente"};
+async function suspicious(){const list=await api("economy/suspicious");const box=$("susp");box.replaceChildren();if(!list.length){box.textContent="Nada fora do normal.";return}
+ for(const w of list){const b=document.createElement("button");b.textContent=w.username+" — "+w.reasons.map(r=>WHY[r]||r).join(", ");b.style.cssText="display:block;margin:0 0 6px;text-align:left";b.onclick=async()=>{try{await showWallet({id:w.userId,username:w.username});say("")}catch(e){say(e.message)}};box.append(b)}}
+async function showWallet(u){const w=await api('economy/wallets/'+u.id);current=u;blocked=w.isBlocked;$('wallet').hidden=false;$('wname').textContent=u.username;$('wbal').textContent=fmt(w.availableCoins);$('limit').value=w.dailyTransferLimit??'';$('wstate').textContent=blocked?'BLOQUEADA':'ativa';
  const rows=$('rows');rows.replaceChildren();for(const t of w.recent){const tr=document.createElement('tr');const cells=[new Date(t.createdAt).toLocaleString('pt-BR'),t.type,(t.direction==='in'?'+ ':'− ')+fmt(Math.abs(t.amount)),t.status];
   cells.forEach((c,i)=>{const td=document.createElement('td');td.textContent=c;if(i===2)td.className=t.direction==='in'?'in':'out';tr.append(td)});rows.append(tr)}}
-$('load').onclick=async()=>{try{say('Carregando…');await summary();say('')}catch(e){say(e.message)}};
+$('load').onclick=async()=>{try{say('Carregando…');await summary();await suspicious();say('')}catch(e){say(e.message)}};
+$('setlimit').onclick=async()=>{if(!current)return;const v=$('limit').value;try{await api('economy/wallets/'+current.id+'/limit','POST',{dailyLimit:v===''?null:parseInt(v,10),reason:$('reason').value});await showWallet(current);say('Limite salvo e auditado.')}catch(e){say(e.message)}};
 $('find').onclick=async()=>{try{const list=await api('users?q='+encodeURIComponent($('q').value));const f=$('found');f.replaceChildren();if(!list.length){f.textContent='Ninguém encontrado.';return}
  for(const u of list.slice(0,8)){const b=document.createElement('button');b.textContent=u.username;b.style.margin='0 6px 6px 0';b.onclick=async()=>{try{await showWallet(u);say('')}catch(e){say(e.message)}};f.append(b)}}catch(e){say(e.message)}};
 $('block').onclick=async()=>{if(!current)return;try{await api('economy/wallets/'+current.id+'/block','POST',{blocked:!blocked,reason:$('reason').value});await showWallet(current);say('Carteira '+(blocked?'bloqueada.':'desbloqueada.'))}catch(e){say(e.message)}};

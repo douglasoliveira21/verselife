@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace LifeVerse.Api.Modules.Economy;
 
 public sealed record WalletBlockRequest(bool Blocked, string Reason);
+public sealed record SuspiciousWallet(Guid UserId, string Username, List<string> Reasons);
+public sealed record WalletLimitRequest(long? DailyLimit, string Reason);
 public sealed record WalletAdjustRequest(long Amount, string Reason, string IdempotencyKey);
 
 /// <summary>The administration of the economy ("Economia VerseCoin"): the numbers of the circulation, a look at one wallet, blocking it, and adjustments that always carry a reason and leave a ledger entry and an audit record. Nothing here changes a balance silently.</summary>
@@ -16,7 +18,7 @@ public static class EconomyAdmin
     {
         var admin = endpoints.MapGroup("/api/v1/admin/economy").WithTags("Economy administration").RequireAuthorization();
         admin.MapGet("/summary", SummaryAsync); admin.MapGet("/wallets/{userId:guid}", WalletAsync);
-        admin.MapPost("/wallets/{userId:guid}/block", BlockAsync); admin.MapPost("/wallets/{userId:guid}/adjust", AdjustAsync);
+        admin.MapPost("/wallets/{userId:guid}/limit", LimitAsync); admin.MapGet("/suspicious", SuspiciousAsync); admin.MapPost("/wallets/{userId:guid}/block", BlockAsync); admin.MapPost("/wallets/{userId:guid}/adjust", AdjustAsync);
         return endpoints;
     }
 
@@ -44,8 +46,35 @@ public static class EconomyAdmin
         if (!AdminEndpoints.Admin(c, out _)) return Results.Forbid();
         var wallet = await db.Wallets.AsNoTracking().SingleOrDefaultAsync(x => x.UserId == userId, ct); if (wallet is null) return Results.NotFound();
         var recent = await db.LedgerTransactions.AsNoTracking().Where(x => x.InitiatorUserId == userId || x.CounterpartyUserId == userId).OrderByDescending(x => x.CreatedAt).Take(50).ToListAsync(ct);
-        return Results.Ok(new { wallet.UserId, wallet.AvailableCoins, wallet.IsBlocked, wallet.UpdatedAt, recent = recent.Select(x => new { x.Id, x.Type, x.Status, x.Amount, x.CreatedAt, direction = EconomyEndpoints.Direction(x, userId) }) });
+        return Results.Ok(new { wallet.UserId, wallet.AvailableCoins, wallet.IsBlocked, wallet.DailyTransferLimit, wallet.UpdatedAt, recent = recent.Select(x => new { x.Id, x.Type, x.Status, x.Amount, x.CreatedAt, direction = EconomyEndpoints.Direction(x, userId) }) });
     }
+
+    private static async Task<IResult> LimitAsync(Guid userId, [FromBody] WalletLimitRequest request, HttpContext c, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!AdminEndpoints.Admin(c, out var admin)) return Results.Forbid();
+        if (request.Reason is not { Length: >= 3 and <= 200 } || request.DailyLimit is < 0 or > EconomyEndpoints.MaxPriceCoins) return Results.BadRequest(new { error = "invalid_limit" });
+        var wallet = await db.Wallets.SingleOrDefaultAsync(x => x.UserId == userId, ct); if (wallet is null) return Results.NotFound();
+        wallet.DailyTransferLimit = request.DailyLimit; wallet.UpdatedAt = clock.GetUtcNow();
+        await AdminEndpoints.Audit(db, admin, request.DailyLimit is null ? "wallet_limit_clear" : "wallet_limit_set", "wallet", wallet.Id, clock.GetUtcNow(), ct);
+        await db.SaveChangesAsync(ct); return Results.Ok(new { wallet.DailyTransferLimit });
+    }
+
+    /// <summary>Wallets worth a look: sending much of the daily limit, or many transfers, in the last 24 hours, or receiving from many different people.</summary>
+    internal static async Task<IReadOnlyList<SuspiciousWallet>> SuspiciousDataAsync(LifeVerseDbContext db, IConfiguration configuration, DateTimeOffset now, CancellationToken ct)
+    {
+        var since = now.AddHours(-24); var (_, daily) = EconomyLimits.For(configuration);
+        var sent = await db.LedgerTransactions.AsNoTracking().Where(x => x.Type == "user_transfer" && x.CreatedAt >= since && x.InitiatorUserId != null).GroupBy(x => x.InitiatorUserId!.Value).Select(g => new { User = g.Key, Count = g.Count(), Total = g.Sum(x => x.Amount) }).ToListAsync(ct);
+        var received = await db.LedgerTransactions.AsNoTracking().Where(x => x.Type == "user_transfer" && x.CreatedAt >= since && x.CounterpartyUserId != null).GroupBy(x => x.CounterpartyUserId!.Value).Select(g => new { User = g.Key, Senders = g.Select(x => x.InitiatorUserId).Distinct().Count(), Total = g.Sum(x => x.Amount) }).ToListAsync(ct);
+        var flags = new Dictionary<Guid, List<string>>();
+        void Flag(Guid user, string why) { if (!flags.TryGetValue(user, out var list)) flags[user] = list = []; list.Add(why); }
+        foreach (var s in sent) { if (s.Total * 10 >= daily * 8) Flag(s.User, "sent_near_daily_limit"); if (s.Count >= SuspiciousTransferCount) Flag(s.User, "many_transfers_sent"); }
+        foreach (var r in received) if (r.Senders >= SuspiciousSenders) Flag(r.User, "received_from_many_people");
+        var names = await db.Users.AsNoTracking().Where(u => flags.Keys.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Username, ct);
+        return [.. flags.Select(f => new SuspiciousWallet(f.Key, names.GetValueOrDefault(f.Key, "?"), f.Value)).OrderByDescending(x => x.Reasons.Count)];
+    }
+    public const int SuspiciousTransferCount = 30, SuspiciousSenders = 10;
+
+    private static async Task<IResult> SuspiciousAsync(HttpContext c, LifeVerseDbContext db, IConfiguration configuration, TimeProvider clock, CancellationToken ct) => !AdminEndpoints.Admin(c, out _) ? Results.Forbid() : Results.Ok(await SuspiciousDataAsync(db, configuration, clock.GetUtcNow(), ct));
 
     private static async Task<IResult> BlockAsync(Guid userId, [FromBody] WalletBlockRequest request, HttpContext c, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
     {

@@ -36,6 +36,26 @@ public sealed class EconomyLimitsTests : IDisposable
     }
 
     [Fact]
+    public async Task AWalletCanHaveItsOwnDailyLimit()
+    {
+        _db.Wallets.Add(new Wallet { Id = Guid.NewGuid(), UserId = _me, AvailableCoins = 1, DailyTransferLimit = 200, CreatedAt = _now, UpdatedAt = _now }); await _db.SaveChangesAsync();
+        Assert.False(await EconomyLimits.ExceededAsync(_db, Config(), _me, 200, _now, default)); Assert.True(await EconomyLimits.ExceededAsync(_db, Config(), _me, 201, _now, default));
+        Sent(150, _now.AddHours(-1)); Assert.True(await EconomyLimits.ExceededAsync(_db, Config(), _me, 51, _now, default));
+    }
+
+    [Fact]
+    public async Task WalletsMovingMuchMoneyOrTalkingToManyAreFlagged()
+    {
+        var busy = Guid.NewGuid(); var popular = Guid.NewGuid(); var quiet = Guid.NewGuid();
+        _db.Users.Add(new User { Id = busy, Username = "movimentado", NormalizedUsername = "MOVIMENTADO", Email = "m@t.l", NormalizedEmail = "M@T.L", PasswordHash = "x", CreatedAt = _now, UpdatedAt = _now });
+        for (var i = 0; i < EconomyAdmin.SuspiciousTransferCount; i++) Sent(10, _now.AddMinutes(-i - 1), busy);
+        for (var i = 0; i < EconomyAdmin.SuspiciousSenders; i++) _db.LedgerTransactions.Add(new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = Guid.NewGuid().ToString("N"), Type = "user_transfer", Status = "completed", Amount = 1, InitiatorUserId = Guid.NewGuid(), CounterpartyUserId = popular, CreatedAt = _now.AddMinutes(-5), CompletedAt = _now });
+        Sent(10, _now.AddMinutes(-3), quiet); await _db.SaveChangesAsync();
+        var flagged = await EconomyAdmin.SuspiciousDataAsync(_db, Config(), _now, default);
+        Assert.Contains(flagged, f => f.UserId == busy && f.Reasons.Contains("many_transfers_sent")); Assert.Contains(flagged, f => f.UserId == popular && f.Reasons.Contains("received_from_many_people")); Assert.DoesNotContain(flagged, f => f.UserId == quiet);
+    }
+
+    [Fact]
     public async Task InvalidConfigurationFallsBackToTheDefaults() => Assert.Equal((EconomyLimits.DefaultMaxTransfer, EconomyLimits.DefaultDailyTransfer), EconomyLimits.For(Config(("Economy:Limits:MaxTransfer", "abc"), ("Economy:Limits:DailyTransfer", "-5"))));
 
     [Fact]

@@ -15,8 +15,10 @@ public static class EconomyLimits
     {
         var (max, daily) = For(configuration);
         if (amount > max) return true;
+        if (await db.Wallets.Where(w => w.UserId == user).Select(w => w.DailyTransferLimit).SingleOrDefaultAsync(ct) is { } own) daily = own;      // the administration may set another limit for one wallet
         var start = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
         var sent = await db.LedgerTransactions.Where(x => x.InitiatorUserId == user && x.Type == "user_transfer" && x.CreatedAt >= start).SumAsync(x => (long?)x.Amount, ct) ?? 0;
         return sent + amount > daily;
     }
 }
+

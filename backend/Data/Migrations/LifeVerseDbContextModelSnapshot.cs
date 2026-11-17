@@ -6296,6 +6296,10 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<long?>("DailyTransferLimit")
+                        .HasColumnType("bigint")
+                        .HasColumnName("daily_transfer_limit");
+
                     b.Property<bool>("IsBlocked")
                         .HasColumnType("boolean")
                         .HasColumnName("is_blocked");
