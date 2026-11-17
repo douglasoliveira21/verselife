@@ -29,6 +29,7 @@ public partial class WalletSmoke : Node
             window.Open(0);
             Require(window.IsOpen && seen == 3450 && window.Balance == 3450, "the window asks the server for the balance and announces it");
             Require(window.PackCountForTesting == 2 && sent.Any(x => x.Path == "/api/v1/economy/packages"), "the packs come from the server");
+            Require(WalletWindow.TypeLabel("land_rent") == "Aluguel de terreno" && WalletWindow.TypeLabel("island_autorenewal") == "Renovação de aluguel de ilha" && WalletWindow.TypeLabel("land_sale_hold") == "Valor reservado" && WalletWindow.TypeLabel("land_deposit_refund") == "Caução devolvida" && WalletWindow.TypeLabel("object_purchase") == "Compra de objeto" && WalletWindow.TypeLabel("land_sale") == "Compra de terreno", "entries have names in Portuguese");
             Require(WalletWindow.Coins(2500) == "VC$ 2.500" && WalletWindow.Reais(2500) == "R$ 25,00", "money is written the Brazilian way");
             window.SelectPackForTesting(1); window.ConfirmBuyForTesting();
             Require(window.BuyStatusForTesting.Contains("Nenhuma cobrança"), $"without a payment provider nothing is charged and the person is told so (got {window.BuyStatusForTesting})");

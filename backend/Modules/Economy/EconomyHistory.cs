@@ -41,7 +41,7 @@ public static class EconomyHistory
     /// <summary>What came in, what went out and how many entries in the period, and the coins held for purchases and rentals that are still being concluded.</summary>
     public static async Task<object> SummaryAsync(LifeVerseDbContext db, Guid me, int days, DateTimeOffset now, CancellationToken ct)
     {
-        var rows = (await Mine(db, me, days, now).Where(x => x.Status == "completed").ToListAsync(ct));
+        var rows = (await Mine(db, me, days, now).Where(x => x.Status == "completed" && !x.Type.EndsWith("_hold")).ToListAsync(ct));      // a hold is money set aside, shown as reserved, and only the settlement counts as spent
         long received = 0, spent = 0; foreach (var x in rows) { if (EconomyEndpoints.Direction(x, me) == "in") received += Math.Abs(x.Amount); else spent += Math.Abs(x.Amount); }
         var reserved = await db.PaymentHolds.AsNoTracking().Where(h => h.PayerUserId == me && h.Status == "held").SumAsync(h => (long?)h.Amount, ct) ?? 0;
         var wallet = await EconomyEndpoints.EnsureWallet(db, me, ct);

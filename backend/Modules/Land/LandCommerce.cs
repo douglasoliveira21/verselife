@@ -54,7 +54,7 @@ public static class LandCommerce
     internal static async Task<LedgerTransaction> LedgerAsync(LifeVerseDbContext db, string key, string type, Guid initiator, Guid payer, IReadOnlyList<(Guid? Receiver, long Amount)> parts, object metadata, DateTimeOffset now, CancellationToken ct, string? payerHoldAccount = null)
     {
         var total = parts.Sum(p => p.Amount);
-        var transaction = new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = type, Status = "completed", Amount = total, InitiatorUserId = initiator, MetadataJson = JsonSerializer.Serialize(metadata), CreatedAt = now, CompletedAt = now };
+        var transaction = new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = type, Status = "completed", Amount = total, InitiatorUserId = initiator, CounterpartyUserId = parts.Where(p => p.Receiver is { } r && r != payer).Select(p => p.Receiver!.Value).Distinct().Take(2).ToList() is [var seller] ? seller : null, MetadataJson = JsonSerializer.Serialize(metadata), CreatedAt = now, CompletedAt = now };
         db.LedgerTransactions.Add(transaction);
         var payerAccount = payerHoldAccount is null ? await AccountAsync(db, payer, "user", now, ct) : await AccountAsync(db, null, payerHoldAccount, now, ct); // a settled purchase is paid from the hold, not from the buyer again
         db.LedgerEntries.Add(new LedgerEntry { Id = Guid.NewGuid(), TransactionId = transaction.Id, AccountId = payerAccount.Id, Debit = total, Credit = 0, CreatedAt = now });

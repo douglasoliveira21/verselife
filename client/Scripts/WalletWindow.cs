@@ -146,7 +146,19 @@ public sealed partial class WalletWindow : Control
         if (_page == 3) LoadHistory();
     }
 
-    private static readonly Dictionary<string, string> TypeLabels = new() { ["transfer"] = "Transferência", ["user_transfer"] = "Transferência", ["admin_adjustment"] = "Ajuste da administração", ["coin_refund"] = "Estorno de compra", ["purchase"] = "Compra", ["sale"] = "Venda", ["rental"] = "Aluguel", ["land"] = "Terreno", ["fee"] = "Taxa", ["refund"] = "Reembolso", ["coin_purchase"] = "Compra de VerseCoin" };
+    private static readonly Dictionary<string, string> TypeLabels = new() { ["transfer"] = "Transferência", ["user_transfer"] = "Transferência", ["admin_adjustment"] = "Ajuste da administração", ["coin_refund"] = "Estorno de compra", ["marketplace_purchase"] = "Compra no marketplace", ["object_purchase"] = "Compra de objeto", ["script_payment"] = "Pagamento a objeto", ["script_payout"] = "Pagamento de objeto", ["purchase"] = "Compra", ["sale"] = "Venda", ["rental"] = "Aluguel", ["land"] = "Terreno", ["fee"] = "Taxa", ["refund"] = "Reembolso", ["coin_purchase"] = "Compra de VerseCoin" };
+    /// <summary>The name of a kind of entry in plain Portuguese: the known ones, then by what the name says (a hold, a deposit, a renewal, a rent, land or island).</summary>
+    public static string TypeLabel(string type)
+    {
+        if (TypeLabels.TryGetValue(type, out var known)) return known;
+        if (type.EndsWith("_hold", StringComparison.Ordinal)) return "Valor reservado";
+        if (type.EndsWith("_release", StringComparison.Ordinal)) return "Reserva devolvida";
+        if (type.EndsWith("_deposit_refund", StringComparison.Ordinal)) return "Caução devolvida";
+        var place = type.StartsWith("island_", StringComparison.Ordinal) ? "ilha" : type.StartsWith("land_", StringComparison.Ordinal) ? "terreno" : null;
+        if (place is not null) return type.Contains("renew", StringComparison.Ordinal) ? $"Renovação de aluguel de {place}" : type.Contains("rent", StringComparison.Ordinal) ? $"Aluguel de {place}" : $"Compra de {place}";
+        return type;
+    }
+
     private static readonly Dictionary<string, string> StatusLabels = new() { ["completed"] = "Concluída", ["pending"] = "Pendente", ["failed"] = "Falhou", ["reversed"] = "Estornada" };
 
     private void FillRows(VBoxContainer box, string status, string body, int limit, string empty)
@@ -162,7 +174,7 @@ public sealed partial class WalletWindow : Control
             {
                 var type = r.GetProperty("type").GetString() ?? ""; var st = r.GetProperty("status").GetString() ?? ""; var when = r.TryGetProperty("createdAt", out var c) && c.TryGetDateTimeOffset(out var t) ? t.LocalDateTime.ToString("dd/MM/yyyy HH:mm", Pt) : "";
                 var amount = r.GetProperty("amount").GetInt64(); var dir = r.TryGetProperty("direction", out var dv) ? dv.GetString() : null; var id = r.TryGetProperty("id", out var iv) && Guid.TryParse(iv.GetString(), out var g) ? g : (Guid?)null;
-                var row = Row(when, TypeLabels.GetValueOrDefault(type, type), dir == "in" ? "+ " + Coins(Math.Abs(amount)) : dir == "out" ? "− " + Coins(Math.Abs(amount)) : Coins(amount), StatusLabels.GetValueOrDefault(st, st), false, id, id is { } rid ? () => OpenReceipt(rid) : null);
+                var row = Row(when, TypeLabel(type), dir == "in" ? "+ " + Coins(Math.Abs(amount)) : dir == "out" ? "− " + Coins(Math.Abs(amount)) : Coins(amount), StatusLabels.GetValueOrDefault(st, st), false, id, id is { } rid ? () => OpenReceipt(rid) : null);
                 if (dir is "in" or "out") row.GetChild<Label>(2).AddThemeColorOverride("font_color", dir == "in" ? UiStyle.SuccessBright : UiStyle.DangerBright);
                 box.AddChild(row);
             }
@@ -219,7 +231,7 @@ public sealed partial class WalletWindow : Control
             string Str(string name) => r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
             var when = r.TryGetProperty("createdAt", out var c) && c.TryGetDateTimeOffset(out var t) ? t.LocalDateTime.ToString("dd/MM/yyyy HH:mm", Pt) : "";
             _receiptCode = Str("code"); var sb = new StringBuilder();
-            sb.AppendLine(TypeLabels.GetValueOrDefault(type, type)).AppendLine();
+            sb.AppendLine(TypeLabel(type)).AppendLine();
             sb.AppendLine($"Valor: {(dir == "in" ? "+ " : "− ")}{Coins(Math.Abs(r.GetProperty("amount").GetInt64()))}");
             if (Str("counterparty") is { Length: > 0 } other) sb.AppendLine($"{(dir == "in" ? "De" : "Para")}: {other}");
             if (r.TryGetProperty("fee", out var fee) && fee.ValueKind == JsonValueKind.Number) sb.AppendLine($"Taxa da plataforma: {Coins(fee.GetInt64())}");

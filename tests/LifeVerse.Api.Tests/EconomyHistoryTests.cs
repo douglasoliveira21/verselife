@@ -53,6 +53,31 @@ public sealed class EconomyHistoryTests : IDisposable
     }
 
     [Fact]
+    public async Task RentAndSalesShowToBothSidesAndHoldsAreNotCountedTwice()
+    {
+        var tenant = _me; var landlord = _you;
+        Add("land_rent", 500, tenant, landlord);                              // the landlord is the other side of the rent
+        Add("land_sale_hold", 900, tenant, null);                              // money set aside for a purchase
+        Add("land_sale", 900, tenant, landlord);                               // ... and the purchase itself, paid from the hold
+        Add("land_sale_release", 300, tenant, null);                           // a hold given back
+        Add("land_deposit_refund", 200, tenant, null);
+        var landlordList = await EconomyHistory.ListAsync(_db, landlord, null, "property", null, 100, _now, default); Assert.Equal(2, landlordList.Count); Assert.All(landlordList, x => Assert.Equal("in", J(x).GetProperty("direction").GetString()));
+        var s = J(await EconomyHistory.SummaryAsync(_db, tenant, 30, _now, default));
+        Assert.Equal((500L + 900L, 300L + 200L), (s.GetProperty("spent").GetInt64(), s.GetProperty("received").GetInt64()));            // the hold of 900 is not spent twice
+        var landlordSummary = J(await EconomyHistory.SummaryAsync(_db, landlord, 30, _now, default)); Assert.Equal(1400L, landlordSummary.GetProperty("received").GetInt64());
+    }
+
+    [Fact]
+    public async Task TheLandLedgerRemembersWhoWasPaid()
+    {
+        var landlord = Guid.NewGuid(); var other = Guid.NewGuid();
+        _db.Users.AddRange(new User { Id = landlord, Username = "locador", NormalizedUsername = "LOCADOR", Email = "l@t.l", NormalizedEmail = "L@T.L", PasswordHash = "x", CreatedAt = _now, UpdatedAt = _now }, new User { Id = _me, Username = "locatario", NormalizedUsername = "LOCATARIO", Email = "m@t.l", NormalizedEmail = "M@T.L", PasswordHash = "x", CreatedAt = _now, UpdatedAt = _now }); await _db.SaveChangesAsync();
+        var one = await LifeVerse.Api.Modules.Land.LandCommerce.LedgerAsync(_db, "k1", "land_rent", _me, _me, [(landlord, 100L)], new { }, _now, default); Assert.Equal(landlord, one.CounterpartyUserId);
+        var withEscrow = await LifeVerse.Api.Modules.Land.LandCommerce.LedgerAsync(_db, "k2", "land_rent", _me, _me, [(landlord, 90L), (null, 10L)], new { }, _now, default); Assert.Equal(landlord, withEscrow.CounterpartyUserId);
+        var twoPeople = await LifeVerse.Api.Modules.Land.LandCommerce.LedgerAsync(_db, "k3", "land_sale", _me, _me, [(landlord, 90L), (other, 10L)], new { }, _now, default); Assert.Null(twoPeople.CounterpartyUserId);       // more than one person was paid: no single other side
+    }
+
+    [Fact]
     public async Task OnlyWhoIsPartOfAnEntryGetsItsReceipt()
     {
         _db.Users.Add(new User { Id = _you, Username = "ana", NormalizedUsername = "ANA", Email = "a@t.l", NormalizedEmail = "A@T.L", PasswordHash = "x", CreatedAt = _now, UpdatedAt = _now }); await _db.SaveChangesAsync();
