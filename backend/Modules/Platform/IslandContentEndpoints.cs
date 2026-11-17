@@ -23,6 +23,7 @@ public static class IslandContentEndpoints
         endpoints.MapPut("/api/v1/platform/servers/{instanceId:guid}/script-runtime", Scripting.ScriptingEndpoints.SaveRuntimeAsync).WithTags("Platform");
         endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-http", Scripting.ScriptingEndpoints.ScriptHttpAsync).WithTags("Platform");
         endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-payment", Scripting.ScriptingEndpoints.ScriptPaymentAsync).WithTags("Platform");
+        endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-payout", Scripting.ScriptingEndpoints.ScriptPayoutAsync).WithTags("Platform");
         endpoints.MapPost("/api/v1/platform/servers/{instanceId:guid}/script-give-item", Scripting.ScriptingEndpoints.ScriptGiveItemAsync).WithTags("Platform");
         endpoints.MapGet("/api/v1/platform/servers/{instanceId:guid}/vehicles", VehiclesAsync).WithTags("Platform");
         return endpoints;

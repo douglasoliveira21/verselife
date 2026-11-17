@@ -39,6 +39,8 @@ Os eventos chamam funções globais com o nome do evento e recebem **uma tabela 
 | `on_delay_complete` | Um timer.after com nome terminou. | name, timer_id, count |
 | `on_http_response` | A resposta de uma http.request chegou (ou ela falhou). | request_id, status, body, error, ok |
 | `on_payment` | Um pagamento pedido com economy.requestPayment foi concluído: o dinheiro já está na carteira do dono. | request_id, avatar_id, avatar.id, avatar.name, amount, transaction_id |
+| `on_payout` | Um pagamento feito com economy.pay foi concluído: o dinheiro saiu da carteira do dono e chegou ao avatar. | request_id, avatar_id, avatar.id, avatar.name, amount, transaction_id |
+| `on_payout_failed` | Um pagamento feito com economy.pay não pôde ser feito. | request_id, avatar_id, amount, reason (not_authorized, over_payment_limit, over_daily_limit, insufficient_balance, wallet_blocked, own_object, unavailable) |
 | `on_payment_failed` | O pagamento foi recusado pelo avatar ou não pôde ser feito. | request_id, avatar_id, amount, reason (declined, insufficient_balance, wallet_blocked, own_object, unavailable) |
 | `on_purchase` | O objeto foi comprado no mercado do mundo (clique Comprar): o evento chega aos scripts do objeto vendido, depois que o pagamento foi aprovado pela API. | price (L$), sale_type (original, copy ou contents), avatar_id, avatar_name, avatar.id, avatar.name, user_id |
 | `on_inventory_changed` | O Conteúdo do objeto mudou (item posto ou tirado). | added, removed (quantos) |
@@ -1216,6 +1218,19 @@ Muda o preço do próprio objeto à venda (clique Comprar). O objeto precisa est
 
 ```lua
 economy.setObjectPrice(150)
+```
+
+### `economy.pay(avatarId, valor)`
+
+Paga um avatar com o dinheiro do DONO do objeto. Só funciona se o dono autorizou este script (valor máximo por pagamento, máximo por dia e até quando), e o dono pode tirar a autorização a qualquer hora. O script não escolhe de quem sai o dinheiro e não sabe o saldo. O resultado chega em on_payout ou on_payout_failed.
+
+- **Retorna:** o id do pedido
+- **Permissão:** — (a autorização do dono)
+- **Limites:** VC$ 1 a 100.000 por pagamento; 10 por minuto; 5 pedidos esperando por script
+- **Erros possíveis:** valor fora do limite; limite por minuto
+
+```lua
+economy.pay(event.avatar.id, 50)
 ```
 
 ### `economy.setPayPrice(padrao, {rapidos})`

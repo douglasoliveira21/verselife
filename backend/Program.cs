@@ -182,6 +182,7 @@ app.MapAssetEndpoints();
 app.MapBuildPackageEndpoints();
 app.MapBuildLimitEndpoints();
 app.MapScriptingEndpoints();
+app.MapScriptPayouts();
 app.MapSocialEndpoints();
 LifeVerse.Api.Modules.Groups.GroupEndpoints.MapGroupEndpoints(app);
 LifeVerse.Api.Modules.Social.NotificationCenter.MapNotificationCenterEndpoints(app);

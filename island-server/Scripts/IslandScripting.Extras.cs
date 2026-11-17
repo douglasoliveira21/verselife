@@ -199,6 +199,31 @@ public sealed partial class IslandScripting
         return true;
     }
 
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(Guid Script, Guid Request, Guid? Transaction, string? Error)> _payoutsDone = new();
+
+    /// <summary>The script pays an avatar out of the wallet of the owner of the object: the API checks the authorization of the owner, the limits and the balance. The result is queued and handed to the script on the next tick.</summary>
+    public bool StartPayout(ScriptDefinition script, Guid requestId, Guid avatarId, long amount)
+    {
+        if (_avatars.FirstOrDefault(a => a.AvatarId == avatarId) is not { } receiver) return false;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var response = await _api.PostAsJsonAsync($"{_config.ApiBaseUrl}/api/v1/platform/servers/{_config.InstanceId}/script-payout", new { scriptId = script.Id, recipientUserId = receiver.UserId, amount, requestId = requestId.ToString("N") }, cancel.Token);
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancel.Token)); var root = document.RootElement;
+                var status = root.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() : null;
+                var transaction = root.TryGetProperty("transactionId", out var t) && Guid.TryParse(t.GetString(), out var parsed) ? parsed : (Guid?)null;
+                if (response.IsSuccessStatusCode && status is "completed" or "already_processed") _payoutsDone.Enqueue((script.Id, requestId, transaction, null));
+                else _payoutsDone.Enqueue((script.Id, requestId, null, root.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : "failed"));
+            }
+            catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException or JsonException) { _payoutsDone.Enqueue((script.Id, requestId, null, "unavailable")); }
+        });
+        return true;
+    }
+
+    private void DrainPayouts() { while (_payoutsDone.TryDequeue(out var done)) _host.CompletePayout(done.Script, done.Request, done.Transaction, done.Error); }
+
     private readonly System.Collections.Concurrent.ConcurrentQueue<(Guid Script, Guid Avatar, string Item, string? Error)> _givesDone = new();
 
     /// <summary>The script asked to give an item of its object to an avatar who allowed it: the API checks the rights of the owner and makes the copy. The result is handed to the script on the next tick.</summary>

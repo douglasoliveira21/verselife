@@ -12,6 +12,8 @@ public sealed class LuaGiveItemTests
     {
         public double Now { get; set; } = 100; public Dictionary<Guid, ScriptObjectState> Objects { get; } = []; public List<string> Said { get; } = []; public List<(Guid Avatar, Guid Asset, string Name)> Started { get; } = []; public bool CanStart { get; set; } = true; public List<int> Prices { get; } = [];
         public bool SetObjectPrice(ScriptDefinition script, int price) { Prices.Add(price); return true; }
+        public List<(Guid Request, Guid Avatar, long Amount)> Payouts { get; } = [];
+        public bool StartPayout(ScriptDefinition script, Guid requestId, Guid avatarId, long amount) { Payouts.Add((requestId, avatarId, amount)); return true; }
         public List<(int Default, int[] Quick)> PayPrices { get; } = [];
         public bool SetPayPrice(ScriptDefinition script, int defaultPrice, int[] quick) { PayPrices.Add((defaultPrice, quick)); return true; }
         public ScriptObjectState? GetObject(Guid id) => Objects.GetValueOrDefault(id);
@@ -84,6 +86,26 @@ public sealed class LuaGiveItemTests
         var (host3, world3, obj3, reports3) = Rig("function on_touch() economy.setObjectPrice(5) end");
         for (var i = 0; i < ScriptHost.MaxPriceChangesPerMinute; i++) Touch(host3, obj3); Assert.Empty(reports3); Touch(host3, obj3); Assert.Contains("at most", Assert.Single(reports3).Message);
         Assert.Equal(ScriptHost.MaxPriceChangesPerMinute, world3.Prices.Count);
+    }
+
+    [Fact]
+    public void AScriptPaysOutOfTheOwnersWalletAndHearsTheResult()
+    {
+        var (host, world, obj, reports) = Rig($"function on_touch() chat.say(economy.pay('{Ana}', 50.7)) end function on_payout(e) chat.say('pago ' .. e.amount .. ' ' .. e.transaction_id) end function on_payout_failed(e) chat.say('falhou ' .. e.reason) end");
+        Touch(host, obj); Assert.Empty(reports); var sent = Assert.Single(world.Payouts); Assert.Equal((Ana, 50L), (sent.Avatar, sent.Amount)); Assert.Equal([sent.Request.ToString()], world.Said);
+        var script = host.Scripts.Single().ScriptId; var tx = Guid.NewGuid();
+        host.CompletePayout(script, sent.Request, tx, null); host.CompletePayout(script, sent.Request, tx, null); host.CompletePayout(script, Guid.NewGuid(), tx, null); host.Process(500);          // a repeat and a made-up id do nothing
+        Assert.Equal([sent.Request.ToString(), $"pago 50 {tx}"], world.Said);
+        Touch(host, obj); var second = world.Payouts[1]; host.CompletePayout(script, second.Request, null, "not_authorized"); host.Process(500);
+        Assert.Equal("falhou not_authorized", world.Said[^1]);
+    }
+
+    [Fact]
+    public void ThePayoutsOfAScriptAreLimited()
+    {
+        foreach (var bad in new[] { "0", "-5", "100001" }) { var (h, w, o, r) = Rig($"function on_touch() economy.pay('{Ana}', {bad}) end"); Touch(h, o); Assert.Single(r); Assert.Empty(w.Payouts); }
+        var (host, world, obj, reports) = Rig($"function on_touch() economy.pay('{Ana}', 1) end");
+        for (var i = 0; i < ScriptHost.MaxPayoutsWaiting; i++) Touch(host, obj); Assert.Empty(reports); Touch(host, obj); Assert.Contains("waiting", Assert.Single(reports).Message); Assert.Equal(ScriptHost.MaxPayoutsWaiting, world.Payouts.Count);
     }
 
     [Fact]

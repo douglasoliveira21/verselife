@@ -4845,6 +4845,50 @@ namespace LifeVerse.Api.Data.Migrations
                     b.ToTable("script_logs", "world");
                 });
 
+            modelBuilder.Entity("LifeVerse.Api.Data.ScriptPayoutAuthorization", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<long>("MaxPerDay")
+                        .HasColumnType("bigint")
+                        .HasColumnName("max_per_day");
+
+                    b.Property<long>("MaxPerPayment")
+                        .HasColumnType("bigint")
+                        .HasColumnName("max_per_payment");
+
+                    b.Property<Guid>("OwnerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid>("ScriptId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("script_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("ScriptId", "RevokedAt");
+
+                    b.ToTable("script_payout_authorizations", "economy");
+                });
+
             modelBuilder.Entity("LifeVerse.Api.Data.ScriptRevision", b =>
                 {
                     b.Property<Guid>("Id")

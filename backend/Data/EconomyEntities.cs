@@ -32,3 +32,16 @@ public sealed class CoinOrder
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
 }
+
+/// <summary>The owner's permission for ONE script to pay people out of the owner's wallet: how much each payment and each day, until when, and whether it was taken back. Without an active one a script cannot pay anyone.</summary>
+public sealed class ScriptPayoutAuthorization
+{
+    public Guid Id { get; set; }
+    public Guid ScriptId { get; set; }
+    public Guid OwnerUserId { get; set; }
+    public long MaxPerPayment { get; set; }
+    public long MaxPerDay { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}

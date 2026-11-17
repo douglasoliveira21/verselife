@@ -493,6 +493,8 @@ public sealed partial class ScriptHost
     {
         var script = instance.Sandbox.Script; var economy = new Table(script); script.Globals["economy"] = economy;
         economy["requestPayment"] = DynValue.NewCallback((_, args) => { instance.Metrics.ApiCalls++; return RequestPayment(instance, AvatarId(args, 0), (long)Math.Floor(Number(args, 1)), args.Count > 2 && args[2].Type != DataType.Nil ? Plain(args, 2, "reason") : ""); });
+        // paying somebody out of the OWNER's wallet: only works when the owner authorized this script (limits and an end date); the API decides, the script hears the result
+        economy["pay"] = DynValue.NewCallback((_, args) => { instance.Metrics.ApiCalls++; return Payout(instance, AvatarId(args, 0), (long)Math.Floor(Number(args, 1))); });
         // what a Pay click offers: the amount the window starts with and up to four quick buttons
         economy["setPayPrice"] = DynValue.NewCallback((_, args) =>
         {
@@ -527,6 +529,34 @@ public sealed partial class ScriptHost
         var me = world.GetObject(instance.Definition.ObjectId); var id = Guid.NewGuid(); _payments[id] = (instance.Definition.Id, avatar, amount, now + 60, false);
         RaiseRequest(new ScriptRequest(id, instance.Definition.Id, instance.Definition.ObjectId, me?.Name ?? "Object", avatar, "payment", "Pagamento", $"“{me?.Name ?? "Um objeto"}” pede L$ {amount:N0}{(reason.Length > 0 ? $" — {(reason.Length > 120 ? reason[..120] : reason)}" : "")}. O valor vai para o dono do objeto.", ["Pagar", "Recusar"], null, false, 60));
         return DynValue.NewString(id.ToString());
+    }
+
+    private readonly Dictionary<Guid, (Guid Script, Guid Avatar, long Amount)> _payouts = [];
+    private readonly Dictionary<Guid, Queue<double>> _payoutTimes = [];
+    public const int MaxPayoutsPerMinute = 10, MaxPayoutsWaiting = 5;
+
+    /// <summary>The script pays an avatar out of the wallet of the owner of the object. Whether it may is not decided here: the API checks the authorization the owner gave this script, the limit of each payment and of the day, and the balance.</summary>
+    private DynValue Payout(Instance instance, Guid avatar, long amount)
+    {
+        if (amount < 1 || amount > MaxPayment) throw new ScriptRuntimeException($"a payment is from VC$ 1 to VC$ {MaxPayment:N0}");
+        var now = world.Now; if (!_payoutTimes.TryGetValue(instance.Definition.Id, out var times)) _payoutTimes[instance.Definition.Id] = times = new();
+        while (times.Count > 0 && now - times.Peek() > 60) times.Dequeue();
+        if (times.Count >= MaxPayoutsPerMinute) throw new ScriptRuntimeException($"economy.pay: at most {MaxPayoutsPerMinute} payments a minute");
+        if (_payouts.Count(p => p.Value.Script == instance.Definition.Id) >= MaxPayoutsWaiting) throw new ScriptRuntimeException($"at most {MaxPayoutsWaiting} payments waiting per script");
+        times.Enqueue(now);
+        var id = Guid.NewGuid(); _payouts[id] = (instance.Definition.Id, avatar, amount);
+        if (!world.StartPayout(instance.Definition, id, avatar, amount)) CompletePayout(instance.Definition.Id, id, null, "unavailable");
+        return DynValue.NewString(id.ToString());
+    }
+
+    /// <summary>The result of a payout as the economy decided it: <c>on_payout</c> only for money that really moved, <c>on_payout_failed</c> (with the reason) otherwise. Repeats and made-up ids do nothing.</summary>
+    public void CompletePayout(Guid scriptId, Guid requestId, Guid? transactionId, string? error)
+    {
+        if (!_payouts.TryGetValue(requestId, out var open) || open.Script != scriptId || Find(scriptId) is not { } instance) return;
+        _payouts.Remove(requestId);
+        var data = new Dictionary<string, object?> { ["request_id"] = requestId, ["avatar_id"] = open.Avatar, ["amount"] = open.Amount, ["avatar"] = new Dictionary<string, object?> { ["id"] = open.Avatar, ["name"] = AvatarName(open.Avatar) } };
+        if (error is null) { data["transaction_id"] = transactionId; Enqueue(new ScriptEvent(instance.Definition.ObjectId, "payout", data, scriptId)); }
+        else { data["reason"] = error; Enqueue(new ScriptEvent(instance.Definition.ObjectId, "payout_failed", data, scriptId)); }
     }
 
     /// <summary>The avatar answered the payment request. Only the person asked, once, in time; "Pagar" starts the payment, anything else is a refusal.</summary>
