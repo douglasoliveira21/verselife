@@ -94,7 +94,7 @@ public partial class ViewerUI : CanvasLayer
         BuildMoveWindow();
         BuildJoinWindow();
         BuildToasts();
-        var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text); notifications.Raw += json => { _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OnLiveEvent(json); _notificationCenter?.Poke(); };
+        var notifications = new NotificationClient { Name = "Notifications" }; AddChild(notifications); notifications.Notified += text => Toast(text); notifications.Raw += json => { OnLiveWallet(json); _world.GetNodeOrNull<GroupsWindow>("GroupsWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<ItemOffersWindow>("ItemOffersWindow")?.OnLiveEvent(json); _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.OnLiveEvent(json); _notificationCenter?.Poke(); };
         AnnounceUpdate();
         _people = new PeoplePanel { Name = "People" }; AddChild(_people); _people.AttachTo(_root); _people.Message += text => Toast(text); _people.ProfileRequested += id => _ = _world.GetNodeOrNull<ProfileWindow>("ProfileWindow")?.OpenByIdAsync(id); _people.ChatRequested += (_, name) => Toast($"Mensagem privada para {name}: abra a aba Conversas.");
         BuildTopBar();
@@ -656,6 +656,18 @@ public partial class ViewerUI : CanvasLayer
         _islandName.Text = online ? (_islandNames.TryGetValue(_network.CurrentIslandId, out var islandTitle) ? islandTitle : "Ilha") : "Sem ilha";
         _peopleButton.SetPressedNoSignal(_people?.Visible ?? false);
         _inventoryButton.SetPressedNoSignal(_world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.IsOpen ?? false);
+    }
+
+    /// <summary>The server says the balance changed ("wallet_changed"): the top bar and the open wallet show it at once, without asking.</summary>
+    public void OnLiveWallet(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json); var root = doc.RootElement;
+            if (root.GetProperty("type").GetString() != "wallet_changed" || !root.GetProperty("data").TryGetProperty("balance", out var balance)) return;
+            _balance.Text = FormatCoins(balance.GetInt64()); _root.GetNodeOrNull<WalletWindow>("WalletWindow")?.ApplyLiveBalance(balance.GetInt64());
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { }
     }
 
     private void RequestWallet()

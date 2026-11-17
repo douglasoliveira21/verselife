@@ -98,7 +98,7 @@ public static class EconomyAdmin
         var now = clock.GetUtcNow(); wallet.AvailableCoins += request.Amount; wallet.UpdatedAt = now;
         db.LedgerTransactions.Add(new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = "admin_adjustment", Status = "completed", Amount = request.Amount, InitiatorUserId = userId, MetadataJson = JsonSerializer.Serialize(new { admin, reason = request.Reason }), CreatedAt = now, CompletedAt = now });
         await AdminEndpoints.Audit(db, admin, "wallet_adjust", "wallet", wallet.Id, now, ct);
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); await EconomyPush.WalletChangedAsync(c.RequestServices, db, ct, userId);
         return Results.Ok(new { status = "completed", balance = wallet.AvailableCoins });
     }
 }

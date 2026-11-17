@@ -74,6 +74,7 @@ public static class CoinPackages
             if (!gateway.Verify(body, context.Request.Headers["X-Signature"].FirstOrDefault(), configuration)) return Results.Unauthorized();
             if (gateway.Parse(body) is not { } evt) return Results.BadRequest();
             var outcome = await CoinPurchases.ApplyAsync(db, gateway, evt, clock.GetUtcNow(), ct);
+            if (outcome is PaymentOutcome.Credited or PaymentOutcome.Refunded or PaymentOutcome.HeldForReview && await db.CoinOrders.AsNoTracking().Where(o => o.Provider == gateway.Name && o.ProviderRef == evt.ProviderRef).Select(o => (Guid?)o.UserId).SingleOrDefaultAsync(ct) is { } buyer) await EconomyPush.WalletChangedAsync(context.RequestServices, db, ct, buyer);
             return outcome == PaymentOutcome.UnknownOrder ? Results.NotFound() : Results.Ok(new { outcome = outcome.ToString() });
         }).AllowAnonymous();
         return endpoints;

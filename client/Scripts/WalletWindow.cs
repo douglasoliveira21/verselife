@@ -78,7 +78,7 @@ public sealed partial class WalletWindow : Control
         _pages.Add(BuildBuy(body)); _pages.Add(BuildOverview(body)); _pages.Add(BuildTransfer(body)); _pages.Add(BuildHistory(body)); _pages.Add(BuildHelp(body));
         foreach (var button in _menu) UiStyle.StyleButton(button, UiStyle.ButtonKind.Tool, 14, 8, 10);
         BuildReceipt();
-        _people = new PersonActions { Name = "WalletPeople" }; AddChild(_people); _people.Setup(this); _people.Said += text => { if (IsInstanceValid(_transferStatus)) _transferStatus.Text = text; };
+        _people = new PersonActions { Name = "WalletPeople" }; AddChild(_people); _people.Transport = (method, path, body) => Transport is null ? (0, "{}") : Transport(method, path, body); _people.Setup(this); _people.Said += text => { if (IsInstanceValid(_transferStatus)) _transferStatus.Text = text; };
         Show(0);
     }
 
@@ -89,6 +89,13 @@ public sealed partial class WalletWindow : Control
     public int HistoryRowsForTesting => _history.GetChildCount();
     public void ConfirmBuyForTesting() => ConfirmBuy();
     public void SelectPackForTesting(int index) { _pack = index; RenderBuy(); }
+
+    /// <summary>The server pushed a new balance: shown at once, and the open page (the totals, the history) is asked for again.</summary>
+    public void ApplyLiveBalance(long balance)
+    {
+        Balance = balance; _balance.Text = Coins(balance);
+        if (Visible && _page is 1 or 3) Refresh(); else if (Visible && _page == 2) UpdateTransferSummary();
+    }
 
     public void Open(int page = 0) { Visible = true; MoveToFront(); Show(page); }
     public void Close() => Visible = false;
@@ -367,7 +374,8 @@ public sealed partial class WalletWindow : Control
     private Control BuildTransfer(Control parent)
     {
         var page = Page(parent, out var left, out var right);
-        left.AddChild(Heading("Destinatário")); _toName = new LineEdit { PlaceholderText = "Nome exato do jogador", CustomMinimumSize = new Vector2(0, 42), MaxLength = 64 }; _toName.TextChanged += _ => UpdateTransferSummary(); left.AddChild(_toName);
+        left.AddChild(Heading("Destinatário")); _toName = new LineEdit { PlaceholderText = "Nome exato do jogador", CustomMinimumSize = new Vector2(0, 42), MaxLength = 64 }; _toName.TextChanged += _ => { _selectedId = null; UpdateTransferSummary(); Suggest(); }; left.AddChild(_toName);
+        _suggest = new VBoxContainer(); _suggest.AddThemeConstantOverride("separation", 4); left.AddChild(_suggest);
         left.AddChild(Heading("Valor a transferir")); _amount = new LineEdit { PlaceholderText = "VC$ 0", CustomMinimumSize = new Vector2(0, 42), MaxLength = 12 }; _amount.TextChanged += _ => UpdateTransferSummary(); left.AddChild(_amount);
         var quick = new HBoxContainer(); quick.AddThemeConstantOverride("separation", 8); foreach (var v in new long[] { 100, 250, 500, 1000 }) { var value = v; var b = new Button { Text = Coins(v), CustomMinimumSize = new Vector2(0, 38), FocusMode = FocusModeEnum.None, SizeFlagsHorizontal = SizeFlags.ExpandFill }; UiStyle.StyleButton(b, UiStyle.ButtonKind.Tool, 8, 6, 8); b.Pressed += () => _amount.Text = value.ToString(); quick.AddChild(b); } left.AddChild(quick);
         left.AddChild(Heading("Mensagem (opcional)")); _message = new LineEdit { PlaceholderText = "Ex.: Aqui está o combinado", CustomMinimumSize = new Vector2(0, 42), MaxLength = 200 }; _message.TextChanged += _ => UpdateTransferSummary(); left.AddChild(_message);
@@ -377,6 +385,47 @@ public sealed partial class WalletWindow : Control
         _send = new Button { Text = "Enviar VC$", CustomMinimumSize = new Vector2(0, 48), FocusMode = FocusModeEnum.None, Disabled = true }; UiStyle.StyleButton(_send, UiStyle.ButtonKind.Primary, 14, 10, 10); _send.Pressed += SendTransfer; right.AddChild(_send);
         UpdateTransferSummary(); return page;
     }
+
+    // ---- who gets it: the name is searched as it is typed (any part of it), and a person chosen from the list is paid by account, not by name
+    private VBoxContainer _suggest = null!; private Guid? _selectedId; private int _suggestToken;
+    public Guid? SelectedRecipientForTesting => _selectedId;
+    public IReadOnlyList<string> SuggestionsForTesting => [.. _suggest.GetChildren().OfType<Button>().Select(b => b.Text)];
+    public void TypeRecipientForTesting(string text) { _toName.Text = text; _toName.EmitSignal(LineEdit.SignalName.TextChanged, text); }
+    public void SendForTesting(string amount, string message) { _amount.Text = amount; _message.Text = message; UpdateTransferSummary(); SendTransfer(); }
+    public void ChooseSuggestionForTesting(int index) => _suggest.GetChild<Button>(index).EmitSignal(BaseButton.SignalName.Pressed);
+
+    private void Suggest()
+    {
+        var token = ++_suggestToken; foreach (var child in _suggest.GetChildren()) child.QueueFree();
+        var text = _toName.Text.Trim(); if (text.Length < 2) return;
+        if (Transport is not null) { Search(text, token); return; }
+        GetTree().CreateTimer(.35).Timeout += () => { if (token == _suggestToken && IsInstanceValid(this)) Search(text, token); };
+    }
+
+    private void Search(string text, int token) => Call(Godot.HttpClient.Method.Get, "/api/v1/social/people?q=" + Uri.EscapeDataString(text), null, (status, body) =>
+    {
+        if (token != _suggestToken || status is < 200 or >= 300) return;
+        foreach (var child in _suggest.GetChildren()) { _suggest.RemoveChild(child); child.QueueFree(); }
+        try
+        {
+            using var d = JsonDocument.Parse(body); var found = new List<(Guid Id, string Name)>();
+            foreach (var p in d.RootElement.EnumerateArray())
+            {
+                var name = p.TryGetProperty("displayName", out var dn) && dn.ValueKind == JsonValueKind.String ? dn.GetString() : null; var user = p.TryGetProperty("username", out var un) && un.ValueKind == JsonValueKind.String ? un.GetString() : null;
+                if (Guid.TryParse(p.GetProperty("id").GetString(), out var id) && (name ?? user) is { Length: > 0 } shown) found.Add((id, name is not null && user is not null && !string.Equals(name, user, StringComparison.OrdinalIgnoreCase) ? $"{name}  (@{user})" : shown));
+                if (found.Count == 6) break;
+            }
+            foreach (var (id, label) in found)
+            {
+                var captured = id; var plain = label.Split("  (@")[0];
+                var b = new Button { Text = label, Alignment = HorizontalAlignment.Left, CustomMinimumSize = new Vector2(0, 34), FocusMode = FocusModeEnum.None }; UiStyle.StyleButton(b, UiStyle.ButtonKind.Tool, 10, 4, 8);
+                b.Pressed += () => { _selectedId = captured; _toName.Text = plain; foreach (var c in _suggest.GetChildren()) { _suggest.RemoveChild(c); c.QueueFree(); } UpdateTransferSummary(); };
+                _suggest.AddChild(b);
+            }
+            if (found.Count == 0 && _toName.Text.Trim().Length >= 2) _suggest.AddChild(Muted("Ninguém encontrado com esse nome."));
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { }
+    });
 
     private bool TryAmount(out long amount) => long.TryParse(_amount.Text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out amount) && amount > 0;
 
@@ -390,7 +439,8 @@ public sealed partial class WalletWindow : Control
     private void SendTransfer()
     {
         if (!TryAmount(out var amount)) return; _send.Disabled = true; _transferStatus.Text = "Enviando…";
-        _people.Pay(_toName.Text.Trim(), amount, _transferKey, ok => { if (ok) { _transferKey = Guid.NewGuid().ToString("N"); _amount.Text = ""; _message.Text = ""; Refresh(); } UpdateTransferSummary(); }, _message.Text);
+        var who = _toName.Text.Trim(); void Go() => _people.Pay(who, amount, _transferKey, ok => { if (ok) { _transferKey = Guid.NewGuid().ToString("N"); _amount.Text = ""; _message.Text = ""; Refresh(); } UpdateTransferSummary(); }, _message.Text);
+        _people.Using(_selectedId, Go);
     }
 
     private Control BuildHelp(Control parent)
