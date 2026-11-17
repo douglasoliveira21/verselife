@@ -10,11 +10,13 @@ public partial class WalletSmoke : Node
         try
         {
             var sent = new List<(string Method, string Path)>(); long balance = 3450; var ordersStatus = 503; var ordersBody = "{\"error\":\"payments_not_configured\"}"; var orderState = "pending";
-            var window = new WalletWindow { Transport = (method, path, body) => { sent.Add((method.ToString(), path)); return path switch
+            var window = new WalletWindow { Transport = (method, path, body) => { sent.Add((method.ToString(), path)); return path.Split('?')[0] switch
             {
                 "/api/v1/economy/wallet" => (200, $"{{\"availableCoins\":{balance},\"isBlocked\":false}}"),
                 "/api/v1/economy/packages" => (200, "{\"paymentsEnabled\":true,\"packages\":[{\"id\":\"a\",\"name\":\"A\",\"coins\":1000,\"bonusPercent\":0,\"bonusCoins\":0,\"totalCoins\":1000,\"priceCents\":1000},{\"id\":\"b\",\"name\":\"B\",\"coins\":2500,\"bonusPercent\":10,\"bonusCoins\":250,\"totalCoins\":2750,\"priceCents\":2500}]}"),
-                "/api/v1/economy/wallet/transactions" => (200, "[{\"type\":\"transfer\",\"status\":\"completed\",\"amount\":500,\"createdAt\":\"2026-11-16T14:20:00Z\"}]"),
+                "/api/v1/economy/wallet/summary" => (200, "{\"received\":2790,\"spent\":100,\"count\":3,\"reserved\":300,\"available\":2000,\"total\":2300,\"isBlocked\":false}"),
+                "/api/v1/economy/wallet/transactions/22222222-2222-2222-2222-222222222222" => (200, "{\"id\":\"22222222-2222-2222-2222-222222222222\",\"type\":\"user_transfer\",\"status\":\"completed\",\"amount\":500,\"direction\":\"out\",\"createdAt\":\"2026-11-16T14:20:00Z\",\"counterparty\":\"ana\",\"message\":\"Aqui está o combinado\",\"code\":\"ABCDEF123456\"}"),
+                "/api/v1/economy/wallet/transactions" => (200, "[{\"id\":\"22222222-2222-2222-2222-222222222222\",\"type\":\"transfer\",\"status\":\"completed\",\"amount\":500,\"createdAt\":\"2026-11-16T14:20:00Z\"}]"),
                 "/api/v1/economy/coin-orders" => (ordersStatus, ordersBody),
                 "/api/v1/economy/coin-orders/11111111-1111-1111-1111-111111111111" => (200, $"{{\"id\":\"11111111-1111-1111-1111-111111111111\",\"status\":\"{orderState}\"}}"),
                 _ => (404, "{}")
@@ -37,6 +39,12 @@ public partial class WalletSmoke : Node
             Require(window.HistoryRowsForTesting == 2, $"the history shows a header and the transaction (got {window.HistoryRowsForTesting})");
             balance = 2950; window.Refresh();
             Require(seen == 2950, "the balance is read again from the server after a change");
+            window.SelectHistoryFiltersForTesting(2, 1, 2);
+            Require(window.HistoryQueryForTesting == "?days=7&kind=transfer&direction=out" && sent.Any(x => x.Path == "/api/v1/economy/wallet/transactions?days=7&kind=transfer&direction=out"), $"the filters go to the server (got {window.HistoryQueryForTesting})");
+            window.SelectHistoryFiltersForTesting(0, 0, 0); Require(window.HistoryQueryForTesting == "", "no filter, no query");
+            window.OpenReceipt(Guid.Parse("22222222-2222-2222-2222-222222222222"));
+            Require(window.ReceiptOpenForTesting && window.ReceiptTextForTesting.Contains("Para: ana") && window.ReceiptTextForTesting.Contains("Aqui está o combinado") && window.ReceiptTextForTesting.Contains("ABCDEF123456"), $"the receipt shows who, the message and the code (got {window.ReceiptTextForTesting})");
+            window.Open(1); Require(window.SummaryLinesForTesting >= 6, $"the balance page shows the totals (got {window.SummaryLinesForTesting})");
             window.Close(); Require(!window.IsOpen, "the window closes");
             GD.Print("event=wallet_smoke result=passed"); GetTree().Quit(0);
         }

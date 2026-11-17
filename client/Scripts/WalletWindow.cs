@@ -42,7 +42,7 @@ public sealed partial class WalletWindow : Control
     // overview, history
     private VBoxContainer _overview = null!, _history = null!;
     // transfer
-    private LineEdit _toName = null!, _amount = null!; private Label _transferStatus = null!, _transferSummary = null!; private Button _send = null!;
+    private LineEdit _toName = null!, _amount = null!, _message = null!; private Label _transferStatus = null!, _transferSummary = null!; private Button _send = null!;
     private PersonActions _people = null!; private string _transferKey = Guid.NewGuid().ToString("N");
 
     public override void _Ready()
@@ -77,6 +77,7 @@ public sealed partial class WalletWindow : Control
         var body = new Control { SizeFlagsVertical = SizeFlags.ExpandFill, ClipContents = true }; main.AddChild(body);
         _pages.Add(BuildBuy(body)); _pages.Add(BuildOverview(body)); _pages.Add(BuildTransfer(body)); _pages.Add(BuildHistory(body)); _pages.Add(BuildHelp(body));
         foreach (var button in _menu) UiStyle.StyleButton(button, UiStyle.ButtonKind.Tool, 14, 8, 10);
+        BuildReceipt();
         _people = new PersonActions { Name = "WalletPeople" }; AddChild(_people); _people.Setup(this); _people.Said += text => { if (IsInstanceValid(_transferStatus)) _transferStatus.Text = text; };
         Show(0);
     }
@@ -134,48 +135,120 @@ public sealed partial class WalletWindow : Control
             if (_page == 2) UpdateTransferSummary();
         });
         if (_page == 0) LoadPackages();
-        if (_page is 1 or 3) LoadHistory();
+        if (_page == 1) { LoadSummary(); LoadOverview(); }
+        if (_page == 3) LoadHistory();
     }
 
     private static readonly Dictionary<string, string> TypeLabels = new() { ["transfer"] = "Transferência", ["user_transfer"] = "Transferência", ["admin_adjustment"] = "Ajuste da administração", ["coin_refund"] = "Estorno de compra", ["purchase"] = "Compra", ["sale"] = "Venda", ["rental"] = "Aluguel", ["land"] = "Terreno", ["fee"] = "Taxa", ["refund"] = "Reembolso", ["coin_purchase"] = "Compra de VerseCoin" };
     private static readonly Dictionary<string, string> StatusLabels = new() { ["completed"] = "Concluída", ["pending"] = "Pendente", ["failed"] = "Falhou", ["reversed"] = "Estornada" };
 
-    private void LoadHistory() => Call(Godot.HttpClient.Method.Get, "/api/v1/economy/wallet/transactions", null, (status, body) =>
+    private void FillRows(VBoxContainer box, string status, string body, int limit, string empty)
     {
-        var targets = new[] { _overview, _history }; foreach (var box in targets) foreach (var child in box.GetChildren()) child.QueueFree();
-        if (status is < 200 or >= 300) { foreach (var box in targets) box.AddChild(Muted("Não foi possível carregar as transações agora.")); return; }
+        foreach (var child in box.GetChildren()) child.QueueFree();
+        if (status is "0") { box.AddChild(Muted("Não foi possível carregar as transações agora.")); return; }
         try
         {
             using var d = JsonDocument.Parse(body); var rows = d.RootElement.EnumerateArray().ToList();
-            foreach (var (box, limit) in new[] { (_overview, 6), (_history, 100) })
+            if (rows.Count == 0) { box.AddChild(Muted(empty)); return; }
+            box.AddChild(Row("Data", "Tipo", "Valor", "Situação", true, null, null));
+            foreach (var r in rows.Take(limit))
             {
-                if (rows.Count == 0) { box.AddChild(Muted("Nenhuma movimentação ainda.")); continue; }
-                box.AddChild(Row("Data", "Tipo", "Valor", "Situação", true));
-                foreach (var r in rows.Take(limit))
-                {
-                    var type = r.GetProperty("type").GetString() ?? ""; var st = r.GetProperty("status").GetString() ?? ""; var when = r.TryGetProperty("createdAt", out var c) && c.TryGetDateTimeOffset(out var t) ? t.LocalDateTime.ToString("dd/MM/yyyy HH:mm", Pt) : "";
-                    var amount = r.GetProperty("amount").GetInt64(); var dir = r.TryGetProperty("direction", out var dv) ? dv.GetString() : null;
-                    var row = Row(when, TypeLabels.GetValueOrDefault(type, type), dir == "in" ? "+ " + Coins(Math.Abs(amount)) : dir == "out" ? "− " + Coins(Math.Abs(amount)) : Coins(amount), StatusLabels.GetValueOrDefault(st, st), false);
-                    if (dir is "in" or "out") row.GetChild<Label>(2).AddThemeColorOverride("font_color", dir == "in" ? UiStyle.SuccessBright : UiStyle.DangerBright);
-                    box.AddChild(row);
-                }
+                var type = r.GetProperty("type").GetString() ?? ""; var st = r.GetProperty("status").GetString() ?? ""; var when = r.TryGetProperty("createdAt", out var c) && c.TryGetDateTimeOffset(out var t) ? t.LocalDateTime.ToString("dd/MM/yyyy HH:mm", Pt) : "";
+                var amount = r.GetProperty("amount").GetInt64(); var dir = r.TryGetProperty("direction", out var dv) ? dv.GetString() : null; var id = r.TryGetProperty("id", out var iv) && Guid.TryParse(iv.GetString(), out var g) ? g : (Guid?)null;
+                var row = Row(when, TypeLabels.GetValueOrDefault(type, type), dir == "in" ? "+ " + Coins(Math.Abs(amount)) : dir == "out" ? "− " + Coins(Math.Abs(amount)) : Coins(amount), StatusLabels.GetValueOrDefault(st, st), false, id, id is { } rid ? () => OpenReceipt(rid) : null);
+                if (dir is "in" or "out") row.GetChild<Label>(2).AddThemeColorOverride("font_color", dir == "in" ? UiStyle.SuccessBright : UiStyle.DangerBright);
+                box.AddChild(row);
             }
         }
-        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { _history.AddChild(Muted("Resposta inesperada do servidor.")); }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { box.AddChild(Muted("Resposta inesperada do servidor.")); }
+    }
+
+    private void LoadOverview() => Call(Godot.HttpClient.Method.Get, "/api/v1/economy/wallet/transactions", null, (status, body) => FillRows(_overview, status is >= 200 and < 300 ? "ok" : "0", body, 6, "Nenhuma movimentação ainda."));
+
+    private static readonly (string Label, int? Days)[] Periods = [("Todo o período", null), ("Hoje", 1), ("Últimos 7 dias", 7), ("Últimos 30 dias", 30)];
+    private static readonly (string Label, string? Id)[] Kinds = [("Todos os tipos", null), ("Transferências", "transfer"), ("Compras e vendas", "market"), ("Terrenos e aluguéis", "property"), ("VerseCoin", "coins"), ("Ajustes", "adjustment")];
+    private static readonly (string Label, string? Id)[] Directions = [("Entradas e saídas", null), ("Só entradas", "in"), ("Só saídas", "out")];
+    private OptionButton _period = null!, _kind = null!, _direction = null!;
+    public string HistoryQueryForTesting => HistoryQuery();
+
+    private string HistoryQuery()
+    {
+        var parts = new List<string>(); if (Periods[Math.Max(0, _period.Selected)].Days is { } days) parts.Add("days=" + days);
+        if (Kinds[Math.Max(0, _kind.Selected)].Id is { } kind) parts.Add("kind=" + kind); if (Directions[Math.Max(0, _direction.Selected)].Id is { } dir) parts.Add("direction=" + dir);
+        return parts.Count == 0 ? "" : "?" + string.Join("&", parts);
+    }
+
+    private void LoadHistory() => Call(Godot.HttpClient.Method.Get, "/api/v1/economy/wallet/transactions" + HistoryQuery(), null, (status, body) => FillRows(_history, status is >= 200 and < 300 ? "ok" : "0", body, 100, "Nada com esses filtros."));
+    public void SelectHistoryFiltersForTesting(int period, int kind, int direction) { _period.Select(period); _kind.Select(kind); _direction.Select(direction); LoadHistory(); }
+
+    private VBoxContainer _summaryBox = null!;
+    private void LoadSummary() => Call(Godot.HttpClient.Method.Get, "/api/v1/economy/wallet/summary?days=30", null, (status, body) =>
+    {
+        foreach (var child in _summaryBox.GetChildren()) child.QueueFree(); _summaryBox.AddChild(Heading("Últimos 30 dias"));
+        if (status is < 200 or >= 300) { _summaryBox.AddChild(Muted("Não foi possível carregar o resumo agora.")); return; }
+        try
+        {
+            using var d = JsonDocument.Parse(body); var r = d.RootElement;
+            void Line(string text, long value, Color? color = null) { var row = new HBoxContainer(); var l = new Label { Text = text, SizeFlagsHorizontal = SizeFlags.ExpandFill }; var v = new Label { Text = Coins(value) }; v.AddThemeFontOverride("font", UiStyle.Bold); if (color is { } c) v.AddThemeColorOverride("font_color", c); row.AddChild(l); row.AddChild(v); _summaryBox.AddChild(row); }
+            Line("Recebido", r.GetProperty("received").GetInt64(), UiStyle.SuccessBright); Line("Gasto", r.GetProperty("spent").GetInt64(), UiStyle.DangerBright);
+            Line("Disponível", r.GetProperty("available").GetInt64()); Line("Reservado", r.GetProperty("reserved").GetInt64(), UiStyle.Orange); Line("Total", r.GetProperty("total").GetInt64(), UiStyle.AccentText);
+            _summaryBox.AddChild(Muted($"{r.GetProperty("count").GetInt32()} movimentações concluídas."));
+            if (r.TryGetProperty("isBlocked", out var blocked) && blocked.ValueKind == JsonValueKind.True) _summaryBox.AddChild(Muted("Sua carteira está bloqueada. Fale com o suporte."));
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { _summaryBox.AddChild(Muted("Resposta inesperada do servidor.")); }
     });
+    public int SummaryLinesForTesting => _summaryBox.GetChildCount();
+
+    // ---- the receipt of one entry
+    private Control _receiptLayer = null!; private Label _receiptText = null!; private string _receiptCode = "";
+    public string ReceiptTextForTesting => _receiptText.Text;
+    public bool ReceiptOpenForTesting => _receiptLayer.Visible;
+    public void OpenReceipt(Guid id) => Call(Godot.HttpClient.Method.Get, $"/api/v1/economy/wallet/transactions/{id}", null, (status, body) =>
+    {
+        if (status is < 200 or >= 300) { _receiptText.Text = "Não foi possível abrir o comprovante agora."; _receiptLayer.Visible = true; return; }
+        try
+        {
+            using var d = JsonDocument.Parse(body); var r = d.RootElement; var dir = r.GetProperty("direction").GetString(); var type = r.GetProperty("type").GetString() ?? ""; var st = r.GetProperty("status").GetString() ?? "";
+            string Str(string name) => r.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+            var when = r.TryGetProperty("createdAt", out var c) && c.TryGetDateTimeOffset(out var t) ? t.LocalDateTime.ToString("dd/MM/yyyy HH:mm", Pt) : "";
+            _receiptCode = Str("code"); var sb = new StringBuilder();
+            sb.AppendLine(TypeLabels.GetValueOrDefault(type, type)).AppendLine();
+            sb.AppendLine($"Valor: {(dir == "in" ? "+ " : "− ")}{Coins(Math.Abs(r.GetProperty("amount").GetInt64()))}");
+            if (Str("counterparty") is { Length: > 0 } other) sb.AppendLine($"{(dir == "in" ? "De" : "Para")}: {other}");
+            if (r.TryGetProperty("fee", out var fee) && fee.ValueKind == JsonValueKind.Number) sb.AppendLine($"Taxa da plataforma: {Coins(fee.GetInt64())}");
+            if (Str("message") is { Length: > 0 } msg) sb.AppendLine($"Mensagem: {msg}");
+            sb.AppendLine($"Data: {when}").AppendLine($"Situação: {StatusLabels.GetValueOrDefault(st, st)}").AppendLine($"Código: {_receiptCode}");
+            _receiptText.Text = sb.ToString().TrimEnd(); _receiptLayer.Visible = true;
+        }
+        catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException) { _receiptText.Text = "Resposta inesperada do servidor."; _receiptLayer.Visible = true; }
+    });
+
+    private void BuildReceipt()
+    {
+        _receiptLayer = new Control { Visible = false, MouseFilter = MouseFilterEnum.Stop }; _receiptLayer.SetAnchorsPreset(LayoutPreset.FullRect); AddChild(_receiptLayer);
+        var dim = new ColorRect { Color = new Color(0, 0, 0, .5f) }; dim.SetAnchorsPreset(LayoutPreset.FullRect); _receiptLayer.AddChild(dim);
+        var center = new CenterContainer { MouseFilter = MouseFilterEnum.Ignore }; center.SetAnchorsPreset(LayoutPreset.FullRect); _receiptLayer.AddChild(center);
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(440, 0) }; panel.AddThemeStyleboxOverride("panel", UiStyle.Box(UiStyle.PanelFillSolid, UiStyle.Accent, 14, 1, 22, 18)); center.AddChild(panel);
+        var box = new VBoxContainer(); box.AddThemeConstantOverride("separation", 12); panel.AddChild(box);
+        box.AddChild(Heading("Comprovante")); _receiptText = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; box.AddChild(_receiptText);
+        var buttons = new HBoxContainer(); buttons.AddThemeConstantOverride("separation", 8); box.AddChild(buttons);
+        var copy = new Button { Text = "Copiar código", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 40), FocusMode = FocusModeEnum.None }; UiStyle.StyleButton(copy, UiStyle.ButtonKind.Tool, 12, 6, 8); copy.Pressed += () => DisplayServer.ClipboardSet(_receiptCode); buttons.AddChild(copy);
+        var close = new Button { Text = "Fechar", SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 40), FocusMode = FocusModeEnum.None }; UiStyle.StyleButton(close, UiStyle.ButtonKind.Primary, 12, 6, 8); close.Pressed += () => _receiptLayer.Visible = false; buttons.AddChild(close);
+    }
 
     // ---- the pages ----------------------------------------------------------------------------------------------------------------------
 
     private static Label Muted(string text) { var l = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart }; l.AddThemeColorOverride("font_color", UiStyle.TextMuted); return l; }
     private static Label Heading(string text) { var l = new Label { Text = text }; l.AddThemeFontOverride("font", UiStyle.Bold); l.AddThemeFontSizeOverride("font_size", 20); return l; }
 
-    private static HBoxContainer Row(string a, string b, string c, string d, bool head)
+    private static HBoxContainer Row(string a, string b, string c, string d, bool head, Guid? id, Action? receipt)
     {
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 12);
         foreach (var (text, width) in new[] { (a, 170), (b, 190), (c, 150), (d, 120) })
         {
             var l = new Label { Text = text, CustomMinimumSize = new Vector2(width, 0) }; l.AddThemeFontSizeOverride("font_size", head ? 13 : 15); l.AddThemeColorOverride("font_color", head ? UiStyle.AccentText : UiStyle.Text); row.AddChild(l);
         }
+        if (receipt is not null) { var see = new Button { Text = "Comprovante", FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(110, 30) }; see.AddThemeFontSizeOverride("font_size", 13); UiStyle.StyleButton(see, UiStyle.ButtonKind.Tool, 8, 3, 8); see.Pressed += receipt; row.AddChild(see); }
         return row;
     }
 
@@ -273,6 +346,7 @@ public sealed partial class WalletWindow : Control
     private Control BuildOverview(Control parent)
     {
         var page = Page(parent, out var left, out var right); left.AddChild(Heading("Últimas transações")); _overview = new VBoxContainer(); _overview.AddThemeConstantOverride("separation", 6); left.AddChild(Card(_overview));
+        _summaryBox = new VBoxContainer(); _summaryBox.AddThemeConstantOverride("separation", 6); right.AddChild(Card(_summaryBox));
         var actions = new VBoxContainer(); actions.AddThemeConstantOverride("separation", 8); actions.AddChild(Heading("Ações"));
         var buy = new Button { Text = "Comprar VerseCoin", CustomMinimumSize = new Vector2(0, 44), FocusMode = FocusModeEnum.None }; UiStyle.StyleButton(buy, UiStyle.ButtonKind.Primary, 12, 8, 10); buy.Pressed += () => Show(0);
         var send = new Button { Text = "Enviar VerseCoin", CustomMinimumSize = new Vector2(0, 44), FocusMode = FocusModeEnum.None }; UiStyle.StyleButton(send, UiStyle.ButtonKind.Tool, 12, 8, 10); send.Pressed += () => Show(2);
@@ -282,6 +356,10 @@ public sealed partial class WalletWindow : Control
     private Control BuildHistory(Control parent)
     {
         var page = Page(parent, out var left, out var right); right.Visible = false; left.SizeFlagsStretchRatio = 1;
+        var filters = new HBoxContainer(); filters.AddThemeConstantOverride("separation", 8); left.AddChild(filters);
+        OptionButton Filter((string Label, string? Id)[] items) { var o = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 38), FocusMode = FocusModeEnum.None }; foreach (var i in items) o.AddItem(i.Label); o.ItemSelected += _ => LoadHistory(); filters.AddChild(o); return o; }
+        _period = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 38), FocusMode = FocusModeEnum.None }; foreach (var p in Periods) _period.AddItem(p.Label); _period.ItemSelected += _ => LoadHistory(); filters.AddChild(_period);
+        _kind = Filter(Kinds); _direction = Filter(Directions);
         var scroll = new ScrollContainer { SizeFlagsVertical = SizeFlags.ExpandFill, HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled }; left.AddChild(scroll);
         _history = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill }; _history.AddThemeConstantOverride("separation", 6); scroll.AddChild(_history); return page;
     }
@@ -292,6 +370,7 @@ public sealed partial class WalletWindow : Control
         left.AddChild(Heading("Destinatário")); _toName = new LineEdit { PlaceholderText = "Nome exato do jogador", CustomMinimumSize = new Vector2(0, 42), MaxLength = 64 }; _toName.TextChanged += _ => UpdateTransferSummary(); left.AddChild(_toName);
         left.AddChild(Heading("Valor a transferir")); _amount = new LineEdit { PlaceholderText = "VC$ 0", CustomMinimumSize = new Vector2(0, 42), MaxLength = 12 }; _amount.TextChanged += _ => UpdateTransferSummary(); left.AddChild(_amount);
         var quick = new HBoxContainer(); quick.AddThemeConstantOverride("separation", 8); foreach (var v in new long[] { 100, 250, 500, 1000 }) { var value = v; var b = new Button { Text = Coins(v), CustomMinimumSize = new Vector2(0, 38), FocusMode = FocusModeEnum.None, SizeFlagsHorizontal = SizeFlags.ExpandFill }; UiStyle.StyleButton(b, UiStyle.ButtonKind.Tool, 8, 6, 8); b.Pressed += () => _amount.Text = value.ToString(); quick.AddChild(b); } left.AddChild(quick);
+        left.AddChild(Heading("Mensagem (opcional)")); _message = new LineEdit { PlaceholderText = "Ex.: Aqui está o combinado", CustomMinimumSize = new Vector2(0, 42), MaxLength = 200 }; _message.TextChanged += _ => UpdateTransferSummary(); left.AddChild(_message);
         _transferStatus = Muted(""); _transferStatus.AddThemeColorOverride("font_color", UiStyle.Orange); left.AddChild(_transferStatus);
         var inner = new VBoxContainer(); inner.AddThemeConstantOverride("separation", 8); inner.AddChild(Heading("Resumo da transferência")); _transferSummary = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart }; inner.AddChild(_transferSummary); right.AddChild(Card(inner));
         right.AddChild(Muted("A transferência é instantânea, o saldo é conferido no servidor e a operação fica registrada no histórico da sua conta."));
@@ -304,14 +383,14 @@ public sealed partial class WalletWindow : Control
     private void UpdateTransferSummary()
     {
         if (!IsInstanceValid(_toName)) return; var ok = TryAmount(out var amount); var name = _toName.Text.Trim();
-        _transferSummary.Text = $"Destinatário: {(name.Length > 0 ? name : "—")}\nValor: {(ok ? Coins(amount) : "—")}\nTaxa do sistema: VC$ 0\nTotal a enviar: {(ok ? Coins(amount) : "—")}" + (ok && Balance >= 0 && amount > Balance ? "\n\nSaldo insuficiente." : "");
+        _transferSummary.Text = $"Destinatário: {(name.Length > 0 ? name : "—")}\nValor: {(ok ? Coins(amount) : "—")}\nTaxa do sistema: VC$ 0\n{(_message.Text.Trim().Length > 0 ? "Mensagem: " + _message.Text.Trim() + "\n" : "")}Total a enviar:{(ok ? Coins(amount) : "—")}" + (ok && Balance >= 0 && amount > Balance ? "\n\nSaldo insuficiente." : "");
         _send.Text = ok ? $"Enviar {Coins(amount)}" : "Enviar VC$"; _send.Disabled = !ok || name.Length < 2 || (Balance >= 0 && amount > Balance);
     }
 
     private void SendTransfer()
     {
         if (!TryAmount(out var amount)) return; _send.Disabled = true; _transferStatus.Text = "Enviando…";
-        _people.Pay(_toName.Text.Trim(), amount, _transferKey, ok => { if (ok) { _transferKey = Guid.NewGuid().ToString("N"); _amount.Text = ""; Refresh(); } UpdateTransferSummary(); });
+        _people.Pay(_toName.Text.Trim(), amount, _transferKey, ok => { if (ok) { _transferKey = Guid.NewGuid().ToString("N"); _amount.Text = ""; _message.Text = ""; Refresh(); } UpdateTransferSummary(); }, _message.Text);
     }
 
     private Control BuildHelp(Control parent)

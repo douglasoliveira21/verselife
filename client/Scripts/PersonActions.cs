@@ -110,10 +110,10 @@ public partial class PersonActions : Node
     // ---- paying ------------------------------------------------------------------------------------------------------
 
     /// Sends coins. The key makes a repeated send harmless: the server does the transfer once per key.
-    public void Pay(string name, long coins, string idempotencyKey, Action<bool>? done = null)
+    public void Pay(string name, long coins, string idempotencyKey, Action<bool>? done = null, string? message = null)
     {
         if (coins <= 0) { Say("Digite um valor maior que zero."); done?.Invoke(false); return; }
-        Find(name, id => Call(Godot.HttpClient.Method.Post, "/api/v1/economy/transfer", JsonSerializer.Serialize(new { recipientUserId = id, amountCoins = coins, idempotencyKey }), (status, body) =>
+        Find(name, id => Call(Godot.HttpClient.Method.Post, "/api/v1/economy/transfer", JsonSerializer.Serialize(new { recipientUserId = id, amountCoins = coins, idempotencyKey, message = string.IsNullOrWhiteSpace(message) ? null : message.Trim() }), (status, body) =>
         {
             var ok = status is >= 200 and < 300;
             Say(ok ? (body.Contains("already_processed") ? $"Este pagamento para {name} já tinha sido feito." : $"Pagamento de VC$ {coins:N0} enviado para {name}.") : status == 409 ? (body.Contains("limit_exceeded") ? "Pagamento recusado: passou do limite de envio (por transferência ou do dia)." : "Pagamento recusado: saldo insuficiente ou carteira bloqueada.") : status == 404 ? "Esta pessoa não foi encontrada." : $"Não foi possível pagar (HTTP {status}).");
