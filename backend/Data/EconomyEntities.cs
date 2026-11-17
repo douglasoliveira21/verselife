@@ -2,7 +2,7 @@ namespace LifeVerse.Api.Data;
 
 public sealed class Wallet { public Guid Id { get; set; } public Guid UserId { get; set; } public long AvailableCoins { get; set; } public bool IsBlocked { get; set; } public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset UpdatedAt { get; set; } }
 public sealed class LedgerAccount { public Guid Id { get; set; } public Guid? UserId { get; set; } public Guid? GroupId { get; set; } public required string AccountType { get; set; } public long Balance { get; set; } public DateTimeOffset CreatedAt { get; set; } }
-public sealed class LedgerTransaction { public Guid Id { get; set; } public required string IdempotencyKey { get; set; } public required string Type { get; set; } public required string Status { get; set; } public long Amount { get; set; } public Guid? InitiatorUserId { get; set; } public string MetadataJson { get; set; } = "{}"; public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset? CompletedAt { get; set; } }
+public sealed class LedgerTransaction { public Guid Id { get; set; } public required string IdempotencyKey { get; set; } public required string Type { get; set; } public required string Status { get; set; } public long Amount { get; set; } public Guid? InitiatorUserId { get; set; } /* the other person of a transfer (who is paid), so the history of both shows it */ public Guid? CounterpartyUserId { get; set; } public string MetadataJson { get; set; } = "{}"; public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset? CompletedAt { get; set; } }
 public sealed class LedgerEntry { public Guid Id { get; set; } public Guid TransactionId { get; set; } public Guid AccountId { get; set; } public long Debit { get; set; } public long Credit { get; set; } public DateTimeOffset CreatedAt { get; set; } }
 public sealed class MarketplaceProduct { public Guid Id { get; set; } public Guid SellerUserId { get; set; } /* set when the group sells it: what it earns goes to the chest of the group */ public Guid? GroupId { get; set; } public Guid AssetId { get; set; } public required string Name { get; set; } public required string Description { get; set; } public required string Category { get; set; } public long PriceCoins { get; set; } public string PermissionsJson { get; set; } = "{}"; /* what the buyer may do with what is bought (LifeVerse.Shared.Items.ItemRights) and what the buyer may pass on; products from before the rights keep everything */ public int BuyerRights { get; set; } = LifeVerse.Shared.Items.ItemRights.Standard; public int BuyerNextRights { get; set; } = LifeVerse.Shared.Items.ItemRights.Standard; /* set when this is somebody reselling an item they bought: the item for sale */ public Guid? SourceItemId { get; set; } /* whether it can be bought for another person */ public bool AllowGift { get; set; } = true; public string? ImageUrl { get; set; } public required string Status { get; set; } public int Version { get; set; } public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset UpdatedAt { get; set; } }
 public sealed class MarketplaceOrder { public Guid Id { get; set; } public Guid ProductId { get; set; } public Guid BuyerUserId { get; set; } public Guid SellerUserId { get; set; } public long PriceCoins { get; set; } public required string Status { get; set; } public required string IdempotencyKey { get; set; } public Guid? TransactionId { get; set; } public Guid? InventoryItemId { get; set; } /* bought as a gift: who received it */ public Guid? RecipientUserId { get; set; } public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset? CompletedAt { get; set; } }
@@ -11,3 +11,24 @@ public sealed class IslandRental { public Guid Id { get; set; } public Guid Isla
 public sealed class WorldStore { public Guid Id { get; set; } public Guid IslandId { get; set; } public Guid OwnerUserId { get; set; } public Guid? GroupId { get; set; } public Guid ProductId { get; set; } public Guid? ObjectId { get; set; } public required string DisplayName { get; set; } public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset UpdatedAt { get; set; } public DateTimeOffset? DeletedAt { get; set; } }
 /// <summary>Money set aside for a purchase or a rental while it is being concluded (phase one of paying). It is settled to the receivers when the title or contract changes hands, or given back if that fails or never finishes.</summary>
 public sealed class PaymentHold { public Guid Id { get; set; } public required string Key { get; set; } public required string Purpose { get; set; } public Guid PayerUserId { get; set; } public long Amount { get; set; } public Guid TargetId { get; set; } public required string Status { get; set; } public string Reason { get; set; } = string.Empty; public DateTimeOffset CreatedAt { get; set; } public DateTimeOffset? ClosedAt { get; set; } }
+
+/// <summary>An order to buy VerseCoin with real money. It is created pending, and only a payment the gateway confirms (and whose amount matches) turns it into coins in the wallet, once.</summary>
+public sealed class CoinOrder
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public required string PackageId { get; set; }
+    /// <summary>Coins the person gets (the pack and its bonus), fixed when the order is made.</summary>
+    public long Coins { get; set; }
+    public long PriceCents { get; set; }
+    public required string Method { get; set; }
+    public required string Provider { get; set; }
+    public string? ProviderRef { get; set; }
+    /// <summary>pending, paid, failed, expired, refunded or chargeback_review (paid, then taken back with the coins already spent: the wallet is held for review).</summary>
+    public required string Status { get; set; }
+    public required string IdempotencyKey { get; set; }
+    public string? Reason { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? PaidAt { get; set; }
+}

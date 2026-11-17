@@ -30,7 +30,9 @@ public sealed class AvatarValidationTests
     {
         Assert.Equal("lifeverse_man", LifeVerse.Shared.Avatar.AvatarRules.DefaultBaseModel);
         Assert.Contains(LifeVerse.Shared.Avatar.AvatarRules.DefaultMan, LifeVerse.Shared.Avatar.AvatarRules.BaseModels);
-        Assert.Empty(AvatarCatalog.Validate(Valid() with { BaseModel = LifeVerse.Shared.Avatar.AvatarRules.DefaultMan }));
+        var man = LifeVerse.Shared.Avatar.AvatarRules.DefaultMan;
+        Assert.Empty(AvatarCatalog.Validate(Valid() with { BaseModel = man, EquippedItems = [.. LifeVerse.Shared.Avatar.AvatarRules.StarterOutfit(man).Select(x => new EquippedItemRequest(x.Slot, x.Key, x.Tint))] }));       // each body has its own wardrobe
+        Assert.Contains("equippedItems", AvatarCatalog.Validate(Valid() with { BaseModel = man }));                  // the plain items belong to the older bodies
         Assert.Empty(AvatarCatalog.Validate(Valid() with { BaseModel = "human_b" }));                 // the older bodies stay
         Assert.Contains("baseModel", AvatarCatalog.Validate(Valid() with { BaseModel = "somebody_else" }));
         Assert.NotEqual(Guid.Empty, LifeVerse.Shared.Avatar.AvatarRules.DefaultManModelId);

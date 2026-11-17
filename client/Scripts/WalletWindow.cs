@@ -137,7 +137,7 @@ public sealed partial class WalletWindow : Control
         if (_page is 1 or 3) LoadHistory();
     }
 
-    private static readonly Dictionary<string, string> TypeLabels = new() { ["transfer"] = "Transferência", ["purchase"] = "Compra", ["sale"] = "Venda", ["rental"] = "Aluguel", ["land"] = "Terreno", ["fee"] = "Taxa", ["refund"] = "Reembolso", ["coin_purchase"] = "Compra de VerseCoin" };
+    private static readonly Dictionary<string, string> TypeLabels = new() { ["transfer"] = "Transferência", ["user_transfer"] = "Transferência", ["admin_adjustment"] = "Ajuste da administração", ["coin_refund"] = "Estorno de compra", ["purchase"] = "Compra", ["sale"] = "Venda", ["rental"] = "Aluguel", ["land"] = "Terreno", ["fee"] = "Taxa", ["refund"] = "Reembolso", ["coin_purchase"] = "Compra de VerseCoin" };
     private static readonly Dictionary<string, string> StatusLabels = new() { ["completed"] = "Concluída", ["pending"] = "Pendente", ["failed"] = "Falhou", ["reversed"] = "Estornada" };
 
     private void LoadHistory() => Call(Godot.HttpClient.Method.Get, "/api/v1/economy/wallet/transactions", null, (status, body) =>
@@ -154,7 +154,10 @@ public sealed partial class WalletWindow : Control
                 foreach (var r in rows.Take(limit))
                 {
                     var type = r.GetProperty("type").GetString() ?? ""; var st = r.GetProperty("status").GetString() ?? ""; var when = r.TryGetProperty("createdAt", out var c) && c.TryGetDateTimeOffset(out var t) ? t.LocalDateTime.ToString("dd/MM/yyyy HH:mm", Pt) : "";
-                    box.AddChild(Row(when, TypeLabels.GetValueOrDefault(type, type), Coins(r.GetProperty("amount").GetInt64()), StatusLabels.GetValueOrDefault(st, st), false));
+                    var amount = r.GetProperty("amount").GetInt64(); var dir = r.TryGetProperty("direction", out var dv) ? dv.GetString() : null;
+                    var row = Row(when, TypeLabels.GetValueOrDefault(type, type), dir == "in" ? "+ " + Coins(Math.Abs(amount)) : dir == "out" ? "− " + Coins(Math.Abs(amount)) : Coins(amount), StatusLabels.GetValueOrDefault(st, st), false);
+                    if (dir is "in" or "out") row.GetChild<Label>(2).AddThemeColorOverride("font_color", dir == "in" ? UiStyle.SuccessBright : UiStyle.DangerBright);
+                    box.AddChild(row);
                 }
             }
         }
@@ -239,7 +242,7 @@ public sealed partial class WalletWindow : Control
             var b = new Button { Text = $"{label}  ·  {detail}", Alignment = HorizontalAlignment.Left, ToggleMode = true, CustomMinimumSize = new Vector2(0, 36), FocusMode = FocusModeEnum.None }; b.SetPressedNoSignal(on);
             UiStyle.StyleButton(b, on ? UiStyle.ButtonKind.ToolSelected : UiStyle.ButtonKind.Tool, 12, 6, 10); b.Pressed += () => { _method = captured; RenderBuy(); }; _methodList.AddChild(b);
         }
-        _confirmBuy.Disabled = _pack < 0; _buyStatus.Text = _paymentsEnabled ? "" : "Pagamentos ainda não habilitados neste servidor.";
+        _confirmBuy.Disabled = _pack < 0; const string off = "Pagamentos ainda não habilitados neste servidor."; if (!_paymentsEnabled) _buyStatus.Text = off; else if (_buyStatus.Text == off) _buyStatus.Text = "";
     }
 
     private void ConfirmBuy()
@@ -248,7 +251,22 @@ public sealed partial class WalletWindow : Control
         Call(Godot.HttpClient.Method.Post, "/api/v1/economy/coin-orders", JsonSerializer.Serialize(new { packageId = _packs[_pack].Id, method = _method, idempotencyKey = Guid.NewGuid().ToString("N") }), (status, body) =>
         {
             _confirmBuy.Disabled = false;
-            _buyStatus.Text = status switch { 503 => "Os pagamentos ainda não foram habilitados neste servidor. Nenhuma cobrança foi feita.", >= 200 and < 300 => "Pedido criado. O VerseCoin é creditado assim que o pagamento for confirmado.", 404 => "Esse pacote não está mais disponível.", 401 => "Entre na sua conta para comprar.", _ => "Não foi possível criar o pedido agora." };
+            _buyStatus.Text = status switch { 409 => "Sua carteira está bloqueada. Fale com o suporte.", 503 => "Os pagamentos ainda não foram habilitados neste servidor. Nenhuma cobrança foi feita.", >= 200 and < 300 => "Pedido criado. Aguardando a confirmação do pagamento…", 404 => "Esse pacote não está mais disponível.", 401 => "Entre na sua conta para comprar.", _ => "Não foi possível criar o pedido agora." };
+            if (status is >= 200 and < 300) { try { using var d = JsonDocument.Parse(body); WatchOrder(d.RootElement.GetProperty("id").GetGuid()); } catch (Exception e) when (e is JsonException or KeyNotFoundException) { } }
+        });
+    }
+
+    /// <summary>After an order is made the server is asked about it until the payment is confirmed (or the order closes); the coins appear only when the server says so.</summary>
+    private void WatchOrder(Guid id, int attempt = 0)
+    {
+        if (attempt > 90 || !IsInstanceValid(this)) return;
+        Call(Godot.HttpClient.Method.Get, $"/api/v1/economy/coin-orders/{id}", null, (status, body) =>
+        {
+            string? state = null;
+            try { if (status is >= 200 and < 300) { using var d = JsonDocument.Parse(body); state = d.RootElement.GetProperty("status").GetString(); } } catch (Exception e) when (e is JsonException or KeyNotFoundException) { }
+            if (state is null or "pending") { if (Transport is null && IsInstanceValid(this)) GetTree().CreateTimer(4).Timeout += () => WatchOrder(id, attempt + 1); return; }
+            _buyStatus.Text = state == "paid" ? "Pagamento confirmado! O VerseCoin já está na sua carteira." : "O pedido foi encerrado sem pagamento (" + state + ").";
+            Refresh();
         });
     }
 

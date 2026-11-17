@@ -116,7 +116,7 @@ public partial class PersonActions : Node
         Find(name, id => Call(Godot.HttpClient.Method.Post, "/api/v1/economy/transfer", JsonSerializer.Serialize(new { recipientUserId = id, amountCoins = coins, idempotencyKey }), (status, body) =>
         {
             var ok = status is >= 200 and < 300;
-            Say(ok ? (body.Contains("already_processed") ? $"Este pagamento para {name} já tinha sido feito." : $"Pagamento de VC$ {coins:N0} enviado para {name}.") : status == 409 ? "Pagamento recusado: saldo insuficiente ou carteira bloqueada." : status == 404 ? "Esta pessoa não foi encontrada." : $"Não foi possível pagar (HTTP {status}).");
+            Say(ok ? (body.Contains("already_processed") ? $"Este pagamento para {name} já tinha sido feito." : $"Pagamento de VC$ {coins:N0} enviado para {name}.") : status == 409 ? (body.Contains("limit_exceeded") ? "Pagamento recusado: passou do limite de envio (por transferência ou do dia)." : "Pagamento recusado: saldo insuficiente ou carteira bloqueada.") : status == 404 ? "Esta pessoa não foi encontrada." : $"Não foi possível pagar (HTTP {status}).");
             if (ok) PaymentMade?.Invoke();
             done?.Invoke(ok);
         }));

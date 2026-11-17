@@ -85,7 +85,7 @@ public sealed class AvatarLooksTests : IDisposable
     [Fact]
     public void EveryCatalogItemHasItsOwnPlaceAndTheDefaultOutfitIsValid()
     {
-        Assert.Equal(AvatarRules.Catalog.Count, AvatarRules.Catalog.Select(i => (i.Slot, i.Key)).Distinct().Count());
+        Assert.Equal(AvatarRules.Catalog.Count, AvatarRules.Catalog.Select(i => (i.Slot, i.Key, Own: i.Bodies is null ? "" : string.Join(",", i.Bodies))).Distinct().Count());       // a key may repeat for another body (the empty choices)
         Assert.All(AvatarRules.Catalog, i => Assert.Contains(i.Slot, AvatarRules.Slots));
         Assert.Empty(AvatarRules.CheckEquipment([("top", "tee_basic"), ("bottom", "pants_basic"), ("shoes", "sneakers_basic")]));
     }
