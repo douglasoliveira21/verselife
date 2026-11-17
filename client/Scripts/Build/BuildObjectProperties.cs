@@ -93,6 +93,32 @@ public partial class BuildObjectProperties : Node
         return Apply(new JsonObject { ["saleType"] = mode, ["salePrice"] = (int)price });
     }
 
+    /// <summary>What a Pay click offers, as the first selected object has it (the editor shows one set of values for the selection).</summary>
+    public (int Default, int[] Quick) ReadPay() => _selection.Views().FirstOrDefault() is { } view ? PayOf(view.State) : (0, []);
+
+    /// <summary>The problem with the pay values, if any: a default of 0 to 10 000 000 (0 = the person types) and up to four quick amounts of 1 to 10 000 000.</summary>
+    public static string? PayProblem(long defaultPrice, IReadOnlyCollection<long> quick)
+    {
+        if (defaultPrice is < 0 or > 10_000_000) return "Valor padrão inválido: use um número inteiro de 0 a 10.000.000.";
+        if (quick.Count > 4) return "No máximo 4 botões de valor rápido.";
+        if (quick.Any(q => q is < 1 or > 10_000_000)) return "Cada botão rápido vale de 1 a 10.000.000.";
+        return null;
+    }
+
+    /// <summary>Parses "10, 25 50;100" into amounts (any of comma, semicolon or space apart); null when something is not a whole number.</summary>
+    public static long[]? ParseQuick(string text)
+    {
+        var parts = text.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries); var list = new List<long>();
+        foreach (var part in parts) { if (!long.TryParse(part, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var n)) return null; list.Add(n); }
+        return [.. list.Distinct()];
+    }
+
+    public bool SetPay(long defaultPrice, long[] quick)
+    {
+        if (PayProblem(defaultPrice, quick) is not null) return false;
+        return Apply(new JsonObject { ["payPrice"] = (int)defaultPrice, ["payQuick"] = new JsonArray([.. quick.Select(q => (JsonNode)JsonValue.Create((int)q)!)]) });
+    }
+
     public bool TakeOffSale() => Apply(new JsonObject { ["saleType"] = "none" });
 
     public bool SetAnyone(bool? move, bool? copy)

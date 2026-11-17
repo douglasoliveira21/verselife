@@ -39,7 +39,7 @@ public partial class BuildClickActionSmoke : Node3D
             // buy
             var sink = new List<string>(); actions.Purchase.OperationSink = json => { sink.Add(json); return true; };
             var shop = Make(world, "buy", "{\"saleType\":\"copy\",\"salePrice\":1500}", at: new Vector3(-4, 1, 4)); actions.Perform(shop); await Frames(2);
-            Require(actions.Purchase.IsOpen && actions.Purchase.PriceForTesting == "1.500 moedas" && actions.Purchase.SellerForTesting == "Vendedor: Ana Souza" && actions.Purchase.GetsForTesting.Contains("cópia"), $"the purchase shows the price, the seller and what comes with it ({actions.Purchase.PriceForTesting} / {actions.Purchase.SellerForTesting})");
+            Require(actions.Purchase.IsOpen && actions.Purchase.PriceForTesting == "VC$ 1.500" && actions.Purchase.FeeForTesting.Contains("5%") && actions.Purchase.FeeForTesting.Contains("VC$ 75") && actions.Purchase.SellerForTesting == "Vendedor: Ana Souza" && actions.Purchase.GetsForTesting.Contains("cópia"), $"the purchase shows the price, the seller and what comes with it ({actions.Purchase.PriceForTesting} / {actions.Purchase.SellerForTesting})");
             actions.Purchase.PressBuyForTesting();
             var command = JsonDocument.Parse(sink[^1]).RootElement;
             Require(command.GetProperty("operation").GetString() == "buy" && command.GetProperty("objectId").GetGuid() == shop.State.Id && command.GetProperty("properties").GetProperty("expectedPrice").GetInt64() == 1500 && command.GetProperty("properties").GetProperty("idempotencyKey").GetString()!.Length >= 8, "Comprar sends the price that was shown and a key");

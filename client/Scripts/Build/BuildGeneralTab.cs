@@ -43,6 +43,18 @@ public partial class BuildGeneralTab : VBoxContainer
     public void CommitNameForTesting() => CommitIdentity();
     public void ChooseClickForTesting(string id) { var i = Array.FindIndex(BuildObjectProperties.ClickActions, a => a.Id == id); _click.Select(i); OnClickChosen(i); }
     public void ToggleForSaleForTesting(bool on) { _forSale.ButtonPressed = on; }
+    private VBoxContainer _payRows = null!; private SpinBox _payDefault = null!; private LineEdit _payQuick = null!; private Button _payApply = null!;
+    public bool PayRowsVisibleForTesting => _payRows.Visible;
+    public void SetPayForTesting(double defaultPrice, string quick) { _payDefault.Value = defaultPrice; _payQuick.Text = quick; _payApply.EmitSignal(BaseButton.SignalName.Pressed); }
+    public (double Default, string Quick) PayShownForTesting => (_payDefault.Value, _payQuick.Text);
+
+    private void ApplyPay()
+    {
+        var quick = BuildObjectProperties.ParseQuick(_payQuick.Text); if (quick is null) { Said?.Invoke("Os botões rápidos precisam ser números inteiros, separados por vírgula."); return; }
+        var problem = BuildObjectProperties.PayProblem((long)_payDefault.Value, quick); if (problem is not null) { Said?.Invoke(problem); return; }
+        if (_props.SetPay((long)_payDefault.Value, quick)) Said?.Invoke("Valores do pagamento guardados.");
+    }
+
     public void SetSaleForTesting(string mode, double price) { _mode.Select(Array.FindIndex(BuildObjectProperties.SaleModes, m => m.Id == mode)); _price.Value = price; }
     public void PressApplyForTesting() => _apply.EmitSignal(BaseButton.SignalName.Pressed);
     public void ToggleAnyoneMoveForTesting(bool on) => _anyoneMove.ButtonPressed = on;
@@ -71,12 +83,20 @@ public partial class BuildGeneralTab : VBoxContainer
         AddChild(Row("AÇÃO AO CLICAR", _click));
         AddChild(new HSeparator());
 
+        _payRows = new VBoxContainer { Visible = false }; _payRows.AddThemeConstantOverride("separation", 6); AddChild(_payRows);
+        _payDefault = new SpinBox { MinValue = 0, MaxValue = 10_000_000, Step = 1, Value = 0, CustomMinimumSize = new Vector2(150, 38), SelectAllOnFocus = true, Suffix = "VC$", TooltipText = "O valor com que a janela de pagamento abre (0 = a pessoa digita)" };
+        _payRows.AddChild(Row("VALOR PADRÃO", _payDefault));
+        _payQuick = new LineEdit { PlaceholderText = "10, 25, 50, 100", CustomMinimumSize = new Vector2(0, 38), TooltipText = "Até 4 botões de valor rápido, separados por vírgula" }; _payRows.AddChild(Row("BOTÕES RÁPIDOS", _payQuick));
+        _payApply = new Button { Text = " SALVAR VALORES", Icon = UiStyle.Icon("check", UiStyle.Text, 22), FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 42), TooltipText = "Guarda o valor padrão e os botões do clique Pagar" };
+        UiStyle.StyleButton(_payApply, UiStyle.ButtonKind.Primary, 12, 6, 14); _payApply.AddThemeFontSizeOverride("font_size", 18); _payApply.Pressed += ApplyPay; _payRows.AddChild(_payApply);
+        AddChild(new HSeparator());
+
         _forSale = Check("Colocar objeto à venda", "Quem clicar (com a ação Comprar) ou escolher Comprar paga o preço e recebe o que você vende"); _forSale.Toggled += OnForSaleToggled; AddChild(_forSale);
         var sale = new VBoxContainer { Visible = false }; sale.AddThemeConstantOverride("separation", 6); _saleRows = sale; AddChild(sale);
         _mode = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 38), FocusMode = FocusModeEnum.None, TooltipText = "O que o comprador recebe" };
         foreach (var (_, label) in BuildObjectProperties.SaleModes) _mode.AddItem(label);
         sale.AddChild(Row("MODALIDADE", _mode));
-        _price = new SpinBox { MinValue = 0, MaxValue = 10_000_000, Step = 1, Value = 10, CustomMinimumSize = new Vector2(150, 38), SelectAllOnFocus = true, Suffix = "moedas" };
+        _price = new SpinBox { MinValue = 0, MaxValue = 10_000_000, Step = 1, Value = 10, CustomMinimumSize = new Vector2(150, 38), SelectAllOnFocus = true, Suffix = "VC$" };
         sale.AddChild(Row("PREÇO", _price));
         _apply = new Button { Text = " APLICAR", Icon = UiStyle.Icon("check", UiStyle.Text, 22), FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 42), TooltipText = "Coloca o objeto à venda com este preço e esta modalidade" };
         UiStyle.StyleButton(_apply, UiStyle.ButtonKind.Primary, 12, 6, 14); _apply.AddThemeFontSizeOverride("font_size", 18); _apply.Pressed += ApplySale; sale.AddChild(_apply);
@@ -125,6 +145,7 @@ public partial class BuildGeneralTab : VBoxContainer
         foreach (var (id, name) in _groups()) { _group.AddItem(name); _groupIds.Add(id); }
         _group.Select(Math.Max(0, _groupIds.IndexOf(model.Group)));
         _click.Select(Math.Max(0, Array.FindIndex(BuildObjectProperties.ClickActions, a => a.Id == model.ClickAction)));
+        _payRows.Visible = model.ClickAction == "pay"; if (_payRows.Visible) { var (payDefault, payQuick) = _props.ReadPay(); _payDefault.SetValueNoSignal(payDefault); _payQuick.Text = string.Join(", ", payQuick); }
         var onSale = model.SaleType is { } t && t != "none"; _forSale.SetPressedNoSignal(onSale); _saleRows.Visible = onSale || _forSale.ButtonPressed;
         if (model.SaleType is { } type && type != "none") _mode.Select(Math.Max(0, Array.FindIndex(BuildObjectProperties.SaleModes, m => m.Id == type)));
         if (model.Price is { } price) _price.SetValueNoSignal(price);
@@ -178,7 +199,7 @@ public partial class BuildGeneralTab : VBoxContainer
         if (!_mine) return;
         var mode = BuildObjectProperties.SaleModes[Math.Max(0, _mode.Selected)].Id; var price = (long)_price.Value;
         if (BuildObjectProperties.SaleProblem(mode, price) is { } problem) { Said?.Invoke(problem); return; }
-        if (_props.PutOnSale(mode, price)) Said?.Invoke($"À venda por {price.ToString("N0", CultureInfo.GetCultureInfo("pt-BR"))} moedas ({BuildObjectProperties.SaleModes.First(m => m.Id == mode).Label.ToLowerInvariant()}).");
+        if (_props.PutOnSale(mode, price)) Said?.Invoke($"À venda por VC$ {price.ToString("N0", CultureInfo.GetCultureInfo("pt-BR"))} ({BuildObjectProperties.SaleModes.First(m => m.Id == mode).Label.ToLowerInvariant()}).");
     }
 
     private void ApplyAnyone() { if (_filling || !_mine) return; if (_props.SetAnyone(_anyoneMove.ButtonPressed, _anyoneCopy.ButtonPressed)) Said?.Invoke("Permissões de qualquer pessoa enviadas ao servidor."); }

@@ -84,7 +84,7 @@ public static partial class BuildOperations
             }
         }
 
-        var fee = price * EconomyEndpoints.FeeBps / 10000;
+        var fee = EconomyFees.Of(price, EconomyFees.ObjectSaleBps);
         var transaction = new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = "object_purchase", Status = "completed", Amount = price, InitiatorUserId = buyer, MetadataJson = JsonSerializer.Serialize(new { objectId, saleType = type, seller }), CreatedAt = now, CompletedAt = now };
         db.LedgerTransactions.Add(transaction);
         buyerWallet.AvailableCoins -= price; buyerWallet.UpdatedAt = now; sellerWallet.AvailableCoins += price - fee; sellerWallet.UpdatedAt = now;

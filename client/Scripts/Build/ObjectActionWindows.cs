@@ -22,6 +22,8 @@ public partial class ObjectPurchaseWindow : Node
     public Func<string, bool>? OperationSink { get; set; }
     public bool IsOpen => _window is not null && _window.Visible;
     public string StatusForTesting => _status.Text;
+    private Label _fee = null!;
+    public string FeeForTesting => _fee.Text;
     public string PriceForTesting => _price.Text;
     public string GetsForTesting => _gets.Text;
     public string SellerForTesting => _seller.Text;
@@ -34,7 +36,7 @@ public partial class ObjectPurchaseWindow : Node
         _window = new FloatingWindow("Comprar objeto", icon: "coin") { Name = "PurchaseWindow", Visible = false, Theme = ViewerTheme.Create() }; _window.Place(.5f, .5f, -230, -170, 230, 170); AddChild(_window);
         _window.CloseRequested += () => _window.Visible = false;
         var c = _window.Content; c.AddThemeConstantOverride("separation", 10);
-        _title = Line(c, 22, true, UiStyle.AccentText); _seller = Line(c, 18, false, UiStyle.TextMuted); _gets = Line(c, 18, false, UiStyle.Text); _price = Line(c, 24, true, UiStyle.Coin);
+        _title = Line(c, 22, true, UiStyle.AccentText); _seller = Line(c, 18, false, UiStyle.TextMuted); _gets = Line(c, 18, false, UiStyle.Text); _price = Line(c, 24, true, UiStyle.Coin); _fee = Line(c, 14, false, UiStyle.TextMuted);
         _status = Line(c, 16, false, UiStyle.TextMuted); _status.CustomMinimumSize = new Vector2(0, 40);
         var buttons = new HBoxContainer(); buttons.AddThemeConstantOverride("separation", 10); c.AddChild(buttons);
         _buy = new Button { Text = " Comprar", Icon = UiStyle.Icon("check", UiStyle.Text, 22), FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, CustomMinimumSize = new Vector2(0, 46) };
@@ -54,7 +56,7 @@ public partial class ObjectPurchaseWindow : Node
     public void Open(BuildObjectState state, string sellerName)
     {
         _object = state; _key = "obj-" + Guid.NewGuid().ToString("N"); var (mode, price) = BuildObjectProperties.SaleOf(state); _priceShown = price;
-        _title.Text = state.Name; _seller.Text = $"Vendedor: {sellerName}"; _price.Text = $"{price.ToString("N0", CultureInfo.GetCultureInfo("pt-BR"))} moedas";
+        _title.Text = state.Name; _seller.Text = $"Vendedor: {sellerName}"; EconomyRates.EnsureLoaded(this); _price.Text = $"VC$ {price.ToString("N0", CultureInfo.GetCultureInfo("pt-BR"))}"; _fee.Text = mode == "none" ? string.Empty : EconomyRates.FeeText(price, EconomyRates.ObjectSaleBps);
         _gets.Text = mode switch { "original" => "Você recebe: o objeto original. Ele passa a ser seu.", "copy" => "Você recebe: uma cópia, que vai para o seu inventário.", "contents" => "Você recebe: uma cópia do conteúdo do objeto, no seu inventário.", _ => "Este objeto não está à venda." };
         _buy.Disabled = mode == "none"; _status.Text = mode == "none" ? "O objeto saiu da venda." : string.Empty; _window.Visible = true; _window.MoveToFront();
     }

@@ -20,7 +20,7 @@ public static class EconomyEndpoints
     public static IEndpointRouteBuilder MapEconomyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var economy = endpoints.MapGroup("/api/v1/economy").WithTags("Economy").RequireAuthorization();
-        economy.MapCoinPackages(); endpoints.MapCoinWebhook(); endpoints.MapEconomyAdmin(); endpoints.MapEconomyAdminPage(); economy.MapGet("/wallet", WalletAsync); economy.MapGet("/wallet/transactions", TransactionsAsync); economy.MapPost("/transfer", TransferAsync);
+        economy.MapCoinPackages(); economy.MapFees(); endpoints.MapCoinWebhook(); endpoints.MapEconomyAdmin(); endpoints.MapEconomyAdminPage(); economy.MapGet("/wallet", WalletAsync); economy.MapGet("/wallet/transactions", TransactionsAsync); economy.MapPost("/transfer", TransferAsync);
         economy.MapGet("/products", ProductsAsync); economy.MapPost("/products", PublishAsync); economy.MapPatch("/products/{id:guid}", UpdateProductAsync); economy.MapPost("/products/{id:guid}/deactivate", DeactivateAsync); economy.MapPost("/products/{id:guid}/purchase", PurchaseAsync); economy.MapGet("/orders", OrdersAsync);
         economy.MapGet("/rental-plans", RentalPlansAsync); economy.MapPost("/islands/{islandId:guid}/rent", RentIslandAsync); economy.MapPost("/rentals/{rentalId:guid}/renew", RenewRentalAsync);
         economy.MapGet("/islands/{islandId:guid}/stores", ListStoresAsync); economy.MapPost("/islands/{islandId:guid}/stores", CreateStoreAsync); economy.MapDelete("/islands/{islandId:guid}/stores/{storeId:guid}", DeleteStoreAsync);
@@ -116,7 +116,7 @@ public static class EconomyEndpoints
         try
         {
         var transaction = new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = request.IdempotencyKey, Type = "marketplace_purchase", Status = "completed", Amount = product.PriceCoins, InitiatorUserId = me, MetadataJson = JsonSerializer.Serialize(new { productId = id }), CreatedAt = now, CompletedAt = now };
-        db.LedgerTransactions.Add(transaction); var fee = product.PriceCoins * FeeBps / 10000; buyer.AvailableCoins -= product.PriceCoins;
+        db.LedgerTransactions.Add(transaction); var fee = EconomyFees.Of(product.PriceCoins, EconomyFees.MarketplaceBps); buyer.AvailableCoins -= product.PriceCoins;
         if (seller is not null) { seller.AvailableCoins += product.PriceCoins - fee; seller.UpdatedAt = now; }
         buyer.UpdatedAt = now;
         /* what a group sells goes to the chest of the group, below */

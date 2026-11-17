@@ -111,6 +111,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+LifeVerse.Api.Modules.Economy.EconomyFees.Configure(app.Configuration);
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {

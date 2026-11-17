@@ -56,6 +56,17 @@ public partial class BuildGeneralSmoke : Node3D
             commands.Clear(); tab.ChooseClickForTesting("buy");
             Require(commands.Count == 0 && editor.Window.StatusForTesting.Contains("à venda") && tab.ClickForTesting == "sit", "Comprar needs a sale first and the tab says so");
 
+            // pay: the values the Pay click offers
+            Require(!tab.PayRowsVisibleForTesting, "the pay values are hidden while the click is not Pagar");
+            commands.Clear(); tab.ChooseClickForTesting("pay"); editor.Synchronizer.OnOperation(Props(StateOf(id, "Porta da casa", 3, Guid.Empty, click: "pay", last: Bruno)));
+            Require(tab.PayRowsVisibleForTesting, "with the click Pagar the default amount and the quick buttons appear");
+            commands.Clear(); tab.SetPayForTesting(25, "10, 25, 50, 100"); var pay = Last(commands).GetProperty("properties");
+            Require(pay.GetProperty("payPrice").GetInt32() == 25 && pay.GetProperty("payQuick").GetArrayLength() == 4, "saving sends the default and the quick buttons");
+            commands.Clear(); tab.SetPayForTesting(25, "1, 2, 3, 4, 5"); Require(commands.Count == 0, "more than four buttons are not sent");
+            commands.Clear(); tab.SetPayForTesting(25, "abc"); Require(commands.Count == 0, "a button that is not a number is not sent");
+            Require(BuildObjectProperties.ParseQuick("10, 25 50;100")!.SequenceEqual([10L, 25L, 50L, 100L]) && BuildObjectProperties.ParseQuick("x") is null && BuildObjectProperties.PayProblem(0, []) is null && BuildObjectProperties.PayProblem(-1, []) is not null, "the values are checked before sending");
+            commands.Clear(); tab.ChooseClickForTesting("sit"); editor.Synchronizer.OnOperation(Props(StateOf(id, "Porta da casa", 3, Guid.Empty, click: "sit", last: Bruno)));
+
             // sale
             tab.ToggleForSaleForTesting(true); Require(tab.SaleRowsVisibleForTesting, "the sale options appear");
             tab.SetSaleForTesting("copy", 250); commands.Clear(); tab.PressApplyForTesting();
