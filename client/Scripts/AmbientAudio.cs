@@ -53,7 +53,7 @@ public partial class AmbientAudio : Node
             oceanTarget = 1f - Mathf.SmoothStep(0f, 140f, edge);
             if (_avatar.IsSwimming) oceanTarget = 1f;
         }
-        var windTarget = .16f + (_avatar is null ? 0f : .2f * Mathf.Clamp(_avatar.GlobalPosition.Y / 30f, 0f, 1f)) + weather switch { "cloudy" => .1f, "rain" => .25f, "storm" => .7f, "fog" => .05f, _ => 0f };
+        var windTarget = .055f + (_avatar is null ? 0f : .07f * Mathf.Clamp(_avatar.GlobalPosition.Y / 30f, 0f, 1f)) + weather switch { "cloudy" => .035f, "rain" => .09f, "storm" => .28f, "fog" => .02f, _ => 0f };      // a soft breeze: the wind used to be about three times louder
         var rainTarget = weather switch { "rain" => .75f, "storm" => 1f, _ => 0f };
         var blend = 1f - Mathf.Exp(-2f * dt);
         _ocean = Mathf.Lerp(_ocean, oceanTarget, blend); _wind = Mathf.Lerp(_wind, windTarget, blend); _rain = Mathf.Lerp(_rain, rainTarget, blend);
