@@ -133,6 +133,7 @@ public partial class Avatar2Smoke : Node
             var creator = GD.Load<PackedScene>("res://Scenes/CharacterCreator.tscn").Instantiate<CharacterCreator>(); AddChild(creator);
             await Frames(5);
 
+            var baseMenu = creator.FindChild("BaseModel", true, false) as OptionButton; baseMenu!.Select(1); baseMenu.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);      // the plain items belong to the older bodies
             creator.ChooseForTesting("top", "dress_basic");
             var worn = creator.FormForTesting().EquippedItems.ToDictionary(x => x.Slot, x => x.ItemKey);
             Require(worn["top"] == "dress_basic" && worn["bottom"] == "covered", $"choosing a dress covers the legs: {worn["bottom"]}");

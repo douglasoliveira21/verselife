@@ -51,12 +51,12 @@ public partial class MirrorSmoke : Node
             player.SetMirrorView(true); await Frames(30);
 
             // ---- the wardrobe and the draft
-            Require(window.MenuCountForTesting("hair") == 2 && window.MenuCountForTesting("top") >= 3 && !window.SaveEnabledForTesting, "the menus hold the catalog and the own items, and there is nothing to save yet");
+            Require(window.MenuCountForTesting("hair") == 3 && window.MenuCountForTesting("top") >= 1 && !window.SaveEnabledForTesting, "the menus hold the wardrobe of the man (bare choices) and the own items, and there is nothing to save yet");
             window.ChooseForTesting("hairstyle", "bald"); await Frames(6);
             Require(window.Dirty && window.SaveEnabledForTesting && window.Draft.HairStyle == "bald" && rig.FindChild("Hair", true, false) is null, "a change shows on the avatar at once and can be saved");
             window.SetSliderForTesting("height", 1.1);
             Require(window.Draft.BodySettingsJson.Contains("1.1"), $"sliders go to the draft: {window.Draft.BodySettingsJson}");
-            window.ChooseForTesting("top", "dress_basic");
+            window.ChooseForTesting("base", "human_a"); window.ChooseForTesting("top", "dress_basic");
             Require(window.MenuKeyForTesting("bottom") == "covered" && window.Draft.Item("bottom", "") == "covered", "the dress covers the legs, as in the full editor");
             window.ChooseForTesting("top", "tee_basic"); window.ChooseForTesting("bottom", "pants_basic");
             window.ChooseForTesting("hair", AvatarRules.CustomKey(hairId));

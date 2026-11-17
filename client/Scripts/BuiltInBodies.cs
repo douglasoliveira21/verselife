@@ -49,4 +49,37 @@ public static class BuiltInBodies
         }
         return _manPrototype?.Duplicate();
     }
+
+    /// <summary>The colour the skin of the man has in his pictures, found once (the middle of the colour map of his body): a skin colour chosen for the character is turned into a tint relative to it.</summary>
+    public static Color SkinReference(Texture2D? colourMap)
+    {
+        if (_skinReference is { } known) return known;
+        if (colourMap?.GetImage() is not { } image) return new Color("#C99B80");
+        var copy = (Image)image.Duplicate(); if (copy.IsCompressed()) copy.Decompress(); copy.Resize(1, 1, Image.Interpolation.Lanczos); return (_skinReference = copy.GetPixel(0, 0)).Value;
+    }
+    private static Color? _skinReference;
+
+    /// <summary>The colour the character editor starts with: it leaves the man's skin as it was made (any other choice tints it).</summary>
+    public const string DefaultSkinChoice = "#C98F65";
+}
+
+public sealed partial class AvatarRig
+{
+    private static readonly string[] SkinMaterials = ["Ga_Skin_Head", "Ga_Skin_Body", "Ga_Skin_Arm", "Ga_Skin_Leg", "Ga_Nails"];
+
+    /// <summary>The skin colour of the character tints the skin of the man (his skin is a picture, so the choice multiplies it). Each avatar gets its own copy of the skin materials; the pictures stay shared.</summary>
+    private void TintBuiltInSkin(Node scene)
+    {
+        if (_lastData is not { } data || string.Equals(data.SkinColor, BuiltInBodies.DefaultSkinChoice, StringComparison.OrdinalIgnoreCase) || !Color.HtmlIsValid(data.SkinColor)) return;
+        var chosen = Color.FromHtml(data.SkinColor); Color? reference = null;
+        foreach (var mesh in Meshes(scene))
+            for (var surface = 0; surface < (mesh.Mesh?.GetSurfaceCount() ?? 0); surface++)
+                if (mesh.GetActiveMaterial(surface) is BaseMaterial3D material && Array.IndexOf(SkinMaterials, material.ResourceName) >= 0)
+                {
+                    reference ??= BuiltInBodies.SkinReference(material.AlbedoTexture);
+                    var own = (BaseMaterial3D)material.Duplicate();
+                    own.AlbedoColor = new Color(Mathf.Clamp(chosen.R / Mathf.Max(.05f, reference.Value.R), .3f, 1.7f), Mathf.Clamp(chosen.G / Mathf.Max(.05f, reference.Value.G), .3f, 1.7f), Mathf.Clamp(chosen.B / Mathf.Max(.05f, reference.Value.B), .3f, 1.7f));
+                    mesh.SetSurfaceOverrideMaterial(surface, own);
+                }
+    }
 }

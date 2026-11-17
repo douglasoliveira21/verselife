@@ -19,7 +19,7 @@ public partial class BuiltInBodySmoke : Node
             // ---- a new character starts as the man
             var fresh = AvatarManager.CreateDefault();
             Require(fresh.BaseModel == AvatarRules.DefaultMan, "a new character is the man of LifeVerse");
-            Require(fresh.Tint("top", "") == "#3AAFC1" && fresh.Tint("bottom", "") == "#263B56", "with the tee and the trousers the game offers");
+            Require(AvatarRules.StarterOutfit(AvatarRules.DefaultMan).All(x => x.Slot is "hair" || fresh.Tint(x.Slot, "") == x.Tint), "with the starter outfit of the man");
             Require(BuiltInBodies.TryFor(AvatarRules.DefaultMan, out var id, out var hash) && id == AvatarRules.DefaultManModelId && hash.Length == 64, "the man has a body file in the game");
             Require(!BuiltInBodies.TryFor("human_a", out _, out _) && !BuiltInBodies.TryFor("human_b", out _, out _), "the older bodies are drawn by the game itself");
             Require(BuiltInBodies.Bytes(Guid.NewGuid()) is null && BuiltInBodies.Bytes(AvatarRules.DefaultManModelId) is { Length: > 1_000_000 }, "and only the man has a file");

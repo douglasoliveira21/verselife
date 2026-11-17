@@ -53,8 +53,25 @@ public partial class AvatarRig
     {
         var token = ++_wearToken; _hairColor = data.HairColor; _eyeColor = data.EyeColor;
         ClearPlaced(); _fetched.Clear(); _wearStatus.Clear();
-        _worn = _detail >= AvatarDetail.Full ? data.CustomWearables : []; // custom items are only fetched and drawn for avatars that are close and in budget
+        _worn = _detail >= AvatarDetail.Full ? [.. data.CustomWearables, .. BuiltInItemsOf(data)] : []; // custom items are only fetched and drawn for avatars that are close and in budget
         foreach (var item in _worn) { _wearStatus[item.Id] = "loading"; _ = LoadWearableAsync(item, token); }
+    }
+
+    private readonly Dictionary<Guid, string> _itemTints = [];
+
+    /// <summary>The wardrobe of the man of LifeVerse: the items of his equipment that come with the game, ready to be drawn (their files are already here). A hat that hides the hair takes the hair item away.</summary>
+    private IEnumerable<WornWearable> BuiltInItemsOf(AvatarAppearanceData data)
+    {
+        _itemTints.Clear();
+        if (data.CustomModelId is not null || !AvatarRules.IsBuiltInBody(data.BaseModel)) yield break;
+        var wanted = data.EquippedItems.Where(e => BuiltInWearables.IsKey(e.ItemKey)).Select(e => (Item: e, Worn: BuiltInWearables.Worn(e.Slot, e.ItemKey))).Where(x => x.Worn is not null).ToList();
+        var hidesHair = wanted.Any(x => x.Worn!.HidesHair);
+        foreach (var (item, worn) in wanted)
+        {
+            if (hidesHair && worn!.Slot == "hair") continue;
+            _itemTints[worn!.Id] = item.TintColor; WearableBytes[worn.Hash] = BuiltInWearables.Bytes(item.ItemKey)!;
+            yield return worn;
+        }
     }
 
     private async Task LoadWearableAsync(WornWearable item, int token)
@@ -201,6 +218,8 @@ public partial class AvatarRig
     {
         if (!CustomBodyActive || _customSkeleton is not { } avatarSkeleton || _customRoot is not Node3D customRoot) return "Roupa com esqueleto só funciona em um corpo personalizado.";
         var scene = Instantiate(bytes); if (scene is null) return "O engine não conseguiu ler esta roupa.";
+        // the hair takes the colour of the person's hair; a plain garment (a tee, swim shorts) the colour chosen for it; the others keep their own pictures
+        if (item.Tint == "hair") TintMaterials(scene, Color.FromHtml(_hairColor)); else if (item.Tint == "eyes") TintMaterials(scene, Color.FromHtml(_eyeColor)); else if (item.Tint == "item" && _itemTints.TryGetValue(item.Id, out var chosen)) TintMaterials(scene, Color.FromHtml(chosen));
         var avatarBones = new Dictionary<string, int>();
         for (var i = 0; i < avatarSkeleton.GetBoneCount(); i++) if (BoneMapper.Map(avatarSkeleton.GetBoneName(i)) is { } standard) avatarBones.TryAdd(standard, i);
         var meshes = Meshes(scene).Where(m => m.Skin is not null).ToList();
@@ -208,18 +227,18 @@ public partial class AvatarRig
         var shown = 0;
         foreach (var mesh in meshes)
         {
-            var skin = new Skin(); var bound = 0;
+            // the garment is made in the space of the model (metres); a skeleton may live in another unit (a body from a program that works in centimetres has its bones in them and a scale on the skeleton),
+            // so the skin carries the conversion from the model to the skeleton, and the mesh sits in the space of the skeleton
+            var skin = new Skin(); var bound = 0; var toSkeleton = avatarSkeleton.GlobalTransform.AffineInverse() * customRoot.GlobalTransform;
             for (var bind = 0; bind < mesh.Skin!.GetBindCount(); bind++)
             {
                 var name = mesh.Skin.GetBindName(bind); if (string.IsNullOrEmpty(name) && mesh.Skeleton is { IsEmpty: false } && mesh.GetNodeOrNull<Skeleton3D>(mesh.Skeleton) is { } own) name = own.GetBoneName(mesh.Skin.GetBindBone(bind));
-                if (BoneMapper.Map(name) is { } standard && avatarBones.TryGetValue(standard, out var index)) { skin.AddNamedBind(avatarSkeleton.GetBoneName(index), avatarSkeleton.GetBoneGlobalRest(index).AffineInverse()); bound++; }
-                else skin.AddNamedBind(avatarSkeleton.GetBoneName(avatarBones.GetValueOrDefault("hips", 0)), avatarSkeleton.GetBoneGlobalRest(avatarBones.GetValueOrDefault("hips", 0)).AffineInverse()); // a bone the avatar lacks: follow the hips instead of tearing
+                if (BoneMapper.Map(name) is { } standard && avatarBones.TryGetValue(standard, out var index)) { skin.AddNamedBind(avatarSkeleton.GetBoneName(index), avatarSkeleton.GetBoneGlobalRest(index).AffineInverse() * toSkeleton); bound++; }
+                else skin.AddNamedBind(avatarSkeleton.GetBoneName(avatarBones.GetValueOrDefault("hips", 0)), avatarSkeleton.GetBoneGlobalRest(avatarBones.GetValueOrDefault("hips", 0)).AffineInverse() * toSkeleton); // a bone the avatar lacks: follow the hips instead of tearing
             }
             if (bound == 0) continue;
             var copy = new MeshInstance3D { Name = "Cloth_" + item.Slot, Mesh = mesh.Mesh, Skin = skin };
             avatarSkeleton.AddChild(copy); copy.Skeleton = new NodePath("..");
-            // the garment was made in the same space as the model, whatever the armature does to the skeleton
-            copy.Transform = avatarSkeleton.GlobalTransform.AffineInverse() * customRoot.GlobalTransform;
             for (var surface = 0; surface < mesh.Mesh.GetSurfaceCount(); surface++) if (mesh.GetActiveMaterial(surface) is { } material) copy.SetSurfaceOverrideMaterial(surface, material);
             _placed.Add(copy); shown++;
         }

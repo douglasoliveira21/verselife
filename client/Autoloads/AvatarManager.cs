@@ -115,12 +115,6 @@ public partial class AvatarManager : Node
     public static AvatarAppearanceData CreateDefault() => new()
     {
         BaseModel = LifeVerse.Shared.Avatar.AvatarRules.DefaultBaseModel,      // a new character is the man of LifeVerse
-        EquippedItems =
-        [
-            new EquippedItemData { Slot = "top", ItemKey = "tee_basic", TintColor = "#3AAFC1" },
-            new EquippedItemData { Slot = "bottom", ItemKey = "pants_basic", TintColor = "#263B56" },
-            new EquippedItemData { Slot = "shoes", ItemKey = "sneakers_basic", TintColor = "#E7E9EE" },
-            new EquippedItemData { Slot = "accessory", ItemKey = "none", TintColor = "#FFFFFF" }
-        ]
+        EquippedItems = [.. LifeVerse.Shared.Avatar.AvatarRules.StarterOutfit(LifeVerse.Shared.Avatar.AvatarRules.DefaultBaseModel).Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.Key, TintColor = x.Tint }), new EquippedItemData { Slot = "accessory", ItemKey = "none", TintColor = "#FFFFFF" }]
     };
 }

@@ -26,6 +26,7 @@ public partial class CharacterCreator : Control
     private Camera3D _camera = null!;
     private AvatarManager _manager = null!;
     private bool _dragging;
+    private string _previewBase = "";
     private float _cameraDistance = 3.4f;
     private AvatarAppearanceData _lastSaved = AvatarManager.CreateDefault();
     private AvatarAppearanceData _undoValue = AvatarManager.CreateDefault();
@@ -47,13 +48,11 @@ public partial class CharacterCreator : Control
         _save = GetNode<Button>("Layout/Panel/Margin/Fields/Buttons/Save");
         _preview = GetNode<AvatarRig>("Layout/Preview/SubViewport/AvatarRig");
         _camera = GetNode<Camera3D>("Layout/Preview/SubViewport/Camera3D");
-        Fill(_baseModel, ("Homem (padrão)", LifeVerse.Shared.Avatar.AvatarRules.DefaultMan), ("Classic", "human_a"), ("Athletic", "human_b"));
-        Fill(_hairStyle, ("Short", "short"), ("Bob", "bob"), ("Mohawk", "mohawk"), ("Bald", "bald"), ("Long", "long"), ("Ponytail", "ponytail"));
-        Fill(_top, ("Basic tee", "tee_basic"), ("Basic jacket", "jacket_basic"), ("Vestido", "dress_basic"));
-        Fill(_bottom, ("Basic pants", "pants_basic"), ("Basic shorts", "shorts_basic"), ("Saia", "skirt_basic"), ("Coberto pelo vestido", "covered"));
-        Fill(_shoes, ("Sneakers", "sneakers_basic"), ("Boots", "boots_basic"), ("Sandálias", "sandals_basic"));
-        Fill(_accessory, ("None", "none"), ("Round glasses", "glasses_round"), ("Basic hat", "hat_basic"));
-        foreach (var option in new[] { _baseModel, _hairStyle, _shoes, _accessory }) option.ItemSelected += _ => RefreshPreview();
+        Fill(_baseModel, ("Homem (padrão)", LifeVerse.Shared.Avatar.AvatarRules.DefaultMan), ("Clássico", "human_a"), ("Atlético", "human_b"));
+        Fill(_hairStyle, ("Curto", "short"), ("Chanel", "bob"), ("Moicano", "mohawk"), ("Careca", "bald"), ("Longo", "long"), ("Rabo de cavalo", "ponytail"));
+        RefillWardrobe(Value(_baseModel));
+        foreach (var option in new[] { _hairStyle, _shoes, _accessory }) option.ItemSelected += _ => RefreshPreview();
+        _baseModel.ItemSelected += _ => OnBaseChanged();
         _top.ItemSelected += _ => OnWearChanged("top"); _bottom.ItemSelected += _ => OnWearChanged("bottom");
         _displayName.TextChanged += _ => RefreshPreview();
         _skin.ColorChanged += _ => RefreshPreview();
@@ -65,8 +64,8 @@ public partial class CharacterCreator : Control
         AddAdvancedControls();
         _manager.AvatarLoaded += OnLoaded;
         _manager.AvatarSaved += OnSaved;
-        InstallResponsiveScroll();
-        SetBusy(true, "Loading avatar…");
+        ApplyDesign();
+        SetBusy(true, "Carregando avatar…");
         var error = _manager.Load();
         if (error != Error.Ok) OnLoaded(false, $"Could not load avatar: {error}");
     }
@@ -96,8 +95,8 @@ public partial class CharacterCreator : Control
     {
         var value = ReadForm();
         _undoValue = value.Copy();
-        if (value.DisplayName.Trim().Length < 3) { _message.Text = "Display name must contain at least 3 characters."; return; }
-        SetBusy(true, "Saving…");
+        if (value.DisplayName.Trim().Length < 3) { _message.Text = "O nome precisa ter pelo menos 3 caracteres."; return; }
+        SetBusy(true, "Salvando…");
         var error = _manager.Save(value);
         if (error != Error.Ok) OnSaved(false, $"Could not save avatar: {error}");
     }
@@ -105,9 +104,9 @@ public partial class CharacterCreator : Control
     private void ApplyToForm(AvatarAppearanceData value)
     {
         _displayName.Text = value.DisplayName;
-        Select(_baseModel, value.BaseModel); Select(_hairStyle, value.HairStyle);
-        Select(_top, value.Item("top", "tee_basic")); Select(_bottom, value.Item("bottom", "pants_basic"));
-        Select(_shoes, value.Item("shoes", "sneakers_basic")); Select(_accessory, value.Item("accessory", "none"));
+        Select(_baseModel, value.BaseModel); Select(_hairStyle, value.HairStyle); RefillWardrobe(value.BaseModel);
+        Select(_top, value.Item("top", Starter(value.BaseModel, "top"))); Select(_bottom, value.Item("bottom", Starter(value.BaseModel, "bottom")));
+        Select(_shoes, value.Item("shoes", Starter(value.BaseModel, "shoes"))); Select(_accessory, value.Item("accessory", "none"));
         _skin.Color = Color.FromHtml(value.SkinColor); _hair.Color = Color.FromHtml(value.HairColor);
         if (IsInstanceValid(_eyes)) _eyes.Color = Color.FromHtml(value.EyeColor);
         if (IsInstanceValid(_beard)) Select(_beard, value.BeardStyle);
@@ -129,14 +128,17 @@ public partial class CharacterCreator : Control
 
     private void RefreshPreview()
     {
-        if (IsInstanceValid(_preview)) _preview.ApplyAppearance(ReadForm());
+        if (!IsInstanceValid(_preview)) return;
+        var data = ReadForm();
+        if (data.BaseModel != _previewBase) { _previewBase = data.BaseModel; _preview.Rotation = new Vector3(0, AvatarRules.IsBuiltInBody(data.BaseModel) ? Mathf.Pi : 0, 0); }      // the models that come with the game look towards -Z
+        _preview.ApplyAppearance(data);
     }
 
     private void AddAdvancedControls()
     {
         var fields = GetNode<VBoxContainer>("Layout/Panel/Margin/Fields");
         _eyes = new ColorPickerButton { Name = "EyeColorAdvanced", CustomMinimumSize = new Vector2(0, 34) };
-        _beard = new OptionButton { Name = "BeardStyleAdvanced" }; Fill(_beard, ("None", "none"), ("Stubble", "stubble"), ("Short beard", "short"), ("Full beard", "full"));
+        _beard = new OptionButton { Name = "BeardStyleAdvanced" }; Fill(_beard, ("Sem barba", "none"), ("Barba por fazer", "stubble"), ("Barba curta", "short"), ("Barba cheia", "full"));
         fields.AddChild(new Label { Text = "Eye color" }); fields.AddChild(_eyes);
         fields.AddChild(new Label { Text = "Beard" }); fields.AddChild(_beard);
         AddAvatar2Controls(fields);
@@ -154,8 +156,8 @@ public partial class CharacterCreator : Control
             if (button.ButtonIndex == MouseButton.Left) _dragging = button.Pressed;
             if (button.Pressed && button.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown)
             {
-                _cameraDistance = Mathf.Clamp(_cameraDistance + (button.ButtonIndex == MouseButton.WheelUp ? -.35f : .35f), 2.5f, 6f);
-                _camera.Position = new Vector3(0, 1.25f, _cameraDistance);
+                _cameraDistance = Mathf.Clamp(_cameraDistance + (button.ButtonIndex == MouseButton.WheelUp ? -.35f : .35f), _faceView ? .7f : 2.5f, 6f);
+                _camera.Position = new Vector3(0, _cameraHeight, _cameraDistance);
             }
         }
         else if (input is InputEventMouseMotion motion && _dragging) _preview.RotateY(-motion.Relative.X * .01f);
@@ -179,6 +181,31 @@ public partial class CharacterCreator : Control
         scroll.AddChild(margin);
         margin.SizeFlagsHorizontal = SizeFlags.ExpandFill;
     }
+    /// <summary>The wardrobe of a body: each body has its own clothes (the man of LifeVerse the ones that come with the game, the older bodies the plain ones).</summary>
+    private void RefillWardrobe(string baseModel)
+    {
+        foreach (var (slot, option) in new[] { ("top", _top), ("bottom", _bottom), ("shoes", _shoes), ("accessory", _accessory) })
+        {
+            option.Clear();
+            foreach (var item in AvatarRules.ItemsFor(slot, baseModel)) { option.AddItem(item.Label); option.SetItemMetadata(option.ItemCount - 1, item.Key); }
+        }
+        RefillExtras(baseModel);
+    }
+
+    private static string Starter(string baseModel, string slot) => AvatarRules.StarterOutfit(baseModel).FirstOrDefault(x => x.Slot == slot).Key ?? AvatarRules.DefaultFor(slot, null, baseModel);
+
+    /// <summary>Another body was chosen: its wardrobe, dressed as a new character of that body is.</summary>
+    private void OnBaseChanged()
+    {
+        var baseModel = Value(_baseModel); RefillWardrobe(baseModel);
+        _syncing = true;
+        foreach (var (slot, option) in new[] { ("top", _top), ("bottom", _bottom), ("shoes", _shoes) }) Select(option, Starter(baseModel, slot));
+        Select(_accessory, "none");
+        foreach (var (slot, option) in _extra) Select(option, AvatarRules.StarterOutfit(baseModel).FirstOrDefault(x => x.Slot == slot).Key ?? "none");
+        _syncing = false;
+        RefreshPreview();
+    }
+
     private static void Fill(OptionButton option, params (string Label, string Value)[] items) { foreach (var item in items) { option.AddItem(item.Label); option.SetItemMetadata(option.ItemCount - 1, item.Value); } }
     private static string Value(OptionButton option) => option.GetItemMetadata(option.Selected).AsString();
     private static void Select(OptionButton option, string value) { for (var i = 0; i < option.ItemCount; i++) if (option.GetItemMetadata(i).AsString() == value) { option.Select(i); return; } }

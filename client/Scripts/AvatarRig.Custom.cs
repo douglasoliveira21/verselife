@@ -120,6 +120,7 @@ public partial class AvatarRig
             if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) { CustomBodyStatus = "O engine não conseguiu ler o corpo personalizado."; return; }
             scene = document.GenerateScene(state);
         }
+        if (scene is not null && BuiltInBodies.IsBuiltIn(hash)) TintBuiltInSkin(scene);
         if (scene is null || FindSkeleton(scene) is not { } skeleton) { scene?.QueueFree(); CustomBodyStatus = "O corpo personalizado não tem esqueleto."; return; }
 
         // far enough to be drawn reduced: the body keeps a fraction of its triangles (its geometry is simplified); close enough, it keeps all of them

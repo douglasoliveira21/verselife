@@ -44,6 +44,12 @@ public partial class CharacterCreator
         return slider;
     }
 
+    /// <summary>The wardrobe of the extra slots (hat, glasses, hair…) for a body.</summary>
+    private void RefillExtras(string baseModel)
+    {
+        foreach (var (slot, option) in _extra) { option.Clear(); foreach (var item in AvatarRules.ItemsFor(slot, baseModel)) { option.AddItem(item.Label); option.SetItemMetadata(option.ItemCount - 1, item.Key); } }
+    }
+
     private void AddAvatar2Controls(VBoxContainer fields)
     {
         fields.AddChild(new Label { Text = "Corpo" });
@@ -55,7 +61,7 @@ public partial class CharacterCreator
         {
             fields.AddChild(new Label { Text = SlotLabels[slot] });
             var option = new OptionButton { Name = "Wear_" + slot };
-            foreach (var item in AvatarRules.ItemsFor(slot)) { option.AddItem(item.Label); option.SetItemMetadata(option.ItemCount - 1, item.Key); }
+            foreach (var item in AvatarRules.ItemsFor(slot, Value(_baseModel))) { option.AddItem(item.Label); option.SetItemMetadata(option.ItemCount - 1, item.Key); }
             var captured = slot; option.ItemSelected += _ => OnWearChanged(captured);
             fields.AddChild(option); _extra[slot] = option;
         }
@@ -75,7 +81,7 @@ public partial class CharacterCreator
         var worn = new List<(string Slot, string Key)> { ("top", Value(_top)), ("bottom", Value(_bottom)), ("shoes", Value(_shoes)), ("accessory", Value(_accessory)) };
         foreach (var slot in ExtraSlots) if (_extra.TryGetValue(slot, out var option) && option.ItemCount > 0) worn.Add((slot, Value(option)));
         // "none" slots are not stored; the server fills nothing in for them
-        return [.. AvatarRules.Resolve(worn, null, CustomResolver).Where(w => w.Slot is "top" or "bottom" or "shoes" || w.Key != "none")
+        return [.. AvatarRules.Resolve(worn, null, CustomResolver, Value(_baseModel)).Where(w => w.Slot is "top" or "bottom" or "shoes" || w.Key != "none")
             .Select(w => new EquippedItemData { Slot = w.Slot, ItemKey = w.Key, TintColor = _tints.GetValueOrDefault(w.Slot, "#FFFFFF") })];
     }
 
@@ -100,7 +106,7 @@ public partial class CharacterCreator
         if (_syncing) return;
         var worn = new List<(string Slot, string Key)> { ("top", Value(_top)), ("bottom", Value(_bottom)), ("shoes", Value(_shoes)) };
         foreach (var extra in ExtraSlots) if (_extra.TryGetValue(extra, out var option) && option.ItemCount > 0) worn.Add((extra, Value(option)));
-        var resolved = AvatarRules.Resolve(worn, slot, CustomResolver).ToDictionary(x => x.Slot, x => x.Key);
+        var resolved = AvatarRules.Resolve(worn, slot, CustomResolver, Value(_baseModel)).ToDictionary(x => x.Slot, x => x.Key);
         _syncing = true;
         Select(_top, resolved["top"]); Select(_bottom, resolved["bottom"]);
         foreach (var extra in ExtraSlots) if (_extra.TryGetValue(extra, out var option)) Select(option, resolved.GetValueOrDefault(extra, "none"));

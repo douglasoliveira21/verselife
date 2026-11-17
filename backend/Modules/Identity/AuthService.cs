@@ -44,12 +44,7 @@ public sealed class AuthService(
             Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, SkinColor = "#C98F65", HairColor = "#2B1B14",
             HairStyle = "short", BodySettingsJson = "{}", CameraSensitivity = 0.003f, CreatedAt = now, UpdatedAt = now
         };
-        user.Avatar.EquippedItems =
-        [
-            new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = "top", ItemKey = "tee_basic", TintColor = "#3AAFC1", EquippedAt = now },
-            new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = "bottom", ItemKey = "pants_basic", TintColor = "#263B56", EquippedAt = now },
-            new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = "shoes", ItemKey = "sneakers_basic", TintColor = "#E7E9EE", EquippedAt = now }
-        ];
+        user.Avatar.EquippedItems = [.. AvatarRules.StarterOutfit(AvatarRules.DefaultBaseModel).Select(x => new EquippedItem { Id = Guid.NewGuid(), AvatarId = user.Avatar.Id, Slot = x.Slot, ItemKey = x.Key, TintColor = x.Tint, EquippedAt = now })];
         db.Users.Add(user);
         await EnsureOfficialIslandsAsync(user.Id, now, ct);
         var response = CreateSession(user, Guid.NewGuid(), context, now).Response;

@@ -78,7 +78,7 @@ public static partial class AvatarCatalog
                 errors["equippedItems"] = ["Equipment entries cannot be null."];
                 return errors;
             }
-            var problems = AvatarRules.CheckEquipment([.. request.EquippedItems.Select(x => (x.Slot ?? string.Empty, x.ItemKey ?? string.Empty))], custom);
+            var problems = AvatarRules.CheckEquipment([.. request.EquippedItems.Select(x => (x.Slot ?? string.Empty, x.ItemKey ?? string.Empty))], custom, request.BaseModel);
             if (problems.Count > 0) errors["equippedItems"] = [.. problems.Select(Describe)];
             else if (request.EquippedItems.Any(item => !IsColor(item.TintColor))) errors["equippedItems"] = ["Equipment contains an invalid tint."];
         }

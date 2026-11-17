@@ -121,16 +121,16 @@ public sealed partial class AppearanceWindow : Node
         foreach (var (slot, menu) in _menus)
         {
             menu.Clear();
-            foreach (var item in AvatarRules.ItemsFor(slot)) { menu.AddItem(item.Label); menu.SetItemMetadata(menu.ItemCount - 1, item.Key); }
+            foreach (var item in AvatarRules.ItemsFor(slot, _draft.BaseModel)) { menu.AddItem(item.Label); menu.SetItemMetadata(menu.ItemCount - 1, item.Key); }
             foreach (var w in _wearables.Where(x => x.Slot == slot)) { menu.AddItem("★ " + w.Name); menu.SetItemMetadata(menu.ItemCount - 1, w.Key); }
-            Choose(menu, _draft.Item(slot, slot is "top" ? "tee_basic" : slot is "bottom" ? "pants_basic" : slot is "shoes" ? "sneakers_basic" : "none"));
+            Choose(menu, _draft.Item(slot, AvatarRules.StarterOutfit(_draft.BaseModel).FirstOrDefault(x => x.Slot == slot).Key ?? (slot is "top" or "bottom" or "shoes" ? AvatarRules.DefaultFor(slot, null, _draft.BaseModel) : "none")));
         }
     }
 
     private List<EquippedItemData> WornFromMenus(string? changed)
     {
         var worn = _menus.Select(m => (m.Key, Key(m.Value))).ToList();
-        return [.. AvatarRules.Resolve(worn, changed, Resolver).Where(w => w.Slot is "top" or "bottom" or "shoes" || w.Key != "none")
+        return [.. AvatarRules.Resolve(worn, changed, Resolver, _draft.BaseModel).Where(w => w.Slot is "top" or "bottom" or "shoes" || w.Key != "none")
             .Select(w => new EquippedItemData { Slot = w.Slot, ItemKey = w.Key, TintColor = _draft.Tint(w.Slot, DefaultTints.GetValueOrDefault(w.Slot, "#FFFFFF")) })];
     }
 
@@ -149,7 +149,14 @@ public sealed partial class AppearanceWindow : Node
     private void Changed(string? wornSlot = null)
     {
         if (_syncing) return;
-        _draft.BaseModel = Key(_baseModel); _draft.HairStyle = Key(_hairStyle); _draft.BeardStyle = Key(_beard);
+        var newBase = Key(_baseModel); var baseChanged = newBase != _draft.BaseModel;
+        _draft.BaseModel = newBase;
+        if (baseChanged)       // another body has another wardrobe: it starts with what a new character of that body wears
+        {
+            _draft.EquippedItems = [.. AvatarRules.StarterOutfit(newBase).Select(x => new EquippedItemData { Slot = x.Slot, ItemKey = x.Key, TintColor = x.Tint })];
+            _syncing = true; RefreshMenus(); _syncing = false; wornSlot = null;
+        }
+        _draft.HairStyle = Key(_hairStyle); _draft.BeardStyle = Key(_beard);
         _draft.SkinColor = "#" + _skin.Color.ToHtml(false); _draft.HairColor = "#" + _hairColour.Color.ToHtml(false); _draft.EyeColor = "#" + _eyeColour.Color.ToHtml(false);
         _draft.BodySettingsJson = AvatarRules.WriteSettings(BodyOrder.ToDictionary(k => k, k => (float)_body[k].Value), AvatarRules.BodyRanges);
         _draft.FaceSettingsJson = AvatarRules.WriteSettings(FaceOrder.ToDictionary(k => k, k => (float)_face[k].Value), AvatarRules.FaceRanges);
