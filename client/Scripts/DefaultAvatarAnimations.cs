@@ -13,6 +13,11 @@ public static class DefaultAvatarAnimations
     public const string Path = "res://Assets/animations/default_avatar_animations.bin";
     /// <summary>The clip of typing on a keyboard (from a mocap of a person standing and talking, cut at the stretch that loops best): its own small file.</summary>
     public const string TypingPath = "res://Assets/animations/typing_animation.bin";
+    /// <summary>Clips that replace the ones of the main file, each in a file of its own: the avatar standing still on the ground (Idle, a man with a briefcase in hand, a loop), going up in a jump (Jump) and coming down after it (JumpDown).</summary>
+    public static readonly (string Path, string Clip)[] ReplacementFiles =
+    [
+        ("res://Assets/animations/idle_animation.bin", "Idle"), ("res://Assets/animations/jump_animation.bin", "Jump"), ("res://Assets/animations/jumpdown_animation.bin", "JumpDown")
+    ];
     /// <summary>Set the environment variable LIFEVERSE_NO_DEFAULT_ANIMATIONS=1 to play without the game's own clips (to tell whether they matter for a slowdown).</summary>
     /// <summary>Off: custom bodies play only the game's own animations (Configurações › Avatar), or the environment variable of the tests.</summary>
     public static bool Disabled { get; set; } = System.Environment.GetEnvironmentVariable("LIFEVERSE_NO_DEFAULT_ANIMATIONS") == "1";
@@ -36,6 +41,9 @@ public static class DefaultAvatarAnimations
         var loaded = new Dictionary<string, SkeletonClip>();
         var bytes = BytesForTesting ?? (Godot.FileAccess.FileExists(Path) ? Godot.FileAccess.GetFileAsBytes(Path) : null);
         if (bytes is { Length: > 0 }) foreach (var name in ClipOfState.Values.Distinct().Where(n => n != "Typing")) if (SkeletonClip.Read(bytes, name) is { } clip) loaded[name] = clip;
+        if (BytesForTesting is null)
+            foreach (var (file, clip) in ReplacementFiles)
+                if (Godot.FileAccess.FileExists(file) && Godot.FileAccess.GetFileAsBytes(file) is { Length: > 0 } fileBytes && SkeletonClip.Read(fileBytes, clip) is { } replacement) loaded[clip] = replacement;
         var typing = TypingBytesForTesting ?? (BytesForTesting is null && Godot.FileAccess.FileExists(TypingPath) ? Godot.FileAccess.GetFileAsBytes(TypingPath) : null);
         if (typing is { Length: > 0 } && SkeletonClip.Read(typing, "Typing") is { } typed) loaded["Typing"] = typed;
         return loaded;

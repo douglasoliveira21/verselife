@@ -275,3 +275,15 @@ Um corpo personalizado cujas mãos têm ossos de dedos (o homem do LifeVerse, qu
 - **Segurando:** a mão que tem um objeto anexado se fecha sobre ele.
 
 O lado da palma é achado do próprio modelo (pela linha dos nós dos dedos), então vale para mãos esquerda e direita e para qualquer pose de modelagem. Corpos sem ossos de dedos não são mexidos; o corpo padrão do jogo é feito de peças e não tem dedos.
+
+## Animações de parado, pulo subindo e pulo descendo
+
+Três animações do Mixamo, cada uma num arquivo próprio em `client/Assets/animations/` (glTF com extensão `.bin`), trocam as do arquivo principal nos corpos personalizados (o homem do LifeVerse e qualquer corpo enviado) que a pessoa não substituiu:
+
+- **Parado no chão** (`idle_animation.bin`, "Standing W_Briefcase Idle", 13,9 s): um homem em pé com uma maleta na mão. É um laço que se fecha sozinho (a última pose é a primeira), em que o corpo fica no lugar, e toca sem parar enquanto o avatar está parado.
+- **Subindo no pulo** (`jump_animation.bin`, "Jumping Up", 0,83 s): do início do pulo até o avatar subir; o clipe termina e segura a última pose (pernas recolhidas) até o avatar começar a cair.
+- **Descendo no pulo** (`jumpdown_animation.bin`, "Jumping Down", 0,35 s): quando o pulo acaba e o avatar vai para baixo (também numa queda de uma beirada, mas não numa queda depois de voar, que continua com o clipe de queda longa).
+
+Nos dois clipes de pulo a elevação do quadril é zerada: quem levanta o avatar é a física do jogo, e o clipe não pode levantá-lo uma segunda vez. As mãos são curvadas pelo jogo (ver "Dedos"), então os dedos do Mixamo ficam de fora. O corpo padrão do jogo, feito de peças, continua com as animações próprias dele.
+
+Para refazer um arquivo: `blender -b --python tools/blender/build_animation_clip.py -- <fbx> <saida.glb> <Idle|Jump|JumpDown> [--zero-hips]` (o Blender põe `.glb` no fim do nome; renomeie para `.bin`).
