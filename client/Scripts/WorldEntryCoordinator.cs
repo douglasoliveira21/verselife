@@ -143,7 +143,7 @@ public partial class WorldEntryCoordinator : Node
         if (!_online) return;
         var parts = (_snapshotOk || _snapshotMissing ? 1 : 0) + (_terrainOk ? 1 : 0);
         Manager.Report("env", parts, 2); if (_terrainOk && (_snapshotOk || _snapshotMissing)) Manager.Complete("env");
-        if (_objectsFailed) { Manager.Fail("objects", "Não foi possível carregar os objetos da ilha."); return; }
+        if (_objectsFailed) { Manager.Fail("objects", string.IsNullOrEmpty(_network.ObjectsFailure) ? "Não foi possível carregar os objetos da ilha." : $"Não foi possível carregar os objetos da ilha ({_network.ObjectsFailure})."); return; }
         if (_assetsFailed) { Manager.Fail("assets", GetParent()?.GetNodeOrNull<AssetLoadingService>("AssetLoadingService")?.LastError ?? "Não foi possível baixar os recursos da ilha."); return; }
         if (_assetsTotal >= 0) { Manager.Report("assets", _assetsDone, _assetsTotal); if (_assetsDone >= _assetsTotal) Manager.Complete("assets"); } else Manager.Begin("assets");
         if (_objectsTotal >= 0) { Manager.Report("objects", _objectsDone, _objectsTotal); if (_objectsDone >= _objectsTotal) Manager.Complete("objects"); } else Manager.Begin("objects");

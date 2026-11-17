@@ -89,6 +89,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 builder.Services.AddAuthorization();
+builder.Services.AddJsonCompression();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -119,6 +120,7 @@ if (app.Configuration.GetValue<bool>("Network:ForwardedHeaders"))
 }
 LifeVerse.Api.Modules.Economy.EconomyFees.Configure(app.Configuration);
 app.UseExceptionHandler();
+app.UseResponseCompression();
 app.Use(async (context, next) =>
 {
     var correlationId = context.Request.Headers["X-Correlation-ID"].FirstOrDefault();

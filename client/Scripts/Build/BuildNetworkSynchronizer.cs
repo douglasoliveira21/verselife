@@ -69,7 +69,8 @@ public partial class BuildNetworkSynchronizer : Node
         _worldRoot = GetParent() as Node3D;
         if (_network is null) return;
         _network.BuildOperationReceived += OnOperation; _network.BuildOperationRejected += OnRejected; _network.ConnectionStateChanged += OnConnectionState;
-        _http = new HttpRequest { Timeout = 30 }; AddChild(_http); _http.RequestCompleted += OnObjectsLoaded;
+        _http = new HttpRequest { Timeout = 120 }; AddChild(_http); _http.RequestCompleted += OnObjectsLoaded;      // an island can have thousands of objects: the list is big
+
         _limitsHttp = new HttpRequest { Timeout = 10 }; AddChild(_limitsHttp); _limitsHttp.RequestCompleted += OnLimitsLoaded;
         if (_network.IsAuthenticated && _network.CurrentIslandId != Guid.Empty) { _islandId = _network.CurrentIslandId; Load(); }
     }
@@ -106,7 +107,13 @@ public partial class BuildNetworkSynchronizer : Node
 
     private void OnObjectsLoaded(long result, long responseCode, string[] headers, byte[] body)
     {
-        if (responseCode is < 200 or >= 300) { _network?.ReportWorldProgress("objects", 0, -2); return; } // -2: the list of objects could not be loaded
+        if (responseCode is < 200 or >= 300)
+        {
+            var why = result != (long)HttpRequest.Result.Success ? (result == (long)HttpRequest.Result.Timeout ? "o servidor demorou demais para enviar" : $"falha de conexão ({(HttpRequest.Result)result})") : $"o servidor respondeu {responseCode}";
+            GD.PushWarning($"event=build_objects_failed status={responseCode} result={result} island={_islandId}");
+            if (_network is not null) _network.ObjectsFailure = why;
+            _network?.ReportWorldProgress("objects", 0, -2); return;      // -2: the list of objects could not be loaded
+        }
         try
         {
             using var document = JsonDocument.Parse(Encoding.UTF8.GetString(body)); var count = 0;

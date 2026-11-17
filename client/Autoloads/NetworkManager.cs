@@ -173,6 +173,8 @@ public partial class NetworkManager : Node
         _ => $"Entrada recusada pela API ({code})."
     };
 
+    /// <summary>Why the list of objects of the island could not be loaded (shown in the loading screen and written in the log).</summary>
+    public string ObjectsFailure { get; set; } = string.Empty;
     public void ReportWorldProgress(string key, long done, long total) => EmitSignal(SignalName.WorldProgress, key, done, total);
     private bool _spawnReported;
 
