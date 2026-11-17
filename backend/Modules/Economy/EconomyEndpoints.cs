@@ -20,7 +20,7 @@ public static class EconomyEndpoints
     public static IEndpointRouteBuilder MapEconomyEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var economy = endpoints.MapGroup("/api/v1/economy").WithTags("Economy").RequireAuthorization();
-        economy.MapCoinPackages(); endpoints.MapCoinWebhook(); endpoints.MapEconomyAdmin(); economy.MapGet("/wallet", WalletAsync); economy.MapGet("/wallet/transactions", TransactionsAsync); economy.MapPost("/transfer", TransferAsync);
+        economy.MapCoinPackages(); endpoints.MapCoinWebhook(); endpoints.MapEconomyAdmin(); endpoints.MapEconomyAdminPage(); economy.MapGet("/wallet", WalletAsync); economy.MapGet("/wallet/transactions", TransactionsAsync); economy.MapPost("/transfer", TransferAsync);
         economy.MapGet("/products", ProductsAsync); economy.MapPost("/products", PublishAsync); economy.MapPatch("/products/{id:guid}", UpdateProductAsync); economy.MapPost("/products/{id:guid}/deactivate", DeactivateAsync); economy.MapPost("/products/{id:guid}/purchase", PurchaseAsync); economy.MapGet("/orders", OrdersAsync);
         economy.MapGet("/rental-plans", RentalPlansAsync); economy.MapPost("/islands/{islandId:guid}/rent", RentIslandAsync); economy.MapPost("/rentals/{rentalId:guid}/renew", RenewRentalAsync);
         economy.MapGet("/islands/{islandId:guid}/stores", ListStoresAsync); economy.MapPost("/islands/{islandId:guid}/stores", CreateStoreAsync); economy.MapDelete("/islands/{islandId:guid}/stores/{storeId:guid}", DeleteStoreAsync);
