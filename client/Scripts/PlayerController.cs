@@ -109,23 +109,87 @@ public partial class PlayerController : CharacterBody3D
         _network?.UnregisterLocalPlayer(this);
     }
 
+    private readonly LifeVerse.Shared.Camera.HeadBob _bob = new();
+    private readonly LifeVerse.Shared.Camera.CameraSway _sway = new();
+    private readonly LifeVerse.Shared.Camera.EyeStabilizer _eyeStabilizer = new();
+    /// <summary>Tests: how much the head is bobbing now, and how much the view leans.</summary>
+    public Vector2 HeadBobForTesting => new(_bob.Offset.X, _bob.Offset.Y);
+    public float SwayRollForTesting => _sway.Roll;
+    /// <summary>Tests: pretends the avatar walks at this speed (m/s) on the ground (null: the real movement).</summary>
+    public (float Speed, bool Grounded)? MotionForTesting { get; set; }
+
     public override void _Process(double delta)
     {
-        var weight = 1f - Mathf.Exp(-Scripts.Camera.CameraSettings.Current.Smoothing * (float)delta);
-        Rotation = new Vector3(0, Mathf.LerpAngle(Rotation.Y, _targetBodyYaw, weight), 0);
+        var dt = (float)delta; var fp = Scripts.Camera.FirstPersonSettings.Current;
+        var weight = 1f - Mathf.Exp(-Scripts.Camera.CameraSettings.Current.Smoothing * dt);
+        // in first person the view follows the mouse without a delay one could notice (how soft it is, is the person's choice)
+        var inside = _firstPerson && !_mirror && !_freeView && !_editView;
+        // the camera is "inside" once it has come close to the head: from then on the head is left out and what is close is not drawn; on the way in and out the avatar is whole
+        var close = _firstPerson && _springArm.SpringLength < FirstPersonSwitchArm;
+        _rig.SetFirstPersonView(close);
+        _camera.Near = close ? FirstPersonNear : NormalNear;
+        _camera.Fov = Mathf.Abs(_camera.Fov - (_firstPerson ? _firstPersonFov : _thirdPersonFov)) < .05f ? (_firstPerson ? _firstPersonFov : _thirdPersonFov) : Mathf.Lerp(_camera.Fov, _firstPerson ? _firstPersonFov : _thirdPersonFov, 1f - Mathf.Exp(-9f * dt));
+        var turn = inside ? 1f - Mathf.Exp(-fp.LookRate * dt) : weight;
+        Rotation = new Vector3(0, Mathf.LerpAngle(Rotation.Y, _targetBodyYaw, turn), 0);
         // The pivot is a child of the body, so its local yaw is the camera yaw relative to the avatar.
-        _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, weight);
-        _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, weight), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), 0);
+        var yawBefore = _cameraYaw;
+        _cameraYaw = Mathf.LerpAngle(_cameraYaw, _targetYaw, turn);
+        if (inside)
+        {
+            var grounded = MotionForTesting?.Grounded ?? (IsOnFloor() && !_flying && !_swimming); var speed = MotionForTesting?.Speed ?? new Vector2(Velocity.X, Velocity.Z).Length();
+            _bob.Step(dt, speed, grounded, fp); _sway.Step(dt, dt > 0 ? Mathf.AngleDifference(yawBefore, _cameraYaw) / dt : 0f, Velocity.Dot(GlobalBasis.X), fp);
+        }
+        else { _bob.Reset(); _sway.Reset(); }
+        _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, turn), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), _sway.Roll);
+        TellHeadLook(inside && close);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
         var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : 1.55f) + _cameraHeightOffset;
         // in first person the camera is at the eyes of the body (its own head, wherever the animation takes it), a little in front of the neck, so it never sees the inside of the head and never cuts the chest
-        Vector3? eyes = _firstPerson && !_oceanSwimming && !_mirror && !_editView && !_freeView && _rig.EyeWorldPosition(-GlobalBasis.Z) is { } world ? ToLocal(world) : null;
+        Vector3? eyes = inside && !_oceanSwimming && _rig.EyeWorldPosition(-GlobalBasis.Z) is { } world ? world : null;
         if (_detached) { if (!Scripts.Camera.CameraSettings.Current.AllowDetached) ExitDetached(); else { UpdateDetached((float)delta); return; } }
         if (_focusNode is not null) { if (IsInstanceValid(_focusNode) && _focusNode.IsInsideTree()) _editFocus = ToLocal(_focusNode.ToGlobal(_focusOffset)); else _focusNode = null; }
-        _cameraPivot.Position = _editView || _freeView ? _cameraPivot.Position.Lerp(_editFocus, weight * (_freeView ? 1f : .6f)) : eyes is { } at ? _cameraPivot.Position.Lerp(at + Vector3.Up * _cameraHeightOffset, Mathf.Min(1f, weight * 2f)) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
+        if (eyes is { } at) { var target = FirstPersonEyes(at, dt, fp); _cameraPivot.Position = _springArm.SpringLength > .1f ? _cameraPivot.Position.Lerp(target, 1f - Mathf.Exp(-16f * dt)) : target; }   // on the way in the pivot glides to the eyes
+        else
+        {
+            _eyeStabilizer.Reset();
+            _cameraPivot.Position = _editView || _freeView ? _cameraPivot.Position.Lerp(_editFocus, weight * (_freeView ? 1f : .6f)) : new Vector3(0, Mathf.Lerp(_cameraPivot.Position.Y, pivotHeight, weight * (_mirror ? .6f : .35f)), 0);
+        }
         // the distance glides too: a notch of the wheel or a drag never jumps
         _springArm.SpringLength = LifeVerse.Shared.Camera.CameraZoomController.Glide(_springArm.SpringLength, _firstPerson ? FirstPersonArm : _cameraDistance, (float)delta, Scripts.Camera.CameraSettings.Current.Smoothing);
     }
+
+    private float _lookSent; private ulong _lookSentAt;
+    /// <summary>Tests: where the angle goes instead of the network.</summary>
+    public Action<float>? HeadLookSinkForTesting { get; set; }
+
+    /// <summary>The others see this avatar's head lean as far as the person looks up or down (only in first person). Only the angle goes to the island, a few times a second, never the camera itself.</summary>
+    private void TellHeadLook(bool inFirstPerson)
+    {
+        var want = inFirstPerson ? _cameraPivot.Rotation.X : 0f;
+        if (want == 0f && _lookSent == 0f) return;
+        var now = Time.GetTicksMsec();
+        var since = TimeSpan.FromMilliseconds(now - _lookSentAt);
+        var straightAgain = want == 0f && _lookSent != 0f && since >= LifeVerse.Shared.Networking.HeadLook.MinInterval;      // stepping out of first person: the head straightens for everybody
+        if (!straightAgain && !LifeVerse.Shared.Networking.HeadLook.ShouldSend(_lookSent, want, since)) return;
+        _lookSent = want; _lookSentAt = now;
+        if (HeadLookSinkForTesting is { } sink) sink(want); else _network?.SendHeadLook(want);
+    }
+
+    /// <summary>The camera of first person, in the space of the body: the eyes of the head, steadied (the shaking the skeleton's animations put in the head is taken out, and sitting down or standing up glide), kept out of walls and objects, and with the bob of the step.</summary>
+    private Vector3 FirstPersonEyes(Vector3 worldEyes, float dt, LifeVerse.Shared.Camera.FirstPersonOptions fp)
+    {
+        var smooth = _eyeStabilizer.Step(ToNumerics(ToLocal(worldEyes)), dt, fp.StabilizeSeconds, fp.StabilizeVerticalSeconds); var steady = ToGlobal(new Vector3(smooth.X, smooth.Y, smooth.Z));
+        if (fp.Collision && CameraCollides && _rig.HeadAnchorWorld is { } anchor)
+        {
+            var ahead = steady + (-_camera.GlobalBasis.Z) * .08f;      // a little beyond the eyes, so the face against a wall is not enough to look through it
+            var query = PhysicsRayQueryParameters3D.Create(anchor, ahead, _springArm.CollisionMask); query.Exclude = [GetRid()]; query.CollideWithAreas = false;
+            var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
+            steady = LifeVerse.Shared.Camera.EyeCollision.Clip(ToNumerics(anchor), ToNumerics(steady), hit.Count > 0 ? anchor.DistanceTo((Vector3)hit["position"]) : null) is var clipped ? new Vector3(clipped.X, clipped.Y, clipped.Z) : steady;
+        }
+        return ToLocal(steady) + new Vector3(_bob.Offset.X, _bob.Offset.Y, 0) + Vector3.Up * _cameraHeightOffset;
+    }
+
+    private static System.Numerics.Vector3 ToNumerics(Vector3 v) => new(v.X, v.Y, v.Z);
 
     public override void _UnhandledInput(InputEvent input)
     {
@@ -164,8 +228,8 @@ public partial class PlayerController : CharacterBody3D
         }
         if (input is InputEventMouseButton button)
         {
-            if (button.ButtonIndex == MouseButton.WheelUp && button.Pressed) SetZoom(_cameraDistance - ZoomStep);
-            if (button.ButtonIndex == MouseButton.WheelDown && button.Pressed) SetZoom(_cameraDistance + ZoomStep);
+            if (button.ButtonIndex == MouseButton.WheelUp && button.Pressed) WheelIn();
+            if (button.ButtonIndex == MouseButton.WheelDown && button.Pressed) WheelOut();
             if (button.ButtonIndex == MouseButton.Right)
             {
                 if (button.Pressed)
@@ -562,14 +626,12 @@ public partial class PlayerController : CharacterBody3D
     private void SetCameraMode(CameraMode mode)
     {
         _cameraMode = mode; _firstPerson = mode == CameraMode.FirstPerson;
-        _springArm.SpringLength = _firstPerson ? FirstPersonArm : _cameraDistance;
-        _camera.Fov = _firstPerson ? _firstPersonFov : _thirdPersonFov;
-        _camera.Near = _firstPerson ? FirstPersonNear : NormalNear;   // from inside the head, whatever is closer than this is not drawn: the head, its hair, glasses and hats
-        _rig.Visible = !_avatarHidden; _rig.SetFirstPersonView(_firstPerson);
+        // nothing jumps: the camera glides in to the eyes (or back out) and its field of view follows; the head is left out only while the camera is close to it (see _Process)
+        _eyeStabilizer.Reset(); _bob.Reset(); _sway.Reset();
+        _rig.Visible = !_avatarHidden;
         if (_firstPerson)
         {
-            _targetYaw = _targetBodyYaw;
-            _cameraYaw = _targetBodyYaw;
+            _targetYaw = _targetBodyYaw;      // the avatar keeps facing where it faces; the view turns to it smoothly
             Input.MouseMode = Input.MouseModeEnum.Captured;
             _cursorFree = false;
         }
@@ -578,6 +640,22 @@ public partial class PlayerController : CharacterBody3D
     private bool _avatarHidden;
     /// Hides the avatar while the build camera is in use (and shows it again afterwards).
     public void SetAvatarHidden(bool hidden) { _avatarHidden = hidden; _rig.Visible = !hidden; }
+    /// <summary>Scrolling in: closer to the avatar, and from the nearest distance on, into first person (when the setting allows it).</summary>
+    private void WheelIn()
+    {
+        if (_firstPerson) return;
+        var free = _mirror || _editView || _freeView || _detached || _cameraMode is CameraMode.Build or CameraMode.Photo;
+        if (WheelEntersFirstPerson && !free && _cameraDistance <= ThirdPersonMinDistance + .01f) { SetCameraMode(CameraMode.FirstPerson); return; }
+        SetZoom(_cameraDistance - ZoomStep);
+    }
+
+    /// <summary>Scrolling out: from first person, back to third person at the nearest distance; otherwise farther from the avatar.</summary>
+    private void WheelOut()
+    {
+        if (_firstPerson && !_mirror && !_freeView && !_editView) { _cameraDistance = ThirdPersonMinDistance; SetCameraMode(CameraMode.ThirdPerson); return; }
+        SetZoom(_cameraDistance + ZoomStep);
+    }
+
     private void SetZoom(float value) { var options = Scripts.Camera.CameraSettings.Current; _cameraDistance = Mathf.Clamp(value, _editView ? .2f : _mirror ? .7f : _freeView ? options.MinDistance : 1.5f, _mirror ? 5f : _freeView ? options.MaxDistance : 12f); if (!_firstPerson) _springArm.SpringLength = _cameraDistance; }
     /// <summary>True while a loading screen covers the world: the avatar ignores the keyboard and the mouse until the world is ready.</summary>
     // ---- the person's own settings (Configurações › Controles e Câmera) ----
@@ -589,7 +667,11 @@ public partial class PlayerController : CharacterBody3D
     /// <summary>How far one notch of the mouse wheel moves the camera, in meters.</summary>
     public static float ZoomStep { get; set; } = .5f;
     private float _pivotBaseY, _cameraHeightOffset;
-    private const float NormalNear = .05f, FirstPersonNear = .06f, FirstPersonArm = .02f;
+    private const float NormalNear = .05f, FirstPersonNear = .06f, FirstPersonArm = .02f, FirstPersonSwitchArm = .4f;
+    /// <summary>The nearest the camera stands in third person: scrolling in from here goes into first person, and scrolling out of first person comes back to here.</summary>
+    public const float ThirdPersonMinDistance = 1.5f;
+    /// <summary>Whether the wheel of the mouse goes in and out of first person (Configurações › Câmera).</summary>
+    public static bool WheelEntersFirstPerson { get; set; } = true;
     /// <summary>How far the person can look down (at their own feet) and up in first person.</summary>
     public const float FirstPersonPitchDown = -1.5f, FirstPersonPitchUp = 1.35f;
     public const float FirstPersonFovMin = 60f, FirstPersonFovMax = 100f, FirstPersonFovDefault = 75f;
@@ -597,7 +679,7 @@ public partial class PlayerController : CharacterBody3D
     public float FirstPersonFov => _firstPersonFov;
 
     /// <summary>The field of view of first person (60 to 100 degrees).</summary>
-    public void SetFirstPersonFov(float fov) { _firstPersonFov = Mathf.Clamp(fov, FirstPersonFovMin, FirstPersonFovMax); if (_firstPerson) _camera.Fov = _firstPersonFov; }
+    public void SetFirstPersonFov(float fov) { _firstPersonFov = Mathf.Clamp(fov, FirstPersonFovMin, FirstPersonFovMax); if (_firstPerson && _springArm.SpringLength < FirstPersonSwitchArm) _camera.Fov = _firstPersonFov; }
     public string CameraModeName => _cameraMode.ToString();
     public float FieldOfView => _camera.Fov;
     public float PivotOffset => _cameraHeightOffset;
@@ -607,7 +689,7 @@ public partial class PlayerController : CharacterBody3D
     /// <summary>The camera as the person likes it: field of view, how far behind, how high, a little to one side, how soon it follows a turn, whether walls stop it. Not while the mirror is in use.</summary>
     public void ApplyCameraSettings(float fov, float distance, float height, float shoulder, float follow, bool collision)
     {
-        _thirdPersonFov = Mathf.Clamp(fov, 40f, 120f); if (!_firstPerson) _camera.Fov = _thirdPersonFov;
+        _thirdPersonFov = Mathf.Clamp(fov, 40f, 120f); if (!_firstPerson && _springArm.SpringLength >= FirstPersonSwitchArm) _camera.Fov = _thirdPersonFov;
         _cameraHeightOffset = Mathf.Clamp(height, -1f, 1.5f);      // the pivot follows it smoothly (see _Process)
         _camera.HOffset = Mathf.Clamp(shoulder, -2f, 2f);
         CameraFollowRate = Mathf.Clamp(follow, .5f, 12f);

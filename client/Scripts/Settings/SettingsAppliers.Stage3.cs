@@ -49,10 +49,18 @@ public static partial class SettingsAppliers
 
         // camera
         foreach (var id in new[] { "camera.fov", "camera.default_distance", "camera.height", "camera.shoulder", "camera.smoothing", "camera.collision" }) store.RegisterApplier(id, _ => ApplyCamera(store));
+        foreach (var id in LifeVerse.Client.Scripts.Camera.FirstPersonSettings.Ids) store.RegisterApplier(id, _ => LifeVerse.Client.Scripts.Camera.FirstPersonSettings.Current = FirstPersonOptionsFrom(store));
+        store.RegisterApplier("camera.wheel_first_person", v => PlayerController.WheelEntersFirstPerson = (bool)v);
         store.RegisterApplier("camera.fp_fov", v => Player?.SetFirstPersonFov((int)v));
         store.RegisterApplier("camera.zoom_step", v => PlayerController.ZoomStep = (float)v);
         store.RegisterApplier("camera.default_mode", v => Player?.SetCameraMode((string)v == "first" ? "FirstPerson" : "ThirdPerson"));
     }
+
+    private static LifeVerse.Shared.Camera.FirstPersonOptions FirstPersonOptionsFrom(SettingsStore store) => new()
+    {
+        HeadBob = store.Get<bool>("camera.fp_bob"), BobStrength = store.Get<float>("camera.fp_bob_strength"), Sway = store.Get<bool>("camera.fp_sway"), SwayStrength = store.Get<float>("camera.fp_sway_strength"),
+        Stabilization = store.Get<float>("camera.fp_stabilization"), LookSmoothing = store.Get<float>("camera.fp_look_smoothing"), Collision = store.Get<bool>("camera.fp_collision")
+    };
 
     public static void ApplyCamera(SettingsStore store)
     {

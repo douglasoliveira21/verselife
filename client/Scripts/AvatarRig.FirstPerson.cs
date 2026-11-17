@@ -53,6 +53,10 @@ public sealed partial class AvatarRig
         return null;
     }
 
+    /// <summary>The place of the head itself (the base of it), where a ray toward the eyes begins; null with no head.</summary>
+    public Vector3? HeadAnchorWorld => CustomBodyActive && _customSkeleton is { } skeleton && IsInstanceValid(skeleton) && _standardBones.TryGetValue("head", out var headBone)
+        ? skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(headBone).Origin : _visual?.GetNodeOrNull<Node3D>("Hips/Torso/Neck/Head") is { } sphere ? sphere.GlobalPosition : null;
+
     /// <summary>The eyes' height above the feet (null with no head).</summary>
     public float? EyeHeight => EyeWorldPosition(Vector3.Forward) is { } eyes ? eyes.Y - GlobalPosition.Y : null;
 

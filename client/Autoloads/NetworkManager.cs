@@ -356,6 +356,19 @@ public partial class NetworkManager : Node
         remote.Rig.PreviewRemoteAttachment(attachment, new Vector3(values[0], values[1], values[2]), new Vector3(values[3], values[4], values[5]), new Vector3(values[6], values[7], values[8]));
     }
 
+    /// <summary>How far up or down this person looks through their own eyes (first person): the others see the head lean that far. Only an angle; the camera is never sent.</summary>
+    public void SendHeadLook(float pitch)
+    {
+        if (!IsAuthenticated || _bridge is null) return;
+        _bridge.RpcId(1, NetworkBridge.MethodName.HeadLook, pitch);
+    }
+
+    /// <summary>Somebody looks up or down: their avatar leans its head that far (within what a head can).</summary>
+    public void OnHeadLook(int peerId, float pitch)
+    {
+        if (_remote.TryGetValue(peerId, out var remote)) remote.Rig.SetLookPitch(LifeVerse.Shared.Networking.HeadLook.Drawn(pitch));
+    }
+
     public void OnPlayerDespawned(int peerId, bool suspended) { Voice.Forget(peerId); HiddenPeers.Remove(peerId); VoiceChat.MutedPeers.Remove(peerId); if (_remote.Remove(peerId, out var remote)) remote.Node.QueueFree(); }
     public void OnChatReceived(int peerId, string displayName, string message, long unixMilliseconds)
     {

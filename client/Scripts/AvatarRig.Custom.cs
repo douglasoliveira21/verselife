@@ -187,7 +187,7 @@ public partial class AvatarRig
     public bool BlendingForTesting => _blendFrom is not null;
     public double BlendProgressForTesting => _blendFrom is null ? 1 : _blendTime / _blendLength;
 
-    public override void _Process(double delta) { _blendTime += delta; if (FirstPersonView) KeepFirstPersonView(); FadeFootsteps(delta); FadeTypingSound(delta); if (Throttled) { AdvanceClip(delta); return; } AdvanceClip(delta); RetargetCustom(); FollowWearables(); FollowAttachments(delta); }
+    public override void _Process(double delta) { _blendTime += delta; StepLook(delta); if (FirstPersonView) KeepFirstPersonView(); FadeFootsteps(delta); FadeTypingSound(delta); if (Throttled) { AdvanceClip(delta); return; } AdvanceClip(delta); RetargetCustom(); FollowWearables(); FollowAttachments(delta); }
 
     /// <summary>Copies the animated rotations of the procedural body onto the bones of the custom model, in the model's own space.</summary>
     public void RetargetCustom()
@@ -227,6 +227,7 @@ public partial class AvatarRig
         }
         Array.Clear(_globalDone);
         for (var bone = 0; bone < _restGlobal.Length; bone++) GlobalOf(skeleton, bone, delta);
+        ApplyLookToCustom(skeleton);
         if (FirstPersonView) CollapseHead(skeleton);
     }
 

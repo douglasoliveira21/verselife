@@ -73,8 +73,25 @@ public static partial class SettingsCatalog
             { Choices = [new("third", "Terceira pessoa"), new("first", "Primeira pessoa")], Group = "Visão", Column = 0, Keywords = ["primeira pessoa", "terceira pessoa", "modo"] };
         yield return new("camera.fov", SettingCategory.Camera, "Câmera", "Campo de visão", "Abertura da câmera em graus. Mais aberto mostra mais dos lados e deforma as bordas; mais fechado aproxima.", SettingKind.Int, 75)
             { Min = 50, Max = 110, Step = 1, Unit = "°", Group = "Visão", Column = 0, Keywords = ["fov", "campo de visão", "zoom"] };
+        yield return new("camera.wheel_first_person", SettingCategory.Camera, "Câmera", "Roda do mouse entra na primeira pessoa", "Aproximar a câmera até a distância mínima com a roda entra na primeira pessoa; afastar a roda de dentro dela volta para a terceira.", SettingKind.Bool, true)
+            { Group = "Visão", Column = 0, Keywords = ["roda", "primeira pessoa", "zoom"] };
         yield return new("camera.fp_fov", SettingCategory.Camera, "Câmera", "Campo de visão da primeira pessoa", "Abertura da câmera quando você vê pelos olhos do personagem (60° a 100°). Mais aberto mostra mais dos lados e dos pés; mais fechado aproxima.", SettingKind.Int, 75)
             { Min = 60, Max = 100, Step = 1, Unit = "°", Group = "Visão", Column = 0, Keywords = ["fov", "campo de visão", "primeira pessoa"] };
+        // ---- Primeira pessoa
+        yield return new("camera.fp_bob", SettingCategory.Camera, "Câmera", "Balanço da cabeça ao andar", "Um leve sobe e desce e balanço lateral da visão enquanto você anda e corre na primeira pessoa.", SettingKind.Bool, true)
+            { Group = "Primeira pessoa", Column = 1, Keywords = ["head bob", "balanço", "andar", "primeira pessoa"] };
+        yield return new("camera.fp_bob_strength", SettingCategory.Camera, "Câmera", "Intensidade do balanço", "Quanto a cabeça balança ao andar (1 é o normal).", SettingKind.Float, 1f)
+            { Min = .25, Max = 2, Step = .25, Unit = "×", Group = "Primeira pessoa", Column = 1, Keywords = ["head bob", "balanço", "intensidade"] };
+        yield return new("camera.fp_sway", SettingCategory.Camera, "Câmera", "Inclinação ao girar", "A visão inclina um pouco ao girar e ao andar de lado, sem exageros.", SettingKind.Bool, true)
+            { Group = "Primeira pessoa", Column = 1, Keywords = ["sway", "inclinação", "girar", "primeira pessoa"] };
+        yield return new("camera.fp_sway_strength", SettingCategory.Camera, "Câmera", "Intensidade da inclinação", "Quanto a visão inclina ao girar (1 é o normal).", SettingKind.Float, 1f)
+            { Min = .25, Max = 2, Step = .25, Unit = "×", Group = "Primeira pessoa", Column = 1, Keywords = ["sway", "inclinação", "intensidade"] };
+        yield return new("camera.fp_stabilization", SettingCategory.Camera, "Câmera", "Estabilização da cabeça", "Tira da câmera os tremores que as animações do esqueleto põem na cabeça. 0 segue a cabeça exatamente; 1 é o mais firme.", SettingKind.Float, .6f)
+            { Min = 0, Max = 1, Step = .05, Group = "Primeira pessoa", Column = 1, Keywords = ["estabilização", "tremor", "cabeça", "primeira pessoa"] };
+        yield return new("camera.fp_look_smoothing", SettingCategory.Camera, "Câmera", "Suavização do olhar", "Quão macio é o giro da visão. 0 acompanha o mouse na hora; valores maiores deixam o giro mais lento e suave. O padrão não tem atraso perceptível.", SettingKind.Float, .35f)
+            { Min = 0, Max = 1, Step = .05, Group = "Primeira pessoa", Column = 1, Keywords = ["suavização", "mouse", "olhar", "primeira pessoa"] };
+        yield return new("camera.fp_collision", SettingCategory.Camera, "Câmera", "Colisão na primeira pessoa", "A câmera não atravessa paredes e objetos, nem quando o rosto encosta neles.", SettingKind.Bool, true)
+            { Group = "Primeira pessoa", Column = 1, Keywords = ["colisão", "parede", "primeira pessoa"] };
         yield return new("camera.default_distance", SettingCategory.Camera, "Câmera", "Distância da câmera", "Quão atrás do personagem a câmera fica na terceira pessoa. A roda do mouse continua ajustando durante o jogo.", SettingKind.Float, 5.2f)
             { Min = 1.5, Max = 12, Step = .1, Unit = " m", Group = "Visão", Column = 0, Keywords = ["distância", "zoom", "terceira pessoa"] };
         yield return new("camera.zoom_step", SettingCategory.Camera, "Câmera", "Passo da roda do mouse", "Quanto cada giro da roda aproxima ou afasta a câmera.", SettingKind.Float, .5f)

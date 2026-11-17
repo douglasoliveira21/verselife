@@ -39,7 +39,7 @@ public partial class TypingSmoke : Node3D
             var foreArm = standard.GetNode<Node3D>("Visual/Hips/Torso/LeftUpperArm/LeftLowerArm"); var upper = standard.GetNode<Node3D>("Visual/Hips/Torso/LeftUpperArm");
             var restForearm = foreArm.Rotation.X; var restUpper = upper.Rotation.X;
             standard.SetMotionState(AvatarMotionState.Typing, true); await Frames(40);
-            Require(foreArm.Rotation.X < restForearm - .5f && upper.Rotation.X < restUpper - .4f, $"the standard body brings its arms up to type: {foreArm.Rotation.X} / {upper.Rotation.X}");
+            Require(foreArm.Rotation.X > restForearm + .5f && upper.Rotation.X > restUpper + .4f, $"the standard body brings its arms up to type: {foreArm.Rotation.X} / {upper.Rotation.X}");
             float lowest = float.MaxValue, highest = float.MinValue; for (var i = 0; i < 12; i++) { lowest = Mathf.Min(lowest, foreArm.Rotation.X); highest = Mathf.Max(highest, foreArm.Rotation.X); await ToSignal(GetTree().CreateTimer(.06), SceneTreeTimer.SignalName.Timeout); }
             Require(highest - lowest > .05f, $"and the hands keep moving (it is not a frozen pose): {highest - lowest}");
 
