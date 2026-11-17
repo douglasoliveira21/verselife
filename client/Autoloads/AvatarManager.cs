@@ -18,7 +18,7 @@ public partial class AvatarManager : Node
 
     public override void _Ready()
     {
-        _http = new HttpRequest();
+        _http = new HttpRequest { Timeout = 30 };
         AddChild(_http);
         _http.RequestCompleted += OnRequestCompleted;
     }
@@ -100,7 +100,7 @@ public partial class AvatarManager : Node
                 else EmitSignal(SignalName.AvatarLoaded, true, "Avatar loaded.");
                 return;
             }
-            var message = responseCode == 401 ? "Session expired. Please sign in again." : "Could not load avatar.";
+            var message = responseCode == 401 ? "Session expired. Please sign in again." : responseCode == 0 ? "The server did not answer in time. Check the internet and try again." : "Could not load avatar.";
             if (wasSaving) EmitSignal(SignalName.AvatarSaved, false, message);
             else EmitSignal(SignalName.AvatarLoaded, false, message);
         }

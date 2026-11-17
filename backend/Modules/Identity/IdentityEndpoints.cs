@@ -6,11 +6,11 @@ public static class IdentityEndpoints
 {
     public static IEndpointRouteBuilder MapIdentityEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup("/api/v1/auth").WithTags("Identity").RequireRateLimiting("auth");
-        group.MapPost("/register", RegisterAsync).Produces<AuthResponse>(201).ProducesValidationProblem().ProducesProblem(409);
-        group.MapPost("/login", LoginAsync).Produces<AuthResponse>().ProducesValidationProblem().ProducesProblem(401);
-        group.MapPost("/refresh", RefreshAsync).Produces<AuthResponse>().ProducesProblem(401);
-        group.MapPost("/logout", LogoutAsync).Produces(204);
+        var group = endpoints.MapGroup("/api/v1/auth").WithTags("Identity");
+        group.MapPost("/register", RegisterAsync).RequireRateLimiting("auth").Produces<AuthResponse>(201).ProducesValidationProblem().ProducesProblem(409);
+        group.MapPost("/login", LoginAsync).RequireRateLimiting("auth").Produces<AuthResponse>().ProducesValidationProblem().ProducesProblem(401);
+        group.MapPost("/refresh", RefreshAsync).RequireRateLimiting("auth-refresh").Produces<AuthResponse>().ProducesProblem(401);
+        group.MapPost("/logout", LogoutAsync).RequireRateLimiting("auth-refresh").Produces(204);
         return endpoints;
     }
 

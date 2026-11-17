@@ -70,6 +70,12 @@ public partial class LoadingSmoke : Node
             Require(manager.Active && !manager.Failed, "retry runs the loading again");
             entry.LeaveForTesting();
 
+            // an entry that never gets to the island, on whatever step, does not wait forever
+            entry.BeginForTesting(LoadingMode.Teleport, "Praia Azul"); await Frames(2);
+            entry.BeforeOnlineWaitForTesting(WorldEntryCoordinator.BeforeOnlineTimeoutSeconds - 5); Require(manager.Active && !manager.Failed, "two minutes are not over yet");
+            entry.BeforeOnlineWaitForTesting(10); Require(manager.Failed && screen.ErrorForTesting.Contains("demorou"), $"an entry that never reaches the island stops with a message (got {screen.ErrorForTesting})");
+            entry.LeaveForTesting();
+
             // the bar eases towards the real progress and never passes it
             entry.BeginForTesting(LoadingMode.Entry, "Ilha"); await Frames(30);
             Require(screen.DisplayedProgress <= manager.Progress + 1e-6, "the bar never gets ahead of the real progress");

@@ -74,9 +74,9 @@ public partial class InventoryPanel : Node3D
     public override void _Ready()
     {
         AddToGroup("lifeverse_inventory"); CallDeferred(nameof(ApplyDefaults));
-        _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnResponse;
-        _folderHttp = new HttpRequest(); AddChild(_folderHttp); _folderHttp.RequestCompleted += OnFolders;
-        _trashHttp = new HttpRequest(); AddChild(_trashHttp); _trashHttp.RequestCompleted += OnTrashFolders;
+        _http = new HttpRequest { Timeout = 30 }; AddChild(_http); _http.RequestCompleted += OnResponse;
+        _folderHttp = new HttpRequest { Timeout = 30 }; AddChild(_folderHttp); _folderHttp.RequestCompleted += OnFolders;
+        _trashHttp = new HttpRequest { Timeout = 30 }; AddChild(_trashHttp); _trashHttp.RequestCompleted += OnTrashFolders;
         _preview = new AssetPreview { Name = "AssetPreview" }; AddChild(_preview);
         _thumbnails = new ThumbnailLoader { Name = "Thumbnails" }; AddChild(_thumbnails);
         BuildUi();

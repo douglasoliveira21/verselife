@@ -13,8 +13,8 @@ namespace LifeVerse.Client.Scripts;
 /// </summary>
 public partial class WorldEntryCoordinator : Node
 {
-    public const double WorldReadyTimeoutSeconds = 45, ConnectTimeoutSeconds = 20;
-    private double _connecting = -1;
+    public const double WorldReadyTimeoutSeconds = 45, ConnectTimeoutSeconds = 20, BeforeOnlineTimeoutSeconds = 120;
+    private double _connecting = -1, _sinceStart;
 
     private NetworkManager _network = null!;
     private LoadingScreen _screen = null!;
@@ -153,7 +153,9 @@ public partial class WorldEntryCoordinator : Node
 
     public override void _Process(double delta)
     {
-        if (!Manager.Active) return;
+        if (!Manager.Active) { _sinceStart = 0; return; }
+        // whatever step it is on, the entry must not wait forever to reach the island: after two minutes without being online the loading stops with a way out
+        if (!_online) { _sinceStart += delta; if (_sinceStart > BeforeOnlineTimeoutSeconds) { _sinceStart = 0; _connecting = -1; FailRunning("A entrada demorou demais. Confira a sua internet e tente de novo."); return; } } else _sinceStart = 0;
         if (_awaitingReady) { _awaitingReady = false; Manager.Complete("ready"); return; } // one frame later: the avatar and the objects exist in the scene
         if (_connecting >= 0 && !_online) { _connecting += delta; if (_connecting > ConnectTimeoutSeconds) { _connecting = -1; FailRunning("O servidor da ilha não respondeu dentro do tempo esperado."); return; } }
         if (!_online) return;
@@ -232,6 +234,7 @@ public partial class WorldEntryCoordinator : Node
     public void BeginForTesting(LoadingMode mode, string island) { ResetFacts(); _islandName = island; StartSession(mode); Manager.Begin("session"); Sync(); }
     public void WaitForTesting(double seconds) { _sinceOnline += seconds; _Process(0); }
     public void ConnectWaitForTesting(double seconds) { _Process(seconds); }
+    public void BeforeOnlineWaitForTesting(double seconds) => _Process(seconds);
     public void StateForTesting(string state, string detail) => OnState(state, detail);
     public void ProgressForTesting(string key, long done, long total) => OnProgress(key, done, total);
     public void SetIslandForTesting(Guid island, string name) { _island = island; _islandName = name; Manager.SetDestination(name); _screen.SetIsland(name, null); }

@@ -19,6 +19,6 @@ OpenAPI JSON is generated at `/openapi/v1.json`. All request and response bodies
 | PUT | `/api/v1/platform/servers/{id}/heartbeat` | Service key | Update health |
 | DELETE | `/api/v1/platform/servers/{id}` | Service key | Mark stopped |
 
-Registration passwords require 12–128 characters with uppercase, lowercase, and numeric characters. Username is 3–32 alphanumeric/underscore characters. Duplicate active username/email returns HTTP 409. Invalid credentials and invalid/expired/reused sessions return HTTP 401.
+Registration passwords require 6–128 characters with uppercase, lowercase, and numeric characters. Username is 3–32 alphanumeric/underscore characters. Duplicate active username/email returns HTTP 409. Invalid credentials and invalid/expired/reused sessions return HTTP 401.
 
 Avatar writes accept only server-owned catalog keys. Supported Phase 02 bases are `human_a` and `human_b`; appearance colors use `#RRGGBB` or `#RRGGBBAA`. Required equipment slots are `top`, `bottom`, and `shoes`; `accessory` is optional. Repeating a slot or supplying an unknown item returns HTTP 400 validation details.

@@ -12,7 +12,7 @@ public partial class AuthManager : Node
 
     public override void _Ready()
     {
-        _http = new HttpRequest();
+        _http = new HttpRequest { Timeout = 30 };
         AddChild(_http);
         _http.RequestCompleted += OnRequestCompleted;
     }
@@ -51,6 +51,7 @@ public partial class AuthManager : Node
                 EmitSignal(SignalName.RequestFinished, true, _registering, "Authenticated.");
                 return;
             }
+            if (responseCode == 429) { EmitSignal(SignalName.RequestFinished, false, _registering, "Muitas tentativas em pouco tempo. Espere um minuto e tente de novo."); return; }
             var message = "Authentication failed.";
             if (!string.IsNullOrWhiteSpace(json))
             {

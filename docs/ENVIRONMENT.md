@@ -29,3 +29,14 @@ The API and Godot C# assemblies compile with the installed .NET SDK. Client, cre
 ## Phase 03 verification note
 
 The shared protocol, API, client assembly, and island-server assembly compile cleanly after the multiplayer changes. `dotnet test` builds the test assembly, but the installed VSTest 18.6 runner loses its testhost after discovery on this Windows sandbox (including a filter containing only the deterministic protocol tests); this is retained as an environment limitation rather than reported as a passing runtime suite.
+
+
+## Cadastro e login abertos (de qualquer lugar)
+
+Não há bloqueio por país, convite ou lista de permissão: qualquer pessoa pode se cadastrar (`POST /api/v1/auth/register`) e entrar (`POST /api/v1/auth/login`) de qualquer lugar. O que existe é um limite por endereço IP, para frear tentativa de adivinhar senha:
+
+- `RateLimits:AuthPerMinute` (padrão **30** por minuto por IP): cadastro e login. Quem divide um IP (casa, escola, operadora móvel) tem folga; ao passar, a API responde 429 e o jogo pede para esperar um minuto.
+- `RateLimits:RefreshPerMinute` (padrão **120** por minuto por IP): renovação da sessão e saída. O jogo renova o login sozinho cerca de a cada 14 minutos.
+- `Network:ForwardedHeaders` (padrão desligado): se a API fica atrás de um proxy reverso (Nginx, Caddy, Traefik, Cloudflare), todos os jogadores apareceriam com o IP do proxy e dividiriam o mesmo limite. Com `true` a API usa o IP do cabeçalho `X-Forwarded-For`. **Só ligue se a API só puder ser alcançada pelo proxy** e ele mesmo escrever esse cabeçalho; senão qualquer um poderia forjá-lo e fugir do limite.
+
+Variáveis de ambiente usam `__`: por exemplo `RateLimits__AuthPerMinute=60` e `Network__ForwardedHeaders=true`.

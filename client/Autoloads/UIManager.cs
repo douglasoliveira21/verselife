@@ -5,6 +5,14 @@ namespace LifeVerse.Client.Autoloads;
 public partial class UIManager : Node
 {
     private bool _transitioning;
+    /// <summary>A line the login screen shows once when the person was sent back to it (the session ended).</summary>
+    public static string? LoginNotice { get; set; }
+
+    public override void _Ready()
+    {
+        // the API ended the session (the refresh was refused): back to the login screen instead of every window saying "sign in"
+        if (GetNodeOrNull<SessionManager>("/root/SessionManager") is { } session) session.SessionExpired += () => { if (GetTree().CurrentScene?.SceneFilePath != "res://Scenes/Login.tscn") { LoginNotice = "Sua sessão terminou. Entre de novo."; ShowLogin(); } };
+    }
 
     public async void ShowLogin() => await ChangeScene("res://Scenes/Login.tscn");
     public async void ShowWorld() => await ChangeScene("res://Scenes/World.tscn");

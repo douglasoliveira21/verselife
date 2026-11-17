@@ -22,8 +22,8 @@ Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
+; admin: the installer adds the rule that lets the game through the Windows Firewall (it cannot be added without it)
+PrivilegesRequired=admin
 WizardStyle=modern
 
 [Files]
@@ -37,4 +37,11 @@ Name: "{autodesktop}\LifeVerse"; Filename: "{app}\LifeVerse.exe"; Tasks: desktop
 Name: "desktopicon"; Description: "Criar um atalho na área de trabalho"; Flags: unchecked
 
 [Run]
+; Windows Firewall: a rule for this program, so the system does not ask on the first run (an old rule of the same name goes first, so there are never two)
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""LifeVerse"" program=""{app}\LifeVerse.exe"""; Flags: runhidden; StatusMsg: "Liberando o LifeVerse no Firewall do Windows..."
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""LifeVerse"" dir=in action=allow program=""{app}\LifeVerse.exe"" enable=yes profile=any"; Flags: runhidden; StatusMsg: "Liberando o LifeVerse no Firewall do Windows..."
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""LifeVerse"" dir=out action=allow program=""{app}\LifeVerse.exe"" enable=yes profile=any"; Flags: runhidden
 Filename: "{app}\LifeVerse.exe"; Description: "Abrir o LifeVerse"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""LifeVerse"" program=""{app}\LifeVerse.exe"""; Flags: runhidden; RunOnceId: "LifeVerseFirewall"

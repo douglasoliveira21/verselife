@@ -112,7 +112,7 @@ public partial class LoginSmoke : Control
             var register = login.Panel.Register; Require(login.Panel.Mode == LoginMode.Register && register.Visible && !form.Visible, "Criar Conta opens the registration");
             register.User.Text = "bia"; register.Email.Text = "bia"; register.Password.Text = "fraca"; register.Confirm.Text = "fraca"; register.Submit(); await Frames(2);
             Require(register.Message.Text.Contains("e-mail válido") && register.Email.Invalid, "a bad e-mail is refused"); register.Email.Text = "bia@exemplo.com"; register.Submit();
-            Require(register.Message.Text.Contains("12 a 128"), "a weak password is refused with the rule"); register.Password.Text = "SenhaForte1234"; register.Confirm.Text = "outra"; register.Submit();
+            Require(register.Message.Text.Contains("6 a 128"), "a weak password is refused with the rule"); register.Password.Text = "SenhaForte1234"; register.Confirm.Text = "outra"; register.Submit();
             Require(register.Message.Text == "As senhas não são iguais.", "different passwords are refused");
             Require(!_requests.Any(r => r.Path == "/api/v1/auth/register"), "nothing was sent yet");
             register.User.Text = "ocupado"; register.Confirm.Text = "SenhaForte1234"; register.Submit(); await Until(() => !register.Create.Busy); await Frames(2);

@@ -8,7 +8,7 @@ namespace LifeVerse.Client.Scripts;
 public partial class DiscoveryPanel : Node3D
 {
     private PanelContainer _panel = null!; private Tree _islands = null!; private RichTextLabel _mini = null!; private HttpRequest _http = null!; private Label _status = null!;
-    public override void _Ready() { _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnResponse; Build(); }
+    public override void _Ready() { _http = new HttpRequest { Timeout = 30 }; AddChild(_http); _http.RequestCompleted += OnResponse; Build(); }
     public void Toggle() { _panel.Visible = !_panel.Visible; if (_panel.Visible) LoadIslands(); }
     private void Build() { _panel = new PanelContainer { Visible = false }; _panel.SetAnchorsPreset(Control.LayoutPreset.CenterRight); _panel.OffsetLeft = -480; _panel.OffsetTop = -270; _panel.OffsetRight = -18; _panel.OffsetBottom = 270; var box = new VBoxContainer(); _panel.AddChild(box); box.AddChild(new Label { Text = "MAPA GLOBAL · ILHAS INDEPENDENTES" }); _islands = new Tree { Columns = 3, HideRoot = true, CustomMinimumSize = new Vector2(430, 250) }; box.AddChild(_islands); var actions = new HBoxContainer(); var refresh = new Button { Text = "Atualizar" }; var favorite = new Button { Text = "Favoritar" }; actions.AddChild(refresh); actions.AddChild(favorite); box.AddChild(actions); _mini = new RichTextLabel { CustomMinimumSize = new Vector2(430, 80), Text = "Minimapa: aguardando posição…" }; box.AddChild(_mini); _status = new Label { Text = "Pronto" }; box.AddChild(_status); AddChild(_panel); refresh.Pressed += LoadIslands; favorite.Pressed += Favorite; }
     private void LoadIslands() { Request("/api/v1/discovery/islands?page=1&pageSize=50&sort=popular", Godot.HttpClient.Method.Get, null); }

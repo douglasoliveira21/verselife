@@ -8,7 +8,7 @@ namespace LifeVerse.Client.Scripts;
 public partial class LuaScriptEditor : Node3D
 {
     private PanelContainer _panel = null!; private TextEdit _editor = null!; private OptionButton _event = null!; private LineEdit _objectId = null!; private Label _console = null!; private HttpRequest _http = null!;
-    public override void _Ready() { _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnResponse; BuildUi(); }
+    public override void _Ready() { _http = new HttpRequest { Timeout = 30 }; AddChild(_http); _http.RequestCompleted += OnResponse; BuildUi(); }
     public void Toggle() { _panel.Visible = !_panel.Visible; }
     private void BuildUi()
     {

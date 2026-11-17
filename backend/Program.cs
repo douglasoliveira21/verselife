@@ -100,17 +100,23 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("announce", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub)?.Value ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // sign-up and sign-in: per address. 30 a minute (the default) lets a household, a school or a mobile operator that shares one address use the game; RateLimits:AuthPerMinute changes it
     options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-        _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 10,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0
-        }));
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = RateLimitSettings.AuthPerMinute(builder.Configuration), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    // keeping a session alive (the client trades its refresh token about every 14 minutes) and signing out: far more generous, a refresh token cannot be guessed
+    options.AddPolicy("auth-refresh", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = RateLimitSettings.RefreshPerMinute(builder.Configuration), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
 });
 
 var app = builder.Build();
+// Behind a reverse proxy every player would look like the proxy's address (and share one rate limit). With Network:ForwardedHeaders=true the address the proxy reports in X-Forwarded-For is used instead. Only turn it on when the API is reachable ONLY through a proxy that sets that header itself: otherwise anybody could write it.
+if (app.Configuration.GetValue<bool>("Network:ForwardedHeaders"))
+{
+    var forwarded = new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions { ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto, ForwardLimit = 1 };
+    forwarded.KnownIPNetworks.Clear(); forwarded.KnownProxies.Clear(); app.UseForwardedHeaders(forwarded);
+}
 LifeVerse.Api.Modules.Economy.EconomyFees.Configure(app.Configuration);
 app.UseExceptionHandler();
 app.Use(async (context, next) =>

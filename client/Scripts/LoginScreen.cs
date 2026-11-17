@@ -49,6 +49,7 @@ public partial class LoginScreen : Control
         _updates = GetNode<AppManager>("/root/AppManager").Updates; _updates.Checked += ShowUpdate; ShowUpdate();
         if (SavedLogin.Load() is { } saved) { Panel.Form.User.Text = saved.Login; Panel.Form.Password.Text = saved.Password; Panel.Form.Remember.ButtonPressed = true; Panel.Form.Enter.GrabFocus(); }
         else Panel.Form.User.Focus();
+        if (UIManager.LoginNotice is { } notice) { UIManager.LoginNotice = null; Panel.Form.Say(notice, true); }      // the session ended and the person was sent back here
         Intro();
     }
 
@@ -108,7 +109,7 @@ public partial class LoginScreen : Control
         "Username or email is already registered." => "Esse nome de usuário ou e-mail já está em uso.",
         "Authentication failed." => "Não foi possível entrar. Tente de novo.",
         "The server returned an invalid response." => "O servidor respondeu algo que não consegui entender.",
-        _ when message.Contains("password:", StringComparison.OrdinalIgnoreCase) => "A senha precisa ter de 12 a 128 caracteres, com maiúscula, minúscula e número.",
+        _ when message.Contains("password:", StringComparison.OrdinalIgnoreCase) => "A senha precisa ter de 6 a 128 caracteres, com maiúscula, minúscula e número.",
         _ => message
     };
 

@@ -8,7 +8,7 @@ namespace LifeVerse.Client.Scripts;
 public partial class MarketplacePanel : Node3D
 {
     private PanelContainer _panel = null!; private Tree _products = null!; private Label _wallet = null!; private Label _status = null!; private HttpRequest _http = null!; private Guid _selected;
-    public override void _Ready() { _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnResponse; Build(); }
+    public override void _Ready() { _http = new HttpRequest { Timeout = 30 }; AddChild(_http); _http.RequestCompleted += OnResponse; Build(); }
     public void Toggle() { _panel.Visible = !_panel.Visible; if (_panel.Visible) { EconomyRates.EnsureLoaded(this); LoadWallet(); LoadProducts(); } }
     /// <summary>The fee of the platform on the product selected, shown before buying (the seller pays it).</summary>
     public static string FeeNote(TreeItem item) { var price = item.GetMetadata(2).AsInt64(); return price > 0 ? "\n" + EconomyRates.FeeText(price, EconomyRates.MarketplaceBps) : string.Empty; }

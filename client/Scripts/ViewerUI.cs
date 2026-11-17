@@ -104,10 +104,10 @@ public partial class ViewerUI : CanvasLayer
         WirePeople();
         ApplyInterfaceMode();
         SeedInterfaceSettings(); ApplyChatFont();
-        _wallet = new HttpRequest(); AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
-        _islands = new HttpRequest(); AddChild(_islands); _islands.RequestCompleted += OnIslands;
+        _wallet = new HttpRequest { Timeout = 30 }; AddChild(_wallet); _wallet.RequestCompleted += OnWallet;
+        _islands = new HttpRequest { Timeout = 30 }; AddChild(_islands); _islands.RequestCompleted += OnIslands;
         RefreshIslands();
-        _start = new HttpRequest(); AddChild(_start); _start.RequestCompleted += OnStart;
+        _start = new HttpRequest { Timeout = 30 }; AddChild(_start); _start.RequestCompleted += OnStart;
         Settings.AutoQuality.Lowered += OnAutoQuality;
         _network.ChatReceived += OnChat; _network.ConnectionStateChanged += OnConnectionState; _network.TerrainEditRejected += OnTerrainRejected; _network.VehicleMessage += Toast;
         AppendSystem("Bem-vindo ao LifeVerse. Pressione Enter para conversar.");
@@ -525,7 +525,7 @@ public partial class ViewerUI : CanvasLayer
     private void GoToWelcome(bool fromStart = false)
     {
         var session = GetNode<SessionManager>("/root/SessionManager"); if (!session.IsAuthenticated) return;
-        var http = new HttpRequest(); AddChild(http);
+        var http = new HttpRequest { Timeout = 30 }; AddChild(http);
         http.RequestCompleted += (result, code, _, body) =>
         {
             http.QueueFree();
@@ -581,7 +581,12 @@ public partial class ViewerUI : CanvasLayer
         // already on an island: going to another one is a controlled trip (reserve, ticket, arrival), not a plain entry
         if (_network.IsAuthenticated) { if (islandId == _network.CurrentIslandId) { Toast("Você já está nessa ilha."); return; } if (!_teleport.Begin(islandId)) Toast("Você já está viajando para outra ilha."); return; }
         var error = _network.JoinIsland(islandId);
-        if (error != Error.Ok) _joinStatus.Text = $"Não foi possível entrar: {error}";
+        if (error != Error.Ok)
+        {
+            _joinStatus.Text = $"Não foi possível entrar: {error}";
+            // the loading screen covers everything while the entry runs: if the entry cannot even start, it has to say so, not wait for an answer that will never come
+            if (_entry.Manager.Active) _entry.LocateFailed(error == Error.Unauthorized ? "Não foi possível iniciar a entrada: a sessão não está pronta ou outra requisição ainda está em andamento. Tente de novo." : $"Não foi possível iniciar a entrada ({error}). Tente de novo.");
+        }
     }
 
     private void OnChatSubmit(string text)

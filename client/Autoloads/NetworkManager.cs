@@ -69,8 +69,8 @@ public partial class NetworkManager : Node
         _bridge = GetNode<NetworkBridge>("/root/NetworkBridge");
         Vehicles = new VehicleClient { Name = "Vehicles" }; AddChild(Vehicles);
         Voice = new VoiceChat { Name = "Voice" }; AddChild(Voice);
-        _http = new HttpRequest(); AddChild(_http); _http.RequestCompleted += OnEntryResponse;
-        _snapshotHttp = new HttpRequest(); AddChild(_snapshotHttp); _snapshotHttp.RequestCompleted += OnSnapshotResponse;
+        _http = new HttpRequest { Timeout = 30 }; AddChild(_http); _http.RequestCompleted += OnEntryResponse;
+        _snapshotHttp = new HttpRequest { Timeout = 90 }; AddChild(_snapshotHttp); _snapshotHttp.RequestCompleted += OnSnapshotResponse;
         Multiplayer.ConnectedToServer += OnConnected;
         Multiplayer.ConnectionFailed += () => HandleConnectionLost("connection_failed");
         Multiplayer.ServerDisconnected += () => HandleConnectionLost("server_disconnected");
@@ -168,6 +168,7 @@ public partial class NetworkManager : Node
         404 => "Ilha não encontrada (404). Confira o ID.",
         403 => "Você não tem permissão para entrar nesta ilha (403).",
         401 => "Sessão expirada (401). Entre novamente.",
+        0 => "O servidor não respondeu a tempo. Confira a sua internet e tente de novo.",
         409 => "Crie o avatar antes de entrar em uma ilha (409).",
         _ => $"Entrada recusada pela API ({code})."
     };
