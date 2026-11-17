@@ -112,10 +112,14 @@ public partial class AvatarRig
 
     private void AttachCustom(byte[] bytes, string hash)
     {
-        var document = new GltfDocument(); var state = new GltfState();
-        if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) { CustomBodyStatus = "O engine não conseguiu ler o corpo personalizado."; return; }
-        var scene = document.GenerateScene(state);
-        if (scene is not null) TintBuiltInOutfit(scene);
+        // the body that comes with the game is read once and every avatar gets its own copy of the scene, all of them sharing the same pictures (it has 2048 pixel skin maps: one set in memory, not one per person)
+        var scene = BuiltInBodies.IsBuiltIn(hash) && _detail == AvatarDetail.Full ? BuiltInBodies.NewManScene() : null;      // (a far, simplified copy is made on its own: simplifying changes the meshes)
+        if (scene is null)
+        {
+            var document = new GltfDocument(); var state = new GltfState();
+            if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) { CustomBodyStatus = "O engine não conseguiu ler o corpo personalizado."; return; }
+            scene = document.GenerateScene(state);
+        }
         if (scene is null || FindSkeleton(scene) is not { } skeleton) { scene?.QueueFree(); CustomBodyStatus = "O corpo personalizado não tem esqueleto."; return; }
 
         // far enough to be drawn reduced: the body keeps a fraction of its triangles (its geometry is simplified); close enough, it keeps all of them

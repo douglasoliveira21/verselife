@@ -32,26 +32,21 @@ public static class BuiltInBodies
         _man = Godot.FileAccess.GetFileAsBytes(ManPath); return _man.Length > 0 ? _man : (_man = null);
     }
 
-    /// <summary>The materials of the clothes and the hair of the body, named so that the game can colour them with the person\x27s choices.</summary>
-    public const string TopMaterial = "LV_Top", BottomMaterial = "LV_Bottom", ShoesMaterial = "LV_Shoes", HairMaterial = "LV_Hair";
-}
+    /// <summary>Whether this file hash is the one of a body that comes with the game.</summary>
+    public static bool IsBuiltIn(string hash) => _manHash is not null && string.Equals(hash, _manHash, StringComparison.OrdinalIgnoreCase);
 
-public sealed partial class AvatarRig
-{
-    /// <summary>The clothes and the hair of a body that comes with the game take the colours the person chose (their materials are named for it); any other body is left as its maker made it.</summary>
-    private void TintBuiltInOutfit(Node scene)
+    private static Node? _manPrototype;
+
+    /// <summary>A new copy of the scene of the man. The file is read once; every copy is made from that scene and shares its meshes, materials and pictures (nothing of the copy is changed in place by the game when it is drawn in full).</summary>
+    public static Node? NewManScene()
     {
-        if (_lastData is not { } data) return;
-        var colours = new Dictionary<string, Color>
+        if (_manPrototype is null || !GodotObject.IsInstanceValid(_manPrototype))
         {
-            [BuiltInBodies.TopMaterial] = Color.FromHtml(data.Tint("top", "#3AAFC1")), [BuiltInBodies.BottomMaterial] = Color.FromHtml(data.Tint("bottom", "#263B56")),
-            [BuiltInBodies.ShoesMaterial] = Color.FromHtml(data.Tint("shoes", "#E7E9EE")), [BuiltInBodies.HairMaterial] = Color.FromHtml(data.HairColor)
-        };
-        foreach (var mesh in Meshes(scene))
-            for (var surface = 0; surface < (mesh.Mesh?.GetSurfaceCount() ?? 0); surface++)
-                if (mesh.GetActiveMaterial(surface) is BaseMaterial3D material && colours.TryGetValue(material.ResourceName, out var colour))
-                    mesh.SetSurfaceOverrideMaterial(surface, (BaseMaterial3D)material.Duplicate() is var own ? Tinted(own, colour) : material);
+            if (ManBytes() is not { } bytes) return null;
+            var document = new GltfDocument(); var state = new GltfState();
+            if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) return null;
+            _manPrototype = document.GenerateScene(state);
+        }
+        return _manPrototype?.Duplicate();
     }
-
-    private static BaseMaterial3D Tinted(BaseMaterial3D material, Color colour) { material.AlbedoColor = colour; return material; }
 }

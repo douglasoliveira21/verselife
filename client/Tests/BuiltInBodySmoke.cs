@@ -27,15 +27,33 @@ public partial class BuiltInBodySmoke : Node
             var rig = GD.Load<PackedScene>("res://Scenes/AvatarRig.tscn").Instantiate<AvatarRig>(); root.AddChild(rig);
             fresh.DisplayName = "Novo"; rig.ApplyAppearance(fresh); await Seconds(2.5f);
             Require(rig.CustomBodyActive, $"the man is drawn as a full 3D body: {rig.CustomBodyStatus}");
-            Require(rig.CustomBodyTriangles is > 15_000 and < 60_000, $"with the triangles of the model and its clothes: {rig.CustomBodyTriangles}");
-            var tall = rig.EyeHeight; Require(tall is > 1.5f and < 1.95f, $"and a man\x27s height: eyes at {tall} m");
-            Require(Look(rig, BuiltInBodies.TopMaterial) == new Color("#3AAFC1") && Look(rig, BuiltInBodies.BottomMaterial) == new Color("#263B56") && Look(rig, BuiltInBodies.ShoesMaterial) == new Color("#E7E9EE"), "its clothes have the colours the character wears");
-            Require(Look(rig, BuiltInBodies.HairMaterial) == new Color(fresh.HairColor), "and its hair the colour of the character\x27s hair");
+            Require(rig.CustomBodyFileTriangles == 17_940, $"it is the whole model, not a reduced one: {rig.CustomBodyFileTriangles} triangles");
+            var tall = rig.EyeHeight; Require(tall is > 1.5f and < 1.95f, $"and a man's height: eyes at {tall} m");
 
-            // ---- the colours chosen are the colours drawn
-            var red = AvatarManager.CreateDefault(); red.DisplayName = "Novo"; red.HairColor = "#C1440E"; red.EquippedItems[0].TintColor = "#E03030";
-            rig.ApplyAppearance(red); await Seconds(2.0f);
-            Require(Look(rig, BuiltInBodies.TopMaterial) == new Color("#E03030") && Look(rig, BuiltInBodies.HairMaterial) == new Color("#C1440E"), "a new colour of the tee and of the hair is drawn");
+            // ---- exactly the model that was given: no clothes and no hair made up for it
+            var names = Meshes(rig.CustomBodyNode!).Select(m => m.Name.ToString()).ToList();
+            Require(names.Count == 5 && names.All(n => n.StartsWith("CC_") || n.StartsWith("Male_Brow")), $"only the parts of the model: {string.Join(", ", names)}");
+            Require(!Meshes(rig.CustomBodyNode!).Any(m => (m.Mesh?.GetSurfaceCount() ?? 0) > 0 && Enumerable.Range(0, m.Mesh!.GetSurfaceCount()).Any(s => m.GetActiveMaterial(s)?.ResourceName.StartsWith("LV_") == true)), "no material made for clothes or hair");
+
+            // ---- the skin keeps the full quality of the maps and is a solid, natural surface
+            var skin = Material(rig, "Ga_Skin_Body")!; Require(skin.AlbedoTexture is { } albedo && albedo.GetWidth() == 2048 && albedo.GetHeight() == 2048, $"the skin keeps its 2048 pixel colour map: {skin.AlbedoTexture?.GetWidth()}");
+            Require(skin.NormalEnabled && skin.NormalTexture is { } normal && normal.GetWidth() == 2048, "and its 2048 pixel normal map");
+            Require(skin.Transparency == BaseMaterial3D.TransparencyEnum.Disabled && skin.Roughness is > .4f and < .8f && skin.Metallic < .05f, $"it is a solid surface with a natural roughness, not wet plastic: {skin.Transparency} / {skin.Roughness}");
+            Require(Material(rig, "Ga_Skin_Head")!.AlbedoTexture!.GetWidth() == 2048 && Material(rig, "Ga_Skin_Leg")!.AlbedoTexture!.GetWidth() == 2048 && Material(rig, "Ga_Skin_Arm")!.AlbedoTexture!.GetWidth() == 2048, "head, arms and legs too");
+            Require(Material(rig, "Ga_Eyelash")!.Transparency == BaseMaterial3D.TransparencyEnum.AlphaScissor && Material(rig, "Male_Brow_Transparency")!.Transparency == BaseMaterial3D.TransparencyEnum.AlphaScissor, "the lashes and the brows are cut-outs (they sort properly)");
+
+            // ---- every avatar has its own copy of the man, and they share the pictures
+            var other = GD.Load<PackedScene>("res://Scenes/AvatarRig.tscn").Instantiate<AvatarRig>(); other.Position = new Vector3(2, 0, 0); root.AddChild(other);
+            other.ApplyAppearance(new AvatarAppearanceData { DisplayName = "Outro", BaseModel = AvatarRules.DefaultMan }); await Seconds(2.0f);
+            Require(other.CustomBodyActive && !ReferenceEquals(other.CustomBodyNode, rig.CustomBodyNode), $"a second person is the man too, with a body of their own: {other.CustomBodyStatus}");
+            Require(ReferenceEquals(Material(other, "Ga_Skin_Body")!.AlbedoTexture, skin.AlbedoTexture), "but the pictures are in memory once");
+            var handIdle = other.CustomBonePositionForTesting("hand_r")!.Value; other.SetMotionState(LifeVerse.Shared.Gameplay.AvatarMotionState.Wave, true); await Seconds(.8f);
+            Require(other.CustomBonePositionForTesting("hand_r")!.Value.DistanceTo(handIdle) > .1f, "the copy animates on its own");
+            var before = rig.CustomBodyTriangles; var far = GD.Load<PackedScene>("res://Scenes/AvatarRig.tscn").Instantiate<AvatarRig>(); far.Position = new Vector3(-2, 0, 0); root.AddChild(far);
+            far.SetDetail(AvatarDetail.Reduced); far.ApplyAppearance(new AvatarAppearanceData { DisplayName = "Longe", BaseModel = AvatarRules.DefaultMan }); await Seconds(3.0f);
+            Require(far.CustomBodyActive && far.CustomBodyTriangles < before, $"far away the man is simplified ({far.CustomBodyTriangles} of {before} triangles)");
+            Require(rig.CustomBodyTriangles == before && Material(rig, "Ga_Skin_Body")!.AlbedoTexture!.GetWidth() == 2048, "and that does not touch the others, which keep every triangle");
+            other.QueueFree(); far.QueueFree(); await Seconds(.3f);
 
             // ---- the other bodies are as before
             var old = new AvatarAppearanceData { DisplayName = "Antigo", BaseModel = "human_a" }; var standard = GD.Load<PackedScene>("res://Scenes/AvatarRig.tscn").Instantiate<AvatarRig>(); standard.Position = new Vector3(2, 0, 0); root.AddChild(standard);
@@ -56,12 +74,12 @@ public partial class BuiltInBodySmoke : Node
         }
     }
 
-    /// <summary>The colour of the material of that name on the body shown.</summary>
-    private static Color? Look(AvatarRig rig, string material)
+    /// <summary>The material of that name on the body shown.</summary>
+    private static BaseMaterial3D? Material(AvatarRig rig, string name)
     {
         foreach (var mesh in Meshes(rig.CustomBodyNode!))
             for (var s = 0; s < (mesh.Mesh?.GetSurfaceCount() ?? 0); s++)
-                if (mesh.GetActiveMaterial(s) is BaseMaterial3D m && m.ResourceName == material) return m.AlbedoColor;
+                if (mesh.GetActiveMaterial(s) is BaseMaterial3D m && m.ResourceName == name) return m;
         return null;
     }
 
