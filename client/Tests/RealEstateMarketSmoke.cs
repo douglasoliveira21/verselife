@@ -82,7 +82,7 @@ public partial class RealEstateMarketSmoke : Node3D
             Require(window.Data.Items.Single(l => l.Code == "L-02").Image == "asset:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" && window.Data.Items.Where(l => l.Code != "L-02").All(l => l.Image.Length == 0), "the picture of a parcel reaches its card; the others have none and use the island cover");
             Require(window.ListingsForTesting.Count == 9 && window.TotalTextForTesting == "Resultados (19 imóveis)", $"nine cards of the first page and the total of 19 (got {window.ListingsForTesting.Count}, {window.TotalTextForTesting})");
             Require(window.ListingsForTesting[0] == "L-01 — Terreno 1", "the newest comes first");
-            var badge = window.BadgeForTesting(0); Require(badge.Contains("Terreno Residencial") && badge.Contains("Ilha Tropical") && badge.Contains("À Venda") && badge.Contains("1.000 m²") && badge.Contains("2.000 prims") && badge.Contains("L$ 10.000"), $"a card shows type, island, state, area, prims and price (got {badge})");
+            var badge = window.BadgeForTesting(0); Require(badge.Contains("Terreno Residencial") && badge.Contains("Ilha Tropical") && badge.Contains("À Venda") && badge.Contains("1.000 m²") && badge.Contains("2.000 prims") && badge.Contains("VC$ 10.000"), $"a card shows type, island, state, area, prims and price (got {badge})");
 
             // --- pages -------------------------------------------------------------------------------------------------------------
             Require(string.Join(",", window.PagesForTesting) == "‹,1,2,3,›", $"three pages (got {string.Join(",", window.PagesForTesting)})");
@@ -131,7 +131,7 @@ public partial class RealEstateMarketSmoke : Node3D
             // --- islands ----------------------------------------------------------------------------------------------------------------------
             await window.ClickTabForTesting("ilhas_venda"); await Frames(2);
             Require(server.LastQuery!.Contains("type=island") && server.LastQuery.Contains("offer=sale") && window.ListingsForTesting.SequenceEqual(["Ilha Dourada"]), $"the island sale tab asks for islands for sale ({server.LastQuery}, {string.Join(",", window.ListingsForTesting)})");
-            var islandCard = window.BadgeForTesting(0); Require(islandCard.Contains("Ilha Full Region") && islandCard.Contains("À Venda") && islandCard.Contains("65.536 m²") && islandCard.Contains("L$ 500.000"), $"an island card shows its kind, state, area and price (got {islandCard})");
+            var islandCard = window.BadgeForTesting(0); Require(islandCard.Contains("Ilha Full Region") && islandCard.Contains("À Venda") && islandCard.Contains("65.536 m²") && islandCard.Contains("VC$ 500.000"), $"an island card shows its kind, state, area and price (got {islandCard})");
             Require(window.PrimaryForTesting(0) == ("Comprar", false) && window.VisitEnabledForTesting(0), "an island can be bought and visited");
             await window.ClickTabForTesting("ilhas_aluguel"); await Frames(2);
             Require(server.LastQuery!.Contains("type=island") && server.LastQuery.Contains("offer=rent") && window.ListingsForTesting.SequenceEqual(["Ilha Pequena"]) && window.BadgeForTesting(0).Contains("Ilha Homestead") && window.BadgeForTesting(0).Contains("/ mensal") && window.PrimaryForTesting(0) == ("Alugar", false), "the island rent tab lists the islands for rent");

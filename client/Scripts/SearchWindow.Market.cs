@@ -145,7 +145,7 @@ public partial class SearchWindow
                 var size = asset.ValueKind == JsonValueKind.Object && asset.TryGetProperty("byteSize", out var bytes) && bytes.TryGetInt64(out var n) ? $" · {Size(n)}" : string.Empty;
                 var lines = new List<string>
                 {
-                    "Preço: " + (_itemPrice > 0 ? $"L$ {_itemPrice:N0}" : "gratuito"),
+                    "Preço: " + (_itemPrice > 0 ? $"VC$ {_itemPrice:N0}" : "gratuito"),
                     creator.ValueKind == JsonValueKind.Object ? "Criador(a): " + Str(creator, "displayName") : string.Empty,
                     seller.ValueKind == JsonValueKind.Object ? "Vendedor(a): " + Str(seller, "name") + (_sellerKind == "group" ? " (grupo)" : string.Empty) : string.Empty,
                     "Você poderá: " + _itemRights + ".", "E passar adiante: " + RightsWords(next) + ".",
@@ -165,7 +165,7 @@ public partial class SearchWindow
     private void UpdateItemButtons(string state)
     {
         (_buy.Text, _buy.Disabled) = _buying ? ("Comprando…", true) : state == "own" ? ("Este item é seu", true) : state == "owned" ? ("Você já pegou este item", true) : state == "gone" ? ("Item indisponível", true)
-            : _canBuy ? (_itemPrice > 0 ? $"Comprar por L$ {_itemPrice:N0}" : "Pegar grátis", false) : ("Comprar", true);
+            : _canBuy ? (_itemPrice > 0 ? $"Comprar por VC$ {_itemPrice:N0}" : "Pegar grátis", false) : ("Comprar", true);
         _creatorButton.Visible = _creatorId != Guid.Empty; _sellerButton.Visible = _sellerId != Guid.Empty && _sellerId != _creatorId; _visitShop.Visible = _shopId != Guid.Empty;
     }
 
@@ -182,8 +182,8 @@ public partial class SearchWindow
         if (!_canBuy || _buying || Selected is not { Kind: SearchKinds.Product } hit) return;
         void Proceed(long? balance)
         {
-            if (balance is { } have && have < _itemPrice) { _note.Text = $"Saldo insuficiente: você tem L$ {have:N0} e o item custa L$ {_itemPrice:N0}."; return; }
-            var price = _itemPrice > 0 ? $"L$ {_itemPrice:N0}, debitados agora da sua carteira" : "grátis"; var id = hit.Id; var name = _itemName;
+            if (balance is { } have && have < _itemPrice) { _note.Text = $"Saldo insuficiente: você tem VC$ {have:N0} e o item custa VC$ {_itemPrice:N0}."; return; }
+            var price = _itemPrice > 0 ? $"VC$ {_itemPrice:N0}, debitados agora da sua carteira" : "grátis"; var id = hit.Id; var name = _itemName;
             AskYes(_itemPrice > 0 ? "Confirmar compra" : "Pegar item", $"{name}\nValor: {price}.\nVocê poderá: {_itemRights}.\nA compra não pode ser desfeita por aqui.", _itemPrice > 0 ? "Comprar" : "Pegar", () => Purchase(id, name));
         }
         if (Actions is { } people) people.Balance(Proceed); else Proceed(null);
@@ -226,7 +226,7 @@ public partial class SearchWindow
                 lines.Add(physical ? "Loja física" + (s.TryGetProperty("island", out var island) && island.ValueKind == JsonValueKind.Object ? " em " + Str(island, "name") : string.Empty) + "." : "Loja virtual: sem endereço no mundo.");
                 lines.Add(string.Join(" · ", new[] { Str(s, "categoryLabel") }.Where(t => t.Length > 0)));
                 lines.Add(count == 0 ? "Nenhum produto à venda agora." : $"{count} {(count == 1 ? "produto publicado" : "produtos publicados")}.");
-                if (s.TryGetProperty("featured", out var featured) && featured.ValueKind == JsonValueKind.Array && featured.GetArrayLength() > 0) { lines.Add("Em destaque:"); foreach (var f in featured.EnumerateArray()) lines.Add("• " + Str(f, "name") + " — " + (Long(f, "priceCoins") > 0 ? $"L$ {Long(f, "priceCoins"):N0}" : "gratuito")); }
+                if (s.TryGetProperty("featured", out var featured) && featured.ValueKind == JsonValueKind.Array && featured.GetArrayLength() > 0) { lines.Add("Em destaque:"); foreach (var f in featured.EnumerateArray()) lines.Add("• " + Str(f, "name") + " — " + (Long(f, "priceCoins") > 0 ? $"VC$ {Long(f, "priceCoins"):N0}" : "gratuito")); }
                 _extra.Text = string.Join("\n", lines.Where(l => l.Length > 0)); _viewProducts.Disabled = count == 0; _editStore.Visible = Flag(s, "isOwner") && !physical; _storeOwner.Visible = _storeOwnerId != Guid.Empty;
             }
             catch (JsonException) { _extra.Text = "Resposta inesperada do servidor."; }

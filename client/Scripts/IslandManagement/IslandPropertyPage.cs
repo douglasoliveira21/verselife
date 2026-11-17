@@ -179,7 +179,7 @@ public partial class IslandPropertyPage : ScrollContainer
     private void OpenSale()
     {
         var content = IslandUi.Column(8); content.AddChild(IslandUi.Text("A ilha inteira vai à venda, com os terrenos e os objetos que ainda são seus. Quem comprar passa a ser o dono dela. Contratos de aluguel em andamento continuam.", 14, IslandUi.TextSecondary, false, true));
-        var price = IslandUi.Number(1, 1_000_000_000, 1, " L$"); price.Value = 100000; content.AddChild(price);
+        var price = IslandUi.Number(1, 1_000_000_000, 1, " VC$"); price.Value = 100000; content.AddChild(price);
         var objects = new CheckBox { Text = "Incluir os meus objetos na venda (senão voltam para o meu inventário)", ButtonPressed = true, FocusMode = FocusModeEnum.None }; content.AddChild(objects);
         var description = IslandUi.Input("Descrição do anúncio (opcional)", 200); content.AddChild(description);
         Ask("Colocar ilha à venda", content, async () => await Do(_api!.OfferSale(_island, (long)price.Value, objects.ButtonPressed, description.Text.Trim()), "Ilha anunciada à venda."), "Anunciar");
@@ -188,11 +188,11 @@ public partial class IslandPropertyPage : ScrollContainer
     private void OpenRent()
     {
         var content = IslandUi.Column(8); content.AddChild(IslandUi.Text("Quem alugar cuida da ilha durante o contrato, mas ela continua sua.", 14, IslandUi.TextSecondary, false, true));
-        var price = IslandUi.Number(1, 1_000_000_000, 1, " L$ por período"); price.Value = 5000; content.AddChild(price);
+        var price = IslandUi.Number(1, 1_000_000_000, 1, " VC$ por período"); price.Value = 5000; content.AddChild(price);
         var period = IslandUi.Dropdown([("7 dias", "7"), ("14 dias", "14"), ("30 dias", "30")]); IslandUi.Select(period, "30"); content.AddChild(period);
         var min = IslandUi.Number(1, 52, 1, " período(s) no mínimo"); min.Value = 1; content.AddChild(min);
         var max = IslandUi.Number(1, 52, 1, " período(s) no máximo"); max.Value = 6; content.AddChild(max);
-        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " L$ de caução"); content.AddChild(deposit);
+        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " VC$ de caução"); content.AddChild(deposit);
         var grace = IslandUi.Number(0, 30, 1, " dia(s) de tolerância"); grace.Value = 3; content.AddChild(grace);
         var autoRenew = new CheckBox { Text = "Deixar quem aluga renovar sozinho a cada vencimento", FocusMode = FocusModeEnum.None, TooltipText = "Quem aluga escolhe; se escolher, um período a mais é cobrado da carteira dele no vencimento." }; content.AddChild(autoRenew);
         Ask("Alugar ilha", content, async () => await Do(_api!.OfferRent(_island, (long)price.Value, int.Parse(IslandUi.IdOf(period)), (int)min.Value, (int)max.Value, (long)deposit.Value, (int)grace.Value, autoRenew.ButtonPressed), "Ilha oferecida para aluguel."), "Anunciar");

@@ -22,7 +22,7 @@ public partial class LandManager
     private CheckBox _rentAuto = null!;
     private static readonly int[] PeriodChoices = [7, 14, 30];
 
-    public static string Coins(long value) => $"L$ {value.ToString("N0", Pt)}";
+    public static string Coins(long value) => $"VC$ {value.ToString("N0", Pt)}";
 
     // ---- the tab ---------------------------------------------------------------------------------------------
 
@@ -38,7 +38,7 @@ public partial class LandManager
         // the owner: sell
         _ownerSale = Section(page, "Vender este terreno");
         var saleRow = new HBoxContainer(); saleRow.AddThemeConstantOverride("separation", 10); _ownerSale.AddChild(saleRow);
-        saleRow.AddChild(Caption("Preço (L$)")); _salePrice = Field("1000"); saleRow.AddChild(_salePrice);
+        saleRow.AddChild(Caption("Preço (VC$)")); _salePrice = Field("1000"); saleRow.AddChild(_salePrice);
         _saleObjects = new CheckBox { Text = " Incluir os meus objetos", ButtonPressed = true, TooltipText = "Os objetos que são seus dentro do terreno passam para quem comprar" }; _saleObjects.AddThemeFontSizeOverride("font_size", 17); _ownerSale.AddChild(_saleObjects);
         var saleButtons = new HBoxContainer(); saleButtons.AddThemeConstantOverride("separation", 8); _ownerSale.AddChild(saleButtons);
         saleButtons.AddChild(Act("Colocar à venda", UiStyle.ButtonKind.Primary, OfferSale)); _cancelSale = Act("Retirar da venda", UiStyle.ButtonKind.Secondary, CancelSale); saleButtons.AddChild(_cancelSale);
@@ -46,11 +46,11 @@ public partial class LandManager
         // the owner: rent out
         _ownerRent = Section(page, "Alugar este terreno para outras pessoas");
         var rentGrid = new GridContainer { Columns = 2 }; rentGrid.AddThemeConstantOverride("h_separation", 10); rentGrid.AddThemeConstantOverride("v_separation", 6); _ownerRent.AddChild(rentGrid);
-        rentGrid.AddChild(Caption("Valor por período (L$)")); _rentPrice = Field("100"); rentGrid.AddChild(_rentPrice);
+        rentGrid.AddChild(Caption("Valor por período (VC$)")); _rentPrice = Field("100"); rentGrid.AddChild(_rentPrice);
         rentGrid.AddChild(Caption("Período")); _rentDays = new OptionButton { CustomMinimumSize = new Vector2(0, 40), FocusMode = Control.FocusModeEnum.None, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill }; foreach (var days in PeriodChoices) _rentDays.AddItem($"{days} dias"); _rentDays.Select(2); rentGrid.AddChild(_rentDays);
         rentGrid.AddChild(Caption("Mínimo de períodos")); _rentMin = Field("1"); rentGrid.AddChild(_rentMin);
         rentGrid.AddChild(Caption("Máximo de períodos")); _rentMax = Field("12"); rentGrid.AddChild(_rentMax);
-        rentGrid.AddChild(Caption("Caução (L$)")); _rentDeposit = Field("0"); rentGrid.AddChild(_rentDeposit);
+        rentGrid.AddChild(Caption("Caução (VC$)")); _rentDeposit = Field("0"); rentGrid.AddChild(_rentDeposit);
         var rentButtons = new HBoxContainer(); rentButtons.AddThemeConstantOverride("separation", 8); _ownerRent.AddChild(rentButtons);
         rentButtons.AddChild(Act("Oferecer para aluguel", UiStyle.ButtonKind.Primary, OfferRent)); _cancelRent = Act("Retirar oferta", UiStyle.ButtonKind.Secondary, CancelRent); rentButtons.AddChild(_cancelRent);
 
@@ -166,7 +166,7 @@ public partial class LandManager
     private void OfferSale()
     {
         if (_tradeParcel is not { Mine: true } parcel) return;
-        if (!TryMoney(_salePrice.Text, out var price)) { Say("Digite o preço em L$ (um número maior que zero)."); return; }
+        if (!TryMoney(_salePrice.Text, out var price)) { Say("Digite o preço em VC$ (um número maior que zero)."); return; }
         Mutate(Godot.HttpClient.Method.Post, $"/parcels/{parcel.Id}/sale", new { price, description = string.Empty, includeObjects = _saleObjects.ButtonPressed }, $"“{parcel.Name}” colocado à venda por {Coins(price)}.");
     }
 
@@ -175,7 +175,7 @@ public partial class LandManager
     private void OfferRent()
     {
         if (_tradeParcel is not { Mine: true } parcel) return;
-        if (!TryMoney(_rentPrice.Text, out var price)) { Say("Digite o valor do aluguel em L$ (um número maior que zero)."); return; }
+        if (!TryMoney(_rentPrice.Text, out var price)) { Say("Digite o valor do aluguel em VC$ (um número maior que zero)."); return; }
         if (!int.TryParse(_rentMin.Text.Trim(), out var min) || !int.TryParse(_rentMax.Text.Trim(), out var max) || min < 1 || max < min) { Say("Mínimo e máximo de períodos: números inteiros, com o máximo igual ou maior que o mínimo."); return; }
         if (!long.TryParse(string.IsNullOrWhiteSpace(_rentDeposit.Text) ? "0" : _rentDeposit.Text.Trim(), out var deposit) || deposit < 0) { Say("A caução deve ser zero ou mais."); return; }
         Mutate(Godot.HttpClient.Method.Post, $"/parcels/{parcel.Id}/rental-offer", new { pricePerPeriod = price, periodDays = PeriodChoices[Mathf.Clamp(_rentDays.Selected, 0, PeriodChoices.Length - 1)], minPeriods = min, maxPeriods = max, depositCoins = deposit, graceDays = 3, autoRenewAllowed = true }, $"“{parcel.Name}” oferecido para aluguel.");

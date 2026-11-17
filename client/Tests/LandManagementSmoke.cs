@@ -125,7 +125,7 @@ public partial class LandManagementSmoke : Node3D
             Require(window.NameForTesting == "Ilha Tropical" && window.AreaLineForTesting.Contains("65.536 m²"), $"the header shows the island and its area (got {window.AreaLineForTesting})");
             Require(window.StatsForTesting.Contains("Parcelas: 5") && window.StatsForTesting.Contains("Vendidas: 1") && window.StatsForTesting.Contains("Alugadas: 1") && window.StatsForTesting.Contains("Disponíveis: 1"), $"the header counts the parcels (got {window.StatsForTesting})");
             var kpi = window.KpiValuesForTesting;
-            Require(kpi[0] == "65.536 m²" && kpi[3] == "1" && kpi[4] == "1" && kpi[5] == "L$ 12.000", $"the six indicators come from the server ({string.Join("|", kpi)})");
+            Require(kpi[0] == "65.536 m²" && kpi[3] == "1" && kpi[4] == "1" && kpi[5] == "VC$ 12.000", $"the six indicators come from the server ({string.Join("|", kpi)})");
             Require(kpi[1] == "4.480 m²", $"the area marked into parcels is the sum of the parcels ({kpi[1]})");
             Require(window.KpiVisibleForTesting && window.Map.ParcelCountForTesting == 5, "the overview shows the indicators and the map has the real parcels");
 

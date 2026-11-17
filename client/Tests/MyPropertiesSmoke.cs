@@ -92,7 +92,7 @@ public partial class MyPropertiesSmoke : Node3D
             await window.OpenAsync(); await Frames(3);
             Require(window.IsOpen && window.TabForTesting == "ilhas", "the window opens on the islands");
             Require(string.Join("|", window.TabTextsForTesting) == "Minhas Ilhas|Meus Terrenos|Meus Aluguéis|Propriedades Alugadas|Meus Anúncios|Pagamentos|Contratos", $"the seven tabs (got {string.Join("|", window.TabTextsForTesting)})");
-            var kpi = window.KpiValuesForTesting; Require(string.Join("|", kpi) == "5|4|1|L$ 3.000|1", $"the summary is the server's: total, in use, rented out, monthly revenue, expiring (got {string.Join("|", kpi)})");
+            var kpi = window.KpiValuesForTesting; Require(string.Join("|", kpi) == "5|4|1|VC$ 3.000|1", $"the summary is the server's: total, in use, rented out, monthly revenue, expiring (got {string.Join("|", kpi)})");
             Require(string.Join("|", window.KpiTitlesForTesting) == "Imóveis Totais|Em Uso|Alugados|Receita Mensal|Próximos Vencimentos", "the five indicators");
 
             // --- islands --------------------------------------------------------------------------------------------------------
@@ -105,7 +105,7 @@ public partial class MyPropertiesSmoke : Node3D
             // --- offering the island itself ---------------------------------------------------------------------------------------------
             var theIsland = window.Data.Islands[0];
             Require(await window.OfferIslandSaleForTesting(theIsland, 400000), "offering the island for sale works"); await Frames(3);
-            Require(server.IslandSale == 400000 && window.TextForTesting.Contains("À venda por L$ 400.000") && window.HasButtonForTesting("Retirar anúncio") && window.Data.Listings.Any(l => l.Target == "island" && l.Kind == "sale"), "the island shows its offer and a withdraw button, and the offer is listed");
+            Require(server.IslandSale == 400000 && window.TextForTesting.Contains("À venda por VC$ 400.000") && window.HasButtonForTesting("Retirar anúncio") && window.Data.Listings.Any(l => l.Target == "island" && l.Kind == "sale"), "the island shows its offer and a withdraw button, and the offer is listed");
             window.SelectTabForTesting("anuncios"); await Frames(2); Require(window.RowsForTesting("anuncios") == 2 && window.TextForTesting.Contains("Ilha Tropical"), "the island offer is in the offers tab");
             Require(await window.WithdrawForTesting(window.Data.Listings.First(l => l.Target == "island")), "withdrawing the island offer works"); await Frames(3); Require(server.IslandSale is null, "the island is off the market");
             Require(await window.OfferIslandRentForTesting(window.Data.Islands[0], 9000, 30), "renting the island out works"); await Frames(3); Require(server.IslandRent == 9000, "the island rent offer is saved");
@@ -115,7 +115,7 @@ public partial class MyPropertiesSmoke : Node3D
             // --- parcels ---------------------------------------------------------------------------------------------------------
             Require(window.Data.Parcels.Single(p => p.Code == "L-01").Image.StartsWith("asset:", StringComparison.Ordinal) && window.Data.Parcels.Where(p => p.Code != "L-01").All(p => p.Image.Length == 0), "the picture of a parcel comes with it");
             window.SelectTabForTesting("terrenos"); await Frames(2); text = window.TextForTesting;
-            Require(window.RowsForTesting("terrenos") == 3 && text.Contains("Meus Terrenos (3)") && text.Contains("L-01 — Residencial Norte") && text.Contains("À venda por L$ 120.000") && text.Contains("Alugado para Carla"), $"the parcels with their offers and tenant (got {text})");
+            Require(window.RowsForTesting("terrenos") == 3 && text.Contains("Meus Terrenos (3)") && text.Contains("L-01 — Residencial Norte") && text.Contains("À venda por VC$ 120.000") && text.Contains("Alugado para Carla"), $"the parcels with their offers and tenant (got {text})");
             window.PressForTesting("Gerenciar"); Require(manageLand == IslandA, "Gerenciar opens the land management of that island");
 
             // --- offering and withdrawing --------------------------------------------------------------------------------------------
@@ -131,7 +131,7 @@ public partial class MyPropertiesSmoke : Node3D
 
             // --- rentals out -----------------------------------------------------------------------------------------------------------
             window.SelectTabForTesting("alugueis"); await Frames(2); Require(window.RowsForTesting("alugueis") == 1, "one parcel rented out");
-            Require(window.TextForTesting.Contains("Carla") && window.TextForTesting.Contains("L$ 3.000"), "the tenant and the value are shown");
+            Require(window.TextForTesting.Contains("Carla") && window.TextForTesting.Contains("VC$ 3.000"), "the tenant and the value are shown");
             var landlord = window.Data.Contracts.First(c => c.Role == "landlord");
             Require(await window.EndForTesting(landlord), "an expired contract can be ended"); await Frames(3); Require(server.Mine[2].Tenant is null && window.Data.Summary.RentedOut == 0, "the parcel is free again");
 
@@ -146,13 +146,13 @@ public partial class MyPropertiesSmoke : Node3D
             Require(await window.EndForTesting(tenant), "leaving works"); await Frames(3); Require(window.RowsForTesting("alugadas") == 0 && window.ToastForTesting.Contains("saiu"), "the rental is gone from the list");
 
             // --- payments -----------------------------------------------------------------------------------------------------------------
-            window.SelectTabForTesting("pagamentos"); await Frames(2); Require(window.RowsForTesting("pagamentos") == 3 && window.TextForTesting.Contains("Recebido: L$ 63.000") && window.TextForTesting.Contains("Pago: L$ 12.500"), $"payments and totals (got {window.TextForTesting})");
+            window.SelectTabForTesting("pagamentos"); await Frames(2); Require(window.RowsForTesting("pagamentos") == 3 && window.TextForTesting.Contains("Recebido: VC$ 63.000") && window.TextForTesting.Contains("Pago: VC$ 12.500"), $"payments and totals (got {window.TextForTesting})");
             window.SetPaymentFilterForTesting("sell"); await Frames(2); Require(window.RowsForTesting("pagamentos") == 1, "filter: sales");
             window.SetPaymentFilterForTesting("rent_out"); await Frames(2); Require(window.RowsForTesting("pagamentos") == 1, "filter: rent paid");
             window.SetPaymentFilterForTesting("rent_in"); await Frames(2); Require(window.RowsForTesting("pagamentos") == 1, "filter: rent received");
             window.SetPaymentFilterForTesting("buy"); await Frames(2); Require(window.RowsForTesting("pagamentos") == 0, "filter: purchases");
             window.SetPaymentFilterForTesting("all"); await Frames(2);
-            var receipt = window.ReceiptForTesting(window.Data.Payments[0]); Require(receipt.StartsWith("RECIBO ", StringComparison.Ordinal) && receipt.Contains("L$ 60.000") && receipt.Contains("Casa do Bruno") && receipt.Contains("Taxas: nenhuma"), $"the receipt carries the payment (got {receipt})");
+            var receipt = window.ReceiptForTesting(window.Data.Payments[0]); Require(receipt.StartsWith("RECIBO ", StringComparison.Ordinal) && receipt.Contains("VC$ 60.000") && receipt.Contains("Casa do Bruno") && receipt.Contains("Taxas: nenhuma"), $"the receipt carries the payment (got {receipt})");
 
             // --- contracts -----------------------------------------------------------------------------------------------------------------
             server.TenantRentalLive = true; await window.LoadAsync(); await Frames(2);

@@ -478,11 +478,11 @@ public partial class MyPropertiesWindow : Node
     {
         var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"{p.Title} · {p.Island} · {LandMath.Area(p.Area)}", 15, IslandUi.TextPrimary, true, true));
         var kind = IslandUi.Dropdown([("Vender", "sale"), ("Alugar", "rent")]); if (editing is not null) IslandUi.Select(kind, editing.Kind); content.AddChild(kind);
-        var price = IslandUi.Number(1, 1_000_000_000, 1, " L$"); price.Value = editing?.Price ?? (p.SalePrice ?? p.RentPrice ?? 1000); content.AddChild(price);
+        var price = IslandUi.Number(1, 1_000_000_000, 1, " VC$"); price.Value = editing?.Price ?? (p.SalePrice ?? p.RentPrice ?? 1000); content.AddChild(price);
         var period = IslandUi.Dropdown([("7 dias", "7"), ("14 dias", "14"), ("30 dias", "30")]); IslandUi.Select(period, editing is { PeriodDays: > 0 } ? editing.PeriodDays.ToString(Pt) : "30"); content.AddChild(period);
-        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " L$ de caução"); content.AddChild(deposit);
+        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " VC$ de caução"); content.AddChild(deposit);
         var objects = new CheckBox { Text = "Incluir os meus objetos na venda", ButtonPressed = true, FocusMode = Control.FocusModeEnum.None }; content.AddChild(objects);
-        void Sync() { var rent = IslandUi.IdOf(kind) == "rent"; period.Visible = rent; deposit.Visible = rent; objects.Visible = !rent; price.Suffix = rent ? " L$ por período" : " L$"; }
+        void Sync() { var rent = IslandUi.IdOf(kind) == "rent"; period.Visible = rent; deposit.Visible = rent; objects.Visible = !rent; price.Suffix = rent ? " VC$ por período" : " VC$"; }
         kind.ItemSelected += index => Sync(); Sync();
         Ask(editing is null ? "Anunciar terreno" : "Editar anúncio", content, async () =>
         {
@@ -497,13 +497,13 @@ public partial class MyPropertiesWindow : Node
     {
         var content = IslandUi.Column(8); content.AddChild(IslandUi.Text($"{i.Name} · {(i.Region == "homestead" ? "Homestead" : "Full Region")}", 15, IslandUi.TextPrimary, true, true));
         var kind = IslandUi.Dropdown([("Vender", "sale"), ("Alugar", "rent")]); if (editing is not null) IslandUi.Select(kind, editing.Kind); content.AddChild(kind);
-        var price = IslandUi.Number(1, 1_000_000_000, 1, " L$"); price.Value = editing?.Price ?? (i.SalePrice ?? i.RentPrice ?? 100000); content.AddChild(price);
+        var price = IslandUi.Number(1, 1_000_000_000, 1, " VC$"); price.Value = editing?.Price ?? (i.SalePrice ?? i.RentPrice ?? 100000); content.AddChild(price);
         var period = IslandUi.Dropdown([("7 dias", "7"), ("14 dias", "14"), ("30 dias", "30")]); IslandUi.Select(period, editing is { PeriodDays: > 0 } ? editing.PeriodDays.ToString(Pt) : "30"); content.AddChild(period);
-        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " L$ de caução"); content.AddChild(deposit);
+        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " VC$ de caução"); content.AddChild(deposit);
         var objects = new CheckBox { Text = "Incluir os meus objetos na venda", ButtonPressed = true, FocusMode = Control.FocusModeEnum.None }; content.AddChild(objects);
         var islandAuto = new CheckBox { Text = "Deixar quem aluga renovar sozinho a cada vencimento", FocusMode = Control.FocusModeEnum.None }; content.AddChild(islandAuto);
         var note = IslandUi.Text("", 13, IslandUi.TextMuted, false, true); content.AddChild(note);
-        void Sync() { var rent = IslandUi.IdOf(kind) == "rent"; period.Visible = rent; deposit.Visible = rent; islandAuto.Visible = rent; objects.Visible = !rent; price.Suffix = rent ? " L$ por período" : " L$"; note.Text = rent ? "Quem alugar cuida da ilha durante o contrato, mas ela continua sua." : "Quem comprar passa a ser o dono da ilha inteira, com os terrenos e objetos que ainda são seus."; }
+        void Sync() { var rent = IslandUi.IdOf(kind) == "rent"; period.Visible = rent; deposit.Visible = rent; islandAuto.Visible = rent; objects.Visible = !rent; price.Suffix = rent ? " VC$ por período" : " VC$"; note.Text = rent ? "Quem alugar cuida da ilha durante o contrato, mas ela continua sua." : "Quem comprar passa a ser o dono da ilha inteira, com os terrenos e objetos que ainda são seus."; }
         kind.ItemSelected += index => Sync(); Sync();
         Ask(editing is null ? "Anunciar ilha" : "Editar anúncio", content, async () =>
         {

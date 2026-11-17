@@ -91,7 +91,7 @@ public sealed partial class GroupDiscoverWindow : Node
         var text = IslandUi.Column(2); text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; row.AddChild(text);
         var title = new Label { Text = tag.Length > 0 ? $"{Str(group, "name")}  [{tag}]" : Str(group, "name") }; title.AddThemeFontSizeOverride("font_size", 15); title.AddThemeFontOverride("font", UiStyle.Medium); text.AddChild(title);
         var category = GroupCreateWindow.CategoryOptions.FirstOrDefault(c => c.Id == Str(group, "category")).Text ?? Str(group, "category");
-        var entry = policy switch { "open" => fee > 0 ? $"Entrada livre · L$ {fee.ToString("N0", Pt)}" : "Entrada livre · grátis", "invite" => "Só por convite", _ => "Por aprovação" };
+        var entry = policy switch { "open" => fee > 0 ? $"Entrada livre · VC$ {fee.ToString("N0", Pt)}" : "Entrada livre · grátis", "invite" => "Só por convite", _ => "Por aprovação" };
         var meta = new Label { Text = $"{category} · {Long(group, "members")} membro(s) · {entry}", AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(240, 0) }; meta.AddThemeFontSizeOverride("font_size", 12); meta.AddThemeColorOverride("font_color", UiStyle.TextMuted); text.AddChild(meta);
         var about = Str(group, "description"); if (about.Length > 0) { var d = new Label { Text = about.Length > 140 ? about[..140] + "…" : about, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(240, 0) }; d.AddThemeFontSizeOverride("font_size", 12); text.AddChild(d); }
         var view = IslandUi.Action(Flag(group, "isMember") ? "Abrir" : "Ver grupo", null, IslandUi.Kind.Secondary, 34, 16); view.Pressed += () => OpenGroup?.Invoke(id); row.AddChild(view);

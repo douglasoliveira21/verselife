@@ -110,14 +110,14 @@ public partial class ParcelInfoSmoke : Node3D
 
             // --- Propriedade -----------------------------------------------------------------------------------------------------------
             window.SelectTabForTesting("propriedade"); await Frames(2); text = window.TextForTesting;
-            Require(text.Contains("AliceVerse") && text.Contains("Pessoa") && text.Contains("Nenhum") && text.Contains("Sim: o dono pode vender") && text.Contains("Venda · de Bruno · para AliceVerse · L$ 60.000") && text.Contains("Terreno criado"), $"ownership and the history of the title (got {text})");
+            Require(text.Contains("AliceVerse") && text.Contains("Pessoa") && text.Contains("Nenhum") && text.Contains("Sim: o dono pode vender") && text.Contains("Venda · de Bruno · para AliceVerse · VC$ 60.000") && text.Contains("Terreno criado"), $"ownership and the history of the title (got {text})");
 
             // --- Venda e Aluguel: the owner --------------------------------------------------------------------------------------------
             window.SelectTabForTesting("venda"); await Frames(2); Require(window.HasButtonForTesting("Colocar à Venda") && window.HasButtonForTesting("Habilitar Aluguel"), "the owner can sell or rent out");
             Require(await window.SellForTesting(90000, true), "selling works"); await Frames(2);
-            Require(server.Sale == 90000 && window.TextForTesting.Contains("L$ 90.000") && window.HasButtonForTesting("Retirar da Venda") && window.HasButtonForTesting("Editar Preço") && !window.ButtonEnabledForTesting("Habilitar Aluguel"), "the offer shows and the rent button waits");
+            Require(server.Sale == 90000 && window.TextForTesting.Contains("VC$ 90.000") && window.HasButtonForTesting("Retirar da Venda") && window.HasButtonForTesting("Editar Preço") && !window.ButtonEnabledForTesting("Habilitar Aluguel"), "the offer shows and the rent button waits");
             Require(await window.WithdrawSaleForTesting(), "withdrawing works"); await Frames(2); Require(server.Sale is null, "the sale is gone");
-            Require(await window.OfferRentForTesting(4000, 30), "offering for rent works"); await Frames(2); Require(server.Rent == 4000 && window.TextForTesting.Contains("L$ 4.000 a cada 30 dias") && window.HasButtonForTesting("Retirar Oferta"), "the rent offer shows");
+            Require(await window.OfferRentForTesting(4000, 30), "offering for rent works"); await Frames(2); Require(server.Rent == 4000 && window.TextForTesting.Contains("VC$ 4.000 a cada 30 dias") && window.HasButtonForTesting("Retirar Oferta"), "the rent offer shows");
             Require(!await window.SellForTesting(1000, true), "sale and rent exclude each other"); await Frames(2); Require(window.ToastForTesting.Length > 0, "and the person is told");
             Require(await window.WithdrawRentForTesting(), "withdrawing the rent offer works"); await Frames(2);
 
@@ -151,9 +151,9 @@ public partial class ParcelInfoSmoke : Node3D
 
             // --- Contrato: nothing, then an offer, then a tenant --------------------------------------------------------------------------
             window.SelectTabForTesting("contrato"); await Frames(2); Require(window.TextForTesting.Contains("não tem contrato nem oferta"), "no contract, no offer");
-            server.Rent = 4000; await window.LoadAsync(); await Frames(2); Require(window.TextForTesting.Contains("Condições da Oferta") && window.TextForTesting.Contains("L$ 4.000 a cada 30 dias") && window.TextForTesting.Contains("3 dia(s)"), "the offer terms are shown");
+            server.Rent = 4000; await window.LoadAsync(); await Frames(2); Require(window.TextForTesting.Contains("Condições da Oferta") && window.TextForTesting.Contains("VC$ 4.000 a cada 30 dias") && window.TextForTesting.Contains("3 dia(s)"), "the offer terms are shown");
             server.Leased = true; await window.LoadAsync(); await Frames(2); text = window.TextForTesting;
-            Require(text.Contains("Contrato de Aluguel") && text.Contains("Carla") && text.Contains("L$ 3.000") && text.Contains("Em dia") && window.HasButtonForTesting("Encerrar Contrato") && !window.ButtonEnabledForTesting("Encerrar Contrato"), $"the owner sees the contract and cannot end it early (got {text})");
+            Require(text.Contains("Contrato de Aluguel") && text.Contains("Carla") && text.Contains("VC$ 3.000") && text.Contains("Em dia") && window.HasButtonForTesting("Encerrar Contrato") && !window.ButtonEnabledForTesting("Encerrar Contrato"), $"the owner sees the contract and cannot end it early (got {text})");
             window.SelectTabForTesting("venda"); await Frames(2); Require(!window.ButtonEnabledForTesting("Habilitar Aluguel") && window.TextForTesting.Contains("Carla"), "while rented the trade tab shows the tenant");
 
             // --- the tenant ----------------------------------------------------------------------------------------------------------------------
@@ -166,7 +166,7 @@ public partial class ParcelInfoSmoke : Node3D
             // --- a visitor ----------------------------------------------------------------------------------------------------------------------------
             server.Owner = false; server.Tenant = false; server.Leased = false; server.Sale = 70000; server.Rent = null; await window.LoadAsync(); window.SelectTabForTesting("venda"); await Frames(2);
             Require(window.HasButtonForTesting("Comprar") && window.HasButtonForTesting("Ver Condições") && !window.HasButtonForTesting("Colocar à Venda"), "a visitor can buy what is for sale, not offer it");
-            Require(window.TextForTesting.Contains("L$ 70.000") && window.TextForTesting.Contains("Bruno"), "price and seller are shown");
+            Require(window.TextForTesting.Contains("VC$ 70.000") && window.TextForTesting.Contains("Bruno"), "price and seller are shown");
             window.SelectTabForTesting("acesso"); await Frames(3); Require(!window.HasButtonForTesting("Adicionar") && window.TextForTesting.Contains("O acesso é do dono"), "a visitor does not manage access");
             server.Voice = false; server.Media = false; await window.LoadAsync();
             window.SelectTabForTesting("permissoes"); await Frames(2); Require(!window.HasButtonForTesting("Salvar Permissões") && window.TextForTesting.Contains("Só o dono do terreno muda"), "nor the rules");

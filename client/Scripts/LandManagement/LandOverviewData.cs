@@ -146,7 +146,7 @@ public static class LandMath
 
     public static string CategoryText(string category) => category switch { "residencial" => "Residencial", "comercial" => "Comercial", "mista" => "Mista", "social" => "Social", "comum" => "Área Comum", _ => category };
     public static string KindText(string kind) => kind switch { "available" => "Disponível", "sale" => "À Venda", "rented" => "Alugado", "sold" => "Vendido", "common" => "Área Comum", _ => kind };
-    public static string Money(long value) => "L$ " + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+    public static string Money(long value) => "VC$ " + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
     public static string Area(double value) => value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")) + " m²";
     public static string Number(long value) => value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
 

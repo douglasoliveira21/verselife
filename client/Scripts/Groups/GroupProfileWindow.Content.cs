@@ -128,14 +128,14 @@ public sealed partial class GroupProfileWindow
     private void OpenContribute()
     {
         var content = IslandUi.Column(8); content.AddChild(Body("Quanto você quer dar ao cofre do grupo? O valor sai da sua carteira e não volta se você sair do grupo."));
-        var amount = IslandUi.Number(1, 1_000_000_000, 1, " L$", 200); amount.Value = 100; content.AddChild(Labeled("Valor", amount)); var note = IslandUi.Input("Recado (opcional)", 120); content.AddChild(Labeled("Recado", note));
+        var amount = IslandUi.Number(1, 1_000_000_000, 1, " VC$", 200); amount.Value = 100; content.AddChild(Labeled("Valor", amount)); var note = IslandUi.Input("Recado (opcional)", 120); content.AddChild(Labeled("Recado", note));
         Ask("Contribuir para o cofre", content, async () => await Do(Api.Contribute(_id, (long)amount.Value, note.Text.Trim()), $"Você contribuiu com {Money((long)amount.Value)}.", reload: false) && await Refresh("economia"), "Contribuir");
     }
 
     private void OpenWithdraw()
     {
         var content = IslandUi.Column(8); content.AddChild(Body("As moedas vão para a carteira de um membro. Toda retirada fica no histórico e precisa de um motivo."));
-        var amount = IslandUi.Number(1, 1_000_000_000, 1, " L$", 200); amount.Value = 100; content.AddChild(Labeled("Valor", amount)); var reason = IslandUi.Input("Motivo (3 a 200 caracteres)", 200); content.AddChild(Labeled("Motivo", reason));
+        var amount = IslandUi.Number(1, 1_000_000_000, 1, " VC$", 200); amount.Value = 100; content.AddChild(Labeled("Valor", amount)); var reason = IslandUi.Input("Motivo (3 a 200 caracteres)", 200); content.AddChild(Labeled("Motivo", reason));
         Ask("Retirar do cofre", content, async () => await Do(Api.Withdraw(_id, (long)amount.Value, null, reason.Text.Trim()), $"{Money((long)amount.Value)} passaram para a sua carteira.", reload: false) && await Refresh("economia"), "Retirar");
     }
 
@@ -209,7 +209,7 @@ public sealed partial class GroupProfileWindow
         var rating = IslandUi.Dropdown([("Livre", "livre"), ("Moderado", "moderado"), ("Adulto", "adulto")]); IslandUi.Select(rating, Str(card, "contentRating")); _content.AddChild(Labeled("Classificação de conteúdo", rating));
         var privacy = IslandUi.Dropdown([("Público (aparece na busca)", "public"), ("Privado (só por convite)", "private")]); IslandUi.Select(privacy, Str(card, "privacy")); _content.AddChild(Labeled("Visibilidade", privacy));
         var policy = IslandUi.Dropdown([("Entrada livre", "open"), ("Por aprovação", "request"), ("Só por convite", "invite")]); IslandUi.Select(policy, Str(card, "joinPolicy")); _content.AddChild(Labeled("Tipo de entrada", policy));
-        var fee = IslandUi.Number(0, GroupRules.MaxJoinFee, 10, " L$", 200); fee.Value = Long(card, "joinFee"); _content.AddChild(Labeled("Taxa de inscrição (só entrada livre)", fee));
+        var fee = IslandUi.Number(0, GroupRules.MaxJoinFee, 10, " VC$", 200); fee.Value = Long(card, "joinFee"); _content.AddChild(Labeled("Taxa de inscrição (só entrada livre)", fee));
         var limit = IslandUi.Number(2, GroupRules.MaxMemberLimit, 10, "", 140); limit.Value = Math.Max(2, Int(card, "memberLimit")); _content.AddChild(Labeled("Limite de membros", limit));
         var cover = IslandUi.Input("https://… (capa do grupo)", 400); cover.Text = Str(card, "coverUrl"); _content.AddChild(Labeled("Imagem de capa (link https)", cover));
         foreach (var field in new Control[] { name, tag, description, category, language, rating, privacy, policy, fee, limit, cover }) SetEditable(field, canEdit);

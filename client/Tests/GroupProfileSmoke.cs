@@ -140,7 +140,7 @@ public partial class GroupProfileSmoke : Control
 
             // --- Economia ---------------------------------------------------------------------------------------------------------------------------
             await window.OpenAsync(Group, "economia"); await Frames(10); text = window.TextForTesting;
-            Require(text.Contains("L$ 125.430") && text.Contains("Contribuição") && text.Contains("Retirada") && text.Contains("+ L$ 5.000") && text.Contains("− L$ 1.200") && window.ButtonEnabledForTesting("Receber") && window.ButtonEnabledForTesting("Pagar"), $"balance, history in green and red, and the two buttons (got {text})");
+            Require(text.Contains("VC$ 125.430") && text.Contains("Contribuição") && text.Contains("Retirada") && text.Contains("+ VC$ 5.000") && text.Contains("− VC$ 1.200") && window.ButtonEnabledForTesting("Receber") && window.ButtonEnabledForTesting("Pagar"), $"balance, history in green and red, and the two buttons (got {text})");
             window.PressForTesting("Receber"); await Frames(8); dialog = window.DialogsForTesting.Last(); dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed); await Frames(12);
             Require(server.Calls.Any(c => c.EndsWith("/treasury/contribute", StringComparison.Ordinal)) && said.Last().StartsWith("Você contribuiu"), "contributing sends the coins");
 
@@ -159,8 +159,8 @@ public partial class GroupProfileSmoke : Control
 
             // --- somebody outside: only the general tab, and how to join -----------------------------------------------------------------------------
             server.IsMember = false; server.Policy = "open"; server.Fee = 50; await window.OpenAsync(Group); await Frames(10);
-            Require(window.HasButtonForTesting("Participar") && !window.HasButtonForTesting("Sair do grupo") && !window.TabEnabledForTesting("membros") && !window.TabEnabledForTesting("chat") && !window.TabEnabledForTesting("configuracoes") && window.TabEnabledForTesting("geral") && window.TextForTesting.Contains("L$ 50"), "an outsider reads only the general tab and can join");
-            window.PressForTesting("Participar"); await Frames(8); dialog = window.DialogsForTesting.Last(); var offer = string.Join("|", dialog.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)); Require(offer.Contains("L$ 50"), "the price is shown before joining"); dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed); await Frames(12);
+            Require(window.HasButtonForTesting("Participar") && !window.HasButtonForTesting("Sair do grupo") && !window.TabEnabledForTesting("membros") && !window.TabEnabledForTesting("chat") && !window.TabEnabledForTesting("configuracoes") && window.TabEnabledForTesting("geral") && window.TextForTesting.Contains("VC$ 50"), "an outsider reads only the general tab and can join");
+            window.PressForTesting("Participar"); await Frames(8); dialog = window.DialogsForTesting.Last(); var offer = string.Join("|", dialog.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)); Require(offer.Contains("VC$ 50"), "the price is shown before joining"); dialog.GetOkButton().EmitSignal(BaseButton.SignalName.Pressed); await Frames(12);
             Require(server.Bodies.Any(b => b.Contains("\"confirmFee\":50")), "the exact price is confirmed");
             server.Policy = "request"; server.Fee = 0; server.Pending = true; await window.OpenAsync(Group); await Frames(10); Require(window.HasButtonForTesting("Solicitação pendente") && !window.ButtonEnabledForTesting("Solicitação pendente") && window.HasButtonForTesting("Cancelar pedido"), "a pending request shows as pending and can be withdrawn");
 

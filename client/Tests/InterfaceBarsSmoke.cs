@@ -20,7 +20,7 @@ public partial class InterfaceBarsSmoke : Node
             await Frames(30);
             var ui = world.GetNode<ViewerUI>("ViewerUI");
             var bar = ui.LocationBarForTesting; Require(bar.Visible && bar.Size.Y >= ViewerUI.LocationBarHeight - 1 && bar.Position.Y >= 37, $"the location bar sits under the menu ({bar.Position} {bar.Size})");
-            Require(Button("Comprar L$") is not null, "the top bar has Comprar L$");
+            Require(Button("Comprar VC$") is not null, "the top bar has Comprar VC$");
             Require(Tooltip("Loja (marketplace)") is not null && Tooltip("Configurações") is not null && Tooltip("Áudio: volume geral") is not null, "Loja, Áudio and Configurações are in the top bar");
             Require(Tooltip("Voltar para a ilha anterior") is { Disabled: true }, "with no history back is off");
 

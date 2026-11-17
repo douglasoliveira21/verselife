@@ -46,7 +46,7 @@ public partial class SearchWindow
                 _isMember = Flag(card, "isMember"); _requestPending = Flag(card, "requestPending"); _invited = Flag(card, "invited"); _banned = Flag(card, "banned"); _groupLoaded = true;
                 if (Str(card, "description") is { Length: > 0 } description) _pDescription.Text = description;
                 var lines = new List<string> { $"{members} {(members == 1 ? "membro" : "membros")}" + (limit > 0 ? $" (limite {limit})" : "") + "." };
-                lines.Add("Entrada: " + PolicyWords(_joinPolicy) + (_joinFee > 0 ? $" · taxa de L$ {_joinFee:N0}" : "") + ".");
+                lines.Add("Entrada: " + PolicyWords(_joinPolicy) + (_joinFee > 0 ? $" · taxa de VC$ {_joinFee:N0}" : "") + ".");
                 if (Str(view, "leaderName") is { Length: > 0 } leader && leader != "?") lines.Add("Líder: " + leader + ".");
                 var facts = new[] { Str(card, "category"), Str(card, "language"), Str(card, "contentRating") }.Where(t => t.Length > 0); lines.Add(string.Join(" · ", facts));
                 if (DateTimeOffset.TryParse(Str(view, "createdAt"), CultureInfo.InvariantCulture, DateTimeStyles.None, out var created)) lines.Add("Criado em " + created.ToString("dd/MM/yyyy", CultureInfo.GetCultureInfo("pt-BR")) + ".");
@@ -72,7 +72,7 @@ public partial class SearchWindow
             : _invited ? ("Abrir convite", false)
             : _joinPolicy == "invite" ? ("Somente por convite", true)
             : _joinPolicy == "request" ? ("Pedir para entrar", false)
-            : _joinFee > 0 ? ($"Entrar (L$ {_joinFee:N0})", false) : ("Participar", false);
+            : _joinFee > 0 ? ($"Entrar (VC$ {_joinFee:N0})", false) : ("Participar", false);
         _groupChat.Disabled = !_isMember; _groupChat.TooltipText = _isMember ? "Abre o chat do grupo" : "Só os membros escrevem no chat do grupo";
         _groupMembers.Disabled = !_groupLoaded;
     }
@@ -83,7 +83,7 @@ public partial class SearchWindow
         if (_invited) { OpenGroupAt("geral"); return; }
         var name = _groupName;
         if (_joinPolicy == "request") { AskYes("Pedir para entrar", $"Enviar um pedido de entrada para “{name}”? Os responsáveis decidem.", "Enviar pedido", () => Join(null)); return; }
-        if (_joinFee > 0) { var fee = _joinFee; AskYes($"Entrar em {name}", $"A entrada custa L$ {fee:N0}, cobrados da sua carteira agora. Deseja pagar e entrar?", "Pagar e entrar", () => Join(fee)); return; }
+        if (_joinFee > 0) { var fee = _joinFee; AskYes($"Entrar em {name}", $"A entrada custa VC$ {fee:N0}, cobrados da sua carteira agora. Deseja pagar e entrar?", "Pagar e entrar", () => Join(fee)); return; }
         Join(null);
     }
 
@@ -109,7 +109,7 @@ public partial class SearchWindow
                 if (Selected is { Kind: SearchKinds.Group } current && current.Id == id) LoadGroup(current); return;
             }
             var code = ErrorCode(body);
-            if (code == "fee_required" && TryFee(body) is { } fee) { _joinFee = fee; UpdateGroupButtons(); _note.Text = $"A taxa de entrada agora é L$ {fee:N0}. Confira e tente de novo."; return; }
+            if (code == "fee_required" && TryFee(body) is { } fee) { _joinFee = fee; UpdateGroupButtons(); _note.Text = $"A taxa de entrada agora é VC$ {fee:N0}. Confira e tente de novo."; return; }
             _note.Text = JoinWords(status, code); if (Selected is { Kind: SearchKinds.Group } now && now.Id == id) LoadGroup(now);
         });
     }

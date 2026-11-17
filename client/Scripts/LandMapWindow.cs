@@ -190,7 +190,7 @@ public partial class LandMapWindow : Node
             {
                 var (x, z) = ToWorld(motion.Position);
                 var parcel = owner._land.ParcelAt(x, z);
-                TooltipText = parcel is null ? string.Empty : $"{parcel.Name}\n{parcel.OwnerName} · {parcel.Area:0} m²" + (parcel.SalePrice is { } sale && parcel.State == "sale" ? $"\nÀ venda: L$ {sale}" : parcel.RentPrice is { } rent && parcel.State == "rent" ? $"\nAluguel: L$ {rent}" : string.Empty);
+                TooltipText = parcel is null ? string.Empty : $"{parcel.Name}\n{parcel.OwnerName} · {parcel.Area:0} m²" + (parcel.SalePrice is { } sale && parcel.State == "sale" ? $"\nÀ venda: VC$ {sale}" : parcel.RentPrice is { } rent && parcel.State == "rent" ? $"\nAluguel: VC$ {rent}" : string.Empty);
             }
             else if (input is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } click)
             {
@@ -223,7 +223,7 @@ public partial class LandMapWindow : Node
             return;
         }
         _title.Text = p.Name;
-        var state = p.State switch { "own" => "Seu terreno", "rented_by_me" => "Alugado por você", "sale" => $"À venda por L$ {p.SalePrice}", "rent" => $"Para alugar por L$ {p.RentPrice} a cada {p.RentPeriodDays} dias", "public" => "Terreno público", "restricted" => "Entrada restrita", _ => "Terreno de outra pessoa" };
+        var state = p.State switch { "own" => "Seu terreno", "rented_by_me" => "Alugado por você", "sale" => $"À venda por VC$ {p.SalePrice}", "rent" => $"Para alugar por VC$ {p.RentPrice} a cada {p.RentPeriodDays} dias", "public" => "Terreno público", "restricted" => "Entrada restrita", _ => "Terreno de outra pessoa" };
         _detail.Text = $"{state}\nDono: {p.OwnerName}\nÁrea: {p.Area:0} m²\nTeleporte: {p.TeleportMode switch { "forced" => "no ponto de chegada", "disabled" => "desativado", _ => "livre" }}";
         _teleport.Disabled = p.TeleportMode == "disabled" || p.State == "restricted";
     }
@@ -277,7 +277,7 @@ public partial class LandMapWindow : Node
                 if (!Guid.TryParse(Str("parcelId"), out var parcel) || !Guid.TryParse(Str("islandId"), out var island)) continue;
                 var hit = new PropertyHit(parcel, island, Str("islandName"), Str("name"), item.TryGetProperty("area", out var a) && a.TryGetDouble(out var area) ? area : 0, Str("offer"), Num("price"), (int)Num("rentPeriodDays"), Str("ownerName"));
                 _hits.Add(hit);
-                _results.AddItem($"{hit.Name} · {hit.IslandName} · {hit.Area:0} m² · " + (hit.Offer == "sale" ? $"venda L$ {hit.Price}" : $"aluguel L$ {hit.Price} / {hit.RentPeriodDays} dias"));
+                _results.AddItem($"{hit.Name} · {hit.IslandName} · {hit.Area:0} m² · " + (hit.Offer == "sale" ? $"venda VC$ {hit.Price}" : $"aluguel VC$ {hit.Price} / {hit.RentPeriodDays} dias"));
             }
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException) { _hits.Clear(); _results.Clear(); _resultNote.Text = "Não foi possível ler os resultados."; return; }

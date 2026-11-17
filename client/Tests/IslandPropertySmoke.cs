@@ -85,7 +85,7 @@ public partial class IslandPropertySmoke : Node3D
             Require(page.HasButtonForTesting("Gerenciar Hospedagem"), "the owner has the hosting button");
             await page.OpenHostingForTesting(); await Frames(3);
             var hostingDialog = page.GetChildren().OfType<AcceptDialog>().Single(d => d.Title == "Hospedagem da ilha"); string DialogText() => string.Join("|", hostingDialog.FindChildren("*", "Label", true, false).OfType<Label>().Select(l => l.Text)); bool DialogHas(string button) => hostingDialog.FindChildren("*", "Button", true, false).OfType<Button>().Any(b => b.Text.Trim() == button);
-            Require(DialogText().Contains("Plano Ouro") && DialogText().Contains("Em vigor até") && DialogText().Contains("L$ 8.000") && DialogHas("Renovar Plano") && !DialogHas("Contratar"), $"a running plan can be renewed, not bought again (got {DialogText()})");
+            Require(DialogText().Contains("Plano Ouro") && DialogText().Contains("Em vigor até") && DialogText().Contains("VC$ 8.000") && DialogHas("Renovar Plano") && !DialogHas("Contratar"), $"a running plan can be renewed, not bought again (got {DialogText()})");
             hostingDialog.Hide(); hostingDialog.QueueFree(); await Frames(2);
             Require(await page.RenewHostingForTesting() && server.Calls.Any(c => c.EndsWith("/hosting/renew", StringComparison.Ordinal)), "renewing sends the request");
             server.HostStatus = "none"; await page.OpenHostingForTesting(); await Frames(3);
@@ -94,19 +94,19 @@ public partial class IslandPropertySmoke : Node3D
             hostingDialog.Hide(); hostingDialog.QueueFree(); await Frames(2);
             Require(await page.SubscribeHostingForTesting(Guid.NewGuid()) && server.HostStatus == "active", "buying a plan works"); server.HostStatus = "active";
             Require(!await page.SubscribeHostingForTesting(Guid.NewGuid()) && notes.Last().Contains("já tem um plano"), $"a second plan is refused in words (got {notes.Last()})");
-            var text = page.TextForTesting; Require(page.IsOwner && text.Contains("AliceVerse") && text.Contains("Full Region") && text.Contains("256 m × 256 m") && text.Contains("Sem anúncio") && text.Contains("Terrenos") && text.Contains("L$ 30.000"), $"owner, region, size, situation and history (got {text})");
+            var text = page.TextForTesting; Require(page.IsOwner && text.Contains("AliceVerse") && text.Contains("Full Region") && text.Contains("256 m × 256 m") && text.Contains("Sem anúncio") && text.Contains("Terrenos") && text.Contains("VC$ 30.000"), $"owner, region, size, situation and history (got {text})");
             Require(page.HasButtonForTesting("Colocar Ilha à Venda") && page.HasButtonForTesting("Alugar Ilha") && page.ButtonEnabledForTesting("Transferir Propriedade") && !page.HasButtonForTesting("Retirar da Venda"), "the owner can sell, rent out and hand over");
 
             // --- selling and withdrawing ------------------------------------------------------------------------------------------------
             Require(await page.SellForTesting(80000, true), "selling works"); await Frames(2);
-            Require(server.Sale == 80000 && page.TextForTesting.Contains("À venda por L$ 80.000") && page.HasButtonForTesting("Retirar da Venda") && !page.HasButtonForTesting("Alugar Ilha"), "the offer is shown and the sale buttons give way to withdrawing");
+            Require(server.Sale == 80000 && page.TextForTesting.Contains("À venda por VC$ 80.000") && page.HasButtonForTesting("Retirar da Venda") && !page.HasButtonForTesting("Alugar Ilha"), "the offer is shown and the sale buttons give way to withdrawing");
             Require(!page.ButtonEnabledForTesting("Transferir Propriedade"), "an island for sale cannot be handed over");
             Require(!await page.TransferForTesting("carla"), "and the server says so"); Require(notes.Last().Contains("Retire da venda"), $"in words (got {notes.Last()})");
             Require(await page.WithdrawForTesting(), "withdrawing works"); await Frames(2); Require(server.Sale is null && page.TextForTesting.Contains("Sem anúncio"), "the island is off the market");
 
             // --- renting out --------------------------------------------------------------------------------------------------------------
             Require(await page.RentOutForTesting(3000, 14, 200), "offering for rent works"); await Frames(2);
-            Require(server.Rent == 3000 && server.Days == 14 && page.TextForTesting.Contains("Para alugar por L$ 3.000 a cada 14 dias") && page.HasButtonForTesting("Retirar Oferta de Aluguel"), "the rent offer is shown");
+            Require(server.Rent == 3000 && server.Days == 14 && page.TextForTesting.Contains("Para alugar por VC$ 3.000 a cada 14 dias") && page.HasButtonForTesting("Retirar Oferta de Aluguel"), "the rent offer is shown");
             Require(await page.WithdrawForTesting(), "withdrawing the rent offer works"); await Frames(2); Require(server.Rent is null, "the offer is gone");
 
             // --- handing over -----------------------------------------------------------------------------------------------------------------
@@ -125,7 +125,7 @@ public partial class IslandPropertySmoke : Node3D
 
             // --- a rented island ---------------------------------------------------------------------------------------------------------------
             server.IsOwner = true; server.Owner = "AliceVerse"; server.LeaseLive = true; await page.LoadAsync(); await Frames(2);
-            text = page.TextForTesting; Require(text.Contains("Alugada para Bruno") && text.Contains("L$ 5.000 a cada 30 dias") && text.Contains("L$ 500"), $"the lease is shown (got {text})");
+            text = page.TextForTesting; Require(text.Contains("Alugada para Bruno") && text.Contains("VC$ 5.000 a cada 30 dias") && text.Contains("VC$ 500"), $"the lease is shown (got {text})");
             Require(page.HasButtonForTesting("Encerrar Aluguel") && !page.ButtonEnabledForTesting("Encerrar Aluguel") && !page.HasButtonForTesting("Colocar Ilha à Venda"), "the owner cannot end it before the end or sell meanwhile");
 
             // --- the renter -------------------------------------------------------------------------------------------------------------------------

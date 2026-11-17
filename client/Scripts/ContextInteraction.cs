@@ -184,7 +184,7 @@ public static class InteractionRegistry
             new() { Label = "Perfil", Icon = "user", Run = () => s.OpenProfile(name), Tooltip = "Vê o perfil desta pessoa" },
             Slice("Mensagem", "chat", D(Capability.PersonMessage), () => s.Message(name), "Escreve uma mensagem privada"),
             Slice("Amizade", "user-add", Decision.Yes, null, relation == "friend" ? "Vocês são amigos" : "Adicionar ou remover amizade", children: friendship, side: true),
-            Slice("Pagar", "coin", D(Capability.PersonPay), () => s.Pay(name), "Envia L$ a esta pessoa (você confirma o valor antes)"),
+            Slice("Pagar", "coin", D(Capability.PersonPay), () => s.Pay(name), "Envia VC$ a esta pessoa (você confirma o valor antes)"),
             new() { Label = "Interagir", Icon = "hand", Children = Gestures(s), SidePanel = true, Tooltip = "Gestos para quem está por perto" },
             new() { Label = "Grupos", Icon = "people", SidePanel = true, Tooltip = "Convidar para um grupo ou ver os grupos públicos", Children =
             [

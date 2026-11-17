@@ -41,7 +41,7 @@ public partial class SearchWindow
         return a.Date == b.Date ? $"{a.ToString("dd/MM/yyyy HH:mm", Br)} às {b.ToString("HH:mm", Br)} ({ZoneText(a)})" : $"{a.ToString("dd/MM/yyyy HH:mm", Br)} até {b.ToString("dd/MM/yyyy HH:mm", Br)} ({ZoneText(a)})";
     }
 
-    private static string PriceText(long? coins) => coins is > 0 ? $"L$ {coins:N0}" : "Gratuito";
+    private static string PriceText(long? coins) => coins is > 0 ? $"VC$ {coins:N0}" : "Gratuito";
 
     /// <summary>The grey line of an event card: when it is (or "Agora"), where and what it costs.</summary>
     private static string EventMeta(SearchHit hit)
@@ -79,7 +79,7 @@ public partial class SearchWindow
                     "Quando: " + RangeText(start, end),
                     e.TryGetProperty("island", out var island) ? "Onde: " + Str(island, "name") : string.Empty,
                     _organizerId != Guid.Empty ? "Organização: " + Str(organizer, "displayName") : string.Empty,
-                    "Valor: " + (Long(e, "priceCoins") > 0 ? $"L$ {Long(e, "priceCoins"):N0}, cobrado na entrada" : "gratuito"),
+                    "Valor: " + (Long(e, "priceCoins") > 0 ? $"VC$ {Long(e, "priceCoins"):N0}, cobrado na entrada" : "gratuito"),
                     capacity > 0 ? $"Vagas: {going} de {capacity} preenchidas" : $"Vagas ilimitadas · {going} {(going == 1 ? "inscrito" : "inscritos")}",
                     string.Join(" · ", new[] { Str(e, "categoryLabel"), "classificação " + Str(e, "contentRating") }.Where(t => t.Length > 0)),
                 };
@@ -196,7 +196,7 @@ public partial class SearchWindow
         Caption("Duração (horas)"); _fHours = new SpinBox { MinValue = 1, MaxValue = 24, Value = 2, CustomMinimumSize = new Vector2(0, 36) }; box.AddChild(_fHours);
         Caption("Classificação de conteúdo"); _fRating = new OptionButton { FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 36) }; _fRating.AddItem("Livre"); _fRating.AddItem("Moderado"); _fRating.AddItem("Adulto"); box.AddChild(_fRating);
         Caption("Vagas (0 = sem limite)"); _fCapacity = new SpinBox { MinValue = 0, MaxValue = 1000, Value = 0, CustomMinimumSize = new Vector2(0, 36) }; box.AddChild(_fCapacity);
-        Caption("Valor na entrada em L$ (0 = gratuito)"); _fPrice = new SpinBox { MinValue = 0, MaxValue = 1_000_000, Value = 0, CustomMinimumSize = new Vector2(0, 36) }; box.AddChild(_fPrice);
+        Caption("Valor na entrada em VC$ (0 = gratuito)"); _fPrice = new SpinBox { MinValue = 0, MaxValue = 1_000_000, Value = 0, CustomMinimumSize = new Vector2(0, 36) }; box.AddChild(_fPrice);
         Caption("Imagem (endereço https, opcional)"); _fImage = new LineEdit { MaxLength = 1024, PlaceholderText = "https://…", CustomMinimumSize = new Vector2(0, 38) }; box.AddChild(_fImage);
         _fPublic = new CheckBox { Text = " Aparece na busca", ButtonPressed = true, FocusMode = Control.FocusModeEnum.None }; box.AddChild(_fPublic);
         _fNote = Text("", false, 14); _fNote.AddThemeColorOverride("font_color", UiStyle.Orange); box.AddChild(_fNote);

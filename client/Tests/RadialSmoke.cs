@@ -171,7 +171,7 @@ public partial class RadialSmoke : Node
             friendsApi.AcceptFriend("Rafa"); Require(apiCalls[^1].StartsWith($"Post /api/v1/social/friends/{rafa}/accept") && friendsApi.RelationOf("Rafa") == "friend", "accepting a request calls the API");
             var paid = false; friendsApi.PaymentMade += () => paid = true;
             friendsApi.Pay("Rafa", 50, "chave-unica-1");
-            Require(apiCalls[^1].Contains("/economy/transfer") && apiCalls[^1].Contains(rafa.ToString()) && apiCalls[^1].Contains("\"amountCoins\":50") && apiCalls[^1].Contains("chave-unica-1") && paid && told[^1].Contains("L$ 50"), $"a payment sends the amount with its own key: {apiCalls[^1]}");
+            Require(apiCalls[^1].Contains("/economy/transfer") && apiCalls[^1].Contains(rafa.ToString()) && apiCalls[^1].Contains("\"amountCoins\":50") && apiCalls[^1].Contains("chave-unica-1") && paid && told[^1].Contains("VC$ 50"), $"a payment sends the amount with its own key: {apiCalls[^1]}");
             friendsApi.Pay("Rafa", 0, "k2"); Require(!apiCalls[^1].Contains("\"amountCoins\":0") && told[^1].Contains("maior que zero"), "a zero payment is refused before anything is sent");
             friendsApi.Pay("Rafa", 999, "k3"); Require(told[^1].Contains("saldo insuficiente"), "a refused payment says why (insufficient balance or blocked wallet)");
             friendsApi.CopyId("Rafa"); Require(DisplayServer.GetName() == "headless" || DisplayServer.ClipboardGet() == rafa.ToString(), "Copiar identificador copies the account id");

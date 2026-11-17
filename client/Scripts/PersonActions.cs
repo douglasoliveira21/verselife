@@ -116,7 +116,7 @@ public partial class PersonActions : Node
         Find(name, id => Call(Godot.HttpClient.Method.Post, "/api/v1/economy/transfer", JsonSerializer.Serialize(new { recipientUserId = id, amountCoins = coins, idempotencyKey }), (status, body) =>
         {
             var ok = status is >= 200 and < 300;
-            Say(ok ? (body.Contains("already_processed") ? $"Este pagamento para {name} já tinha sido feito." : $"Pagamento de L$ {coins:N0} enviado para {name}.") : status == 409 ? "Pagamento recusado: saldo insuficiente ou carteira bloqueada." : status == 404 ? "Esta pessoa não foi encontrada." : $"Não foi possível pagar (HTTP {status}).");
+            Say(ok ? (body.Contains("already_processed") ? $"Este pagamento para {name} já tinha sido feito." : $"Pagamento de VC$ {coins:N0} enviado para {name}.") : status == 409 ? "Pagamento recusado: saldo insuficiente ou carteira bloqueada." : status == 404 ? "Esta pessoa não foi encontrada." : $"Não foi possível pagar (HTTP {status}).");
             if (ok) PaymentMade?.Invoke();
             done?.Invoke(ok);
         }));
@@ -125,7 +125,7 @@ public partial class PersonActions : Node
     /// A payment went through: the balance on the top bar should be asked for again.
     public event Action? PaymentMade;
 
-    /// Reads the balance (L$) of the signed-in person for the payment window.
+    /// Reads the balance (VC$) of the signed-in person for the payment window.
     public void Balance(Action<long?> done) => Call(Godot.HttpClient.Method.Get, "/api/v1/economy/wallet", null, (status, body) =>
     {
         if (status is < 200 or >= 300) { done(null); return; }
@@ -140,17 +140,17 @@ public partial class PersonActions : Node
         var window = _ask = new FloatingWindow($"Pagar a {name}", icon: "coin") { Name = "AskPayment" };
         window.Place(.5f, .5f, -260, -150, 260, 150);
         var balance = new Label { Text = "Saldo: consultando…" }; window.Content.AddChild(balance);
-        var field = new LineEdit { PlaceholderText = "Valor em L$", MaxLength = 9, CustomMinimumSize = new Vector2(0, 44) }; window.Content.AddChild(field);
+        var field = new LineEdit { PlaceholderText = "Valor em VC$", MaxLength = 9, CustomMinimumSize = new Vector2(0, 44) }; window.Content.AddChild(field);
         var info = new Label { Text = "O pagamento é feito na hora e não pode ser desfeito por aqui.", AutowrapMode = TextServer.AutowrapMode.WordSmart }; window.Content.AddChild(info);
         var key = Guid.NewGuid().ToString("N"); long? have = null; var sent = false;
-        Balance(value => { have = value; if (IsInstanceValid(balance)) balance.Text = value is null ? "Saldo indisponível agora." : $"Saldo: L$ {value:N0}"; });
+        Balance(value => { have = value; if (IsInstanceValid(balance)) balance.Text = value is null ? "Saldo indisponível agora." : $"Saldo: VC$ {value:N0}"; });
         var row = new HBoxContainer(); row.AddThemeConstantOverride("separation", 8); window.Content.AddChild(row);
         var pay = new Button { Text = "Pagar", CustomMinimumSize = new Vector2(0, 44), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, FocusMode = Control.FocusModeEnum.None };
         void Send()
         {
             if (sent) return;
             if (!long.TryParse(field.Text.Trim(), out var coins) || coins <= 0) { info.Text = "Digite um valor inteiro maior que zero."; return; }
-            if (have is { } available && coins > available) { info.Text = $"Saldo insuficiente: você tem L$ {available:N0}."; return; }
+            if (have is { } available && coins > available) { info.Text = $"Saldo insuficiente: você tem VC$ {available:N0}."; return; }
             sent = true; pay.Disabled = true; info.Text = "Enviando…";
             Using(id, () => Pay(name, coins, key, ok => { if (!IsInstanceValid(window)) return; if (ok) { window.QueueFree(); _ask = null; } else { sent = false; pay.Disabled = false; info.Text = "O pagamento não foi feito. Confira e tente de novo."; key = Guid.NewGuid().ToString("N"); } }));
         }

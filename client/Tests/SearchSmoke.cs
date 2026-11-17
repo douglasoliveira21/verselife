@@ -140,7 +140,7 @@ public partial class SearchSmoke : Node
         Require(window.GroupBoxVisibleForTesting && !window.PersonBoxVisibleForTesting && window.ExtraForTesting.Contains("128 membros") && window.ExtraForTesting.Contains("Entrada: livre") && window.ExtraForTesting.Contains("Líder: luna"), "group facts: " + window.ExtraForTesting);
         Require(window.JoinTextForTesting == "Participar" && window.JoinEnabledForTesting && !window.GroupChatEnabledForTesting, "an open group can be joined, its chat is for members");
         window.PressGroupMembersForTesting(); Require(_groupTabs.Last() == (_group, "membros"), "Ver membros opens the group on its members tab");
-        _fee = 100; window.SelectForTesting(-1); window.SelectForTesting(0); Require(window.JoinTextForTesting == "Entrar (L$ 100)", "a fee is shown on the button: " + window.JoinTextForTesting);
+        _fee = 100; window.SelectForTesting(-1); window.SelectForTesting(0); Require(window.JoinTextForTesting == "Entrar (VC$ 100)", "a fee is shown on the button: " + window.JoinTextForTesting);
         window.PressJoinForTesting(); Require(!_calls.Contains("POST /api/v1/groups/" + _group + "/join"), "paying to enter asks first"); PressDialog("Entrar em", "Pagar e entrar");
         Require(_calls.Any(c => c.StartsWith("BODY") && c.Contains("\"confirmFee\":100")) && window.NoteForTesting.StartsWith("Você entrou") && window.JoinTextForTesting == "Você já é membro" && window.GroupChatEnabledForTesting, "joining with the confirmed fee makes a member: " + window.NoteForTesting);
         window.PressGroupChatForTesting(); Require(_groupTabs.Last() == (_group, "chat"), "members write in the chat of the group");
@@ -236,12 +236,12 @@ public partial class SearchSmoke : Node
         window.SetPriceRangeForTesting("10", "500"); window.SetRightsForTesting(true, true, false); window.SetCreatorForTesting("criador"); window.SetPriceForTesting(1); window.SetSortForTesting(1); window.Search();
         Require(LastSearch.Contains("types=product") && LastSearch.Contains("minPrice=10") && LastSearch.Contains("maxPrice=500") && LastSearch.Contains("rights=copy%2Cmodify") && LastSearch.Contains("creator=criador") && LastSearch.Contains("free=true") && LastSearch.Contains("sort=price_asc"), "every item filter is sent: " + LastSearch);
         window.SetPriceRangeForTesting("", ""); window.SetRightsForTesting(false, false, false); window.SetCreatorForTesting(""); window.SetPriceForTesting(0); window.SetSortForTesting(0); window.Search();
-        Require(window.Hits.Count == 1 && window.MarketMetaForTesting(0) == "Item · roupas · L$ 300 · Permissões: " + LifeVerse.Shared.Items.ItemRights.Letters(LifeVerse.Shared.Items.ItemRights.Copy | LifeVerse.Shared.Items.ItemRights.Modify), "an item card tells the price and the rights: " + window.MarketMetaForTesting(0));
+        Require(window.Hits.Count == 1 && window.MarketMetaForTesting(0) == "Item · roupas · VC$ 300 · Permissões: " + LifeVerse.Shared.Items.ItemRights.Letters(LifeVerse.Shared.Items.ItemRights.Copy | LifeVerse.Shared.Items.ItemRights.Modify), "an item card tells the price and the rights: " + window.MarketMetaForTesting(0));
 
         // one item
         window.SelectForTesting(0);
-        Require(window.ItemBoxVisibleForTesting && !window.PersonBoxVisibleForTesting && window.ExtraForTesting.Contains("Preço: L$ 300") && window.ExtraForTesting.Contains("Criador(a): Criador") && window.ExtraForTesting.Contains("Vendedor(a): Luna") && window.ExtraForTesting.Contains("Você poderá: copiar, modificar.") && window.ExtraForTesting.Contains("E passar adiante: transferir.") && window.ExtraForTesting.Contains("Tipo: models"), "the item tells everything: " + window.ExtraForTesting);
-        Require(window.BuyTextForTesting == "Comprar por L$ 300" && window.BuyEnabledForTesting && window.CreatorButtonVisibleForTesting && window.VisitShopVisibleForTesting, "an item for sale can be bought");
+        Require(window.ItemBoxVisibleForTesting && !window.PersonBoxVisibleForTesting && window.ExtraForTesting.Contains("Preço: VC$ 300") && window.ExtraForTesting.Contains("Criador(a): Criador") && window.ExtraForTesting.Contains("Vendedor(a): Luna") && window.ExtraForTesting.Contains("Você poderá: copiar, modificar.") && window.ExtraForTesting.Contains("E passar adiante: transferir.") && window.ExtraForTesting.Contains("Tipo: models"), "the item tells everything: " + window.ExtraForTesting);
+        Require(window.BuyTextForTesting == "Comprar por VC$ 300" && window.BuyEnabledForTesting && window.CreatorButtonVisibleForTesting && window.VisitShopVisibleForTesting, "an item for sale can be bought");
         window.PressCreatorForTesting(); Require(_profileOpened == _creatorId, "Ver criador opens the creator"); window.PressSellerForTesting(); Require(_profileOpened == _person, "Ver vendedor opens the seller");
         _sellerKind = "group"; window.SelectForTesting(-1); window.SelectForTesting(0); window.PressSellerForTesting(); Require(_groupOpened == _group, "a group that sells opens as a group"); _sellerKind = "user";
 
@@ -254,7 +254,7 @@ public partial class SearchSmoke : Node
         window.PressBuyForTesting(); PressDialog("Confirmar compra", "Comprar"); Require(_buys.Count == 3 && KeyOf(_buys[2]) == KeyOf(_buys[1]), "trying again after no answer sends the same key");
         _buyStatus = 200; window.PressBuyForTesting(); PressDialog("Confirmar compra", "Comprar"); Require(_buys.Count == 4 && KeyOf(_buys[3]) == KeyOf(_buys[1]), "and it goes through with that key"); window.PressBuyForTesting(); PressDialog("Confirmar compra", "Comprar"); Require(KeyOf(_buys[4]) != KeyOf(_buys[3]) && KeyOf(_buys[4]) != firstKey, "after an answer the next purchase is a new one");
         _buyStatus = 409; window.PressBuyForTesting(); PressDialog("Confirmar compra", "Comprar"); Require(window.NoteForTesting == "Saldo insuficiente para esta compra.", "the server refusing is explained: " + window.NoteForTesting); _buyStatus = 200;
-        _price = 900; window.SelectForTesting(-1); window.SelectForTesting(0); var buys = _buys.Count; window.PressBuyForTesting(); Require(_buys.Count == buys && window.NoteForTesting.Contains("Saldo insuficiente: você tem L$ 500") && window.NoteForTesting.Contains("900"), "a balance that cannot pay is told before asking: " + window.NoteForTesting);
+        _price = 900; window.SelectForTesting(-1); window.SelectForTesting(0); var buys = _buys.Count; window.PressBuyForTesting(); Require(_buys.Count == buys && window.NoteForTesting.Contains("Saldo insuficiente: você tem VC$ 500") && window.NoteForTesting.Contains("900"), "a balance that cannot pay is told before asking: " + window.NoteForTesting);
         _price = 0; window.SelectForTesting(-1); window.SelectForTesting(0); Require(window.BuyTextForTesting == "Pegar grátis" && window.BuyEnabledForTesting, "a free item is taken, not bought");
         _itemOwned = true; window.SelectForTesting(-1); window.SelectForTesting(0); Require(window.BuyTextForTesting == "Você já pegou este item" && !window.BuyEnabledForTesting, "a free item is taken once"); _itemOwned = false; _price = 300;
         _itemOwn = true; window.SelectForTesting(-1); window.SelectForTesting(0); Require(window.BuyTextForTesting == "Este item é seu" && !window.BuyEnabledForTesting, "one's own item cannot be bought"); _itemOwn = false;
@@ -263,7 +263,7 @@ public partial class SearchSmoke : Node
 
         // from the item to its shop
         window.PressVisitShopForTesting(); Require(window.TabForTesting == 6 && window.Hits.Count == 1 && window.Hits[0].Id == _shop && window.StoreBoxVisibleForTesting, "Visitar loja opens the shop of the item, chosen: tab " + window.TabForTesting);
-        Require(window.ExtraForTesting.Contains("Proprietário(a): Luna.") && window.ExtraForTesting.Contains("Loja virtual: sem endereço no mundo.") && window.ExtraForTesting.Contains("3 produtos publicados.") && window.ExtraForTesting.Contains("Em destaque:") && window.ExtraForTesting.Contains("• Vestido longo — L$ 300"), "the virtual shop: " + window.ExtraForTesting);
+        Require(window.ExtraForTesting.Contains("Proprietário(a): Luna.") && window.ExtraForTesting.Contains("Loja virtual: sem endereço no mundo.") && window.ExtraForTesting.Contains("3 produtos publicados.") && window.ExtraForTesting.Contains("Em destaque:") && window.ExtraForTesting.Contains("• Vestido longo — VC$ 300"), "the virtual shop: " + window.ExtraForTesting);
 
         // the stores tab
         window.SetQueryForTesting("moda"); window.Search();

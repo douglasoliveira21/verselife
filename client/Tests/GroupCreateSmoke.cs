@@ -53,7 +53,7 @@ public partial class GroupCreateSmoke : Control
             wizard.PressForTesting("Próximo"); await Frames(6); wizard.PressForTesting("Próximo"); await Frames(6); Require(wizard.StepForTesting == 2 && wizard.TextForTesting.Contains("Classificação de conteúdo"), "step 3 is Configurações");
             var cover = Node<LineEdit>(wizard, "cover"); cover.Text = "http://ruim"; cover.EmitSignal(LineEdit.SignalName.TextChanged, "http://ruim"); wizard.PressForTesting("Próximo"); await Frames(3); Require(wizard.StepForTesting == 2 && wizard.NoteForTesting.Contains("https"), "a cover must be https");
             cover.Text = ""; cover.EmitSignal(LineEdit.SignalName.TextChanged, ""); wizard.PressForTesting("Próximo"); await Frames(6);
-            Require(wizard.StepForTesting == 3 && wizard.HasButtonForTesting("Criar grupo") && wizard.TextForTesting.Contains("Banda do Mirante  [BDM]") && wizard.TextForTesting.Contains("taxa L$ 75") && wizard.TextForTesting.Contains("Criar um grupo é gratuito"), $"the confirmation summarises everything (got {wizard.TextForTesting})");
+            Require(wizard.StepForTesting == 3 && wizard.HasButtonForTesting("Criar grupo") && wizard.TextForTesting.Contains("Banda do Mirante  [BDM]") && wizard.TextForTesting.Contains("taxa VC$ 75") && wizard.TextForTesting.Contains("Criar um grupo é gratuito"), $"the confirmation summarises everything (got {wizard.TextForTesting})");
             var size = wizard.SizeForTesting; Require(size.X <= screen.X && size.Y <= screen.Y, $"the wizard fits the screen (size {size}, screen {screen})");
             wizard.PressForTesting("Criar grupo"); await Frames(12); Require(wizard.Visible && wizard.NoteForTesting.Contains("Já existe"), $"a server refusal is shown in words and the wizard stays (got {wizard.NoteForTesting})");
             wizard.PressForTesting("Criar grupo"); await Frames(12);
@@ -64,7 +64,7 @@ public partial class GroupCreateSmoke : Control
             // ---- discover ----
             var discover = new GroupDiscoverWindow { Name = "Discover", OpenGroup = id => opened = id }; discover.SetTransportForTesting(Server); AddChild(discover); await Frames(3);
             await discover.OpenAsync(); await Frames(6); var text = discover.TextForTesting;
-            Require(text.Contains("Banda LV  [BLV]") && text.Contains("Coral Paga") && text.Contains("Pedreiros") && text.Contains("Entrada livre · grátis") && text.Contains("Entrada livre · L$ 250") && text.Contains("Por aprovação") && discover.NoteForTesting == "3 grupo(s)", $"all the groups (got {text})");
+            Require(text.Contains("Banda LV  [BLV]") && text.Contains("Coral Paga") && text.Contains("Pedreiros") && text.Contains("Entrada livre · grátis") && text.Contains("Entrada livre · VC$ 250") && text.Contains("Por aprovação") && discover.NoteForTesting == "3 grupo(s)", $"all the groups (got {text})");
             var s = discover.SizeForTesting; Require(s.X <= screen.X && s.Y <= screen.Y, "the discover window fits the screen");
             discover.FilterForTesting("coral", "musica", "", "", true); discover.PressForTesting("Buscar"); await Frames(10); text = discover.TextForTesting;
             Require(text.Contains("Banda LV") && !text.Contains("Coral Paga") && !text.Contains("Pedreiros") && calls.Last().Contains("q=coral") && calls.Last().Contains("category=musica") && calls.Last().Contains("free=true"), $"filters narrow the search and are sent (last call {calls.Last()}, got {text})");

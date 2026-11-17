@@ -166,7 +166,7 @@ public partial class RealEstateMarketWindow : Node
         form.AddChild(Caption("Categoria")); _category = IslandUi.Dropdown([("Todas", ""), ("Residencial", "residencial"), ("Comercial", "comercial"), ("Mista", "mista"), ("Social", "social"), ("Área Comum", "comum")]); form.AddChild(_category);
         form.AddChild(Caption("Tipo de Região")); _region = IslandUi.Dropdown([("Todos", "all"), ("Full Region", "full"), ("Homestead", "homestead")]); form.AddChild(_region);
         form.AddChild(Caption("Área (m²)")); var area = IslandUi.Row(8); _minArea = Range("Mín."); _maxArea = Range("Máx."); area.AddChild(_minArea); area.AddChild(IslandUi.Text("–", 14, IslandUi.TextMuted)); area.AddChild(_maxArea); form.AddChild(area);
-        form.AddChild(Caption("Preço (L$)")); var price = IslandUi.Row(8); _minPrice = Range("Mín."); _maxPrice = Range("Máx."); price.AddChild(_minPrice); price.AddChild(IslandUi.Text("–", 14, IslandUi.TextMuted)); price.AddChild(_maxPrice); form.AddChild(price);
+        form.AddChild(Caption("Preço (VC$)")); var price = IslandUi.Row(8); _minPrice = Range("Mín."); _maxPrice = Range("Máx."); price.AddChild(_minPrice); price.AddChild(IslandUi.Text("–", 14, IslandUi.TextMuted)); price.AddChild(_maxPrice); form.AddChild(price);
         _onlyAvailable = new CheckBox { Text = "Somente disponíveis", ButtonPressed = true, FocusMode = Control.FocusModeEnum.None, TooltipText = "Desligado, mostra também o que já está alugado." }; form.AddChild(_onlyAvailable);
         _withVisit = new CheckBox { Text = "Com visitação", FocusMode = Control.FocusModeEnum.None, TooltipText = "Só terrenos em que qualquer pessoa pode entrar." }; form.AddChild(_withVisit);
         body.AddChild(IslandUi.Spacer());

@@ -283,7 +283,7 @@ public partial class ParcelInfoWindow
     private void OpenSale(long price, bool objects)
     {
         var content = IslandUi.Column(8); content.AddChild(Note("O terreno vai à venda para todos."));
-        var value = IslandUi.Number(1, 1_000_000_000, 1, " L$"); value.Value = price; content.AddChild(value);
+        var value = IslandUi.Number(1, 1_000_000_000, 1, " VC$"); value.Value = price; content.AddChild(value);
         var include = new CheckBox { Text = "Incluir os meus objetos na venda", ButtonPressed = objects, FocusMode = Control.FocusModeEnum.None }; content.AddChild(include);
         var description = IslandUi.Input("Descrição do anúncio (opcional)", 200); content.AddChild(description);
         Ask("Colocar à venda", content, async () => { if (Obj(About, "sale") is not null) await Api.CancelSale(IslandId, _parcel); return await Do(Api.OfferSale(IslandId, _parcel, (long)value.Value, include.ButtonPressed, description.Text.Trim()), "Terreno anunciado à venda."); }, "Anunciar");
@@ -292,11 +292,11 @@ public partial class ParcelInfoWindow
     private void OpenRent()
     {
         var content = IslandUi.Column(8); content.AddChild(Note("Quem alugar pode construir durante o contrato; o terreno continua seu."));
-        var price = IslandUi.Number(1, 1_000_000_000, 1, " L$ por período"); price.Value = 500; content.AddChild(price);
+        var price = IslandUi.Number(1, 1_000_000_000, 1, " VC$ por período"); price.Value = 500; content.AddChild(price);
         var period = IslandUi.Dropdown([("7 dias", "7"), ("14 dias", "14"), ("30 dias", "30")]); IslandUi.Select(period, "30"); content.AddChild(period);
         var min = IslandUi.Number(1, 52, 1, " período(s) no mínimo"); min.Value = 1; content.AddChild(min);
         var max = IslandUi.Number(1, 52, 1, " período(s) no máximo"); max.Value = 6; content.AddChild(max);
-        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " L$ de caução"); content.AddChild(deposit);
+        var deposit = IslandUi.Number(0, 1_000_000_000, 1, " VC$ de caução"); content.AddChild(deposit);
         var grace = IslandUi.Number(0, 30, 1, " dia(s) de tolerância"); grace.Value = 3; content.AddChild(grace);
         Ask("Habilitar aluguel", content, async () => await Do(Api.OfferRent(IslandId, _parcel, (long)price.Value, int.Parse(IslandUi.IdOf(period)), (int)min.Value, (int)max.Value, (long)deposit.Value, (int)grace.Value), "Terreno oferecido para aluguel."), "Anunciar");
     }

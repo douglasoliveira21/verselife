@@ -94,7 +94,7 @@ public partial class LandSmoke : Node
             // 1. my own parcel: offer it for sale
             var mine = Show(Parcel("Casa", "Marina", "own", true, 0, 0, 3, 3, 4));
             Require(land.OwnerSaleVisibleForTesting && land.OwnerRentVisibleForTesting && !land.BuyBoxVisibleForTesting && !land.ContractVisibleForTesting, "the owner is offered selling and renting, not buying");
-            Require(land.HistoryForTesting.Contains("Venda") && land.HistoryForTesting.Contains("L$ 900"), $"the history of my parcel is listed: {land.HistoryForTesting}");
+            Require(land.HistoryForTesting.Contains("Venda") && land.HistoryForTesting.Contains("VC$ 900"), $"the history of my parcel is listed: {land.HistoryForTesting}");
             said.Clear(); calls2.Clear();
             land.SetSaleForTesting("abc", true); land.OfferSaleForTesting();
             Require(said.Count == 1 && !calls2.Any(c => c.StartsWith("Post")), "a price that is not a number is refused before asking");
@@ -114,7 +114,7 @@ public partial class LandSmoke : Node
 
             // 3. a parcel for sale that is not mine: buy it
             Show(Parcel("Loja", "Rafa", "sale", false, 4, 0, 7, 3, 2, ",\"salePrice\":2500,\"saleIncludesObjects\":true,\"saleDescription\":\"Esquina boa\""));
-            Require(land.BuyBoxVisibleForTesting && !land.OwnerSaleVisibleForTesting && land.BuySummaryForTesting.Contains("L$ 2.500") && land.BuySummaryForTesting.Contains("Rafa"), $"someone else's parcel for sale offers buying: {land.BuySummaryForTesting}");
+            Require(land.BuyBoxVisibleForTesting && !land.OwnerSaleVisibleForTesting && land.BuySummaryForTesting.Contains("VC$ 2.500") && land.BuySummaryForTesting.Contains("Rafa"), $"someone else's parcel for sale offers buying: {land.BuySummaryForTesting}");
             land.OpenBuyForTesting();
             Require(land.BuyWindowVisibleForTesting, "buying asks for a confirmation first");
             calls2.Clear(); said.Clear(); wallet = 0; land.ConfirmBuy();
@@ -131,7 +131,7 @@ public partial class LandSmoke : Node
             Show(Parcel("Quiosque", "Lua", "rent", false, 8, 0, 11, 3, 0, ",\"rentPrice\":100,\"rentPeriodDays\":10,\"rentMinPeriods\":2,\"rentMaxPeriods\":6,\"rentDeposit\":50"));
             Require(land.RentBoxVisibleForTesting && !land.BuyBoxVisibleForTesting, "a parcel offered for rent offers renting");
             land.OpenRentForTesting(3);
-            Require(land.RentWindowVisibleForTesting && land.RentTotalForTesting == "L$ 350", $"the total is rent for the periods plus the deposit: {land.RentTotalForTesting}");
+            Require(land.RentWindowVisibleForTesting && land.RentTotalForTesting == "VC$ 350", $"the total is rent for the periods plus the deposit: {land.RentTotalForTesting}");
             calls2.Clear(); said.Clear(); land.ConfirmRent();
             var rent = calls2.First(c => c.Contains("/rent"));
             Require(rent.Contains("\"periods\":3") && rent.Contains("\"expectedPrice\":100") && rent.Contains("idempotencyKey") && said.Any(s => s.Contains("alugou")), $"the rental sends periods, the price seen and a key: {rent}");
@@ -139,7 +139,7 @@ public partial class LandSmoke : Node
             // 5. my contract as the tenant
             var rentalId = Guid.NewGuid();
             Show(Parcel("Quiosque", "Lua", "rented_by_me", false, 8, 0, 11, 3, 0, $",\"rentalId\":\"{rentalId}\",\"tenantName\":\"Marina\",\"tenantIsMe\":true,\"rentStatus\":\"grace\",\"rentExpiresAt\":\"2026-12-01T12:00:00Z\",\"rentNextCharge\":100,\"rentAutoRenew\":true"));
-            Require(land.ContractVisibleForTesting && land.ContractTextForTesting.Contains("Alugado por você") && land.ContractTextForTesting.Contains("tolerância") && land.ContractTextForTesting.Contains("L$ 100") && land.ContractTextForTesting.Contains("automática"), $"the tenant sees the contract: {land.ContractTextForTesting}");
+            Require(land.ContractVisibleForTesting && land.ContractTextForTesting.Contains("Alugado por você") && land.ContractTextForTesting.Contains("tolerância") && land.ContractTextForTesting.Contains("VC$ 100") && land.ContractTextForTesting.Contains("automática"), $"the tenant sees the contract: {land.ContractTextForTesting}");
             calls2.Clear(); land.RenewForTesting(); land.EndForTesting();
             Require(calls2.Any(c => c.Contains($"/rentals/{rentalId}/renew") && c.Contains("\"periods\":1")) && calls2.Any(c => c.Contains($"/rentals/{rentalId}/end")), "renewing and ending go to the contract");
 

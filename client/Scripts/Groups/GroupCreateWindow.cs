@@ -74,7 +74,7 @@ public sealed partial class GroupCreateWindow : Node
 
     private Label Hint(string text) { var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(240, 0) }; label.AddThemeFontSizeOverride("font_size", 12); label.AddThemeColorOverride("font_color", UiStyle.TextMuted); return label; }
     private Label Caption(string text) { var label = new Label { Text = text }; label.AddThemeFontSizeOverride("font_size", 13); label.AddThemeFontOverride("font", UiStyle.Medium); return label; }
-    private static string Money(long value) => "L$ " + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+    private static string Money(long value) => "VC$ " + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
     private static string Policy(string policy) => policy switch { "open" => "Entrada livre", "invite" => "Só por convite", _ => "Entrada por aprovação" };
     private static string Text(IEnumerable<(string Id, string Text)> options, string id) => options.FirstOrDefault(o => o.Id == id).Text ?? id;
 
@@ -108,7 +108,7 @@ public sealed partial class GroupCreateWindow : Node
     {
         _body.AddChild(Caption("Quem vê o grupo")); var privacy = IslandUi.Dropdown([("Público: aparece na busca", "public"), ("Privado: só por convite", "private")]); IslandUi.Select(privacy, _privacy); privacy.Name = "privacy"; _body.AddChild(privacy);
         _body.AddChild(Caption("Como se entra")); var policy = IslandUi.Dropdown([("Entrada livre", "open"), ("Entrada por aprovação", "request"), ("Só por convite", "invite")]); IslandUi.Select(policy, _policy); policy.Name = "policy"; _body.AddChild(policy);
-        var feeBox = IslandUi.Column(4); _body.AddChild(feeBox); feeBox.AddChild(Caption("Taxa de entrada (L$)")); var fee = IslandUi.Number(0, GroupRules.MaxJoinFee, 1, " L$"); fee.Value = _fee; fee.ValueChanged += v => _fee = (long)v; fee.Name = "fee"; feeBox.AddChild(fee);
+        var feeBox = IslandUi.Column(4); _body.AddChild(feeBox); feeBox.AddChild(Caption("Taxa de entrada (VC$)")); var fee = IslandUi.Number(0, GroupRules.MaxJoinFee, 1, " VC$"); fee.Value = _fee; fee.ValueChanged += v => _fee = (long)v; fee.Name = "fee"; feeBox.AddChild(fee);
         var feeHint = Hint("A taxa só vale para grupos de entrada livre: quem entra paga e o valor vai para o cofre do grupo."); feeBox.AddChild(feeHint);
         void Sync()
         {
@@ -151,7 +151,7 @@ public sealed partial class GroupCreateWindow : Node
                 if (_description.Length > 600) return "A descrição pode ter até 600 caracteres.";
                 return "";
             case 1:
-                return _fee < 0 || _fee > GroupRules.MaxJoinFee ? "A taxa vai de L$ 0 a L$ 1.000.000." : "";
+                return _fee < 0 || _fee > GroupRules.MaxJoinFee ? "A taxa vai de VC$ 0 a VC$ 1.000.000." : "";
             case 2:
                 return _cover.Length > 0 && !_cover.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? "A capa precisa ser um endereço https." : "";
             default: return "";

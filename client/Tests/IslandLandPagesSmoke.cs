@@ -63,7 +63,7 @@ public partial class IslandLandPagesSmoke : Node3D
             // --- Vendas e Aluguéis ----------------------------------------------------------------------------------------------------------
             await deals.LoadAsync(); await Frames(3); text = deals.TextForTesting;
             Require(string.Join("|", deals.KpiTitlesForTesting) == "Anúncios Ativos|Parcelas à Venda|Parcelas Alugadas|Contratos Ativos|Receita Mensal|Próximos Vencimentos", "the six indicators");
-            Require(text.Contains("L$ 3.000") && text.Contains("(em 7 dias)"), $"revenue and the next due dates (got {text})");
+            Require(text.Contains("VC$ 3.000") && text.Contains("(em 7 dias)"), $"revenue and the next due dates (got {text})");
             Require(deals.Loaded!.Parcels.Count(p => p.SalePrice is not null || (p.RentPrice is not null && p.Kind != "rented")) == 2, "two offers are active: one sale and one rent offer");
             Require(deals.ContractRowsForTesting == 1 && text.Contains("L-03 — Galeria") && text.Contains("Carla") && text.Contains("Ativo") && !text.Contains("Duda"), "only the contracts in force are listed");
             deals.PressForTesting("Gerenciar Vendas"); deals.PressForTesting("Gerenciar Aluguéis"); deals.PressForTesting("Criar Anúncio");

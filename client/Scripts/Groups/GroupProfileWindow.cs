@@ -94,7 +94,7 @@ public sealed partial class GroupProfileWindow : Node
     private bool Can(string permission) => IsLeader || Items(Prop(_view, "myPermissions")).Any(p => p.GetString() == permission);
     private static string Moment(DateTimeOffset when) => when == default ? "—" : when.ToLocalTime().ToString("dd/MM/yyyy HH:mm", Pt);
     private static string Day(DateTimeOffset when) => when == default ? "—" : when.ToLocalTime().ToString("dd/MM/yyyy", Pt);
-    private static string Money(long value) => "L$ " + value.ToString("N0", Pt);
+    private static string Money(long value) => "VC$ " + value.ToString("N0", Pt);
     private static string CategoryText(string key) { var i = Array.IndexOf(GroupRules.Categories, key); return i >= 0 && i < CategoryNames.Length ? CategoryNames[i] : key; }
     private static string JoinText(string policy) => policy switch { "open" => "Entrada livre", "invite" => "Só por convite", _ => "Entrada por aprovação" };
     private static string RatingText(string rating) => rating switch { "moderado" => "Moderado", "adulto" => "Adulto", _ => "Livre" };
@@ -206,7 +206,7 @@ public sealed partial class GroupProfileWindow : Node
             "too_many_proposals" => "Já há propostas demais abertas.", "not_open" => "Essa votação já terminou.", "not_eligible" => "O seu cargo não pode votar nessa proposta.", "already_voted" => "Você já votou nessa proposta.", "bad_option" => "Escolha uma das opções.",
             "fee_required" => "A taxa de entrada mudou: confirme o valor de novo.", "insufficient_balance" => "Saldo insuficiente na carteira.", "wallet_blocked" => "A carteira está bloqueada.", "already_member" => "Você já faz parte deste grupo.",
             "banned" => "Você foi banido deste grupo.", "full" or "group_full" => "O grupo está cheio.", "invite_only" => "Este grupo só entra por convite.", "bad_category" => "Categoria inválida.", "bad_language" => "Idioma inválido.", "bad_cover" => "A capa precisa ser um endereço https.",
-            "bad_headquarters" => "Essa ilha não pode ser a sede.", "bad_fee" => "A taxa só vale para grupos de entrada livre, até L$ 1.000.000.", "bad_message" => "A mensagem é longa demais.", "bad_role" => "Esse cargo não existe ou não pode ser dado.",
+            "bad_headquarters" => "Essa ilha não pode ser a sede.", "bad_fee" => "A taxa só vale para grupos de entrada livre, até VC$ 1.000.000.", "bad_message" => "A mensagem é longa demais.", "bad_role" => "Esse cargo não existe ou não pode ser dado.",
             "bad_attachment" => "O anexo precisa ser um link https.", "bad_expiry" => "A validade precisa ser entre 1 minuto e 1 ano.", "rate_limited" => "Calma: faça isso de novo daqui a pouco.", "not_found" => "Não encontrei isso: pode ter sido apagado.",
             "too_many_roles" => "O grupo já tem cargos demais.", "bad_rank" => "O nível do cargo vai de 1 a 99.", "bad_permissions" => "Permissão inválida.", "system_role" => "Os cargos iniciais mantêm o nome e o nível.", "bad_message_" => "",
             _ => reply.Message.Length > 0 ? reply.Message : LandManagementApi.Words(reply)

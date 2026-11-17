@@ -76,6 +76,7 @@ public partial class ViewerUI
             ("Construir   B", () => BuildHost.SetActive(_world, true), false),
             ("Inventário", () => _world.GetNodeOrNull<InventoryPanel>("InventoryPanel")?.Toggle(), false),
             ("Marketplace e carteira…", () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle(), false),
+            ("Minha carteira (VC$)…", () => _root.GetNodeOrNull<WalletWindow>("WalletWindow")?.Toggle(1), false),
             ("-", null, false),
             ("Editor de scripts Lua…", () => _world.GetNodeOrNull<LuaScriptEditor>("LuaScriptEditor")?.Toggle(), false),
             ("Editor de HUD…", () => _world.GetNodeOrNull<HudEditor>("HudEditor")?.Toggle(), false));
@@ -91,16 +92,18 @@ public partial class ViewerUI
 
         // Coins: gold coin, balance and the "+" button.
         row.AddChild(new CoinIcon { CustomMinimumSize = new Vector2(26, 26), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter });
-        _balance = new Label { Text = "—", TooltipText = "Saldo de LV Coins", MouseFilter = Control.MouseFilterEnum.Stop };
+        _balance = new Label { Text = "—", TooltipText = "Saldo de VerseCoin (VC$)", MouseFilter = Control.MouseFilterEnum.Stop };
         _balance.AddThemeFontSizeOverride("font_size", 20); _balance.AddThemeFontOverride("font", UiStyle.Medium);
         row.AddChild(new Control { CustomMinimumSize = new Vector2(4, 0) });
         row.AddChild(_balance);
-        var plus = new Button { Text = "Comprar L$", Icon = UiStyle.Icon("plus", UiStyle.Accent, 18), TooltipText = "Carteira e marketplace: comprar e usar moedas", CustomMinimumSize = new Vector2(0, 30), FocusMode = Control.FocusModeEnum.None, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, ExpandIcon = false };
+        var plus = new Button { Text = "Comprar VC$", Icon = UiStyle.Icon("plus", UiStyle.Accent, 18), TooltipText = "Carteira e marketplace: comprar e usar moedas", CustomMinimumSize = new Vector2(0, 30), FocusMode = Control.FocusModeEnum.None, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, ExpandIcon = false };
         plus.AddThemeStyleboxOverride("normal", UiStyle.Box(new Color(UiStyle.AccentFill, .55f), UiStyle.Accent, 8, 2, 10, 0));
         plus.AddThemeStyleboxOverride("hover", UiStyle.Box(UiStyle.AccentFillHover, UiStyle.Accent, 8, 2, 10, 0));
         plus.AddThemeStyleboxOverride("pressed", UiStyle.Box(UiStyle.AccentFillPressed, UiStyle.Accent, 8, 2, 10, 0));
         plus.AddThemeStyleboxOverride("focus", new StyleBoxEmpty()); plus.AddThemeFontSizeOverride("font_size", 15); plus.AddThemeFontOverride("font", UiStyle.Medium);
-        plus.Pressed += () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle();
+        plus.Pressed += () => _root.GetNodeOrNull<WalletWindow>("WalletWindow")?.Open(0);
+        _balance.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) _root.GetNodeOrNull<WalletWindow>("WalletWindow")?.Toggle(1); };
+        _balance.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
         row.AddChild(plus);
         row.AddChild(Divider(26));
         row.AddChild(TopIconButton("bag", "Loja (marketplace)", () => _world.GetNodeOrNull<MarketplacePanel>("MarketplacePanel")?.Toggle()));
@@ -311,6 +314,7 @@ public partial class ViewerUI
     private void BuildRadial()
     {
         var menu = new RadialMenu(); _root.AddChild(menu);
+        var wallet = new WalletWindow { Name = "WalletWindow" }; _root.AddChild(wallet); wallet.BalanceChanged += value => _balance.Text = FormatCoins(value);
         var session = GetNodeOrNull<SessionManager>("/root/SessionManager");
         var people = new PersonActions { Name = "PersonActions" }; AddChild(people); people.Setup(_root); people.Said += text => Toast(text);
         var services = new ContextServices
