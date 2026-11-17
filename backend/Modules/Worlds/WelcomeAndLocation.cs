@@ -21,13 +21,29 @@ public static class WelcomeIsland
 
     private static IQueryable<Island> Usable(LifeVerseDbContext db) => db.Islands.Where(i => i.DeletedAt == null && i.IsPublic);
 
+    /// <summary>Whether an island has a server answering right now (its last heartbeat is recent: the same rule the world manager uses).</summary>
+    public static Task<bool> HasLiveServerAsync(LifeVerseDbContext db, Guid islandId, DateTimeOffset now, CancellationToken ct) =>
+        db.ServerInstances.AnyAsync(s => s.IslandId == islandId && s.StoppedAt == null && s.LastHeartbeatAt > now.AddSeconds(-45), ct);
+
+    /// <summary>
+    /// A new person must arrive somewhere that can take them. Islands are started on demand by the supervisor, so one with no server may never come up (and the person would wait on "Preparando servidor"
+    /// for good): when the island chosen has no live server and another public one has, the person goes to the one that is up. The choice itself (the flag) is not changed.
+    /// </summary>
+    private static async Task<Island> OneThatIsUpAsync(LifeVerseDbContext db, Island chosen, DateTimeOffset now, CancellationToken ct)
+    {
+        if (await HasLiveServerAsync(db, chosen.Id, now, ct)) return chosen;
+        var up = await Usable(db).Where(i => db.ServerInstances.Any(s => s.IslandId == i.Id && s.StoppedAt == null && s.LastHeartbeatAt > now.AddSeconds(-45))).OrderBy(i => i.CreatedAt).ThenBy(i => i.Id).FirstOrDefaultAsync(ct);
+        return up ?? chosen;
+    }
+
     /// <summary>The welcome island, chosen or made if there was none.</summary>
     public static async Task<Island> ResolveAsync(LifeVerseDbContext db, DateTimeOffset now, CancellationToken ct)
     {
         var chosen = await Usable(db).Where(i => i.IsWelcome).OrderBy(i => i.CreatedAt).FirstOrDefaultAsync(ct);
-        if (chosen is not null) return chosen;
+        if (chosen is not null) return await OneThatIsUpAsync(db, chosen, now, ct);
         // the flag points at an island that was deleted or made private: it moves on to the oldest public island there is
-        var oldest = await Usable(db).OrderBy(i => i.CreatedAt).ThenBy(i => i.Id).FirstOrDefaultAsync(ct);
+        var running = await Usable(db).Where(i => db.ServerInstances.Any(s => s.IslandId == i.Id && s.StoppedAt == null && s.LastHeartbeatAt > now.AddSeconds(-45))).OrderBy(i => i.CreatedAt).ThenBy(i => i.Id).FirstOrDefaultAsync(ct);
+        var oldest = running ?? await Usable(db).OrderBy(i => i.CreatedAt).ThenBy(i => i.Id).FirstOrDefaultAsync(ct);      // when none was chosen, one that is up comes first
         if (oldest is not null) return await MarkAsync(db, oldest, now, ct) ?? oldest;
         { var made = await CreateAsync(db, now, ct); return await MarkAsync(db, made, now, ct) ?? made; }
     }

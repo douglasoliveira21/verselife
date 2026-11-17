@@ -31,3 +31,10 @@ Ninguém escolhe a ilha de boas-vindas pelos outros: não há rota para usuário
 **Para onde olhava:** o servidor não guarda a direção, então o cliente guarda neste computador (`user://last_place.json`, a cada 5 s) e vira o avatar para ela ao conectar, se for a mesma pessoa e a mesma ilha.
 
 **Limitações:** o ponto de nascer de cada ilha agora vale (antes todos nasciam em 0, 0) — ilhas com ponto configurado passam a receber ali; a direção do olhar só volta no mesmo computador; se o servidor da ilha cair sem avisar, volta-se ao último ponto contado (até 20 s antes); quem ficou sentado em veículo volta ao ponto do veículo, a pé; o ponto de retomada e a gravação foram verificados pelos testes da API e do `SpawnPlanner`, e o servidor da ilha compila e foi ligado a eles, mas **não foi rodado de ponta a ponta com um banco e jogadores reais**.
+
+
+## Ilha de boas-vindas e ilhas sem servidor
+
+Uma ilha só aceita jogadores quando tem um servidor de ilha rodando. Ilhas sem servidor (estado `suspended`) só sobem se o **supervisor de ilhas** (`island-supervisor`) estiver ativo; sem ele, quem entra numa dessas ilhas fica em "Preparando servidor" até o jogo desistir (cerca de 70 segundos).
+
+Por isso a ilha onde uma pessoa **nova** começa (`GET /api/v1/worlds/welcome`, `/worlds/me/start`) prefere uma ilha pública **com servidor respondendo** (último sinal há menos de 45 s): quando ninguém escolheu a ilha de boas-vindas, entre as públicas vence a que está no ar (e a mais antiga entre as que estão); quando a escolhida está sem servidor e outra pública está no ar, a pessoa vai para a que está no ar, sem mudar a escolha. Sem nenhum servidor no ar, vale a escolhida (ou a mais antiga).

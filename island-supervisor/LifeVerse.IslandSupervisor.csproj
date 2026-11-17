@@ -3,5 +3,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>LifeVerse.IslandSupervisor</RootNamespace>
+    <!-- the island image (godot-ci mono) ships .NET 9 only: let this program run on a newer runtime than the one it was built for -->
+    <RollForward>Major</RollForward>
   </PropertyGroup>
 </Project>

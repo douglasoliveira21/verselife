@@ -24,6 +24,45 @@ public sealed class WelcomeAndLocationTests : IDisposable
 
     // ---- the welcome island ----------------------------------------------------------------------------------------------------------
 
+    private void ServerUp(Island island, int secondsAgo = 5) { _db.ServerInstances.Add(new ServerInstance { Id = Guid.NewGuid(), IslandId = island.Id, Hostname = "h", Port = 7777, Status = "running", StartedAt = _now.AddMinutes(-5), LastHeartbeatAt = _now.AddSeconds(-secondsAgo) }); _db.SaveChanges(); }
+
+    [Fact]
+    public async Task WhenNobodyChoseAnIslandThatIsUpComesBeforeOnesThatAreNot()
+    {
+        var owner = NewUser("ana"); var plaza = NewIsland(owner, "Praca", age: TimeSpan.FromDays(3)); var tropical = NewIsland(owner, "Tropical", age: TimeSpan.FromDays(3)); var sandbox = NewIsland(owner, "Sandbox", age: TimeSpan.FromDays(3));
+        ServerUp(tropical);
+        var welcome = await WelcomeIsland.ResolveAsync(_db, _now, default);
+        Assert.Equal(tropical.Id, welcome.Id); Assert.True((await _db.Islands.SingleAsync(i => i.Id == tropical.Id)).IsWelcome);
+    }
+
+    [Fact]
+    public async Task AChosenIslandWithNoServerGivesWayToOneThatIsUpWithoutChangingTheChoice()
+    {
+        var owner = NewUser("ana"); var chosen = NewIsland(owner, "Escolhida", age: TimeSpan.FromDays(9)); var other = NewIsland(owner, "Outra", age: TimeSpan.FromDays(2));
+        await WelcomeIsland.MarkAsync(_db, chosen, _now, default); ServerUp(other);
+        var welcome = await WelcomeIsland.ResolveAsync(_db, _now, default);
+        Assert.Equal(other.Id, welcome.Id);                                                                                               // the person goes where there is a server
+        Assert.True((await _db.Islands.SingleAsync(i => i.Id == chosen.Id)).IsWelcome);                                                      // the operator's choice stands
+    }
+
+    [Fact]
+    public async Task AChosenIslandThatIsUpStaysAndWithNoServerAnywhereTheChoiceStands()
+    {
+        var owner = NewUser("ana"); var chosen = NewIsland(owner, "Escolhida", age: TimeSpan.FromDays(9)); var other = NewIsland(owner, "Outra", age: TimeSpan.FromDays(2));
+        await WelcomeIsland.MarkAsync(_db, chosen, _now, default);
+        Assert.Equal(chosen.Id, (await WelcomeIsland.ResolveAsync(_db, _now, default)).Id);                                                // no server anywhere: the choice stands
+        ServerUp(other); ServerUp(chosen);
+        Assert.Equal(chosen.Id, (await WelcomeIsland.ResolveAsync(_db, _now, default)).Id);                                                // both up: the choice stands
+    }
+
+    [Fact]
+    public async Task AServerThatStoppedAnsweringDoesNotCount()
+    {
+        var owner = NewUser("ana"); var chosen = NewIsland(owner, "Escolhida", age: TimeSpan.FromDays(9)); var other = NewIsland(owner, "Outra", age: TimeSpan.FromDays(2));
+        await WelcomeIsland.MarkAsync(_db, chosen, _now, default); ServerUp(other, secondsAgo: 120);
+        Assert.Equal(chosen.Id, (await WelcomeIsland.ResolveAsync(_db, _now, default)).Id);
+    }
+
     [Fact]
     public async Task WithNoIslandsAtAllOneIsMadeForTheWelcome()
     {
