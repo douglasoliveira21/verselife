@@ -157,7 +157,7 @@ public partial class AvatarRig
         ApplyCustomShape();
         _restGlobal = new Quaternion[skeleton.GetBoneCount()]; _globalNow = new Quaternion[skeleton.GetBoneCount()]; _globalDone = new bool[skeleton.GetBoneCount()];
         for (var bone = 0; bone < _restGlobal.Length; bone++) _restGlobal[bone] = skeleton.GetBoneGlobalRest(bone).Basis.Orthonormalized().GetRotationQuaternion();
-        ComputeNeutralPose(skeleton, scene);
+        ComputeNeutralPose(skeleton, scene); PrepareFingers(skeleton);
         CustomBodyStatus = "ready";
         RetargetCustom();
         PlaceWearables(); // pieces and garments that were waiting for the body
@@ -195,7 +195,7 @@ public partial class AvatarRig
     public bool BlendingForTesting => _blendFrom is not null;
     public double BlendProgressForTesting => _blendFrom is null ? 1 : _blendTime / _blendLength;
 
-    public override void _Process(double delta) { _blendTime += delta; StepLook(delta); if (FirstPersonView) KeepFirstPersonView(); FadeFootsteps(delta); FadeTypingSound(delta); if (Throttled) { AdvanceClip(delta); return; } AdvanceClip(delta); RetargetCustom(); FollowWearables(); FollowAttachments(delta); }
+    public override void _Process(double delta) { _blendTime += delta; _frameDelta = delta; StepLook(delta); if (FirstPersonView) KeepFirstPersonView(); FadeFootsteps(delta); FadeTypingSound(delta); if (Throttled) { AdvanceClip(delta); return; } AdvanceClip(delta); RetargetCustom(); FollowWearables(); FollowAttachments(delta); }
 
     /// <summary>Copies the animated rotations of the procedural body onto the bones of the custom model, in the model's own space.</summary>
     public void RetargetCustom()
@@ -235,6 +235,7 @@ public partial class AvatarRig
         }
         Array.Clear(_globalDone);
         for (var bone = 0; bone < _restGlobal.Length; bone++) GlobalOf(skeleton, bone, delta);
+        ApplyFingers(skeleton);
         ApplyLookToCustom(skeleton);
         if (FirstPersonView) CollapseHead(skeleton);
     }

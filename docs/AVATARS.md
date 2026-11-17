@@ -263,3 +263,15 @@ Um personagem novo começa como **"Homem (padrão)"** (`baseModel = "lifeverse_m
 - **Memória:** o arquivo é lido uma vez e cada avatar recebe uma cópia da cena que compartilha as mesmas malhas, materiais e texturas (um conjunto na memória, não um por pessoa). Um avatar longe, que perde triângulos, faz a própria cópia e não mexe nos outros.
 - **Quem já tem personagem:** continua com o corpo que tinha (`human_a`, `human_b` ou um corpo enviado); "Clássico" e "Atlético" seguem na lista. O cadastro (`AuthService`) e o cliente (`AvatarManager.CreateDefault`) criam novos personagens como o homem. A cor da pele e do cabelo do editor não mudam o homem (a pele é textura).
 - **Refazer o arquivo:** `blender -b --python tools/blender/build_default_man.py -- <base.fbx> <saida.glb>` (o Blender põe `.glb` no fim do nome; renomeie para `lifeverse_man.bin`).
+
+## Dedos
+
+Um corpo personalizado cujas mãos têm ossos de dedos (o homem do LifeVerse, qualquer modelo com dedos, nos nomes do Unreal/Character Creator `index_01_l…` ou do Mixamo `LeftHandIndex1…`) não fica com os dedos retos como tábuas: depois da animação, `AvatarRig.Fingers` curva cada dedo para a palma, articulação por articulação, e mistura de uma forma para a outra (~0,1 s).
+
+- **Relaxada** (padrão): dedos levemente curvados, mais o mindinho que o indicador, polegar solto.
+- **Aberta:** acenar, cumprimentar, aplaudir, dançar e nadar.
+- **Digitando:** dedos arqueados sobre as teclas. **Correndo:** meio fechada.
+- **Apontando:** só o indicador estendido (mão direita), os outros fechados.
+- **Segurando:** a mão que tem um objeto anexado se fecha sobre ele.
+
+O lado da palma é achado do próprio modelo (pela linha dos nós dos dedos), então vale para mãos esquerda e direita e para qualquer pose de modelagem. Corpos sem ossos de dedos não são mexidos; o corpo padrão do jogo é feito de peças e não tem dedos.
