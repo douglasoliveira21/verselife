@@ -38,7 +38,7 @@ public static partial class ScriptingEndpoints
         var transaction = new LedgerTransaction { Id = Guid.NewGuid(), IdempotencyKey = key, Type = "script_payment", Status = "completed", Amount = call.Amount, InitiatorUserId = call.PayerUserId, MetadataJson = JsonSerializer.Serialize(new { scriptId = call.ScriptId, objectId = target.ObjectId, islandId = server.IslandId, receiverUserId = target.OwnerUserId, requestId = call.RequestId }), CreatedAt = now, CompletedAt = now };
         db.LedgerTransactions.Add(transaction);
         db.ScriptLogs.Add(new ScriptLogLine { Id = Guid.NewGuid(), ScriptId = call.ScriptId, Level = "info", EventName = "payment", Text = $"payment of L$ {call.Amount} received from {call.PayerUserId.ToString()[..8]}…", CreatedAt = now });
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); await EconomyPush.WalletChangedAsync(context.RequestServices, db, ct, call.PayerUserId, target.OwnerUserId);
+        if (!await EconomyConcurrency.CommitAsync(db, tx, ct)) return Results.Json(new ScriptPaymentResult("rejected", EconomyConcurrency.TryAgain), statusCode: StatusCodes.Status409Conflict); await EconomyPush.WalletChangedAsync(context.RequestServices, db, ct, call.PayerUserId, target.OwnerUserId);
         return Results.Ok(new ScriptPaymentResult("completed", null, transaction.Id, call.Amount));
     }
 }

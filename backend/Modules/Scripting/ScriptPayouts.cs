@@ -85,7 +85,7 @@ public static partial class ScriptingEndpoints
         db.LedgerTransactions.Add(transaction);
         Land.PropertyNotices.Add(db, call.RecipientUserId, "payment_received", $"Pagamento recebido: {EconomyEndpoints.Coins(call.Amount)}", $"“{target.Name}” pagou {EconomyEndpoints.Coins(call.Amount)} para você.", $"scriptpayout:{transaction.Id}", now);
         db.ScriptLogs.Add(new ScriptLogLine { Id = Guid.NewGuid(), ScriptId = call.ScriptId, Level = "info", EventName = "payout", Text = $"paid VC$ {call.Amount} to {call.RecipientUserId.ToString()[..8]}…", CreatedAt = now });
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); await EconomyPush.WalletChangedAsync(context.RequestServices, db, ct, target.OwnerUserId, call.RecipientUserId);
+        if (!await EconomyConcurrency.CommitAsync(db, tx, ct)) return Results.Json(new ScriptPaymentResult("rejected", EconomyConcurrency.TryAgain), statusCode: StatusCodes.Status409Conflict); await EconomyPush.WalletChangedAsync(context.RequestServices, db, ct, target.OwnerUserId, call.RecipientUserId);
         return Results.Ok(new ScriptPaymentResult("completed", null, transaction.Id, call.Amount));
     }
 }
