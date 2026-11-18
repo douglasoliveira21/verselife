@@ -57,6 +57,7 @@ size = Vector3(10, 2.5, 10)
 size = Vector3(10, 0.08, 10)
 [sub_resource type="StandardMaterial3D" id="WaterMaterial"]
 transparency = 1
+cull_mode = 2
 albedo_color = Color(0.08, 0.5, 0.75, 0.55)
 roughness = 0.18
 [sub_resource type="BoxMesh" id="MudMesh"]

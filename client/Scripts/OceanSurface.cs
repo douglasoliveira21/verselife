@@ -63,6 +63,18 @@ void fragment() {
     ROUGHNESS = mix(0.09, 0.4, clamp(foam, 0.0, 1.0));
     SPECULAR = 0.55;
     METALLIC = 0.0;
+
+    // Seen from below (the camera is under the water): the surface is a translucent ceiling. Looking almost straight up the sky and sun show through
+    // (the bright window); at shallow angles it turns dark, like the real total reflection. The depth trick above only makes sense from above.
+    if (!FRONT_FACING) {
+        float facing = clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0);
+        float window = smoothstep(0.25, 0.8, facing);
+        vec3 ceiling = mix(vec3(0.02, 0.17, 0.30), vec3(0.32, 0.74, 0.90), window);
+        ALBEDO = ceiling * mix(0.12, 1.0, day);
+        ALPHA = mix(0.92, 0.35, window) * (1.0 - smoothstep(1100.0, 1290.0, dist));
+        ROUGHNESS = 0.05;
+        SPECULAR = 0.9;
+    }
 }";
 
     /// <summary>The water moves in waves (Configurações › Gráficos › Qualidade). Off, the surface is flat and cheaper.</summary>

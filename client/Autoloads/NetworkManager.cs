@@ -317,7 +317,7 @@ public partial class NetworkManager : Node
             if (state.PeerId == ownPeer) { _localPlayer?.Reconcile(position, new Vector3(state.VelocityX, state.VelocityY, state.VelocityZ), state.LastProcessedInput, state.Motion); continue; }
             if (_remote.TryGetValue(state.PeerId, out var remote))
             {
-                remote.TargetPosition = position; remote.TargetYaw = state.Yaw; remote.Rig.SetMotionState(WaterStill.Apply(ToAvatarMotion(state.Motion), state.VelocityX * state.VelocityX + state.VelocityZ * state.VelocityZ > .09f));
+                remote.TargetPosition = position; remote.TargetYaw = state.Yaw; remote.Rig.SetMotionState(RemoteMotion(state));
             }
         }
     }
@@ -400,6 +400,37 @@ public partial class NetworkManager : Node
     public void OnVehicleSnapshots(byte[] payload) { if (VehicleCodec.TryDecode(payload, out _, out var vehicles)) Vehicles.Apply(vehicles); }
     public void OnVehicleRejected(string code) => EmitSignal(SignalName.VehicleMessage, code switch { "too_far" => "Chegue mais perto do veículo.", "occupied" => "Alguém já está dirigindo este veículo.", "already_driving" => "Você já está em um veículo.", _ => "Veículo indisponível." });
     private void ClosePeer() { if (Multiplayer.HasMultiplayerPeer()) Multiplayer.MultiplayerPeer.Close(); Multiplayer.MultiplayerPeer = null; }
+    /// <summary>The state another player's avatar plays. The network carries a few states; the rest every client tells from how the avatar moves (the same rules the player's own client uses):
+    /// treading water when swimming in place, hovering when flying in place, and walking backwards when the avatar moves against the way it faces.</summary>
+    private static AvatarMotionState RemoteMotion(PlayerSnapshot state)
+    {
+        var speedSquared = state.VelocityX * state.VelocityX + state.VelocityZ * state.VelocityZ;
+        var moving = speedSquared > .09f;
+        var motion = ToAvatarMotion(state.Motion);
+        if (motion == AvatarMotionState.FlyMove && !moving && Mathf.Abs(state.VelocityY) < .3f) return AvatarMotionState.FlyIdle;
+        if (motion is AvatarMotionState.Walk or AvatarMotionState.Run && moving)
+        {
+            // the avatar faces (-sin yaw, -cos yaw); moving against that is walking backwards
+            var along = -(state.VelocityX * Mathf.Sin(state.Yaw) + state.VelocityZ * Mathf.Cos(state.Yaw));
+            return BackwardsWalk.Apply(motion, along < -.3f * Mathf.Sqrt(speedSquared));
+        }
+        return WaterStill.Apply(motion, moving);
+    }
+
+    /// <summary>The player makes one of the extra gestures (applaud, point, greet, laugh, sit on the floor): the island tells everybody nearby.</summary>
+    public void SendGesture(int gestureId)
+    {
+        if (!IsAuthenticated || _bridge is null || !LifeVerse.Shared.Networking.ExtraGestures.IsValid(gestureId)) return;
+        _bridge.RpcId(1, NetworkBridge.MethodName.Gesture, gestureId);
+    }
+
+    /// <summary>Somebody applauds, points, greets, laughs or sits on the floor: their avatar plays it for a few seconds.</summary>
+    public void OnGesture(int peerId, int gestureId)
+    {
+        if (!LifeVerse.Shared.Networking.ExtraGestures.IsValid(gestureId) || !_remote.TryGetValue(peerId, out var remote)) return;
+        remote.Rig.SetAnimationOverride(LifeVerse.Shared.Networking.ExtraGestures.States[gestureId], LifeVerse.Shared.Networking.ExtraGestures.Seconds, 2);
+    }
+
     private static AvatarMotionState ToAvatarMotion(NetworkMotionState state) => state switch
     {
         NetworkMotionState.Walk => AvatarMotionState.Walk, NetworkMotionState.Run => AvatarMotionState.Run, NetworkMotionState.Jump => AvatarMotionState.Jump,

@@ -143,7 +143,8 @@ public partial class PlayerController : CharacterBody3D
         _cameraPivot.Rotation = new Vector3(Mathf.Lerp(_cameraPivot.Rotation.X, _targetPitch, turn), Mathf.Wrap(_cameraYaw - Rotation.Y, -Mathf.Pi, Mathf.Pi), _sway.Roll);
         TellHeadLook(inside && close);
         // While swimming the camera rides higher so it stays above the waves instead of dipping under the surface.
-        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? 2.7f : 1.55f) + _cameraHeightOffset;
+        // In first person the eyes stay at eye height (a little above the water when floating), so diving with Ctrl puts the camera under the surface and the lake can be seen from below.
+        var pivotHeight = _mirror ? (_mirrorFace ? 1.62f : 1.05f) : (_oceanSwimming ? (_firstPerson ? FirstPersonSwimEyeHeight : 2.7f) : 1.55f) + _cameraHeightOffset;
         // in first person the camera is at the eyes of the body (its own head, wherever the animation takes it), a little in front of the neck, so it never sees the inside of the head and never cuts the chest
         Vector3? eyes = inside && !_oceanSwimming && _rig.EyeWorldPosition(-GlobalBasis.Z) is { } world ? world : null;
         if (_detached) { if (!Scripts.Camera.CameraSettings.Current.AllowDetached) ExitDetached(); else { UpdateDetached((float)delta); return; } }
@@ -601,7 +602,7 @@ public partial class PlayerController : CharacterBody3D
     }
 
     private void ContextSit() { _selectedSeat?.Interact(this); _selectedSeat = null; }
-    private void StartGesture(AvatarMotionState state, float duration, InputFlags networkFlag = InputFlags.None) { if (_seat is not null || _flying || _swimming || IsTyping()) return; _emoteState = state; _emoteTime = duration; _pendingGesture = networkFlag; _rig.SetAnimationOverride(state, duration, 2); }
+    private void StartGesture(AvatarMotionState state, float duration, InputFlags networkFlag = InputFlags.None) { if (_seat is not null || _flying || _swimming || IsTyping()) return; _emoteState = state; _emoteTime = duration; _pendingGesture = networkFlag; _rig.SetAnimationOverride(state, duration, 2); if (networkFlag == InputFlags.None && LifeVerse.Shared.Networking.ExtraGestures.IdOf(state) is var gestureId and >= 0) _network?.SendGesture(gestureId); }
     private void BuildGesturePanel()
     {
         var panel = new PanelContainer { Name = "GesturePanel", Position = new Vector2(20, 135), CustomMinimumSize = new Vector2(210, 0) };
@@ -668,6 +669,8 @@ public partial class PlayerController : CharacterBody3D
     public static float ZoomStep { get; set; } = .5f;
     private float _pivotBaseY, _cameraHeightOffset;
     private const float NormalNear = .05f, FirstPersonNear = .06f, FirstPersonArm = .02f, FirstPersonSwitchArm = .4f;
+    /// <summary>Eye height above the feet while swimming in first person: floating (feet 1.2 m under the sea) the eyes are about half a metre above the water.</summary>
+    private const float FirstPersonSwimEyeHeight = 1.7f;
     /// <summary>The nearest the camera stands in third person: scrolling in from here goes into first person, and scrolling out of first person comes back to here.</summary>
     public const float ThirdPersonMinDistance = 1.5f;
     /// <summary>Whether the wheel of the mouse goes in and out of first person (Configurações › Câmera).</summary>

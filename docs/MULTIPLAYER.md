@@ -19,6 +19,14 @@ O servidor nunca confia em posições, IDs ou nomes enviados pelo cliente. O cli
 
 Snapshots são limitados a 256 jogadores e 32 KiB, com interesse por proximidade. O cliente interpola avatares remotos e reconcilia o avatar local com o último input confirmado. Desconexões suspendem o avatar por dez segundos para permitir reconexão sem duplicação.
 
+## Animações dos outros jogadores
+Os snapshots levam um estado de movimento por jogador (parado, andar, correr, pular, cair, voar, sentar, nadar, digitando, acenar e dançar). O resto cada cliente deduz do próprio movimento, com as mesmas regras do avatar local:
+- **Nadando parado** (`SwimIdle`) quando a velocidade horizontal é quase zero; **voando parado** (`FlyIdle`) quando não há velocidade em nenhum eixo; **andando de costas** (`WalkBack`) quando o avatar se move contra a direção para onde está virado.
+- **Aplaudir, apontar, cumprimentar, rir e sentar no chão** não cabem nas flags do input (que já usam os 8 bits). O jogador manda o número do gesto por um RPC confiável (`Gesture`, protocolo 11), a ilha confere (número válido, no máximo um a cada 300 ms) e repassa a quem está no raio de interesse (`GestureChanged`); cada gesto toca por 2,5 s. Acenar e dançar continuam nas flags do input.
+- Pousar (`Landing`), levantar (`StandUp`) e o impacto no chão (`FlatImpact`) continuam só no avatar do próprio jogador.
+
+Ao subir a versão do protocolo (de 10 para 11), clientes antigos são recusados com a mensagem de incompatibilidade em vez de falhar nos RPCs. `IslandEntry:ProtocolVersion` do `backend/appsettings.json` também passou para **11** (um teste confere): publique API, servidores de ilha e cliente juntos.
+
 ## Chat local
 
 Mensagens são sanitizadas, limitadas a 256 caracteres, cinco por dez segundos por conexão e distribuídas somente num raio de 30 m. Termos adicionais podem ser configurados em `LIFEVERSE_CHAT_BLOCKED_TERMS`.

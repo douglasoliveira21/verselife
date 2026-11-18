@@ -10,7 +10,8 @@ public static class NetworkProtocol
     // v9 moves the flight state change to an idempotent reliable RPC; continuous
     // movement inputs remain unreliable/ordered so packet loss cannot toggle flight.
     // v10 adds answers to dialogs and permission requests that scripts show to players (ScriptDialogResponse).
-    public const int Version = 10;
+    // v11 adds the extra gestures (applaud, point, greet, laugh, sit on the floor): Gesture / GestureChanged.
+    public const int Version = 11;
     public const int MaxVehicles = 64;
     public const int MaxTerrainEditsPerSecond = 20;
     public const int MaxTerrainImportBytes = 300_000;

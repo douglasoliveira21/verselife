@@ -33,7 +33,12 @@ public partial class AvatarRig
         var before = _detail; _detail = detail;
         var visible = detail != AvatarDetail.Hidden;
         Visible = visible; SetProcess(visible);
-        if (_tree is not null && IsInstanceValid(_tree)) _tree.Active = visible;
+        if (_tree is not null && IsInstanceValid(_tree))
+        {
+            _tree.Active = visible;
+            // turning the tree back on restarts it at "Idle": go to the state the avatar is in now, or it would stay still until the state changes
+            if (visible && _playback is not null) _playback.Start(Effective(_state));
+        }
         if (!visible || _lastData is null) return;
         var level = detail < AvatarDetail.Basic ? AvatarDetail.Basic : detail;
         if (level != _builtDetail || before == AvatarDetail.Hidden && level != _builtDetail) ApplyAppearance(_lastData);
