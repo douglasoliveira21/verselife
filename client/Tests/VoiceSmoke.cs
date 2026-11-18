@@ -40,6 +40,11 @@ public partial class VoiceSmoke : Node3D
             var playback = avatar.GetNode<VoicePlayback>("Voice");
             await Frames(3);
             Require(chat.IsSpeaking(7) && playback.Speaking, "the speaker should be marked as speaking");
+            // echo guard: while another person is heard, an open microphone stays quiet (their sound would come back through the speakers); the talk button still sends
+            var guarded = sent.Count; chat.SendSamples(tone, openMicGate: true);
+            Require(chat.HearingOthers && sent.Count == guarded, $"an open microphone does not send while someone is heard (sent {sent.Count - guarded})");
+            chat.SendSamples(tone, openMicGate: false); Require(sent.Count > guarded, "holding the talk button always sends");
+            VoiceChat.EchoGuard = false; var unguarded = sent.Count; chat.SendSamples(tone, openMicGate: true); Require(sent.Count > unguarded, "with the guard off (headphones) the open microphone sends"); VoiceChat.EchoGuard = true;
             var queued = playback.Queued;
             chat.Receive(7, sent[5].Sequence, sent[5].Data);
             Require(playback.Queued <= queued, "a repeated or late packet must be ignored");

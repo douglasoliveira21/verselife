@@ -33,7 +33,7 @@ public static partial class SettingsCatalog
             SettingKind.Int, 83) { Min = 0, Max = 100, Step = 1, Unit = "%", Group = "Voz", Column = 0, Keywords = ["sensibilidade", "limiar", "ruído"] };
         yield return new("voice.noise_suppression", SettingCategory.Voice, "Microfone", "Redução de ruído", "Tira o ruído de fundo da sua voz antes de enviar.", SettingKind.Bool, false)
             { Group = "Voz", Column = 0, Unavailable = "O cliente não tem redução de ruído (o Godot não oferece e o serviço de voz atual não a faz)." };
-        yield return new("voice.echo_cancel", SettingCategory.Voice, "Microfone", "Cancelamento de eco", "Evita que o som dos alto-falantes volte pelo microfone.", SettingKind.Bool, false)
+        yield return new("voice.echo_cancel", SettingCategory.Voice, "Microfone", "Cancelamento de eco", "Evita o eco: com o microfone aberto, sua voz não é enviada enquanto você ouve outra pessoa falando (o som do alto-falante voltaria pelo microfone e se repetiria para todos). Segurar o botão de falar sempre envia. Com fone de ouvido você pode desligar.", SettingKind.Bool, true)
             { Group = "Voz", Column = 0, Unavailable = "O cliente não tem cancelamento de eco: use fones de ouvido." };
 
         // ---- Comunicação por voz › Audição

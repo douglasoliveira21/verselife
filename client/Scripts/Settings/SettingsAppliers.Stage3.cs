@@ -27,6 +27,7 @@ public static partial class SettingsAppliers
         store.RegisterApplier("voice.open_mic", v => { if (Voice is { } voice) voice.OpenMic = (bool)v; });
         store.RegisterApplier("voice.input_device", v => AudioBuses.UseInput((string)v));
         store.RegisterApplier("voice.sensitivity", v => VoiceChat.OpenMicThreshold = ThresholdFor((int)v));
+        store.RegisterApplier("voice.echo_cancel", v => VoiceChat.EchoGuard = (bool)v);
         store.RegisterApplier("voice.users_volume", v => AudioBuses.SetVolume(AudioBuses.Voice, (float)v));
         store.RegisterApplier("voice.hearing_distance", v => VoicePlayback.Distance = Mathf.Clamp((int)v, 5, 25));
         store.RegisterApplier("voice.spatial", v => VoicePlayback.Spatial = (bool)v);

@@ -16,6 +16,8 @@ public partial class VoiceChat : Node
     /// <summary>The talk key is held (the settings window sets it); it keeps the microphone on even though the mouse button is not down.</summary>
     public bool KeyHeld { get; set; }
     private const int HangoverFrames = 10;
+    /// <summary>Echo guard (Configurações › Voz › Cancelamento de eco). The sound of other people comes out of the speakers and goes back in through the microphone: an open microphone would send it again, and the speech would come back to everybody over and over. With the guard on, an open microphone sends nothing while another person is being heard (holding the talk button always sends). Headphones make it unnecessary.</summary>
+    public static bool EchoGuard { get; set; } = true;
 
     [Signal] public delegate void TalkingChangedEventHandler(bool talking);
     [Signal] public delegate void SettingsChangedEventHandler();
@@ -44,6 +46,8 @@ public partial class VoiceChat : Node
     public bool BlockedHere { get => _blockedHere; set { if (_blockedHere == value) return; _blockedHere = value; if (value) { _pushToTalk = false; Reset(); } EmitSignal(SignalName.SettingsChanged); } }
     private bool _blockedHere;
     public bool Talking => _talking;
+    /// <summary>Someone else is being heard right now (their voice played in the last moments).</summary>
+    public bool HearingOthers => _speakers.Values.Any(s => s.Playback is { } p && IsInstanceValid(p) && p.Speaking);
     public int SentPackets { get; private set; }
     public int ReceivedPackets { get; private set; }
     /// Smoothed loudness of what you are sending, 0..1, and the loudest recent sample. Both fall back to zero when you stop.
@@ -86,6 +90,7 @@ public partial class VoiceChat : Node
             var level = VoiceLevel.Of(frame); var peak = VoiceMeter.Peak(frame);
             if (openMicGate)
             {
+                if (EchoGuard && HearingOthers) { _hangover = 0; continue; }       // what the microphone hears now is probably the speakers
                 if (level >= OpenMicThreshold) _hangover = HangoverFrames;
                 else if (_hangover > 0) _hangover--; else continue;
             }
