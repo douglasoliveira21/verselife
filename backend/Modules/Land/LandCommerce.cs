@@ -89,7 +89,7 @@ public static class LandCommerce
     private static Task<bool> HasLiveRentalAsync(LifeVerseDbContext db, Guid parcelId, CancellationToken ct) => db.ParcelRentals.AnyAsync(r => r.ParcelId == parcelId && (r.Status == "active" || r.Status == "grace"), ct);
 
     internal static string Label(IslandParcel parcel) => parcel.Code.Length > 0 ? $"{parcel.Code} — {parcel.Name}" : parcel.Name;
-    internal static string Money(long value) => "L$ " + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+    internal static string Money(long value) => "L$ " + value.ToString("N0", Economy.EconomyEndpoints.PtNumbers);
 
     private static Task NoticeGraceAsync(LifeVerseDbContext db, Guid tenant, Guid landlord, string what, string id, DateTimeOffset until, DateTimeOffset now, CancellationToken ct)
     {

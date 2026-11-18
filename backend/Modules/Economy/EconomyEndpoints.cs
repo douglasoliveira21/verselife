@@ -28,7 +28,9 @@ public static class EconomyEndpoints
     }
     private static async Task<IResult> WalletAsync(HttpContext context, LifeVerseDbContext db, CancellationToken ct) { if (!User(context, out var me)) return Results.Unauthorized(); var wallet = await EnsureWallet(db, me, ct); return Results.Ok(new { wallet.Id, wallet.AvailableCoins, wallet.IsBlocked, wallet.UpdatedAt }); }
     private static async Task<IResult> TransactionsAsync(int? days, string? kind, string? direction, HttpContext context, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) { if (!User(context, out var me)) return Results.Unauthorized(); return Results.Ok(await EconomyHistory.ListAsync(db, me, days, kind, direction, 100, clock.GetUtcNow(), ct)); }
-    internal static string Coins(long value) => "VC$ " + value.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR"));
+    // pt-BR style thousands ("1.234"), built by hand: the API container (Alpine) runs without ICU, where GetCultureInfo("pt-BR") throws.
+    internal static readonly System.Globalization.NumberFormatInfo PtNumbers = new() { NumberGroupSeparator = ".", NumberDecimalSeparator = ",", NegativeSign = "-" };
+    internal static string Coins(long value) => "VC$ " + value.ToString("N0", PtNumbers);
     /// <summary>"in" when the coins came to this person (a transfer received, a purchase of coins, a positive adjustment), "out" when they left.</summary>
     internal static string Direction(LedgerTransaction t, Guid me) => t.Type switch { _ when t.Type.EndsWith("_release", StringComparison.Ordinal) || t.Type.EndsWith("_deposit_refund", StringComparison.Ordinal) => "in",      // set-aside money coming back, a deposit returned to the tenant
              "coin_purchase" => "in", "coin_refund" => "out", "admin_adjustment" => t.Amount >= 0 ? "in" : "out", _ => t.CounterpartyUserId == me ? "in" : "out" };
