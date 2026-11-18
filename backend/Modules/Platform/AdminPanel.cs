@@ -71,7 +71,7 @@ public static class AdminPanel
             },
             islands = new { total = await db.Islands.CountAsync(x => x.DeletedAt == null, ct), running = await db.Islands.CountAsync(x => x.DeletedAt == null && x.RuntimeState == "running", ct), servers = await db.ServerInstances.CountAsync(x => x.StoppedAt == null && x.LastHeartbeatAt > now.AddSeconds(-45), ct) },
             content = new { objects = await db.BuildObjects.CountAsync(x => x.DeletedAt == null, ct), assets = await db.Assets.CountAsync(x => x.DeletedAt == null, ct), inventoryItems = await db.InventoryItems.CountAsync(x => x.DeletedAt == null, ct), products = await db.MarketplaceProducts.CountAsync(x => x.Status == "active", ct) },
-            social = new { groups = await db.SocialGroups.CountAsync(ct), memberships = await db.GroupMembers.CountAsync(ct), friendships = await db.Friendships.CountAsync(x => x.Status == "accepted", ct), openReports = await db.SocialReports.CountAsync(x => x.Status == "open", ct) },
+            social = new { groups = await db.SocialGroups.CountAsync(ct), memberships = await db.GroupMembers.CountAsync(ct), friendships = (await db.Friendships.CountAsync(x => x.Status == "accepted", ct) + 1) / 2, openReports = await db.SocialReports.CountAsync(x => x.Status == "open", ct) },
             economy = new
             {
                 coinsInWallets = await db.Wallets.SumAsync(x => (long?)x.AvailableCoins, ct) ?? 0, wallets = await db.Wallets.CountAsync(ct), blockedWallets = await db.Wallets.CountAsync(x => x.IsBlocked, ct),
@@ -121,7 +121,7 @@ public static class AdminPanel
             user = u, avatar, wallet, sessions, history,
             counts = new
             {
-                inventory = await db.InventoryItems.CountAsync(x => x.OwnerUserId == id && x.DeletedAt == null, ct), friends = await db.Friendships.CountAsync(x => x.Status == "accepted" && (x.UserId == id || x.FriendUserId == id), ct),
+                inventory = await db.InventoryItems.CountAsync(x => x.OwnerUserId == id && x.DeletedAt == null, ct), friends = await db.Friendships.CountAsync(x => x.Status == "accepted" && x.UserId == id, ct),
                 groups = await db.GroupMembers.CountAsync(x => x.UserId == id, ct), objects = await db.BuildObjects.CountAsync(x => x.OwnerUserId == id && x.DeletedAt == null, ct), islands = await db.Islands.CountAsync(x => x.OwnerUserId == id && x.DeletedAt == null, ct)
             }
         });
@@ -185,7 +185,8 @@ public static class AdminPanel
         var links = await db.Friendships.AsNoTracking().Where(x => x.UserId == id || x.FriendUserId == id).ToListAsync(ct);
         var otherIds = links.Select(l => l.UserId == id ? l.FriendUserId : l.UserId).Distinct().ToList();
         var names = await db.Users.AsNoTracking().Where(u => otherIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.Username, ct);
-        var items = links.Select(l => { var other = l.UserId == id ? l.FriendUserId : l.UserId; return new { userId = other, username = names.GetValueOrDefault(other, "?"), l.Status, direction = l.Status == "accepted" ? "friend" : l.UserId == id ? "sent" : "received", since = l.UpdatedAt }; }).OrderBy(x => x.Status == "accepted" ? 0 : 1).ThenBy(x => x.username).ToList();
+        // an accepted friendship is stored as two mirrored rows (A→B and B→A): one entry per person, never two
+        var items = links.GroupBy(l => l.UserId == id ? l.FriendUserId : l.UserId).Select(g => { var l = g.OrderBy(x => x.Status == "accepted" ? 0 : 1).ThenBy(x => x.UserId == id ? 0 : 1).First(); var other = g.Key; return new { userId = other, username = names.GetValueOrDefault(other, "?"), l.Status, direction = l.Status == "accepted" ? "friend" : l.UserId == id ? "sent" : "received", since = l.UpdatedAt }; }).OrderBy(x => x.Status == "accepted" ? 0 : 1).ThenBy(x => x.username).ToList();
         var blocked = await (from b in db.UserBlocks.AsNoTracking() join u in db.Users.AsNoTracking() on b.BlockedUserId equals u.Id where b.UserId == id select new { userId = u.Id, username = u.Username }).ToListAsync(ct);
         return Results.Ok(new { friends = items.Where(x => x.Status == "accepted"), pending = items.Where(x => x.Status != "accepted"), blocked });
     }
