@@ -38,7 +38,10 @@ public partial class LandPresence : Node
     public void EndPreview() { StopMusic(); Evaluate(true); }
     /// What the player was told about the music, for the info window.
     public string Status { get; private set; } = string.Empty;
+    /// <summary>True while <see cref="Status"/> says that the music could not be played (the windows show it as a problem).</summary>
+    public bool StatusFailed { get; private set; }
     public event Action? Changed;
+    private void Report(string text, bool failed) { Status = text; StatusFailed = failed; Changed?.Invoke(); }
 
     public void ClearCacheForTesting() => _cache.Clear();
     public Guid CurrentParcel => _current;
@@ -121,7 +124,7 @@ public partial class LandPresence : Node
         // The music a person hears: the parcel's own, otherwise the island's (open ground, or a parcel that plays nothing).
         var (musicUrl, musicVolume, musicAutoplay, whose) = parcel is { MusicUrl.Length: > 0 } own2 ? (own2.MusicUrl, own2.MusicVolume, own2.MusicAutoplay, "deste terreno") : BaseMedia?.Invoke() is { Url.Length: > 0 } island ? (island.Url, island.Volume, island.Autoplay, "da ilha") : (string.Empty, 0f, true, "");
         if (musicUrl.Length == 0 || !_enabled) { if (!sameParcel || musicUrl.Length == 0) StopMusic(); return; }
-        if (!musicAutoplay && !sameParcel) { StopMusic(); Status = $"A música {whose} não toca sozinha."; Changed?.Invoke(); return; }
+        if (!musicAutoplay && !sameParcel) { StopMusic(); Report($"A música {whose} não toca sozinha.", false); return; }
         if (_audio.Playing && _loadedUrl == musicUrl) { _audio.VolumeDb = Volume(musicVolume); return; }
         PlayMusic(musicUrl, musicVolume);
     }
@@ -141,7 +144,7 @@ public partial class LandPresence : Node
         _request++;
         if (_audio is null) return;
         if (_audio.Playing) _audio.Stop();
-        _loadedUrl = string.Empty; Status = string.Empty; Changed?.Invoke();
+        _loadedUrl = string.Empty; Report(string.Empty, false);
     }
 
     /// Why an address would not be played, or null when it is fine. Resolves the name too, so an address that points into a network is refused.
@@ -155,24 +158,34 @@ public partial class LandPresence : Node
         return null;
     }
 
+    /// <summary>Whether a redirect target may be followed: https, no login in the address, no machine inside a network (a name is resolved and checked too). The type of file is not asked for here.</summary>
+    public static string? RefuseRedirect(string url)
+    {
+        if (LandMediaUrl.CheckRedirect(url) is { } why) return why;
+        var host = new Uri(url).Host.Trim('[', ']');
+        if (IPAddress.TryParse(host, out _)) return null;
+        var resolved = IP.ResolveHostname(host);
+        if (string.IsNullOrEmpty(resolved) || !IPAddress.TryParse(resolved, out var address) || LandMediaUrl.Private(address)) return "bad_host";
+        return null;
+    }
+
     private void PlayMusic(string url, float volume)
     {
         var ticket = ++_request;
-        if (FetcherForTesting is null && Refuse(url) is { } why) { Status = MediaMessage(why); Changed?.Invoke(); return; }
-        if (FetcherForTesting is null && LandMediaUrl.Check(url) is { } bad) { Status = MediaMessage(bad); Changed?.Invoke(); return; }
+        if (FetcherForTesting is null && Refuse(url) is { } why) { Report(MediaMessage(why), true); return; }
+        if (FetcherForTesting is null && LandMediaUrl.Check(url) is { } bad) { Report(MediaMessage(bad), true); return; }
         if (_cache.TryGetValue(url, out var known)) { Start(url, known, volume, ticket); return; }
-        Status = "Carregando a música…"; Changed?.Invoke();
-        if (FetcherForTesting is not null) { Finish(url, FetcherForTesting(url), volume, ticket); return; }
-        var http = new HttpRequest { Timeout = 25, MaxRedirects = 0, BodySizeLimit = MaxMusicBytes, UseThreads = true };
-        AddChild(http);
-        http.RequestCompleted += (result, code, _, body) => { http.QueueFree(); Finish(url, result == (long)HttpRequest.Result.Success && code == 200 ? body : null, volume, ticket); };
-        if (http.Request(url) != Error.Ok) { http.QueueFree(); Finish(url, null, volume, ticket); }
+        Report("Carregando a música…", false);
+        if (FetcherForTesting is not null) { Finish(url, new MediaResult(FetcherForTesting(url), null), volume, ticket); return; }
+        MediaDownload.Start(this, url, MaxMusicBytes, result => Finish(url, result, volume, ticket));
     }
 
-    private void Finish(string url, byte[]? bytes, float volume, int ticket)
+    private void Finish(string url, MediaResult result, float volume, int ticket)
     {
         if (ticket != _request) return; // the person moved on while it downloaded
-        if (bytes is null || bytes.Length == 0 || bytes.Length > MaxMusicBytes) { Status = "Não foi possível carregar a música deste terreno."; Changed?.Invoke(); return; }
+        var bytes = result.Bytes;
+        if (bytes is null || bytes.Length == 0 || bytes.Length > MaxMusicBytes) { Report(result.Problem ?? "Não foi possível carregar a música.", true); return; }
+        if (AudioSniff.Kind(bytes, url) is null) { Report(AudioSniff.NotASound, true); return; }
         if (_cache.Count >= 3) _cache.Clear();
         _cache[url] = bytes;
         Start(url, bytes, volume, ticket);
@@ -184,20 +197,20 @@ public partial class LandPresence : Node
         AudioStream? stream = null;
         try
         {
-            if (new Uri(url).AbsolutePath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)) { var ogg = AudioStreamOggVorbis.LoadFromBuffer(bytes); if (ogg is not null) ogg.Loop = true; stream = ogg; }
+            if (AudioSniff.Kind(bytes, url) == "ogg") { var ogg = AudioStreamOggVorbis.LoadFromBuffer(bytes); if (ogg is not null) ogg.Loop = true; stream = ogg; }
             else stream = new AudioStreamMP3 { Data = bytes, Loop = true };
         }
         catch (Exception) { stream = null; }
-        if (stream is null) { Status = "O arquivo de música não pôde ser tocado."; Changed?.Invoke(); return; }
+        if (stream is null) { Report("O arquivo de música não pôde ser tocado (use MP3 ou OGG Vorbis válido).", true); return; }
         _audio.Stream = stream; _audio.VolumeDb = Volume(volume); _audio.Play(); _loadedUrl = url;
-        Status = _audio.Playing ? "Tocando a música do terreno." : "O arquivo de música não pôde ser tocado."; Changed?.Invoke();
+        Report(_audio.Playing ? "Tocando a música do terreno." : "O arquivo de música não pôde ser tocado.", !_audio.Playing);
     }
 
     public static string MediaMessage(string code) => code switch
     {
         "not_https" => "O endereço da música precisa começar com https://.",
         "bad_host" => "Esse endereço não é permitido (rede interna ou nome inválido).",
-        "bad_type" => "Só arquivos .mp3 ou .ogg podem ser usados.",
+        "bad_type" => "O endereço precisa levar direto a um arquivo .mp3 ou .ogg (não uma página, nem .mp4 ou .wav).",
         "too_long" => "O endereço é longo demais.",
         _ => "Não foi possível usar esse endereço."
     };

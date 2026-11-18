@@ -643,6 +643,8 @@ Chama a função a cada intervalo (com um nome, dispara on_interval).
 timer.every(10, function() object.rotate({x=0, y=15, z=0}) end)
 ```
 
+> **Como repetir uma ação.** O servidor trata um evento por vez e não existe espera dentro do script: um `while true do … end` (ou `repeat … until false`) sem `break` nem `return` só termina estourando o limite de instruções, e o script é suspenso. O editor já recusa esse laço e diz para usar `timer.every`. O mesmo vale para um temporizador com menos de 0,25 s ou mais de 24 h (por exemplo `timer.every(0.1, …)`): a chamada falha e o script não repete; o editor avisa antes de salvar. Os temporizadores são do script em execução: se a ilha reinicia, eles são recriados pelo código que roda ao iniciar (o topo do script ou `on_start`); um temporizador criado só dentro de `on_touch`, por exemplo, não volta sozinho.
+
 ### `timer.cancel(id)`
 
 Cancela um temporizador.
@@ -1423,7 +1425,7 @@ vehicle.stop(1)
 
 ### `media.play(url, {volume, loop, range})`
 
-Toca um arquivo de áudio da internet (.mp3 ou .ogg, só https) em 3D no objeto, para quem está perto. Cada cliente baixa o arquivo (até 12 MB). Um stream por script: tocar de novo troca o anterior. Quem chega depois ouve do começo. Ao terminar (sem loop), o script ouve on_media_finished.
+Toca um arquivo de áudio da internet (.mp3 ou .ogg, só https) em 3D no objeto, para quem está perto. Cada cliente baixa o arquivo (até 12 MB), segue até 4 redirecionamentos para um endereço https público e confere pelo conteúdo, não só pelo nome, se veio mesmo um áudio (uma página da web no lugar do arquivo é recusada). Com `loop = true` o som se repete, em MP3 ou OGG. Um stream por script: tocar de novo troca o anterior. Quem chega depois ouve do começo. Ao terminar (sem loop), o script ouve on_media_finished.
 
 - **Retorna:** verdadeiro se o pedido foi enviado
 - **Permissão:** CONTROL_MEDIA (o dono dá no editor, aba Permissões)

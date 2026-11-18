@@ -36,7 +36,7 @@ public static class IslandMediaManagement
     private static string Why(string code) => code switch
     {
         "not_https" => "O endereço da música precisa começar com https://.", "bad_host" => "Esse endereço não é permitido (rede interna ou nome inválido).",
-        "bad_type" => "Só arquivos .mp3 ou .ogg podem ser usados.", "too_long" => "O endereço é longo demais (até 512 caracteres).", _ => "Não foi possível usar esse endereço.",
+        "bad_type" => "O endereço precisa levar direto a um arquivo .mp3 ou .ogg (não uma página, nem .mp4 ou .wav).", "too_long" => "O endereço é longo demais (até 512 caracteres).", _ => "Não foi possível usar esse endereço.",
     };
 
     private static object? Music(Island island)

@@ -58,7 +58,10 @@ public partial class IslandMediaPage : ScrollContainer
         Changed();
     }
 
-    public override void _ExitTree() { if (_previewing) PreviewStop?.Invoke(); }
+    /// <summary>Lets go of what the window hooked into (the game's music status), so a closed tab is never called.</summary>
+    public Action? PreviewDetach { get; set; }
+
+    public override void _ExitTree() { if (_previewing) PreviewStop?.Invoke(); PreviewDetach?.Invoke(); }
 
     // ---- cards ------------------------------------------------------------------------------------------------------------
 
@@ -111,10 +114,24 @@ public partial class IslandMediaPage : ScrollContainer
         _save.Disabled = !dirty || problem is not null; _revert.Disabled = !dirty; _test.Disabled = url.Length == 0 || problem is not null; _stop.Disabled = !_previewing; _remove.Disabled = _loaded.Url.Length == 0;
     }
 
+    /// <summary>What the game says about the test now ("Carregando…", "Tocando…" or why it did not work) and whether that is a problem; set by the window.</summary>
+    public Func<(string Text, bool Failed)>? PreviewStatus { get; set; }
+
     private void Test()
     {
         var url = _url.Text.Trim(); if (url.Length == 0 || LandMediaUrl.Check(url) is not null) return;
-        _previewing = true; PreviewStart?.Invoke(url, (float)(_volume.Value / 100)); _tested.Text = "Tocando só para você. Pare o teste antes de sair da aba."; Changed();
+        _previewing = true; _tested.Text = "Baixando o arquivo para testar…"; _tested.AddThemeColorOverride("font_color", IslandUi.TextMuted);
+        PreviewStart?.Invoke(url, (float)(_volume.Value / 100)); PreviewStatusChanged(); Changed();
+    }
+
+    /// <summary>The game answered about the test (it loaded, it plays, or it failed and why): the tab says so, instead of claiming it plays.</summary>
+    public void PreviewStatusChanged()
+    {
+        if (!_previewing || _tested is null || PreviewStatus is not { } read) return;
+        var now = read();
+        if (now.Text.Length == 0) return;
+        _tested.Text = now.Failed ? now.Text : now.Text + " Pare o teste antes de sair da aba.";
+        _tested.AddThemeColorOverride("font_color", now.Failed ? IslandUi.Error : IslandUi.Success);
     }
 
     /// <summary>Ends a test that is playing (leaving the tab or closing the window).</summary>

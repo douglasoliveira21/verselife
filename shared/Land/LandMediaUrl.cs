@@ -26,6 +26,18 @@ public static class LandMediaUrl
         return path.EndsWith(".mp3", StringComparison.Ordinal) || path.EndsWith(".ogg", StringComparison.Ordinal) ? null : "bad_type";
     }
 
+    /// <summary>Null when a redirect target is safe to follow (HTTPS, no login in the address, no machine inside a network). The file type is not asked for: a download address often has none.</summary>
+    public static string? CheckRedirect(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || url.Length > 2048) return "not_https";
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length > 0) return "not_https";
+        var host = uri.Host.ToLowerInvariant().Trim('[', ']');
+        var isAddress = IPAddress.TryParse(host, out var ip);
+        if (host.Length is 0 or > 255 || (!host.Contains('.') && !isAddress && !host.Contains(':'))) return "bad_host";
+        if (host is "localhost" or "postgres" or "redis" or "minio" || host.EndsWith(".internal", StringComparison.Ordinal) || host.EndsWith(".local", StringComparison.Ordinal) || host.EndsWith(".localhost", StringComparison.Ordinal)) return "bad_host";
+        return isAddress && Private(ip!) ? "bad_host" : null;
+    }
+
     /// <summary>Loopback, link-local, private and unspecified addresses, in IPv4 and IPv6.</summary>
     public static bool Private(IPAddress ip)
     {

@@ -109,6 +109,7 @@ public partial class ObjectEffects : Node
         switch (copy)
         {
             case AudioStreamOggVorbis ogg: ogg.Loop = true; break;
+            case AudioStreamMP3 mp3: mp3.Loop = true; break;          // an MP3 sound used to play only once, whatever loop = true said
             case AudioStreamWav wav: wav.LoopMode = AudioStreamWav.LoopModeEnum.Forward; wav.LoopBegin = 0; wav.LoopEnd = Mathf.Max(1, WavFrames(wav)); break;
         }
         return copy;

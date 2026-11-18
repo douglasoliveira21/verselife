@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using MoonSharp.Interpreter;
@@ -20,6 +21,11 @@ public static partial class ScriptCompiler
     private static partial Regex CallPattern();
     [GeneratedRegex(@"(?<![A-Za-z0-9_.:])(?<name>os|io|package|coroutine|require|load|loadstring|loadfile|dofile|setmetatable|getmetatable|rawget|rawset|collectgarbage|string\.dump)\b\s*[\.\(]")]
     private static partial Regex BlockedPattern();
+
+    [GeneratedRegex(@"(?<![A-Za-z0-9_])(?:timer\.(?:every|after)|object\.(?:create_timer|createTimer))\s*\(\s*(?<n>\d+(?:\.\d+)?|\.\d+)")]
+    private static partial Regex TimerLiteral();
+    [GeneratedRegex(@"[A-Za-z_][A-Za-z0-9_]*|\d+")]
+    private static partial Regex Tokens();
 
     private static readonly HashSet<string> DebugAllowed = ["log", "warn", "error"];
 
@@ -50,9 +56,54 @@ public static partial class ScriptCompiler
                     diagnostics.Add(new("warning", line, $"{ns}.{fn} não existe na API.{Suggest(fn, known, ns + ".")}"));
             }
         }
+        for (var i = 0; i < lines.Length; i++)
+            foreach (Match match in TimerLiteral().Matches(lines[i]))
+                if (double.TryParse(match.Groups["n"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && (seconds < 0.25 || seconds > 86_400))
+                    diagnostics.Add(new("error", i + 1, "Um temporizador só aceita de 0,25 s a 24 h. Com esse valor a chamada falha e o script não repete."));
+        diagnostics.AddRange(EndlessLoops(clean));
         if (handlers.Count == 0) diagnostics.Add(new("warning", 0, "O script não trata nenhum evento (por exemplo on_start ou on_touch); ele não vai fazer nada."));
         foreach (var duplicate in handlers.GroupBy(h => h).Where(g => g.Count() > 1)) diagnostics.Add(new("warning", 0, $"{duplicate.Key} está definido {duplicate.Count()} vezes; só a última vale."));
         return new(diagnostics.All(d => d.Severity != "error"), diagnostics, [.. handlers.Distinct()]);
+    }
+
+    private const string EndlessMessage = "Este laço nunca termina: o servidor o interrompe pelo limite de instruções e o script para. O servidor trata um evento por vez e não há espera dentro do script; para repetir uma ação use timer.every(segundos, função).";
+
+    /// <summary>A <c>while true do</c> or <c>repeat … until false</c> with no <c>break</c> or <c>return</c> inside can only end by blowing the instruction limit. Looks at the code without comments and strings; a loop that can leave is never reported.</summary>
+    private static List<ScriptDiagnostic> EndlessLoops(string clean)
+    {
+        var found = new List<ScriptDiagnostic>();
+        var tokens = Tokens().Matches(clean).Select(m => (Value: m.Value, Index: m.Index)).ToList();
+        int LineOf(int index) { var line = 1; for (var k = 0; k < index && k < clean.Length; k++) if (clean[k] == '\n') line++; return line; }
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (tokens[i].Value == "while" && i + 2 < tokens.Count && (tokens[i + 1].Value is "true" or "1") && tokens[i + 2].Value == "do")
+            {
+                Scan(tokens, i + 3, out var leaves);
+                if (!leaves) found.Add(new("error", LineOf(tokens[i].Index), EndlessMessage));
+            }
+            else if (tokens[i].Value == "repeat")
+            {
+                var close = Scan(tokens, i + 1, out var leaves);
+                if (close >= 0 && tokens[close].Value == "until" && close + 1 < tokens.Count && (tokens[close + 1].Value is "false" or "nil") && !leaves) found.Add(new("error", LineOf(tokens[i].Index), EndlessMessage));
+            }
+        }
+        return found;
+    }
+
+    /// <summary>From the first word inside a block to the word that closes it: where that is (-1 when it never closes) and whether a break or return was seen on the way.</summary>
+    private static int Scan(List<(string Value, int Index)> tokens, int start, out bool leaves)
+    {
+        leaves = false; var depth = 1;
+        for (var k = start; k < tokens.Count; k++)
+        {
+            switch (tokens[k].Value)
+            {
+                case "function" or "if" or "do" or "repeat": depth++; break;
+                case "end" or "until": depth--; if (depth == 0) return k; break;
+                case "break" or "return": leaves = true; break;
+            }
+        }
+        return -1;
     }
 
     private static ScriptDiagnostic? SyntaxError(string source)

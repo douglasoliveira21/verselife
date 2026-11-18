@@ -258,6 +258,8 @@ public partial class IslandManagementWindow : Node
         _pageHost.AddChild(_environment); _pages["ambiente"] = _environment;
         _media = new IslandMediaPage { Name = "Media", Visible = false }; _media.SetAnchorsPreset(Control.LayoutPreset.FullRect); _media.Bind(_api!); _media.Notify += text => Notify(text); _media.Ask = (text, ok, action) => Ask(text, ok, action);
         _media.PreviewStart = (url, volume) => Presence()?.Preview(url, volume); _media.PreviewStop = () => Presence()?.EndPreview();
+        _media.PreviewStatus = () => Presence() is { } presence ? (presence.Status, presence.StatusFailed) : (string.Empty, false);
+        if (Presence() is { } listening) { listening.Changed += _media.PreviewStatusChanged; var media = _media; media.PreviewDetach = () => listening.Changed -= media.PreviewStatusChanged; }
         _pageHost.AddChild(_media); _pages["midia"] = _media;
         _physics = new IslandPhysicsPage { Name = "Physics", Visible = false }; _physics.SetAnchorsPreset(Control.LayoutPreset.FullRect); _physics.Bind(_api!); _physics.Notify += text => Notify(text); _physics.Ask = (text, ok, action) => Ask(text, ok, action);
         _pageHost.AddChild(_physics); _pages["fisica"] = _physics;

@@ -68,7 +68,7 @@ public partial class ObjectEffects
         if (bytes is null || bytes.Length == 0 || bytes.Length > MaxStreamBytes) return null;
         try
         {
-            if (new Uri(url).AbsolutePath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase)) { var ogg = AudioStreamOggVorbis.LoadFromBuffer(bytes); if (ogg is not null) ogg.Loop = loop; return ogg; }
+            if (AudioSniff.Kind(bytes, url) == "ogg") { var ogg = AudioStreamOggVorbis.LoadFromBuffer(bytes); if (ogg is not null) ogg.Loop = loop; return ogg; }
             return new AudioStreamMP3 { Data = bytes, Loop = loop };
         }
         catch (Exception) { return null; }
@@ -81,14 +81,15 @@ public partial class ObjectEffects
         if (_downloads >= MaxDownloads) { done(null); return; }
         if (LandPresence.Refuse(url) is not null) { done(null); return; }         // a name that points into a network is refused
         _downloads++;
-        var http = new HttpRequest { Timeout = 25, MaxRedirects = 0, BodySizeLimit = MaxStreamBytes, UseThreads = true }; AddChild(http);
-        http.RequestCompleted += (result, code, _, body) =>
+        MediaDownload.Start(this, url, MaxStreamBytes, result =>
         {
-            _downloads--; http.QueueFree();
-            var ok = result == (long)HttpRequest.Result.Success && code == 200 && body.Length > 0 && body.Length <= MaxStreamBytes;
-            if (ok) CacheStream(url, body); done(ok ? body : null);
-        };
-        if (http.Request(url) != Error.Ok) { _downloads--; http.QueueFree(); done(null); }
+            _downloads--;
+            var bytes = result.Bytes;
+            var ok = bytes is { Length: > 0 } && bytes.Length <= MaxStreamBytes && AudioSniff.Kind(bytes, url) is not null;
+            if (!ok) GD.PushWarning("event=object_media_failed reason=" + (result.Problem ?? (bytes is null ? "empty" : AudioSniff.NotASound)));
+            if (ok) CacheStream(url, bytes!);
+            done(ok ? bytes : null);
+        });
     }
 
     private void CacheStream(string url, byte[] bytes) { if (_streamCache.Count >= 3) _streamCache.Clear(); _streamCache[url] = bytes; }
