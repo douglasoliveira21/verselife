@@ -186,7 +186,7 @@ public partial class InventoryPanel : Node3D
         _folderName = new LineEdit { PlaceholderText = "Nome da pasta", CustomMinimumSize = new Vector2(280, 0) };
         _newFolderDialog.AddChild(_folderName); _newFolderDialog.Confirmed += CreateFolder; _folderName.TextSubmitted += _ => { _newFolderDialog.Hide(); CreateFolder(); };
         AddChild(_newFolderDialog);
-        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Importar para o inventário", Filters = ["*.glb,*.gltf ; Meshes e animações 3D", "*.png,*.jpg,*.jpeg,*.webp ; Imagens e texturas", "*.ogg,*.wav,*.mp3 ; Sons e áudios (OGG Vorbis, WAV, MP3)"], UseNativeDialog = true, Theme = ViewerTheme.Create(), MinSize = new Vector2I(760, 480) };
+        _fileDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Title = "Importar para o inventário", Filters = ["*.glb,*.gltf,*.dae ; Meshes e animações 3D", "*.png,*.jpg,*.jpeg,*.webp ; Imagens e texturas", "*.ogg,*.wav,*.mp3 ; Sons e áudios (OGG Vorbis, WAV, MP3)"], UseNativeDialog = true, Theme = ViewerTheme.Create(), MinSize = new Vector2I(760, 480) };
         AddChild(_fileDialog);
         _zipDialog = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.zip"], Title = "Importar pacote de arquivos" }; AddChild(_zipDialog); _zipDialog.FileSelected += UploadZip;
         _fileDialog.FileSelected += Upload;
@@ -718,6 +718,14 @@ public partial class InventoryPanel : Node3D
             if (!GltfUploadPackager.TryPack(path, bytes, out bytes, out var packageError)) { _status.Text = packageError ?? "Não foi possível reunir os arquivos do glTF."; return; }
             filename = System.IO.Path.ChangeExtension(filename, ".glb");
         }
+        var daeNote = string.Empty;
+        if (System.IO.Path.GetExtension(filename).Equals(".dae", StringComparison.OrdinalIgnoreCase))
+        {
+            // a COLLADA model is turned into a GLB here, with its textures from the same folder: the island and the server only deal with GLB
+            if (!DaeUploadPackager.TryPack(path, bytes, out bytes, out var daeError, out var daeWarnings)) { _status.Text = daeError ?? "Não foi possível converter o COLLADA."; return; }
+            filename = System.IO.Path.ChangeExtension(filename, ".glb");
+            if (daeWarnings.Count > 0) daeNote = " Avisos: " + string.Join(" ", daeWarnings.Take(3)) + (daeWarnings.Count > 3 ? $" (+{daeWarnings.Count - 3})" : string.Empty);
+        }
         var category = CategoryFor(filename);
         var boundary = "----LifeVerse" + Guid.NewGuid().ToString("N");
         // Strict multipart parsers require quoted names. Keep the header filename ASCII as
@@ -727,7 +735,7 @@ public partial class InventoryPanel : Node3D
         var tail = Encoding.UTF8.GetBytes($"\r\n--{boundary}--\r\n");
         var payload = new byte[head.Length + bytes.Length + tail.Length];
         Buffer.BlockCopy(head, 0, payload, 0, head.Length); Buffer.BlockCopy(bytes, 0, payload, head.Length, bytes.Length); Buffer.BlockCopy(tail, 0, payload, head.Length + bytes.Length, tail.Length);
-        _status.Text = $"Importando {filename} ({bytes.Length / 1024} KB)…";
+        _status.Text = $"Importando {filename} ({bytes.Length / 1024} KB)…{daeNote}";
         _queue.Enqueue((Godot.HttpClient.Method.Post, "/api/v1/assets/upload", null, Pending.Action, [$"Authorization: Bearer {session.AccessToken}", $"Content-Type: multipart/form-data; boundary={boundary}"], payload));
         Pump();
     }

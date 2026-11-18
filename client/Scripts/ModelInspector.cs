@@ -26,6 +26,12 @@ public static class ModelInspector
             if (!GltfUploadPackager.TryPack(path, bytes, out bytes, out var packageError)) return Fail(packageError ?? "Não foi possível reunir os arquivos do glTF.");
             extension = ".glb";
         }
+        if (extension == ".dae")
+        {
+            if (!DaeUploadPackager.TryPack(path, bytes, out bytes, out var daeError, out _)) return Fail(daeError ?? "Não foi possível converter o COLLADA.");
+            if (bytes.Length > ModelLimits.MaxBytes) return Fail(ModelLimits.Check(1, 0, 0, 0, bytes.Length)!);
+            extension = ".glb";
+        }
         var document = new GltfDocument(); var state = new GltfState();
         // The packer produces a self-contained GLB, so no external path is resolved by Godot.
         if (document.AppendFromBuffer(bytes, string.Empty, state) != Error.Ok) return Fail("O arquivo não é um modelo GLB válido.");

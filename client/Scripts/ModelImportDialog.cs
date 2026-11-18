@@ -26,7 +26,7 @@ public partial class ModelImportDialog : Node
     private Vector3 _original = Vector3.Zero;
     private float _placement = 2f;
     private float _zoom = 1f;
-    private string _info = "Escolha um arquivo GLB ou glTF.";
+    private string _info = "Escolha um arquivo GLB, glTF ou COLLADA (.dae).";
 
     /// Raised with the file path once the person confirmed a valid model.
     public event Action<string>? Confirmed;
@@ -150,7 +150,7 @@ public partial class ModelImportDialog : Node
         _confirm = Act("download", "Importar", UiStyle.ButtonKind.Primary, Confirm, 1f); _confirm.Disabled = true; buttons.AddChild(_confirm);
         buttons.AddChild(OrangeButtonFilled(Act("close", "Cancelar", UiStyle.ButtonKind.Secondary, Close, .9f)));
 
-        _files = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.glb,*.gltf ; Modelos 3D"], Title = "Importar modelo 3D" };
+        _files = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenFile, Access = FileDialog.AccessEnum.Filesystem, Filters = ["*.glb,*.gltf,*.dae ; Modelos 3D"], Title = "Importar modelo 3D" };
         _files.FileSelected += Load;
         AddChild(_files);
         ShowDimensions();
@@ -239,7 +239,7 @@ public partial class ModelImportDialog : Node
     private void Clear()
     {
         foreach (var child in _pivot.GetChildren()) { _pivot.RemoveChild(child); child.QueueFree(); }
-        _report = null; _path = string.Empty; _confirm.Disabled = true; _original = Vector3.Zero; _info = "Escolha um arquivo GLB ou glTF.";
+        _report = null; _path = string.Empty; _confirm.Disabled = true; _original = Vector3.Zero; _info = "Escolha um arquivo GLB, glTF ou COLLADA (.dae).";
         _fileName.Text = "Nenhum arquivo escolhido"; _problem.Text = string.Empty; _banner.Visible = false;
         foreach (var value in new[] { _sizeValue, _trianglesValue, _materialsValue, _texturesValue, _partsValue, _animationsValue }) { value.Text = "—"; value.RemoveThemeColorOverride("font_color"); }
         ShowDimensions();
