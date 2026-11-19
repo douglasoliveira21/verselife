@@ -5,7 +5,10 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "LifeVerse.Unity.Core",
-        "LifeVerse.Unity.Platform"
+        "LifeVerse.Unity.Platform",
+        "LifeVerse.Unity.World",
+        "Unity.RenderPipelines.HighDefinition.Runtime",
+        "Unity.RenderPipelines.Core.Runtime"
     ],
     "includePlatforms": [
         "Editor"

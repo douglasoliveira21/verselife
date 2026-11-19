@@ -50,7 +50,8 @@
 | 4 Código compartilhado | Não iniciado | Rodar o conjunto completo de testes de `shared` dentro da Unity; planilha dos 117 smokes |
 | 5 Multiplayer | Em migração | Protocolo e transporte feitos e testados (`WIRE_PROTOCOL.md`). Faltam: interpolação e reconciliação no cliente, interesse e tick no servidor, 64 clientes simultâneos e latência alta; dependem das Fases 6 e 7 |
 | 6 Servidores | **Em migração (parcial)** | Núcleo sem engine (`unity/UnityIslandServer/Core`) com admissão, simulação, snapshots por interesse, chat, voo, gestos, persistência, heartbeat/comandos do admin, saúde, métricas e encerramento; roda como processo .NET (`Host`) e como Unity Dedicated Server. 45 testes xUnit; 64 clientes UDP contra o servidor dentro do player Unity. Terreno editável (por editores da ilha) portado. Veículos, construção, terras (land-sync, acesso, teletransporte), terreno por donos de parcela voz, aparência e anexos portados. Também portados: terreno editável, veículos, construção com locks e terras (land-sync, acesso, teletransporte). **Faltam** scripts de objetos (`IslandScripting`), física de objetos (S4) e a execução no Linux. Ver `MIGRATION_ISLAND_SERVER.md` |
-| 7 a 15 | Não iniciado | — |
+| 7 Mundo | **Iniciada (C1 a C3 em migração)** | `unity/UnityClient/Assets/LifeVerse/World`: terreno, oceano, céu e clima renderizados no HDRP e fotografados na GPU real; 17 testes de modo Edit. Ver a seção "Fase 7" abaixo |
+| 8 a 15 | Não iniciado | — |
 
 ## Módulos
 
@@ -81,3 +82,25 @@
 - 2026-11-18: o Wire passou a numerar jogadores como `id do LiteNetLib + 1` (0 = sistema) e o servidor divide snapshots em pacotes de até 40 jogadores do mesmo tick; ambos documentados em `WIRE_PROTOCOL.md`.
 - 2026-11-18: o commit `4e73996` omitiu três `.csproj` (`LifeVerse.Wire`, `LifeVerse.Shared.Unity`, `LifeVerse.Scripting.Unity`) por causa da regra `**/*.csproj` de `unity/.gitignore`; corrigido com exceções na regra, e os arquivos entram no commit da Fase 6.
 - 2026-11-18: o servidor Godot não foi alterado.
+
+## Fase 7 (mundo 3D): o que existe e como foi verificado
+
+Código em `unity/UnityClient/Assets/LifeVerse/World` (assembly `LifeVerse.Unity.World`): `TerrainView` (malha a partir do `TerrainMap` e textura de chão), `OceanView`, `IslandEnvironment` (hora, sol, céu, névoa, clima, visual de parcela), `ProceduralTextures` e `WorldPreview`. Os materiais HDRP (`TerrainMaterial`, `OceanMaterial`) são assets criados por `WorldAssets` (editor; `-executeMethod LifeVerse.Unity.EditorTools.WorldAssets.BuildBatch`), porque o HDRP liga recursos por palavras-chave que só o editor define.
+
+**Verificação:** `LifeVerse.exe -screen-width 1280 -screen-height 720 -screen-fullscreen 0 -lifeverse-world-preview <prefixo>` abre uma janela na GPU (RTX 2060 SUPER, Direct3D) e salva 7 fotos (`island`, `sunset`, `night`, `storm`, `under`, `beach`, `ground`). Quatro estão em `docs/unity-migration/img/` (`world-island.png`, `world-sunset.png`, `world-night.png`, `world-under.png`). Mais 5 testes de modo Edit (malha com as alturas do mapa, triângulos virados para cima, mistura das camadas por pesos, sol e noite, visual de parcela): 17 de 17 no total.
+
+**Decisões e achados**
+- **D5 (shader do terreno)**: sem Shader Graph, o HDRP não tem um shader de mistura de 8 camadas por vértice. As camadas são misturadas na CPU em **uma textura de 1024 px para a ilha** (25 cm por texel), com um mapa de detalhe repetido a cada metro para o grão fino, deformação do domínio e variação em manchas grandes para esconder a repetição de 5 m. Limite: a edição de terreno obriga a refazer a textura (hoje, tudo de uma vez); ainda aparece um padrão quadriculado fraco no gramado.
+- **Céu**: o céu fisicamente baseado do HDRP **ignorou o sol** neste projeto (ficou em pleno dia à noite e no pôr do sol; a causa não foi isolada). O céu passou a ser um gradiente HDRP controlado pela hora (cores de dia e de noite como no cliente Godot, horizonte laranja com o sol baixo), sol e lua como luzes direcionais e câmera com exposição fixa. Parâmetros de volume do HDRP só valem se tiverem `Override`: valores atribuídos a cada quadro sem isso foram ignorados em silêncio.
+- **Sol nunca com intensidade zero** e exposição fixa de dia: sem isso a noite saía branca.
+- **Água**: material transparente do HDRP com duas camadas de normais deslizando; vista de baixo com o mesmo plano de dupla face e um volume de névoa azul. Fora do mapa da ilha não há chão: a água fica azul-escura (profundidade infinita), como no Godot.
+
+**Não feito / não verificado**: chuva em partículas e raios; disco do sol e estrelas; ondas de vértice e espuma na costa (o Godot calcula profundidade por pixel); colisão e raycast do terreno; aplicar edições e patches do servidor à malha em tempo real; LOD; ler o ambiente e o terreno de uma ilha real (só a ilha de exemplo); desempenho (quadros por segundo não foram medidos); modo claro/escuro e qualidade gráfica (`GraphicsQuality`); IL2CPP; Linux com Vulkan renderizando; câmera e avatar (Fase 8), objetos do mundo (C6), efeitos (C7) e mapa (C9).
+
+### Fase 7, segunda parte: o mundo acompanha o servidor
+
+`WorldClient` (World) entra numa ilha por LifeVerse Wire e mantém o terreno e o mar iguais ao do servidor: o mapa inteiro ao entrar, as edições (repetidas localmente com as mesmas regras do `shared`), os patches de desfazer e o nível do mar; se a revisão local divergir, pede o mapa de novo (no máximo a cada 2 s, como o servidor permite). `TerrainView` redesenha a malha na hora e refaz a textura só na área tocada.
+
+**Verificação** (`LifeVerse.exe -batchmode -nographics -lifeverse-world-selfcheck`, 6 execuções seguidas, 11 verificações cada, todas passaram): dentro de um único processo, um servidor de ilha de verdade (o mesmo núcleo do servidor dedicado, com a API em memória `LocalIslandApi`) numa porta UDP e três jogadores. Confere: só o editor esculpe e o visitante recebe `no_permission`; três edições de um jogador chegam ao outro e os mapas ficam **idênticos byte a byte** a um mapa calculado à parte; a malha de quem olha mostra o morro; a pintura chega igual; o mar sobe para quem olha; desfazer chega como patch aos dois; quem entra depois recebe o terreno e o mar como estão. Com uma janela (`-lifeverse-world-shots <prefixo>`) fotografa antes e depois: `docs/unity-migration/img/world-sync-after.png` mostra o morro de rocha criado por outro jogador. Uma falha intermitente da primeira versão do teste (conferir um jogador antes de o outro receber o patch) foi corrigida; era do teste, não do jogo.
+
+Ainda sem: ler o terreno de uma ilha real da API (a ilha é a de exemplo ou a em memória), a aplicação de edições com máscara de parcela (chegam como patch e são aplicadas, mas não foram testadas), colisão local do terreno, e o resto do que a Fase 7 lista (chuva, ondas, objetos, efeitos, mapa).

@@ -2,7 +2,10 @@
     "name": "LifeVerse.Unity.Server",
     "rootNamespace": "LifeVerse.Unity.Server",
     "references": [
-        "LifeVerse.Unity.Core"
+        "LifeVerse.Unity.Core",
+        "LifeVerse.Unity.World",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.RenderPipelines.HighDefinition.Runtime"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

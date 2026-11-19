@@ -44,9 +44,9 @@ Critério de "Concluído": compila, testes relevantes passam, comportamento orig
 
 | Id | Funcionalidade | Origem | Destino | Classe | Estado |
 |---|---|---|---|---|---|
-| C1 | Terreno (alturas, camadas, patches, edição) | `IslandTerrain`, `TerrainEditor`, `shared/Terrain` | malha própria + shader HDRP (D5) | A (dados) / E (render) | Não iniciado |
-| C2 | Oceano e nível do mar | `OceanSurface`, `WaterVolume`, `shared` | água HDRP ou shader próprio; vista de baixo da superfície | E | Não iniciado |
-| C3 | Céu, hora, clima, neblina, luz | `IslandEnvironmentController`, `IslandLookService` | Sky/Fog/Exposure do HDRP + Volumes | E | Não iniciado |
+| C1 | Terreno (alturas, camadas, patches, edição) | `IslandTerrain`, `TerrainEditor`, `shared/Terrain` | malha própria + shader HDRP (D5) | A (dados) / E (render) | **Em migração**: malha e textura de chão (8 camadas misturadas na CPU) renderizadas e testadas; **aplica o mapa, as edições, os patches de desfazer e o nível do mar vindos do servidor** (rebake parcial da textura); faltam colisão local e o editor de terreno (UI) |
+| C2 | Oceano e nível do mar | `OceanSurface`, `WaterVolume`, `shared` | água HDRP ou shader próprio; vista de baixo da superfície | E | **Em migração**: plano que segue a câmera, duas camadas de ondas, transparência, vista de baixo e névoa submersa renderizados; o nível do mar acompanha o servidor; faltam ondas de vértice, espuma na costa e profundidade por pixel |
+| C3 | Céu, hora, clima, neblina, luz | `IslandEnvironmentController`, `IslandLookService` | Sky/Fog/Exposure do HDRP + Volumes | E | **Em migração**: hora, sol, céu em gradiente, nuvens, névoa e clima (limpo, nublado, chuva, tempestade, neblina) e visual de parcela; faltam a chuva (partículas), o disco do sol e a leitura do ambiente salvo da ilha |
 | C4 | Música e mídia de terreno e ilha | `LandPresence`, `MediaDownload`, `LandManager` | idem | A | Não iniciado |
 | C5 | Parcelas, vendas, aluguel, acesso, banimento | `LandManager` (+5), `LandManagement`, `RealEstate`, `shared/Land`, backend Land | UI nova; regras reaproveitadas | A | Não iniciado |
 | C6 | Objetos do mundo e LOD | `BuildObjectView`, `ModelCache`, `ModelLod` | `LifeVerse.Unity.World` | E | Não iniciado |
