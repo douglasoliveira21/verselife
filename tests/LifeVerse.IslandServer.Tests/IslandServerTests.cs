@@ -582,6 +582,31 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.True(await island.PumpAsync(() => owner.All<TerrainEditRejectedMessage>().Any(r => r.Code == "no_permission"))); // o mar é dos editores da ilha
     }
     [Fact]
+    public async Task VoiceReachesOnlyListenersInRangeWithinTheLimitsAndNotOnSilentParcels()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var speaker = await island.JoinAsync("Fala", 0, 0); var near = await island.JoinAsync("Perto", 8, 0); var far = await island.JoinAsync("Longe", 60, 0);
+        speaker.Wire.Send(new SubmitVoiceMessage(1, new byte[80]));
+        Assert.True(await island.PumpAsync(() => near.All<ReceiveVoiceMessage>().Count == 1));
+        var heard = near.Last<ReceiveVoiceMessage>()!;
+        Assert.Equal(speaker.PeerId, heard.SpeakerPeer); Assert.Equal(80, heard.Data.Length);
+        speaker.Wire.Send(new SubmitVoiceMessage(2, new byte[401])); // maior que o pacote Opus permitido
+        for (uint i = 3; i < 140; i++) speaker.Wire.Send(new SubmitVoiceMessage(i, new byte[40])); // mais de 60 por segundo
+        await island.PumpForAsync(500);
+        var count = near.All<ReceiveVoiceMessage>().Count;
+        Assert.InRange(count, 2, 62);
+        Assert.Empty(far.All<ReceiveVoiceMessage>());
+
+        island.Api.LandJson = "{\"rules\":{\"parcels\":[{\"id\":\"" + Guid.NewGuid() + "\",\"voice\":false,\"runs\":[[-1,-3,3],[0,-3,3]]}]},\"cursor\":1}"; // a parcela do falante proíbe voz
+        await island.PumpForAsync(900);
+        var before = near.All<ReceiveVoiceMessage>().Count;
+        await island.PumpForAsync(1100);
+        speaker.Wire.Send(new SubmitVoiceMessage(500, new byte[40]));
+        await island.PumpForAsync(500);
+        Assert.Equal(before, near.All<ReceiveVoiceMessage>().Count);
+    }
+    [Fact]
     public async Task AnIslandNobodyJoinsShutsDownByItselfWhenAskedTo()
     {
         using var island = new IslandHarness(idleMinutes: 1, options: new IslandServerOptions(HeartbeatSeconds: 5));

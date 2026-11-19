@@ -9,6 +9,7 @@ using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Platform;
 using LifeVerse.Shared.Terrain;
 using LifeVerse.Shared.Vehicles;
+using LifeVerse.Shared.Voice;
 using LifeVerse.Wire;
 
 namespace LifeVerse.IslandServer.Core;
@@ -65,6 +66,7 @@ public sealed partial class IslandServer : IDisposable
     private readonly Stopwatch _uptime = Stopwatch.StartNew();
     private readonly string[] _blockedTerms;
     private readonly VehicleFleet _fleet = new();
+    private readonly VoiceRelay _voice = new();
     private TerrainMap _terrain = new();
     private string _terrainJson = "{}", _environmentJson = "{}";
     private long _worldVersion;
@@ -254,6 +256,7 @@ public sealed partial class IslandServer : IDisposable
     private void OnPeerDisconnected(int peerId, WireDisconnectReason reason)
     {
         _fleet.Release(peerId);
+        _voice.Forget(peerId);
         if (!_players.Remove(peerId, out var player)) return;
         if (player.Authenticated)
         {
@@ -277,6 +280,7 @@ public sealed partial class IslandServer : IDisposable
             case SubmitInputMessage input: OnInput(player, input); break;
             case SetFlightMessage flight: OnFlight(player, flight.Enabled); break;
             case SendChatMessage chat: OnChat(player, chat.Message); break;
+            case SubmitVoiceMessage voice: OnVoice(player, voice); break;
             case GestureMessage gesture: OnGesture(player, gesture.GestureId); break;
             case HeadLookMessage look: OnHeadLook(player, look.Pitch); break;
             case RequestTerrainMessage: OnRequestTerrain(player); break;
@@ -428,6 +432,17 @@ public sealed partial class IslandServer : IDisposable
         player.LastGesture = now;
         foreach (var target in _players.Values.Where(x => x.Authenticated && x.PeerId != player.PeerId && DistanceSquared(player, x) <= _config.InterestRadius * _config.InterestRadius))
             _wire.Send(target.PeerId, new GestureChangedMessage(player.PeerId, gestureId));
+    }
+
+    /// <summary>Proximity voice: Opus packets go to the players inside hearing range and nowhere else. The server never decodes the audio; it only checks size and rate, and voice can be off on a parcel.</summary>
+    private void OnVoice(Player speaker, SubmitVoiceMessage message)
+    {
+        if (!_voice.Allow(speaker.PeerId, _uptime.ElapsedMilliseconds, message.Data.Length)) return;
+        if (!_landRules.VoiceAllowedAt(speaker.State.X, speaker.State.Z)) return;
+        var positions = _players.Values.Where(x => x.Authenticated).Select(x => new VoicePeer(x.PeerId, x.State.X, x.State.Y, x.State.Z)).ToList();
+        foreach (var hearer in VoiceRelay.Hearers(speaker.PeerId, positions))
+            if (!_players.TryGetValue(hearer, out var listener) || _landRules.VoiceAllowedAt(listener.State.X, listener.State.Z))
+                _wire.Send(hearer, new ReceiveVoiceMessage(speaker.PeerId, message.Sequence, message.Data));
     }
 
     private void OnHeadLook(Player player, float pitch)
