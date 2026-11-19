@@ -54,8 +54,8 @@ public sealed class WireServer : IDisposable
             if (_manager.ConnectedPeersCount >= _maxPeers) { request.Reject(); return; }
             request.AcceptIfKey(WireProtocol.ConnectionKey);
         };
-        _listener.PeerConnectedEvent += peer => { _peers[peer.Id] = new PeerState(peer); PeerConnected?.Invoke(peer.Id); };
-        _listener.PeerDisconnectedEvent += (peer, info) => { _peers.Remove(peer.Id); PeerDisconnected?.Invoke(peer.Id, WireTransport.ToReason(info.Reason)); };
+        _listener.PeerConnectedEvent += peer => { _peers[PeerKey(peer)] = new PeerState(peer); PeerConnected?.Invoke(PeerKey(peer)); };
+        _listener.PeerDisconnectedEvent += (peer, info) => { _peers.Remove(PeerKey(peer)); PeerDisconnected?.Invoke(PeerKey(peer), WireTransport.ToReason(info.Reason)); };
         _listener.NetworkReceiveEvent += (peer, reader, _, _) => Receive(peer, reader.GetRemainingBytesSpan());
     }
 
@@ -64,6 +64,9 @@ public sealed class WireServer : IDisposable
     public event Action<int, IWireMessage>? MessageReceived;
     /// <summary>Um jogador foi desconectado por culpa dele: "empty", "unknown_type", "wrong_direction", "malformed", "trailing_bytes", "not_authenticated" ou "auth_timeout".</summary>
     public event Action<int, string>? PeerRejected;
+
+    /// <summary>O número do jogador na rede: o id do LiteNetLib (que começa em 0) mais 1. O 0 fica livre para "ninguém / o sistema" (avisos, scripts), como o 0 do Godot.</summary>
+    private static int PeerKey(NetPeer peer) => peer.Id + 1;
 
     public int Port => _manager.LocalPort;
     public int PeerCount => _manager.ConnectedPeersCount;
@@ -109,11 +112,11 @@ public sealed class WireServer : IDisposable
 
     private void Receive(NetPeer peer, ReadOnlySpan<byte> frame)
     {
-        if (!_peers.TryGetValue(peer.Id, out var state)) return;
+        if (!_peers.TryGetValue(PeerKey(peer), out var state)) return;
         var decoded = WireCodec.Decode(frame, WireDirection.ClientToServer);
-        if (!decoded.Ok) { Reject(peer.Id, decoded.Error!); return; }
-        if (!state.Authenticated && decoded.Message is not AuthenticateMessage) { Reject(peer.Id, "not_authenticated"); return; }
-        MessageReceived?.Invoke(peer.Id, decoded.Message!);
+        if (!decoded.Ok) { Reject(PeerKey(peer), decoded.Error!); return; }
+        if (!state.Authenticated && decoded.Message is not AuthenticateMessage) { Reject(PeerKey(peer), "not_authenticated"); return; }
+        MessageReceived?.Invoke(PeerKey(peer), decoded.Message!);
     }
 
     public void Dispose() => _manager.Stop();

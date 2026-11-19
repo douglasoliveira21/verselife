@@ -38,3 +38,14 @@ UnityPlugins/obj/
 UnityPlugins/generated/
 UnityWire/bin/
 UnityWire/obj/
+UnityIslandServer/Core/bin/
+UnityIslandServer/Core/obj/
+UnityIslandServer/Host/bin/
+UnityIslandServer/Host/obj/
+UnityIslandServer/LoadTest/bin/
+UnityIslandServer/LoadTest/obj/
+
+# Projetos .NET escritos à mão (a regra **/*.csproj acima é para os gerados pela Unity)
+!UnityWire/*.csproj
+!UnityPlugins/*.csproj
+!UnityIslandServer/**/*.csproj

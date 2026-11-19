@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Compila o código-fonte de ../../shared para a Unity (netstandard2.1) SEM alterar o projeto shared.
+    O resultado vai para UnityClient/Assets/LifeVerse/Plugins por build-plugins.ps1.
+    Fonte única: nenhuma regra é copiada; os mesmos .cs são compilados com LangVersion 12 e polyfills.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>LifeVerse.Shared</AssemblyName>
+    <RootNamespace>LifeVerse.Shared</RootNamespace>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DebugType>portable</DebugType>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <OutputPath>bin\LifeVerse.Shared.Unity\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <DefineConstants>$(DefineConstants);LIFEVERSE_UNITY_PLUGIN</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="generated\shared\**\*.cs" />
+    <Compile Include="Polyfills.cs" />
+    <Compile Include="Compat.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Concentus" Version="2.2.2" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+</Project>

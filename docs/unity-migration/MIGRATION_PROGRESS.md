@@ -1,6 +1,6 @@
 # Migração para Unity 6 HDRP — Progresso
 
-Última atualização: 2026-11-18. Não há percentuais: o progresso é contado sobre o inventário de `MIGRATION_CHECKLIST.md` (72 itens, grupos A a H) e sobre os critérios de aceite.
+Última atualização: 2026-11-18 (Fase 6). Não há percentuais: o progresso é contado sobre o inventário de `MIGRATION_CHECKLIST.md` (72 itens, grupos A a H) e sobre os critérios de aceite.
 
 ## Resumo
 
@@ -11,7 +11,7 @@
 | Itens com a base técnica provada (A3, A4: `shared` e `scripting` rodando na Unity) | 2, ainda em validação |
 | Itens que não precisam de migração (backend) | 1 (A1) |
 | Fases concluídas | 1 (auditoria) |
-| Fase em andamento | **3 (fundação)**: entregue e verificada, falta a revisão do gate abaixo |
+| Fase em andamento | **6 (servidores)**, parcial (ver `MIGRATION_ISLAND_SERVER.md`); a 3 (fundação) segue com o gate abaixo por revisar |
 | Decisões | D1, D2, D3 (LiteNetLib), D4 (Unity Dedicated Server) e D7 tomadas e executadas; o módulo Linux está instalado e o build do servidor foi verificado |
 | Protocolo de rede | `LifeVerse.Wire` (protocolo 12): 44 mensagens, 25 testes xUnit e 2 testes na Unity passam; rodou num player Windows (Mono). Ainda não há servidor de ilha nem cliente de jogo usando o protocolo |
 | Projeto Unity | Criado em `unity/UnityClient` |
@@ -49,7 +49,7 @@
 | 3 Fundação Unity | Em validação | Gate cumprido, exceto IL2CPP e render visual (acima). D1, D2 e D7 foram executadas |
 | 4 Código compartilhado | Não iniciado | Rodar o conjunto completo de testes de `shared` dentro da Unity; planilha dos 117 smokes |
 | 5 Multiplayer | Em migração | Protocolo e transporte feitos e testados (`WIRE_PROTOCOL.md`). Faltam: interpolação e reconciliação no cliente, interesse e tick no servidor, 64 clientes simultâneos e latência alta; dependem das Fases 6 e 7 |
-| 6 Servidores | Não iniciado | Depende de D4 |
+| 6 Servidores | **Em migração (parcial)** | Núcleo sem engine (`unity/UnityIslandServer/Core`) com admissão, simulação, snapshots por interesse, chat, voo, gestos, persistência, heartbeat/comandos do admin, saúde, métricas e encerramento; roda como processo .NET (`Host`) e como Unity Dedicated Server. 32 testes xUnit; 64 clientes UDP contra o servidor dentro do player Unity. Terreno editável (por editores da ilha) portado. **Faltam** construção, edição por donos de parcela, veículos, teletransporte/terras, scripts, física de objetos, voz e a execução no Linux. Ver `MIGRATION_ISLAND_SERVER.md` |
 | 7 a 15 | Não iniciado | — |
 
 ## Módulos
@@ -61,7 +61,7 @@
 | `scripting` | `scripting/` | `LifeVerse.Scripting.dll` | Implementado, em validação | OK | Compilador Lua e timer do `ScriptHost` passam no editor; compilador Lua passa no player | IL2CPP; sandbox e limites no player | Fase 4 |
 | Pipeline de build | — | `build-plugins.ps1`, `ProjectSetup`, `BuildClient` | Implementado, validado | OK | Build Windows reproduzível | Build do servidor (D4) | — |
 | Rede (protocolo e transporte) | `NetworkBridge` (44 RPCs) | `unity/UnityWire` (`LifeVerse.Wire`) | Implementado, em validação | OK (`netstandard2.1` e `net8.0`, 0 avisos; solução inteira 0 avisos) | 25 xUnit + 2 na Unity + autoverificação do player: passam | Servidor de ilha e cliente de jogo; 64 clientes; latência alta | Fase 6 |
-| Servidor de ilha | `island-server/` | `UnityIslandServer` | Não iniciado (o build do servidor dedicado Linux já compila, sem lógica de jogo) | Build Linux OK (161 MB, 0 erros) | Não executado no Linux | Simulação de ilha, física de objetos (S4), execução em Linux | Fase 6 |
+| Servidor de ilha | `island-server/` | `unity/UnityIslandServer` (`Core`, `Host`, `LoadTest`) + `Assets/LifeVerse/Server` | Parcial: ver paridade em `MIGRATION_ISLAND_SERVER.md` | `Core` net8.0 e netstandard2.1 OK (0 avisos); Build Linux OK (161 MB, 0 erros) | 30 xUnit; 64 clientes contra o player Unity (Windows/Mono); **não executado no Linux** | Construção, terreno por donos de parcela, veículos, teletransporte/terras, scripts (`IslandScripting`), física (S4), voz, `VehicleSnapshots` em pacotes, `engine`/`wireVersion` na API, Supervisor | Fase 6 (continuação) |
 | Mundo 3D, Jogador, Avatar, Construção, UI, Social, Áudio, Distribuição | ver checklist | `LifeVerse.Unity.*` | Não iniciado | — | — | — | Fases 7 a 15 |
 
 ## Registro de decisões e incompatibilidades
@@ -77,3 +77,7 @@
 - 2026-11-18, **D7 executada** (autorizada): HDRP 17.6.0 (embutido), Input System 1.20.1, glTFast 6.21.0 e Test Framework 1.8.0.
 - 2026-11-18: o `shared` precisou de 13 APIs ausentes no netstandard2.1; a solução (11 substituições mecânicas no código gerado mais `Compat.cs`) deixa os fontes originais intactos. Se o `shared` passar a usar outra API do .NET 5–8, o `build-plugins.ps1` falha com o erro de compilação e a regra nova deve ser adicionada ali.
 - 2026-11-18: o `build-plugins.ps1` copia, junto com as DLLs do LifeVerse, as dependências de pacotes (`System.Memory`, `System.Buffers`, `System.Numerics.Vectors`, `System.Runtime.CompilerServices.Unsafe`, `System.Threading.Tasks.Extensions`, `Microsoft.Bcl.AsyncInterfaces`, `System.Text.Json`, `System.Text.Encodings.Web`, Concentus, MoonSharp). Elas convivem com a Unity no editor e no player Mono; se aparecer conflito de assemblies em outro alvo, remover as que a Unity já fornece.
+- 2026-11-18, **Fase 6 iniciada**: `unity/UnityIslandServer/Core` (sem engine) hospedado por `Host` (.NET) e por `Assets/LifeVerse/Server/IslandServerBehaviour` (Unity). A API continua emitindo bilhetes de protocolo 11: o servidor Unity os aceita por `LIFEVERSE_TICKET_PROTOCOL` (padrão 11) em vez de exigir uma mudança de API; escolher o motor por ilha continua dependendo de um campo `engine`/`wireVersion` (migração de banco, **não autorizada nem feita**).
+- 2026-11-18: o Wire passou a numerar jogadores como `id do LiteNetLib + 1` (0 = sistema) e o servidor divide snapshots em pacotes de até 40 jogadores do mesmo tick; ambos documentados em `WIRE_PROTOCOL.md`.
+- 2026-11-18: o commit `4e73996` omitiu três `.csproj` (`LifeVerse.Wire`, `LifeVerse.Shared.Unity`, `LifeVerse.Scripting.Unity`) por causa da regra `**/*.csproj` de `unity/.gitignore`; corrigido com exceções na regra, e os arquivos entram no commit da Fase 6.
+- 2026-11-18: o servidor Godot não foi alterado.

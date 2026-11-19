@@ -17,6 +17,12 @@
   <Folder Name="/Shared/">
     <Project Path="shared/LifeVerse.Shared.csproj" />
   </Folder>
+  <Folder Name="/Unity Island Server/">
+    <Project Path="unity/UnityIslandServer/Core/LifeVerse.IslandServer.Core.csproj" />
+    <Project Path="unity/UnityIslandServer/Host/LifeVerse.IslandServer.Host.csproj" />
+    <Project Path="unity/UnityIslandServer/LoadTest/LifeVerse.IslandServer.LoadTest.csproj" />
+    <Project Path="tests/LifeVerse.IslandServer.Tests/LifeVerse.IslandServer.Tests.csproj" />
+  </Folder>
   <Folder Name="/Unity Wire/">
     <Project Path="unity/UnityWire/LifeVerse.Wire.csproj" />
   </Folder>

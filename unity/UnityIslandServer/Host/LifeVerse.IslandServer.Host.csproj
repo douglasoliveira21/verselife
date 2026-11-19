@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    O servidor de ilha como processo .NET comum (sem Unity): o mesmo núcleo do Unity Dedicated Server, sem gráficos, sem licença e sem Vulkan.
+    Roda no Alpine/Linux do Supervisor e no Windows. Mesmas variáveis de ambiente do servidor Godot.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>LifeVerse.IslandServer.Host</AssemblyName>
+    <RootNamespace>LifeVerse.IslandServer.Host</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Core\LifeVerse.IslandServer.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compila o código-fonte de ../../scripting (runtime Lua com MoonSharp) para a Unity, sem alterar o projeto original. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>LifeVerse.Scripting</AssemblyName>
+    <RootNamespace>LifeVerse.Scripting</RootNamespace>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DebugType>portable</DebugType>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <OutputPath>bin\LifeVerse.Scripting.Unity\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <DefineConstants>$(DefineConstants);LIFEVERSE_UNITY_PLUGIN</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="generated\scripting\**\*.cs" />
+    <Compile Include="Polyfills.cs" />
+    <Compile Include="Compat.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MoonSharp" Version="2.0.0" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+</Project>

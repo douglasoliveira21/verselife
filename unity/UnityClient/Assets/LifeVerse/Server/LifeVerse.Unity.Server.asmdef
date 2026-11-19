@@ -1,0 +1,16 @@
+{
+    "name": "LifeVerse.Unity.Server",
+    "rootNamespace": "LifeVerse.Unity.Server",
+    "references": [
+        "LifeVerse.Unity.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

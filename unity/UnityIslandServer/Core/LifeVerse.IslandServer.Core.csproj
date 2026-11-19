@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Núcleo do servidor de ilha (Fase 6 da migração): admissão, simulação autoritativa, snapshots, API, saúde, métricas e logs.
+    Sem dependência de engine: roda no console (.NET), nos testes e dentro do Unity Dedicated Server (netstandard2.1).
+    O servidor Godot (island-server/) continua intacto; este núcleo fala o protocolo LifeVerse Wire 12.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+    <AssemblyName>LifeVerse.IslandServer.Core</AssemblyName>
+    <RootNamespace>LifeVerse.IslandServer.Core</RootNamespace>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <Compile Include="..\..\UnityPlugins\Polyfills.cs" Link="Polyfills.cs" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\UnityWire\LifeVerse.Wire.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <ProjectReference Include="..\..\..\shared\LifeVerse.Shared.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <ProjectReference Include="..\..\UnityPlugins\LifeVerse.Shared.Unity.csproj" />
+  </ItemGroup>
+</Project>

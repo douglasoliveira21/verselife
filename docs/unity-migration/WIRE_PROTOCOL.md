@@ -109,3 +109,8 @@ Canal e entrega entre parênteses; "Rel" = confiável (canal 0).
 
 ## Fora do escopo desta entrega
 Este documento cobre o protocolo e o transporte. **Não** há ainda um servidor de ilha nem um cliente de jogo falando o protocolo: isso é a Fase 6 (servidor) e as Fases 7 a 12. Também não foram feitos testes de 64 clientes simultâneos nem de latência alta.
+
+## Regras de uso descobertas na Fase 6
+
+- **Numeração dos jogadores.** `PeerId` é o id do LiteNetLib mais 1 (o `WireServer` faz a soma). O 0 é reservado para "sistema" (avisos, scripts), como no Godot. Nunca use 0 como jogador.
+- **Snapshots em vários pacotes.** O LiteNetLib não fragmenta pacotes `Unreliable`/`Sequenced` (limite ~1020 bytes por quadro). Um `Snapshot` leva no máximo 40 jogadores (6 + 40 × 23 = 926 bytes); com mais gente no raio de interesse o servidor manda **vários `Snapshot` do mesmo `ServerTick`**, com o próprio jogador sempre no primeiro. O cliente deve **mesclar os pacotes de um mesmo tick** (e só então tratar quem não apareceu como fora do raio). Com 64 jogadores por perto são 2 pacotes por jogador por snapshot (medido: 39,8 pacotes/s por cliente a 20 Hz). O mesmo vale para `VehicleSnapshots` quando houver mais de ~40 veículos (o limite do jogo é 64): **ainda não dividido**, ver `MIGRATION_ISLAND_SERVER.md`.

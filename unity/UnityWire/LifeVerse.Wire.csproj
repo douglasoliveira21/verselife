@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    LifeVerse Wire (protocolo 12): as 44 mensagens do jogo (as mesmas dos 44 RPCs do Godot, protocolo 11) em um formato binário próprio,
+    transportadas por LiteNetLib. Sem dependência de engine: serve ao cliente Unity, ao servidor de ilha e aos testes.
+    Alvos: netstandard2.1 (Unity) e net8.0 (servidor .NET e testes).
+  -->
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
+    <AssemblyName>LifeVerse.Wire</AssemblyName>
+    <RootNamespace>LifeVerse.Wire</RootNamespace>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
+    <Compile Include="..\UnityPlugins\Polyfills.cs" Link="Polyfills.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="LiteNetLib" Version="2.1.5" />
+  </ItemGroup>
+</Project>

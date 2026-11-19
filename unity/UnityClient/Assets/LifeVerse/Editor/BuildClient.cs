@@ -19,7 +19,7 @@ namespace LifeVerse.Unity.EditorTools
             var scenes = EditorBuildSettings.scenes.Where(scene => scene.enabled).Select(scene => scene.path).ToArray();
             if (scenes.Length == 0) { Debug.LogError("[LifeVerse] Nenhuma cena habilitada nas Build Settings."); EditorApplication.Exit(2); return; }
             Directory.CreateDirectory("Builds/Windows");
-            var options = new BuildPlayerOptions { scenes = scenes, locationPathName = "Builds/Windows/LifeVerse.exe", target = BuildTarget.StandaloneWindows64, options = BuildOptions.None };
+            var options = new BuildPlayerOptions { scenes = scenes, locationPathName = "Builds/Windows/LifeVerse.exe", target = BuildTarget.StandaloneWindows64, subtarget = (int)StandaloneBuildSubtarget.Player, options = BuildOptions.None }; // explícito: o último build de servidor deixa o subtarget em Server
             var report = BuildPipeline.BuildPlayer(options);
             var summary = report.summary;
             Debug.Log($"[LifeVerse] Build {summary.result}: {summary.totalSize / (1024 * 1024)} MB em {summary.totalTime:g}, erros {summary.totalErrors}, avisos {summary.totalWarnings}");

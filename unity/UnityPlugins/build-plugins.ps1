@@ -1,4 +1,4 @@
-<#
+﻿<#
   Compila shared/ e scripting/ para a Unity (netstandard2.1, C# 12) e copia os .dll para
   UnityClient/Assets/LifeVerse/Plugins. Os projetos originais NÃO são alterados.
 
@@ -60,6 +60,10 @@ foreach ($project in 'LifeVerse.Shared.Unity.csproj', 'LifeVerse.Scripting.Unity
 & $dotnet build (Join-Path $here '..\UnityWire\LifeVerse.Wire.csproj') -c $Configuration -f netstandard2.1 -p:CopyLocalLockFileAssemblies=true -nologo -v q
 if ($LASTEXITCODE -ne 0) { throw "Falha ao compilar LifeVerse.Wire" }
 
+# LifeVerse.IslandServer.Core (servidor de ilha sem engine, Fase 6)
+& $dotnet build (Join-Path $here '..\UnityIslandServer\Core\LifeVerse.IslandServer.Core.csproj') -c $Configuration -f netstandard2.1 -p:CopyLocalLockFileAssemblies=true -nologo -v q
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar LifeVerse.IslandServer.Core' }
+
 # copia as DLLs (incluindo as dependências de pacotes) e remove versões antigas
 Get-ChildItem $plugins -Filter *.dll -ErrorAction SilentlyContinue | Remove-Item -Force
 Get-ChildItem $plugins -Filter *.dll.meta -ErrorAction SilentlyContinue | Remove-Item -Force
@@ -67,4 +71,5 @@ foreach ($out in 'bin\LifeVerse.Shared.Unity', 'bin\LifeVerse.Scripting.Unity') 
   Get-ChildItem (Join-Path $here "$out\netstandard2.1") -Filter *.dll | ForEach-Object { Copy-Item $_.FullName $plugins -Force }
 }
 Get-ChildItem (Join-Path $here "..\UnityWire\bin\$Configuration\netstandard2.1") -Filter *.dll | ForEach-Object { Copy-Item $_.FullName $plugins -Force }
+Get-ChildItem (Join-Path $here "..\UnityIslandServer\Core\bin\$Configuration\netstandard2.1") -Filter *.dll | ForEach-Object { Copy-Item $_.FullName $plugins -Force }
 Write-Host "Plugins em $plugins :"; Get-ChildItem $plugins -Filter *.dll | ForEach-Object { '  {0}  {1:N0} bytes' -f $_.Name, $_.Length }
