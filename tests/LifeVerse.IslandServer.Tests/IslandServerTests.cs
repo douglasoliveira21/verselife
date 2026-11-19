@@ -435,16 +435,97 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Contains(32, counts); Assert.Contains(18, counts);
     }
 
+    private const string Cube = "{\"operation\":\"create\",\"expectedRevision\":0,\"object\":{\"primitiveType\":\"cube\",\"positionX\":1,\"positionY\":0,\"positionZ\":1,\"rotationX\":0,\"rotationY\":0,\"rotationZ\":0,\"scaleX\":1,\"scaleY\":1,\"scaleZ\":1}}";
+
+    [Fact]
+    public async Task ABuildOperationIsForwardedToTheAPIAsThePlayerAndEveryoneSeesTheAnswer()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana"); var b = await island.JoinAsync("Beto");
+        island.Api.BuildAnswer = _ => (200, "{\"operation\":\"create\",\"objectId\":\"abc\"}");
+        a.Wire.Send(new SubmitBuildOperationMessage(Cube));
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationAppliedMessage>().Count > 0 && b.All<BuildOperationAppliedMessage>().Count > 0));
+        Assert.Contains("abc", b.Last<BuildOperationAppliedMessage>()!.OperationJson);
+        Assert.True(island.Api.BuildRequests.TryDequeue(out var sent));
+        using var body = System.Text.Json.JsonDocument.Parse(sent!);
+        Assert.Equal(a.Admission!.UserId, body.RootElement.GetProperty("userId").GetGuid());
+        Assert.Equal("create", body.RootElement.GetProperty("operation").GetString());
+        Assert.Equal("cube", body.RootElement.GetProperty("object").GetProperty("primitiveType").GetString());
+    }
+
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("{\"operation\":\"explode\"}")]
+    [InlineData("{\"operation\":\"create\",\"object\":{\"primitiveType\":\"banana\",\"scaleX\":1,\"scaleY\":1,\"scaleZ\":1}}")]
+    [InlineData("{\"operation\":\"create\",\"object\":{\"primitiveType\":\"cube\",\"scaleX\":500,\"scaleY\":1,\"scaleZ\":1}}")]
+    public async Task InvalidBuildOperationsNeverReachTheAPI(string json)
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana");
+        a.Wire.Send(new SubmitBuildOperationMessage(json));
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Count > 0));
+        Assert.Equal("invalid_operation", a.Last<BuildOperationRejectedMessage>()!.Code);
+        Assert.Empty(island.Api.BuildRequests);
+    }
+
+    [Fact]
+    public async Task APIRefusalsReachThePlayerWithAPreciseCode()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana");
+        island.Api.BuildAnswer = _ => (403, "{\"code\":\"not_owner\"}");
+        a.Wire.Send(new SubmitBuildOperationMessage(Cube));
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Any(r => r.Code == "not_owner")));
+        island.Api.BuildAnswer = _ => (409, "{}");
+        a.Wire.Send(new SubmitBuildOperationMessage(Cube));
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Any(r => r.Code == "revision_conflict")));
+        island.Api.BuildAnswer = _ => throw new HttpRequestException("down");
+        a.Wire.Send(new SubmitBuildOperationMessage(Cube));
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Any(r => r.Code == "service_unavailable")));
+    }
+
+    [Fact]
+    public async Task BuildOperationsAreRateLimitedToTwentyPerSecond()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana");
+        for (var i = 0; i < 40; i++) a.Wire.Send(new SubmitBuildOperationMessage(Cube));
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Any(r => r.Code == "rate_limit")));
+    }
+
+    [Fact]
+    public async Task EditLocksKeepOthersOutAnnounceThemToNewcomersAndFallWhenTheHolderLeaves()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana"); var b = await island.JoinAsync("Beto");
+        var id = Guid.NewGuid();
+        a.Wire.Send(new SubmitBuildOperationMessage($"{{\"operation\":\"lock\",\"expectedRevision\":0,\"objectIds\":[\"{id}\"]}}"));
+        Assert.True(await island.PumpAsync(() => b.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("\"lock\""))));
+
+        b.Wire.Send(new SubmitBuildOperationMessage($"{{\"operation\":\"update\",\"expectedRevision\":1,\"objectId\":\"{id}\"}}"));
+        Assert.True(await island.PumpAsync(() => b.All<BuildOperationRejectedMessage>().Any(r => r.Code == "locked:Ana")));
+        Assert.Empty(island.Api.BuildRequests); // a ilha recusou antes de perguntar à API
+
+        var c = await island.JoinAsync("Cris");
+        Assert.True(await island.PumpAsync(() => c.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("\"lock\"") && m.OperationJson.Contains(id.ToString()))));
+
+        a.Wire.Disconnect();
+        Assert.True(await island.PumpAsync(() => b.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("\"unlock\""))));
+    }
     [Fact]
     public async Task UnsupportedFeaturesAnswerWithAClearRejectionInsteadOfSilence()
     {
         using var island = new IslandHarness();
         await island.StartAsync();
         var a = await island.JoinAsync("Ana");
-        a.Wire.Send(new SubmitBuildOperationMessage("{}"));
         a.Wire.Send(new RequestTeleportMessage("x", 1, 1));
-        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Count > 0 && a.All<TeleportResultMessage>().Count > 0));
-        Assert.Equal("unsupported", a.Last<BuildOperationRejectedMessage>()!.Code);
+        Assert.True(await island.PumpAsync(() => a.All<TeleportResultMessage>().Count > 0));
+        Assert.Equal("unsupported", a.Last<TeleportResultMessage>()!.Code);
     }
 
     [Fact]

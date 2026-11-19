@@ -26,7 +26,7 @@ public sealed record IslandServerStats(int Players, long Ticks, double TickAvera
 /// chat, voo, gestos, persistência (mundo e posições), registro, heartbeat, comandos do admin, saúde e métricas.
 /// Tudo acontece em <see cref="Update"/>, na thread de quem o chama; as tarefas de rede só deixam recados na caixa de entrada.
 /// </summary>
-public sealed class IslandServer : IDisposable
+public sealed partial class IslandServer : IDisposable
 {
     private sealed class Player(int peerId)
     {
@@ -41,7 +41,7 @@ public sealed class IslandServer : IDisposable
         public NetworkMotionState Motion;
         public readonly Queue<DateTimeOffset> ChatTimes = new();
         public DateTimeOffset? LastGesture, LastHeadLook;
-        public readonly Queue<DateTimeOffset> TerrainTimes = new();
+        public readonly Queue<DateTimeOffset> TerrainTimes = new(), BuildTimes = new();
         public DateTimeOffset LastTerrainRequest, LastTerrainImport, LastStrokeAt;
         public readonly List<TerrainPatch> UndoStack = new(), RedoStack = new();
     }
@@ -179,6 +179,7 @@ public sealed class IslandServer : IDisposable
             if (_scheduled[i].At <= _time) { var run = _scheduled[i].Run; _scheduled.RemoveAt(i); run(); }
         if (!_ready || _stopping) return;
         var dt = Math.Min(delta, 1f / 20f);
+        SweepLocks();
         _fleet.Tick(dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin);
         foreach (var player in _players.Values)
         {
@@ -254,6 +255,7 @@ public sealed class IslandServer : IDisposable
         if (player.Authenticated)
         {
             Interlocked.Decrement(ref _playerCount);
+            BroadcastUnlock(_locks.ReleaseAll(player.UserId), player.UserId);
             _ = SaveLocationsAsync(new[] { player }, CancellationToken.None);
             if (!player.Released) _suspended[player.AvatarId] = new Suspended(player, _time + _options.SuspendSeconds); // quem sai em viagem não volta sozinho
             foreach (var other in _players.Values.Where(x => x.Authenticated)) _wire.Send(other.PeerId, new DespawnPlayerMessage(peerId, true));
@@ -280,7 +282,7 @@ public sealed class IslandServer : IDisposable
             case UndoTerrainMessage: StepHistory(player, true); break;
             case RedoTerrainMessage: StepHistory(player, false); break;
             case SubmitTerrainImportMessage import: OnTerrainImport(player, import.Heights); break;
-            case SubmitBuildOperationMessage: _wire.Send(peerId, new BuildOperationRejectedMessage("unsupported")); break;
+            case SubmitBuildOperationMessage build: OnBuildOperation(player, build.OperationJson); break;
             case EnterVehicleMessage enter: OnEnterVehicle(player, enter.VehicleId); break;
             case ExitVehicleMessage: OnExitVehicle(player); break;
             case SubmitVehicleInputMessage drive: if (float.IsFinite(drive.Throttle) && float.IsFinite(drive.Steer)) _fleet.SetInput(peerId, drive.Throttle, drive.Steer, drive.Brake); break;
@@ -340,6 +342,7 @@ public sealed class IslandServer : IDisposable
         _wire.Send(player.PeerId, new AuthResultMessage(true, "ok", _serverTick));
         SendTerrain(player);
         foreach (var vehicle in _fleet.Vehicles) SendVehicle(player.PeerId, vehicle);
+        SendLocks(player.PeerId);
         _log.Write("peer_authenticated", new { player.PeerId, admission.UserId, admission.AvatarId });
         if (admission.TransferId is { } trip) _ = ConfirmArrivalAsync(player.PeerId, trip); // quem viajou: a API só conclui a viagem quando esta ilha diz que a pessoa chegou
     }

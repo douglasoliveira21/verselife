@@ -65,6 +65,10 @@ public sealed class FakeApi : IIslandApi
 
     public Task<int> ConfirmArrivalAsync(Guid transferId, CancellationToken ct) { Interlocked.Increment(ref ArrivalConfirmations); return Task.FromResult(ArrivalStatus); }
 
+    public readonly ConcurrentQueue<string> BuildRequests = new();
+    public Func<string, (int Status, string Body)> BuildAnswer = json => (200, json);
+    public Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct) { BuildRequests.Enqueue(json); return Task.FromResult(BuildAnswer(json)); }
+
     public readonly List<VehicleRow> Vehicles = new();
     public Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct) { lock (Vehicles) return Task.FromResult<IReadOnlyList<VehicleRow>>(Vehicles.ToList()); }
 

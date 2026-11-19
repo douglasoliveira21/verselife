@@ -36,6 +36,8 @@ public interface IIslandApi : IDisposable
     /// <summary>O estado HTTP da confirmação de chegada de quem viajou (404 e 409: a viagem não vale mais).</summary>
     Task<int> ConfirmArrivalAsync(Guid transferId, CancellationToken ct);
     Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct);
+    /// <summary>Repassa uma operação de construção à API em nome do jogador. Devolve o estado HTTP e o corpo (aceito ou o motivo da recusa).</summary>
+    Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct);
     Task DeregisterAsync(CancellationToken ct);
 }
 
@@ -104,6 +106,12 @@ public sealed class HttpIslandApi : IIslandApi
     {
         using var response = await _http.PostAsync($"{Server}/transfers/{transferId}/arrived", new StringContent(string.Empty), ct).ConfigureAwait(false);
         return (int)response.StatusCode;
+    }
+
+    public async Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct)
+    {
+        using var response = await _http.PostAsync($"{Server}/build-operations", new StringContent(json, Encoding.UTF8, "application/json"), ct).ConfigureAwait(false);
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync().ConfigureAwait(false));
     }
 
     public async Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct)
