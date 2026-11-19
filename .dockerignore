@@ -12,3 +12,8 @@ artifacts
 .env
 secrets
 logs
+unity/UnityClient/Library
+unity/UnityClient/Temp
+unity/UnityClient/Logs
+unity/UnityClient/Builds/Windows
+unity/UnityPlugins/generated

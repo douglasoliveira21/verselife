@@ -48,7 +48,7 @@ Como funciona:
 4. Depois de `SUPERVISOR_IDLE_MINUTES` (padrão 10) sem ninguém, a ilha salva o mundo e encerra sozinha; a porta volta a ficar livre.
 5. Uma ilha que fica em `starting` por mais de 3 minutos sem servidor volta para `suspended`. Uma ilha que cai 3 vezes seguidas fica 5 minutos sem ser reiniciada.
 
-Variáveis do supervisor: `LIFEVERSE_API_URL`, `LIFEVERSE_SERVICE_KEY` (mesma de `IslandServer__SharedKey`, mínimo 32 caracteres), `LIFEVERSE_HOSTNAME` (endereço público que o cliente usa), `SUPERVISOR_GODOT_PATH`, `SUPERVISOR_PROJECT_PATH`, `SUPERVISOR_PORT_START` (7777), `SUPERVISOR_MAX_ISLANDS` (8), `SUPERVISOR_HEALTH_PORT_START` (7070), `SUPERVISOR_IDLE_MINUTES`, `SUPERVISOR_POLL_SECONDS`.
+Variáveis do supervisor: `LIFEVERSE_API_URL`, `LIFEVERSE_SERVICE_KEY` (mesma de `IslandServer__SharedKey`, mínimo 32 caracteres), `LIFEVERSE_HOSTNAME` (endereço público que o cliente usa), `SUPERVISOR_GODOT_PATH`, `SUPERVISOR_PROJECT_PATH`, `SUPERVISOR_ENGINE` (`godot`, o padrão, ou `unity`: o servidor dedicado da Unity, ver `docs/unity-migration/MIGRATION_ISLAND_SERVER.md` e `island-supervisor/Dockerfile.unity`), `SUPERVISOR_UNITY_SERVER_PATH`, `SUPERVISOR_PORT_START` (7777), `SUPERVISOR_MAX_ISLANDS` (8), `SUPERVISOR_HEALTH_PORT_START` (7070), `SUPERVISOR_IDLE_MINUTES`, `SUPERVISOR_POLL_SECONDS`.
 
 No EasyPanel/Swarm: crie um serviço com a imagem de `island-supervisor/Dockerfile` e publique em modo host o intervalo **7777-7784/udp** (um por ilha simultânea). Como o supervisor é um único serviço, o problema de `start-first` do deploy por ilha deixa de existir para as ilhas; só o próprio supervisor precisa de `--update-order stop-first`. Ao reiniciar o supervisor as ilhas dele são encerradas e voltam sob demanda.
 

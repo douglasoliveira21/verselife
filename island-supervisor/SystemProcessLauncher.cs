@@ -3,13 +3,23 @@ using System.Diagnostics;
 
 namespace LifeVerse.IslandSupervisor;
 
-/// <summary>Starts a headless Godot island server per island and forwards its output, tagged with the island.</summary>
-public sealed class SystemProcessLauncher(string godotPath, string projectPath, Action<string> write) : IProcessLauncher
+/// <summary>
+/// Starts an island server process per island and forwards its output, tagged with the island. The Godot server is started as
+/// "godot --headless --path project"; the Unity dedicated server as "LifeVerseServer.x86_64 -batchmode -nographics -logFile -".
+/// Both read the same LIFEVERSE_* variables and answer SIGTERM with a clean stop.
+/// </summary>
+public sealed class SystemProcessLauncher(string godotPath, IReadOnlyList<string> arguments, Action<string> write) : IProcessLauncher
 {
+    /// <summary>The Godot island server (the default engine).</summary>
+    public SystemProcessLauncher(string godotPath, string projectPath, Action<string> write) : this(godotPath, new[] { "--headless", "--path", projectPath }, write) { }
+
+    /// <summary>The Unity dedicated server (Linux build). "-logFile -" sends the Unity log to the standard output, where the supervisor tags it.</summary>
+    public static SystemProcessLauncher ForUnity(string serverPath, Action<string> write) => new(serverPath, new[] { "-batchmode", "-nographics", "-logFile", "-" }, write);
+
     public IChildProcess Start(IslandLaunch launch)
     {
         var info = new ProcessStartInfo(godotPath) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        foreach (var argument in new[] { "--headless", "--path", projectPath }) info.ArgumentList.Add(argument);
+        foreach (var argument in arguments) info.ArgumentList.Add(argument);
         foreach (var (key, value) in launch.Environment) info.Environment[key] = value;
         var process = new Process { StartInfo = info, EnableRaisingEvents = true };
         var tag = launch.IslandId.ToString("N")[..8];

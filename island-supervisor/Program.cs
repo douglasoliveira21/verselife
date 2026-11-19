@@ -21,14 +21,19 @@ void Log(string message) => Console.WriteLine($"{{\"timestamp\":\"{DateTimeOffse
 
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 http.DefaultRequestHeaders.Add("X-LifeVerse-Service-Key", serviceKey);
-var launcher = new SystemProcessLauncher(Optional("SUPERVISOR_GODOT_PATH", "godot"), Optional("SUPERVISOR_PROJECT_PATH", "/app/island-server"), Console.WriteLine);
+// SUPERVISOR_ENGINE=godot (default) starts the Godot island server; =unity starts the Unity dedicated server build (LifeVerse Wire 12, see docs/unity-migration/MIGRATION_ISLAND_SERVER.md).
+var engine = Optional("SUPERVISOR_ENGINE", "godot").ToLowerInvariant();
+if (engine is not ("godot" or "unity")) throw new InvalidOperationException("SUPERVISOR_ENGINE must be godot or unity.");
+var launcher = engine == "unity"
+    ? SystemProcessLauncher.ForUnity(Optional("SUPERVISOR_UNITY_SERVER_PATH", "/opt/lifeverse-server/LifeVerseServer.x86_64"), Console.WriteLine)
+    : new SystemProcessLauncher(Optional("SUPERVISOR_GODOT_PATH", "godot"), Optional("SUPERVISOR_PROJECT_PATH", "/app/island-server"), Console.WriteLine);
 var supervisor = new IslandProcessSupervisor(options, new HttpPendingIslands(http, apiUrl), launcher, () => DateTimeOffset.UtcNow, Log);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
 using var terminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; cancellation.Cancel(); });
 
-Log($"supervisor started: UDP {options.PortStart}-{options.PortStart + options.MaxIslands - 1}, idle shutdown {options.BaseEnvironment!["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"]} min");
+Log($"supervisor started ({engine}): UDP {options.PortStart}-{options.PortStart + options.MaxIslands - 1}, idle shutdown {options.BaseEnvironment!["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"]} min");
 var poll = TimeSpan.FromSeconds(Math.Clamp(Number("SUPERVISOR_POLL_SECONDS", 3), 1, 60));
 try
 {

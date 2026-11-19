@@ -177,6 +177,28 @@ public sealed class SystemProcessLauncherTests
     }
 
     [Fact]
+    public void TheArgumentsOfTheEngineAreForwardedAsGiven()
+    {
+        // "dotnet --version" succeeds only if the launcher passes exactly the arguments it was given (the Godot ones would fail), which is how the Unity server gets its own
+        var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var launcher = new SystemProcessLauncher("dotnet", new[] { "--version" }, lines.Enqueue);
+        var island = Guid.NewGuid();
+        var child = launcher.Start(new IslandLaunch(island, "Teste", 7777, 7070, Guid.NewGuid(), new Dictionary<string, string>()));
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!child.HasExited && DateTime.UtcNow < deadline) Thread.Sleep(50);
+        Assert.Equal(0, child.ExitCode);
+        Thread.Sleep(200);
+        Assert.Contains(lines, line => line.StartsWith($"[{island.ToString("N")[..8]}] ") && char.IsDigit(line[^1]));
+    }
+
+    [Fact]
+    public void TheUnityLauncherStartsTheDedicatedServerInBatchModeWithoutGraphics()
+    {
+        var launcher = SystemProcessLauncher.ForUnity("/definitely/not/unity", _ => { });
+        Assert.Throws<InvalidOperationException>(() => launcher.Start(new IslandLaunch(Guid.NewGuid(), "x", 7777, 7070, Guid.NewGuid(), new Dictionary<string, string>())));
+    }
+
+    [Fact]
     public void AMissingExecutableIsReportedNotThrownAsAnOsError()
     {
         var launcher = new SystemProcessLauncher("/definitely/not/godot", "x", _ => { });
