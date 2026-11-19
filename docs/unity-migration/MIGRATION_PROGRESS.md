@@ -23,7 +23,7 @@
 | Item | Estado |
 |---|---|
 | Unity Editor | **6000.6.9f1** em `C:\Program Files\Unity\Hub\Editor\6000.6.9f1`; Windows Standalone e WebGL; **sem** o módulo de servidor Linux |
-| Licença | O log mostra `Access token is unavailable` no cliente de licença; o modo batch funciona, mas a ativação **não foi confirmada**: conferir no Unity Hub |
+| Licença | O modo batch funcionou até 2026-11-19, quando passou a falhar com "No valid Unity Editor license found" (código 198); depois que a licença foi reativada no Unity Hub, voltou a funcionar. O log continua mostrando `Access token is unavailable`: pode repetir, e a reativação é no Unity Hub |
 | Pacotes (Fase 3) | HDRP 17.6.0, Input System 1.20.1, glTFast 6.21.0, Test Framework 1.8.0 (57 pacotes resolvidos) |
 | SDK .NET | 10.0.404 |
 | IL2CPP | Indisponível: o Visual Studio com C++ não está instalado. O player foi construído com Mono |
