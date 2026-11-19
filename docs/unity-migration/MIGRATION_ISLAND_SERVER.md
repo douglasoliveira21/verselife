@@ -11,7 +11,7 @@ unity/UnityIslandServer/
   LoadTest/ LifeVerse.IslandServer.LoadTest   N clientes simulados por UDP contra um servidor em execução
 unity/UnityClient/Assets/LifeVerse/Server/
           IslandServerBehaviour         componente do Unity Dedicated Server (só dá o relógio e o código de saída)
-tests/LifeVerse.IslandServer.Tests      32 testes xUnit (UDP real + HTTP real)
+tests/LifeVerse.IslandServer.Tests      35 testes xUnit (UDP real + HTTP real)
 ```
 
 Toda a regra está no `Core`. Os dois hospedeiros só dão o relógio e a saída:
@@ -48,6 +48,7 @@ Concorrência: tudo que mexe no estado roda em `Update()`, na thread do hospedei
 | Chat: 5 por 10 s, raio de 30 m, termos bloqueados | sim | sim | `ChatReachesOnlyPlayersWithin30m…` |
 | Voo idempotente, gestos extras e olhar com limite de taxa | sim | sim | `FlightIsAnIdempotentState…` |
 | Terreno: pincel (limites e valores aplicados iguais para todos), patches, nível do mar, desfazer/refazer por traço, importação de mapa de alturas, limite de 20 edições/s, salvamento ao encerrar | sim | sim (só editores da ilha) | `OnlyIslandEditorsSculpt…`, `TerrainEditsAreRateLimited…` |
+| Veículos: frota da API (sincronizada a cada 15 s), entrar/sair/dirigir, motorista preso ao assento, liberação ao desconectar, snapshots em pacotes de 32 | sim | sim (sem scripts de veículo) | `APlayerEntersDrives…`, `ADriverWhoDisconnects…`, `ManyVehiclesGoOut…` |
 | Posições salvas a cada 20 s e ao sair; liberação de viajantes; confirmação de chegada | sim | sim | `ATravellerWhoseTrip…`, `ATravellerArriving…` |
 | Heartbeat a cada 15 s, comandos `kick`, `notice`, `shutdown` | sim | sim | `AKickFromTheAdminPanel…`, `AShutdownCommand…` |
 | Health check TCP/HTTP: 200 `healthy` / 503 `starting` | sim | sim, com métricas (jogadores, tick médio e p99, uptime) | `StartRegisters…` |
@@ -65,7 +66,7 @@ Estas mensagens do protocolo chegam ao servidor e são respondidas com uma recus
 |---|---|---|
 | Operações de construção (autoria, permissões, locks de edição, devolução ao inventário) | `SubmitBuildOperation` | recusa `unsupported`; é o maior item restante (`ServerMain` linhas 268–520) |
 | Edição de terreno **por donos de parcelas** (máscara de `LandTerrainRights`) | `SubmitTerrainEdit` | só editores da ilha esculpem (os demais recebem `no_permission`); depende do `land-sync` |
-| Veículos e frotas | `EnterVehicle`, `SubmitVehicleInput` | recusa `unsupported` |
+
 | Teletransporte entre parcelas, sincronização de terras (`land-sync`), áreas fechadas | `RequestTeleport` | recusa `unsupported`; `KeepOutOfClosedLand` não portado |
 | Scripts de objetos (MoonSharp), NPCs, física de objetos, mídia, HUD | `TouchObject`, `ScriptDialogResponse` | o `LifeVerse.Scripting.dll` já roda na Unity (Fase 3); falta o `IslandScripting` (~17 arquivos) e a física (S4) |
 | Voz proximal, anexos, atualização de aparência | `SubmitVoice`, `AttachmentLive`, `RefreshAppearance` | ignoradas |
@@ -77,7 +78,7 @@ A API grava um único `ProtocolVersion` (11) nos bilhetes e o servidor Godot exi
 
 ## Achados durante a construção
 
-1. **Snapshots grandes quebravam o transporte.** O LiteNetLib não fragmenta pacotes não confiáveis (limite ~1020 bytes); com 44 jogadores no raio de interesse o `Send` lançava exceção (58 falhas de tick no primeiro teste de carga). O Godot/ENet fragmenta, então o problema não aparecia lá. Correção: o servidor divide o snapshot em pacotes do **mesmo tick** com até 40 jogadores (926 bytes), o próprio jogador sempre no primeiro. **O cliente precisa mesclar os pacotes de um mesmo tick** (registrado em `WIRE_PROTOCOL.md`). Pendente: o mesmo limite vale para `VehicleSnapshots` acima de ~40 veículos.
+1. **Snapshots grandes quebravam o transporte.** O LiteNetLib não fragmenta pacotes não confiáveis (limite ~1020 bytes); com 44 jogadores no raio de interesse o `Send` lançava exceção (58 falhas de tick no primeiro teste de carga). O Godot/ENet fragmenta, então o problema não aparecia lá. Correção: o servidor divide o snapshot em pacotes do **mesmo tick** com até 40 jogadores (926 bytes), o próprio jogador sempre no primeiro. **O cliente precisa mesclar os pacotes de um mesmo tick** (registrado em `WIRE_PROTOCOL.md`). O mesmo vale para `VehicleSnapshots` (pacotes de 32 veículos).
 2. **O id 0 do LiteNetLib colidia com "sistema".** O Wire usa `PeerId` 0 para avisos e scripts (`ReceiveChat` do servidor), como o Godot; o LiteNetLib numera pares a partir de 0. `WireServer` agora expõe `id + 1`.
 3. **O health check fechava a conexão com o pedido HTTP por ler**, o que faz o TCP mandar um RST e o cliente (`Invoke-WebRequest`, visto no player Unity) perder a resposta; o servidor Godot tem o mesmo desenho. Agora o pedido é lido antes (e uma sonda que só abre a conexão recebe a resposta depois de 300 ms). Teste: `TheHealthCheckAnswersARealHttpClient…`.
 4. **`HttpIslandApi` só estava coberto por uma API de mentira em memória**; `HttpApiTests` exercita o HTTP de verdade.
@@ -107,7 +108,7 @@ Integração com o Supervisor: a mesma porta de saúde (`/` responde 200/503 em 
 
 | Verificação | Resultado |
 |---|---|
-| `dotnet test LifeVerse.IslandServer.Tests` | 32 de 32 (execuções repetidas, sem instabilidade); inclui 64 jogadores por UDP no loopback: 60,2 Hz, tick médio 0,53 ms, p99 3,9 ms, 0 falhas |
+| `dotnet test LifeVerse.IslandServer.Tests` | 35 de 35 (execuções repetidas, sem instabilidade); inclui 64 jogadores por UDP no loopback: 60,2 Hz, tick médio 0,53 ms, p99 3,9 ms, 0 falhas |
 | `dotnet test LifeVerse.Wire.Tests` (depois da mudança do id) | 25 de 25 |
 | `Core` compila para `netstandard2.1` (Unity) e `net8.0` | 0 avisos, 0 erros |
 | Unity Dedicated Server **Linux** (`BuildLinuxServer`) | compila: 161 MB, 0 erros, 0 avisos. **Não executado** (sem Linux/WSL) |

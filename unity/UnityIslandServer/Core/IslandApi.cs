@@ -17,6 +17,10 @@ public sealed record ReleasedEntry(Guid UserId, long ArrivedAtUnixMs);
 
 public sealed record LocationAnswer(int Kept, List<ReleasedEntry>? Release);
 
+public sealed record VehicleRow(Guid Id, string Name, string VehicleType, float PositionX, float PositionZ, float RotationY, float MaxSpeed, Guid OwnerUserId = default);
+
+public sealed record VehicleFeed(List<VehicleRow>? Vehicles);
+
 public sealed record PlayerLocation(Guid UserId, float X, float Y, float Z);
 
 /// <summary>Tudo o que o servidor de ilha pede à API. Uma interface para que os testes usem uma API de mentira sem rede.</summary>
@@ -31,6 +35,7 @@ public interface IIslandApi : IDisposable
     Task<LocationAnswer?> SaveLocationsAsync(IReadOnlyList<PlayerLocation> players, CancellationToken ct);
     /// <summary>O estado HTTP da confirmação de chegada de quem viajou (404 e 409: a viagem não vale mais).</summary>
     Task<int> ConfirmArrivalAsync(Guid transferId, CancellationToken ct);
+    Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct);
     Task DeregisterAsync(CancellationToken ct);
 }
 
@@ -99,6 +104,13 @@ public sealed class HttpIslandApi : IIslandApi
     {
         using var response = await _http.PostAsync($"{Server}/transfers/{transferId}/arrived", new StringContent(string.Empty), ct).ConfigureAwait(false);
         return (int)response.StatusCode;
+    }
+
+    public async Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct)
+    {
+        using var response = await _http.GetAsync($"{Server}/vehicles", ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return Array.Empty<VehicleRow>();
+        return JsonSerializer.Deserialize<VehicleFeed>(await response.Content.ReadAsStringAsync().ConfigureAwait(false), Json)?.Vehicles ?? new List<VehicleRow>();
     }
 
     public async Task DeregisterAsync(CancellationToken ct)

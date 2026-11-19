@@ -2,6 +2,7 @@ using LifeVerse.IslandServer.Core;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Platform;
 using LifeVerse.Shared.Terrain;
+using LifeVerse.Shared.Vehicles;
 using LifeVerse.Wire;
 
 namespace LifeVerse.IslandServer.Tests;
@@ -377,14 +378,72 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task APlayerEntersDrivesAndLeavesAVehicleAndEveryoneSeesIt()
+    {
+        using var island = new IslandHarness();
+        island.Api.Vehicles.Add(new VehicleRow(Guid.NewGuid(), "Carro", "car", 2, 0, 0, 20));
+        await island.StartAsync();
+        var driver = await island.JoinAsync("Mot", 0, 0);
+        var watcher = await island.JoinAsync("Ob", 6, 0);
+        Assert.True(await island.PumpAsync(() => driver.All<VehicleSpawnedMessage>().Count == 1 && watcher.All<VehicleSpawnedMessage>().Count == 1));
+        var id = driver.Last<VehicleSpawnedMessage>()!.VehicleId;
+
+        driver.Wire.Send(new EnterVehicleMessage(999));
+        Assert.True(await island.PumpAsync(() => driver.All<VehicleRejectedMessage>().Any(r => r.Code == "no_vehicle")));
+        driver.Wire.Send(new EnterVehicleMessage(id));
+        Assert.True(await island.PumpAsync(() => driver.Snapshot(driver.PeerId) is { Motion: NetworkMotionState.Sit }));
+        for (var i = 0; i < 60; i++) { driver.Wire.Send(new SubmitVehicleInputMessage(1f, 0f, false)); await island.PumpForAsync(16); }
+        VehicleSnapshot? seen = null;
+        Assert.True(await island.PumpAsync(() => { foreach (var m in watcher.All<VehicleSnapshotsMessage>().Reverse()) if (VehicleCodec.TryDecode(m.Payload, out _, out var list) && list.Count > 0) { seen = list[0]; return true; } return false; }));
+        Assert.Equal(driver.PeerId, seen!.Value.DriverPeer);
+        Assert.True(Math.Abs(seen.Value.Speed) > 1f || Math.Abs(seen.Value.X - 2f) + Math.Abs(seen.Value.Z) > 1f);
+
+        watcher.Wire.Send(new EnterVehicleMessage(id));
+        Assert.True(await island.PumpAsync(() => watcher.All<VehicleRejectedMessage>().Any(r => r.Code is "occupied" or "too_far")));
+        driver.Wire.Send(new ExitVehicleMessage());
+        Assert.True(await island.PumpAsync(() => driver.Snapshot(driver.PeerId) is { Motion: not NetworkMotionState.Sit }));
+    }
+
+    [Fact]
+    public async Task ADriverWhoDisconnectsFreesTheVehicleAndALateVehicleReachesEveryone()
+    {
+        using var island = new IslandHarness();
+        island.Api.Vehicles.Add(new VehicleRow(Guid.NewGuid(), "Um", "car", 1, 0, 0, 20));
+        await island.StartAsync();
+        var a = await island.JoinAsync("A", 0, 0); var b = await island.JoinAsync("B", 3, 0);
+        a.Wire.Send(new EnterVehicleMessage(a.Last<VehicleSpawnedMessage>() is { } v ? v.VehicleId : 1));
+        await island.PumpAsync(() => a.Snapshot(a.PeerId) is { Motion: NetworkMotionState.Sit });
+        a.Wire.Disconnect();
+        await island.PumpAsync(() => b.All<DespawnPlayerMessage>().Any());
+        b.Wire.Send(new EnterVehicleMessage(b.Last<VehicleSpawnedMessage>()!.VehicleId));
+        Assert.True(await island.PumpAsync(() => b.Snapshot(b.PeerId) is { Motion: NetworkMotionState.Sit })); // o carro foi liberado
+        lock (island.Api.Vehicles) island.Api.Vehicles.Add(new VehicleRow(Guid.NewGuid(), "Dois", "car", 8, 8, 0, 20));
+        Assert.True(await island.PumpAsync(() => b.All<VehicleSpawnedMessage>().Count == 2)); // veio da API depois
+    }
+
+    [Fact]
+    public async Task ManyVehiclesGoOutInSeveralPacketsOfTheSameTick()
+    {
+        using var island = new IslandHarness();
+        for (var i = 0; i < 50; i++) island.Api.Vehicles.Add(new VehicleRow(Guid.NewGuid(), $"V{i}", "car", i % 10 * 6, i / 10 * 6, 0, 20));
+        await island.StartAsync();
+        var a = await island.JoinAsync("A");
+        Assert.True(await island.PumpAsync(() => a.All<VehicleSpawnedMessage>().Count == 50));
+        Assert.True(await island.PumpAsync(() => a.All<VehicleSnapshotsMessage>().Count >= 4));
+        var counts = a.All<VehicleSnapshotsMessage>().Select(m => VehicleCodec.TryDecode(m.Payload, out _, out var l) ? l.Count : -1).ToList();
+        Assert.DoesNotContain(-1, counts);
+        Assert.Contains(32, counts); Assert.Contains(18, counts);
+    }
+
+    [Fact]
     public async Task UnsupportedFeaturesAnswerWithAClearRejectionInsteadOfSilence()
     {
         using var island = new IslandHarness();
         await island.StartAsync();
         var a = await island.JoinAsync("Ana");
         a.Wire.Send(new SubmitBuildOperationMessage("{}"));
-        a.Wire.Send(new EnterVehicleMessage(1));
-        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Count > 0 && a.All<VehicleRejectedMessage>().Count > 0));
+        a.Wire.Send(new RequestTeleportMessage("x", 1, 1));
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationRejectedMessage>().Count > 0 && a.All<TeleportResultMessage>().Count > 0));
         Assert.Equal("unsupported", a.Last<BuildOperationRejectedMessage>()!.Code);
     }
 

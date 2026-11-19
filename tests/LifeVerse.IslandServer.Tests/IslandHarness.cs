@@ -65,6 +65,9 @@ public sealed class FakeApi : IIslandApi
 
     public Task<int> ConfirmArrivalAsync(Guid transferId, CancellationToken ct) { Interlocked.Increment(ref ArrivalConfirmations); return Task.FromResult(ArrivalStatus); }
 
+    public readonly List<VehicleRow> Vehicles = new();
+    public Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct) { lock (Vehicles) return Task.FromResult<IReadOnlyList<VehicleRow>>(Vehicles.ToList()); }
+
     public Task DeregisterAsync(CancellationToken ct) { Deregistered = true; return Task.CompletedTask; }
 
     public void Dispose() { }
@@ -116,7 +119,7 @@ public sealed class IslandHarness : IDisposable
             ["LIFEVERSE_TICKET_PROTOCOL"] = ticketProtocol.ToString(), ["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"] = idleMinutes.ToString(),
         };
         var config = IslandServerConfig.From(name => environment.GetValueOrDefault(name));
-        Server = new Core.IslandServer(config, Api, new IslandLog(Logs), options ?? new IslandServerOptions(HeartbeatSeconds: .3, LocationSeconds: .5, DisconnectDelaySeconds: .15));
+        Server = new Core.IslandServer(config, Api, new IslandLog(Logs), options ?? new IslandServerOptions(HeartbeatSeconds: .3, LocationSeconds: .5, DisconnectDelaySeconds: .15, VehicleSyncSeconds: .3));
     }
 
     public async Task StartAsync() { await Server.StartAsync(); _run = Server.RunAsync(); }

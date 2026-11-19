@@ -8,13 +8,14 @@ using LifeVerse.Shared.Loading;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Platform;
 using LifeVerse.Shared.Terrain;
+using LifeVerse.Shared.Vehicles;
 using LifeVerse.Wire;
 
 namespace LifeVerse.IslandServer.Core;
 
 /// <summary>Os tempos do servidor. Os padrões são os do servidor Godot; os testes os encurtam.</summary>
 public sealed record IslandServerOptions(double HeartbeatSeconds = 15, double LocationSeconds = 20, double WorldSaveSeconds = 60,
-    double SuspendSeconds = 10, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25);
+    double SuspendSeconds = 10, double VehicleSyncSeconds = 15, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25);
 
 /// <summary>O que o servidor mede de si mesmo (vai para o health check, o heartbeat e os testes de carga).</summary>
 public sealed record IslandServerStats(int Players, long Ticks, double TickAverageMs, double TickP99Ms, double TickMaxMs, double TickRate,
@@ -62,6 +63,7 @@ public sealed class IslandServer : IDisposable
     private readonly Queue<double> _tickMs = new();
     private readonly Stopwatch _uptime = Stopwatch.StartNew();
     private readonly string[] _blockedTerms;
+    private readonly VehicleFleet _fleet = new();
     private TerrainMap _terrain = new();
     private string _terrainJson = "{}", _environmentJson = "{}";
     private long _worldVersion;
@@ -70,7 +72,7 @@ public sealed class IslandServer : IDisposable
     private double _time, _snapshotAccumulator, _locationAccumulator, _worldSaveAccumulator;
     private double? _emptySince;
     private TcpListener? _health;
-    private Task? _healthTask, _heartbeatTask, _stopTask;
+    private Task? _healthTask, _heartbeatTask, _stopTask, _vehicleTask;
     private int _playerCount;
     private long _ticks, _snapshotsSent, _snapshotBytes, _messages, _tickFailures;
     private double _tickMaxMs, _tickWindowStart;
@@ -126,6 +128,7 @@ public sealed class IslandServer : IDisposable
             _log.Write("world_snapshot_loaded", new { snapshot.Version, snapshot.IntegrityHash });
             if (!_wire.Start(_config.GamePort, _config.LoopbackOnly)) throw new InvalidOperationException($"LiteNetLib failed to listen on {_config.GamePort}.");
             _heartbeatTask = HeartbeatLoopAsync();
+            _vehicleTask = VehicleSyncLoopAsync();
             _ready = true;
             _log.Write("server_started", new { _config.InstanceId, _config.IslandId, gamePort = _wire.Port, healthPort = HealthPort, wire = WireProtocol.Version, ticket = _config.TicketProtocolVersion, engine = "wire" });
         }
@@ -176,15 +179,17 @@ public sealed class IslandServer : IDisposable
             if (_scheduled[i].At <= _time) { var run = _scheduled[i].Run; _scheduled.RemoveAt(i); run(); }
         if (!_ready || _stopping) return;
         var dt = Math.Min(delta, 1f / 20f);
+        _fleet.Tick(dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin);
         foreach (var player in _players.Values)
         {
             if (!player.Authenticated) continue;
+            if (PinDriver(player)) continue;
             player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin, null);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with { Flags = player.LatestInput.Flags & (InputFlags.Run | InputFlags.Descend) };
         }
         _snapshotAccumulator += delta; _locationAccumulator += delta; _worldSaveAccumulator += delta;
-        if (_snapshotAccumulator >= 1.0 / _config.SnapshotRate) { _snapshotAccumulator = 0; BroadcastSnapshots(); }
+        if (_snapshotAccumulator >= 1.0 / _config.SnapshotRate) { _snapshotAccumulator = 0; BroadcastSnapshots(); BroadcastVehicles(); }
         if (_locationAccumulator >= _options.LocationSeconds) { _locationAccumulator = 0; SaveLocations(_players.Values.Where(p => p.Authenticated).ToList()); }
         if (_worldSaveAccumulator >= _options.WorldSaveSeconds) { _worldSaveAccumulator = 0; if (_terrainDirty) _ = SaveWorldAsync(_cts.Token); }
         foreach (var avatar in _suspended.Where(x => x.Value.ExpiresAt <= _time).Select(x => x.Key).ToList()) _suspended.Remove(avatar);
@@ -244,6 +249,7 @@ public sealed class IslandServer : IDisposable
 
     private void OnPeerDisconnected(int peerId, WireDisconnectReason reason)
     {
+        _fleet.Release(peerId);
         if (!_players.Remove(peerId, out var player)) return;
         if (player.Authenticated)
         {
@@ -275,7 +281,9 @@ public sealed class IslandServer : IDisposable
             case RedoTerrainMessage: StepHistory(player, false); break;
             case SubmitTerrainImportMessage import: OnTerrainImport(player, import.Heights); break;
             case SubmitBuildOperationMessage: _wire.Send(peerId, new BuildOperationRejectedMessage("unsupported")); break;
-            case EnterVehicleMessage: _wire.Send(peerId, new VehicleRejectedMessage("unsupported")); break;
+            case EnterVehicleMessage enter: OnEnterVehicle(player, enter.VehicleId); break;
+            case ExitVehicleMessage: OnExitVehicle(player); break;
+            case SubmitVehicleInputMessage drive: if (float.IsFinite(drive.Throttle) && float.IsFinite(drive.Steer)) _fleet.SetInput(peerId, drive.Throttle, drive.Steer, drive.Brake); break;
             case RequestTeleportMessage teleport: _wire.Send(peerId, new TeleportResultMessage(false, "unsupported", teleport.X, teleport.Z, 0)); break;
             default: break; // voz, anexos, aparência, toque e diálogos de scripts: ainda sem equivalente (ver MIGRATION_PROGRESS.md, Fase 6)
         }
@@ -331,6 +339,7 @@ public sealed class IslandServer : IDisposable
         SendSpawn(player.PeerId, player);
         _wire.Send(player.PeerId, new AuthResultMessage(true, "ok", _serverTick));
         SendTerrain(player);
+        foreach (var vehicle in _fleet.Vehicles) SendVehicle(player.PeerId, vehicle);
         _log.Write("peer_authenticated", new { player.PeerId, admission.UserId, admission.AvatarId });
         if (admission.TransferId is { } trip) _ = ConfirmArrivalAsync(player.PeerId, trip); // quem viajou: a API só conclui a viagem quando esta ilha diz que a pessoa chegou
     }
@@ -437,7 +446,7 @@ public sealed class IslandServer : IDisposable
             {
                 if (!other.Authenticated || DistanceSquared(target, other) > radius2) continue;
                 var s = other.State;
-                _visible.Add(new PlayerSnapshot(other.PeerId, s.X, s.Y, s.Z, s.VelocityX, s.VelocityY, s.VelocityZ, MathF.Atan2(s.VelocityX, -s.VelocityZ), other.Motion, other.LastProcessedInput));
+                _visible.Add(new PlayerSnapshot(other.PeerId, s.X, s.Y, s.Z, s.VelocityX, s.VelocityY, s.VelocityZ, YawOf(other), other.Motion, other.LastProcessedInput));
             }
             // Um snapshot é um datagrama sem fragmentação (LiteNetLib: ~1020 bytes). Com muita gente por perto ele vai em vários pacotes do MESMO tick;
             // o próprio jogador vai sempre no primeiro, para a confirmação das suas entradas (LastProcessedInput) não depender de um pacote que se perca.
@@ -452,6 +461,9 @@ public sealed class IslandServer : IDisposable
             }
         }
     }
+
+    /// <summary>6 bytes de cabeçalho + 28 por veículo: 32 veículos = 902 bytes.</summary>
+    public const int VehiclesPerPacket = 32;
 
     /// <summary>6 bytes de cabeçalho + 23 por jogador: 40 jogadores = 926 bytes, abaixo do limite de um pacote do LiteNetLib.</summary>
     public const int SnapshotPlayersPerPacket = 40;
@@ -558,6 +570,80 @@ public sealed class IslandServer : IDisposable
         _terrainDirty = true;
         actor.UndoStack.Add(undo); actor.RedoStack.Clear(); if (actor.UndoStack.Count > 20) actor.UndoStack.RemoveAt(0);
         foreach (var target in _players.Values.Where(p => p.Authenticated)) SendTerrain(target);
+    }
+
+    // ---- vehicles (the fleet is simulated here; a driver is pinned to the seat; clients only see snapshots) ----
+
+    private void SendVehicle(int peerId, FleetVehicle vehicle) => _wire.Send(peerId, new VehicleSpawnedMessage(vehicle.Id, vehicle.Name, vehicle.Type, vehicle.State.X, vehicle.State.Y, vehicle.State.Z, vehicle.State.Yaw));
+
+    private bool PinDriver(Player player)
+    {
+        if (_fleet.VehicleOf(player.PeerId) is not { } car) return false;
+        var forwardX = -MathF.Sin(car.State.Yaw); var forwardZ = -MathF.Cos(car.State.Yaw);
+        player.State.X = car.State.X; player.State.Y = car.State.Y + VehicleFleet.DriverHeight; player.State.Z = car.State.Z;
+        player.State.VelocityX = forwardX * car.State.Speed; player.State.VelocityY = 0; player.State.VelocityZ = forwardZ * car.State.Speed;
+        player.State.Flying = false; player.State.Seated = true;
+        player.Motion = NetworkMotionState.Sit; player.LastProcessedInput = player.LatestInput.Sequence;
+        player.LatestInput = new MovementInput(player.LatestInput.Sequence, 0, 0, InputFlags.None);
+        return true;
+    }
+
+    /// <summary>The yaw other players see: the car's heading for a driver, the walking direction for everyone else.</summary>
+    private float YawOf(Player player) => _fleet.VehicleOf(player.PeerId) is { } car ? -car.State.Yaw : MathF.Atan2(player.State.VelocityX, -player.State.VelocityZ);
+
+    private void BroadcastVehicles()
+    {
+        if (_fleet.Vehicles.Count == 0) return;
+        var all = _fleet.Snapshot();
+        for (var offset = 0; offset < all.Count; offset += VehiclesPerPacket)
+        {
+            var payload = VehicleCodec.Encode(_serverTick, all.Skip(offset).Take(VehiclesPerPacket).ToList());
+            foreach (var target in _players.Values.Where(x => x.Authenticated)) _wire.Send(target.PeerId, new VehicleSnapshotsMessage(payload));
+        }
+    }
+
+    private void OnEnterVehicle(Player player, int vehicleId)
+    {
+        var result = _fleet.Enter(player.PeerId, vehicleId, player.State.X, player.State.Y, player.State.Z);
+        if (result == EnterResult.Ok) { _log.Write("vehicle_entered", new { player.PeerId, vehicleId }); return; }
+        _wire.Send(player.PeerId, new VehicleRejectedMessage(result switch { EnterResult.TooFar => "too_far", EnterResult.Occupied => "occupied", EnterResult.AlreadyDriving => "already_driving", _ => "no_vehicle" }));
+    }
+
+    private void OnExitVehicle(Player player)
+    {
+        if (!_fleet.Exit(player.PeerId, _terrain.SampleHeight, out var x, out var y, out var z)) return;
+        player.State.X = x; player.State.Y = y + AuthoritativeMovement.GroundOffset; player.State.Z = z;
+        player.State.VelocityX = player.State.VelocityY = player.State.VelocityZ = 0; player.State.Seated = false;
+        _log.Write("vehicle_exited", new { player.PeerId });
+    }
+
+    /// <summary>Adds the vehicles the API knows and this island has not seen yet, and tells everyone connected. Right away and then every 15 s; a failure never stops the island.</summary>
+    private async Task VehicleSyncLoopAsync()
+    {
+        try
+        {
+            while (!_cts.IsCancellationRequested)
+            {
+                try
+                {
+                    var rows = await _api.GetVehiclesAsync(_cts.Token).ConfigureAwait(false);
+                    if (rows.Count > 0) _inbox.Enqueue(() => AddVehicles(rows));
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException) { _log.Write("vehicles_sync_failed", new { error = exception.Message }); }
+                await Task.Delay(TimeSpan.FromSeconds(_options.VehicleSyncSeconds), _cts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void AddVehicles(IReadOnlyList<VehicleRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            if (_fleet.Add(row.Id, row.Name, row.VehicleType, row.PositionX, row.PositionZ, row.RotationY, row.MaxSpeed, _terrain.SampleHeight, row.OwnerUserId) is not { } vehicle) continue;
+            foreach (var target in _players.Values.Where(x => x.Authenticated)) SendVehicle(target.PeerId, vehicle);
+            _log.Write("vehicle_added", new { vehicle.Id, vehicle.Name });
+        }
     }
     // ---- persistence ----
 
