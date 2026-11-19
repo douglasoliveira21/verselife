@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
 using LifeVerse.Wire;
 using UnityEngine;
@@ -37,6 +38,17 @@ namespace LifeVerse.Unity.World
         /// <summary>Told when the server accepts a person: the number the server gave this player (their id in snapshots).</summary>
         public int SelfPeerId { get; private set; } = -1;
 
+        // what the avatar side (LifeVerse.Unity.Avatar) listens to: people arriving and leaving, where everybody is, gestures
+        public event Action<SpawnPlayerMessage> PlayerSpawned;
+        public event Action<DespawnPlayerMessage> PlayerDespawned;
+        public event Action<AppearanceChangedMessage> AppearanceChanged;
+        public event Action<GestureChangedMessage> GestureChanged;
+        public event Action<WorldSnapshot> SnapshotReceived;
+        public int Snapshots { get; private set; }
+
+        /// <summary>One step of movement input for the server (game space: x right, z toward the viewer).</summary>
+        public bool SendInput(uint sequence, float x, float z, InputFlags flags) => Send(new SubmitInputMessage(sequence, x, z, (byte)flags));
+
         public bool Connect(string host, int port)
         {
             _client = new WireClient();
@@ -65,7 +77,15 @@ namespace LifeVerse.Unity.World
             {
                 case AuthResultMessage result: Authenticated = result.Success; if (!result.Success) RejectCode = result.Code; break;
                 case ProtocolRejectedMessage rejected: ProtocolMismatch = rejected.ServerVersion; break;
-                case SpawnPlayerMessage spawn when SelfPeerId < 0 && spawn.DisplayName == Token: SelfPeerId = spawn.PeerId; break;
+                case SpawnPlayerMessage spawn:
+                    if (SelfPeerId < 0 && spawn.DisplayName == Token) SelfPeerId = spawn.PeerId;
+                    PlayerSpawned?.Invoke(spawn); break;
+                case DespawnPlayerMessage gone: PlayerDespawned?.Invoke(gone); break;
+                case AppearanceChangedMessage changed: AppearanceChanged?.Invoke(changed); break;
+                case GestureChangedMessage gesture: GestureChanged?.Invoke(gesture); break;
+                case SnapshotMessage snapshot:
+                    if (SnapshotCodec.TryDecode(snapshot.Payload, out var world)) { Snapshots++; SnapshotReceived?.Invoke(world); }
+                    break;
                 case TerrainFullMessage full: TerrainMessages++; CanEditTerrain = full.CanEdit; Terrain.ApplyFull(full.Data); if (Ocean != null) Ocean.SeaLevel = Terrain.Map.SeaLevel; break;
                 case TerrainEditedMessage edit:
                     TerrainMessages++;

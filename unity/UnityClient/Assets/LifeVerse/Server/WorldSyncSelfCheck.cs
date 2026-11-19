@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using LifeVerse.IslandServer.Core;
 using LifeVerse.Shared.Terrain;
+using LifeVerse.Shared.Networking;
+using LifeVerse.Unity.Avatar;
 using LifeVerse.Unity.World;
 using LifeVerse.Wire;
 using UnityEngine;
@@ -25,7 +27,7 @@ namespace LifeVerse.Unity.Server
             new GameObject("World Sync Self Check").AddComponent<WorldSyncSelfCheck>();
         }
 
-        private sealed class Player { public WorldClient Client; public TerrainView Terrain; public OceanView Ocean; public WorldObjects Objects; }
+        private sealed class Player { public WorldClient Client; public TerrainView Terrain; public OceanView Ocean; public WorldObjects Objects; public PlayerViews Views; }
 
         private IslandServerCore _server;
         private int _checks;
@@ -75,7 +77,8 @@ namespace LifeVerse.Unity.Server
             var ocean = new GameObject(name + " ocean").AddComponent<OceanView>(); ocean.transform.SetParent(root.transform);
             var objects = new GameObject(name + " objects").AddComponent<WorldObjects>(); objects.transform.SetParent(root.transform);
             var client = root.AddComponent<WorldClient>(); client.Terrain = terrain; client.Ocean = ocean; client.Objects = objects; client.Token = name;
-            return new Player { Client = client, Terrain = terrain, Ocean = ocean, Objects = objects };
+            var views = new GameObject(name + " people").AddComponent<PlayerViews>(); views.transform.SetParent(root.transform); views.Attach(client);
+            return new Player { Client = client, Terrain = terrain, Ocean = ocean, Objects = objects, Views = views };
         }
 
         private static void Expect(bool condition, string what) { if (!condition) throw new InvalidOperationException(what); }
@@ -141,6 +144,65 @@ namespace LifeVerse.Unity.Server
             editor.Client.Send(new SubmitBuildOperationMessage(Create("cube", -10, 1.5f, -30, 6, 3, 5, "{\"color\":\"#C94F3D\",\"roughness\":0.8}"))); // the wall again, for the photo
             yield return Until(() => viewer.Objects.Count == sends.Length, "a parede de novo");
             if (_shots != null) { _camera.transform.position = GameSpace.ToUnity(-12, 9, -66); _camera.transform.LookAt(GameSpace.ToUnity(8, 2, -28)); yield return Shot("objects"); }
+        }
+
+        // The person: walking, running, jumping and flying with the prediction of LocalPlayer against the real server, seen by another player.
+        private IEnumerator Walking(Player editor, Player viewer)
+        {
+            var peer = editor.Client.SelfPeerId; Expect(peer >= 0 && viewer.Client.SelfPeerId >= 0, "os jogadores sabem o seu número no servidor"); _checks++;
+            yield return Until(() => viewer.Views.ViewOf(peer) != null && editor.Views.ViewOf(viewer.Client.SelfPeerId) != null && viewer.Views.TryGetSnapshot(peer, out _), "os corpos aparecerem para os dois");
+            Expect(viewer.Views.Count == 2 && editor.Views.Count == 2, "cada jogador vê os dois corpos: " + viewer.Views.Count + " " + editor.Views.Count); _checks++;
+            var follow = editor.Client.gameObject.AddComponent<FollowCamera>(); follow.Terrain = editor.Terrain; follow.Camera = _camera; follow.Interactive = false; follow.Yaw = 0f;
+            var local = editor.Client.gameObject.AddComponent<LocalPlayer>(); local.Attach(editor.Client, editor.Terrain, editor.Views, follow);
+            Expect(local.Spawned, "o jogador local parte de onde o servidor o pôs"); _checks++;
+            var remote = viewer.Views.ViewOf(peer); var start = local.GamePosition;
+            Console.WriteLine($"event=walk start={start}");
+            var swing = 0f; var input = new PlayerInputSample { Forward = 1f }; var pendingFly = false;
+            local.Scripted = () => { var sample = input; if (pendingFly) { sample.Fly = true; pendingFly = false; } return sample; };
+
+            // walking: a bit over 3 m/s, the server and the prediction agree, the other player's body follows and swings its legs
+            var t = 0f; while (t < 2.5f) { t += Time.deltaTime; swing = Mathf.Max(swing, Mathf.Abs(Mathf.DeltaAngle(0f, remote.LeftLeg.localEulerAngles.x))); yield return null; }
+            viewer.Views.TryGetSnapshot(peer, out var seen); var travelled = Vector3.Distance(start, local.GamePosition);
+            Console.WriteLine($"event=walk end={local.GamePosition} travelled={travelled:F2} server={seen.X:F2},{seen.Y:F2},{seen.Z:F2} corrections={local.Corrections} lastError={local.LastError:F3} motion={seen.Motion} swing={swing:F1}");
+            Expect(travelled > 5f && travelled < 8.6f, "andou a pé a cerca de 3 m/s: " + travelled); _checks++;
+            Expect(Vector3.Distance(new Vector3(seen.X, seen.Y, seen.Z), local.GamePosition) < 1.6f, "o servidor e a previsão estão juntos"); _checks++;
+            Expect(seen.Motion == NetworkMotionState.Walk && Vector3.Distance(remote.TargetGame, new Vector3(seen.X, seen.Y, seen.Z)) < .01f, "quem olha recebe o estado de andar: " + seen.Motion); _checks++;
+            Expect(swing > 10f, "as pernas do outro jogador balançam ao andar: " + swing); _checks++;
+            Expect(Mathf.Abs(Mathf.DeltaAngle(remote.Heading, 0f)) < 15f, "o corpo olha para onde anda (-z do jogo): " + remote.Heading); _checks++;
+
+            // running
+            input.Run = true; yield return new WaitForSeconds(1.2f);
+            viewer.Views.TryGetSnapshot(peer, out seen); var speed = Mathf.Sqrt(seen.VelocityX * seen.VelocityX + seen.VelocityZ * seen.VelocityZ);
+            Expect(seen.Motion == NetworkMotionState.Run && speed > 5.5f, "correu a cerca de 6,4 m/s: " + speed + " " + seen.Motion); _checks++;
+            input.Run = false; input.Forward = 0f; yield return new WaitForSeconds(.6f);
+            viewer.Views.TryGetSnapshot(peer, out seen);
+            Expect(seen.Motion == NetworkMotionState.Idle, "parou: " + seen.Motion); _checks++;
+
+            // jumping: up about 1.4 m and back to the ground
+            var ground = local.GamePosition.y; var peak = ground; input.Jump = true; var jumpTime = 0f;
+            while (jumpTime < 1.6f) { jumpTime += Time.deltaTime; if (jumpTime > .08f) input.Jump = false; peak = Mathf.Max(peak, local.GamePosition.y); yield return null; }
+            Expect(peak - ground > .9f && peak - ground < 1.8f && Mathf.Abs(local.GamePosition.y - ground) < .05f, "pulou e voltou ao chão: subiu " + (peak - ground) + ", agora " + (local.GamePosition.y - ground)); _checks++;
+
+            // flying: F toggles, space climbs, C comes down; the server agrees
+            pendingFly = true; input.Jump = true; yield return Until(() => !pendingFly, "o pedido de voo sair");   // the key press is one step
+            yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion == NetworkMotionState.Fly, "o servidor pôr o jogador em voo");
+            yield return new WaitForSeconds(.8f); input.Jump = false;
+            Expect(local.GamePosition.y - ground > 2f, "subiu em voo: " + (local.GamePosition.y - ground)); _checks++;
+            input.Descend = true;
+            yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion != NetworkMotionState.Fly, "voltar ao chão e parar de voar", 10f);
+            input.Descend = false; yield return new WaitForSeconds(.4f);
+            Expect(!local.State.Flying && local.GamePosition.y - ground < .3f, "pousou: " + (local.GamePosition.y - ground)); _checks++;
+            Expect(local.LastError < 1f, "a previsão acompanhou o servidor o tempo todo: " + local.LastError); _checks++;
+
+            if (_shots != null)
+            {
+                viewer.Views.gameObject.SetActive(false); local.Scripted = () => new PlayerInputSample { Forward = 1f, Run = true };
+                follow.Yaw = 40f; follow.Pitch = 12f; follow.Distance = 5f; yield return new WaitForSeconds(.9f);
+                yield return Shot("avatar");
+                viewer.Views.gameObject.SetActive(true);
+            }
+            local.Scripted = () => default; yield return new WaitForSeconds(.3f);
+            UnityEngine.Object.Destroy(local); UnityEngine.Object.Destroy(follow);
         }
 
         private static string JsonString(string text) => System.Text.Json.JsonSerializer.Serialize(text);
@@ -257,6 +319,7 @@ namespace LifeVerse.Unity.Server
             Expect(viewer.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa com a pintura é idêntico"); _checks++;
             yield return Shot("after");
             yield return Objects(editor, viewer);
+            yield return Walking(editor, viewer);
             viewer.Client.Send(new SubmitTerrainEditMessage((int)TerrainTool.Raise, 0, 0, 5, 1f, 0));
             yield return Until(() => viewer.Client.LastTerrainRejection != null, "a recusa ao visitante");
             Expect(viewer.Client.LastTerrainRejection == "no_permission", "o visitante não esculpe: " + viewer.Client.LastTerrainRejection); _checks++;

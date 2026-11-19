@@ -51,7 +51,8 @@
 | 5 Multiplayer | Em migração | Protocolo e transporte feitos e testados (`WIRE_PROTOCOL.md`). Faltam: interpolação e reconciliação no cliente, interesse e tick no servidor, 64 clientes simultâneos e latência alta; dependem das Fases 6 e 7 |
 | 6 Servidores | **Em migração (parcial)** | Núcleo sem engine (`unity/UnityIslandServer/Core`) com admissão, simulação, snapshots por interesse, chat, voo, gestos, persistência, heartbeat/comandos do admin, saúde, métricas e encerramento; roda como processo .NET (`Host`) e como Unity Dedicated Server. 45 testes xUnit; 64 clientes UDP contra o servidor dentro do player Unity. Terreno editável (por editores da ilha) portado. Veículos, construção, terras (land-sync, acesso, teletransporte), terreno por donos de parcela voz, aparência e anexos portados. Também portados: terreno editável, veículos, construção com locks e terras (land-sync, acesso, teletransporte). **Faltam** scripts de objetos (`IslandScripting`), física de objetos (S4) e a execução no Linux. Ver `MIGRATION_ISLAND_SERVER.md` |
 | 7 Mundo | **Iniciada (C1 a C3 em migração)** | `unity/UnityClient/Assets/LifeVerse/World`: terreno, oceano, céu e clima renderizados no HDRP e fotografados na GPU real; 17 testes de modo Edit. Ver a seção "Fase 7" abaixo |
-| 8 a 15 | Não iniciado | — |
+| 8 Avatar, movimento e câmera | **Iniciada** | `unity/UnityClient/Assets/LifeVerse/Avatar`: movimento com previsão, corpos procedurais de todos os jogadores, câmera de terceira pessoa. Ver "Fase 8" |
+| 9 a 15 | Não iniciado | — |
 
 ## Módulos
 
@@ -142,3 +143,17 @@ Ainda sem: ler o terreno de uma ilha real da API (a ilha é a de exemplo ou a em
 **Verificação**: 21 de 21 testes de modo Edit; `-lifeverse-world-selfcheck` com 35 verificações (a hora 22 h e a chuva salvas vindas da API, a textura chegar do endpoint e estar na cor base, o GLB normalizado para 3 m × 1,5 m e centrado, a árvore e a grama, o corte do objeto a 1,5 km, a espuma preparada), no player de Windows. Fotos: `world-assets-models.png`.
 
 **Não verificado**: modelos reais do Godot (só um cubo feito à mão), texturas WebP (não suportado), desempenho com muitos objetos, o halo do sol, a API real.
+
+## Fase 8 (avatar, movimento e câmera): primeira parte
+
+Novo assembly `LifeVerse.Unity.Avatar` (`Assets/LifeVerse/Avatar`); o `WorldClient` agora decodifica os snapshots e avisa por eventos (`PlayerSpawned`, `PlayerDespawned`, `SnapshotReceived`, `GestureChanged`, `AppearanceChanged`), sem referenciar o assembly de avatar.
+
+**Movimento (`LocalPlayer`).** Lê o teclado (WASD ou setas, Shift corre, Espaço pula, C ou Ctrl desce, F voa, X senta), converte a direção para o espaço de jogo pela direção da câmera, envia `SubmitInputMessage` a 60 Hz e, no mesmo passo, move o próprio corpo com o `AuthoritativeMovement` do `shared`, o mesmo código do servidor. Cada snapshot traz a posição do servidor após a última entrada que ele processou (`LastProcessedInput`): compara-se com a posição que o jogador tinha **naquela mesma entrada** (histórico das últimas 240), e a diferença é fechada (30 % por snapshot quando passa de 8 cm, de uma vez acima de 3 m). Assim a latência não puxa o avatar de volta. **Achado**: voar não é uma flag de entrada (o servidor só honra `SetFlightMessage`, "confiável e idempotente"); a previsão liga o voo na hora e espera a confirmação do servidor por até 1,5 s. Os gestos (acenar, dançar) também não são flags de entrada: virão com a mensagem de gesto.
+
+**Corpos (`AvatarView`, `PlayerViews`).** Um corpo procedural por pessoa (cor pelo nome), com o heading do servidor (`atan2(vx, -vz)` do jogo é o mesmo ângulo de um heading da Unity) e animação por estado (andar, correr, pular, cair, voar, nadar, sentar, acenar, dançar, digitando). Corpos remotos seguem o snapshot com suavização e extrapolação de até 0,2 s; um salto de mais de 5 m é imediato.
+
+**Câmera (`FollowCamera`).** Terceira pessoa em órbita da cabeça (botão direito + mouse, roda para a distância 1,2 a 14 m), puxada para perto quando o terreno está no caminho e nunca abaixo do chão.
+
+**Verificação**: `-lifeverse-world-selfcheck` com 49 verificações (as de antes mais 14 de pessoas) contra o servidor real: o jogador anda 7,9 m em 2,5 s (3,2 m/s), servidor e previsão a 3 cm, 0 correções; corre a 6,4 m/s; pula 1,4 m e volta ao chão; o servidor o põe em voo e ele sobe, desce e pousa; o outro jogador vê o corpo, o estado, a direção e as pernas balançando. 26 de 26 testes de modo Edit (5 novos). Foto: `avatar-third-person.png`.
+
+**Não feito nesta parte**: o corpo do `HumanoidTemplate` e as animações compartilhadas (`AnimationClips`), corpos GLB, roupas e anexos, aparência, primeira pessoa e olhar, gestos, sentar em assentos, nadar com água por volta, veículos, obstáculos dos objetos na previsão (o servidor corrige), passos, nomes sobre a cabeça, e a interface. Os controles não foram testados com um teclado de verdade (os testes usam a entrada por script; o ambiente não tem teclado).

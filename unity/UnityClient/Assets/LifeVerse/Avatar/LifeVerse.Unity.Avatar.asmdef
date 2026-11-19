@@ -1,0 +1,18 @@
+{
+    "name": "LifeVerse.Unity.Avatar",
+    "rootNamespace": "LifeVerse.Unity.Avatar",
+    "references": [
+        "LifeVerse.Unity.Core",
+        "LifeVerse.Unity.World",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -58,10 +58,10 @@ Critério de "Concluído": compila, testes relevantes passam, comportamento orig
 
 | Id | Funcionalidade | Origem | Destino | Classe | Estado |
 |---|---|---|---|---|---|
-| D1 | Movimento (andar, correr, pular, voar, nadar, sentar) | `PlayerController`, `shared/Networking/AuthoritativeMovement`, `MovementStateResolver` | seguidor cinemático + `shared` | A | Não iniciado |
-| D2 | Câmeras (terceira, primeira, livre, construção, foto) | `PlayerController`, `BuildCamera`, `Camera/`, `shared/Camera` | Cinemachine ou câmera própria | E | Não iniciado |
+| D1 | Movimento (andar, correr, pular, voar, nadar, sentar) | `PlayerController`, `shared/Networking/AuthoritativeMovement`, `MovementStateResolver` | seguidor cinemático + `shared` | A | **Em migração**: `LocalPlayer` prevê com o mesmo `AuthoritativeMovement` a 60 Hz, envia a entrada, reconcilia pela última entrada confirmada; andar, correr, pular, voar (`SetFlightMessage`) testados contra o servidor real. Faltam nadar visto de dentro, sentar em assentos, veículos e obstáculos de objetos na previsão |
+| D2 | Câmeras (terceira, primeira, livre, construção, foto) | `PlayerController`, `BuildCamera`, `Camera/`, `shared/Camera` | Cinemachine ou câmera própria | E | **Em migração**: câmera de terceira pessoa (`FollowCamera`: órbita com o botão direito, roda, não entra no terreno). Faltam primeira pessoa, livre, construção e foto |
 | D3 | Entrada e atalhos | `project.godot` [input] (19 ações) | Input System | E | Não iniciado |
-| D4 | Avatar procedural e corpos GLB | `AvatarRig` (+11), `BuiltInBodies`, `shared/Avatar` | `LifeVerse.Unity.Avatar` | E | Não iniciado |
+| D4 | Avatar procedural e corpos GLB | `AvatarRig` (+11), `BuiltInBodies`, `shared/Avatar` | `LifeVerse.Unity.Avatar` | E | **Em migração**: corpo procedural simples (`AvatarView`: tronco, cabeça com nariz, braços e pernas articulados) para todos os jogadores, interpolado pelos snapshots. Faltam o corpo do `HumanoidTemplate`, corpos GLB, aparência (`AppearanceJson`) |
 | D5 | Criação e personalização de personagem | `CharacterCreator` (+5), `AppearanceWindow` | UI nova | E | Não iniciado |
 | D6 | Roupas, acessórios, anexos em ossos | `AvatarRig.Wearables/Attachments`, `Attachments/`, `shared/Avatar/AttachmentPoints` | idem | E | Não iniciado |
 | D7 | Animações padrão, gestos, digitação, passos | `DefaultAvatarAnimations`, `AvatarRig.*`, `tools/blender` | Animator/Playables | E | Não iniciado |

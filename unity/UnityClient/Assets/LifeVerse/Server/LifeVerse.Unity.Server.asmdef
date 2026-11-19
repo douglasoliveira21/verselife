@@ -4,6 +4,7 @@
     "references": [
         "LifeVerse.Unity.Core",
         "LifeVerse.Unity.World",
+        "LifeVerse.Unity.Avatar",
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.HighDefinition.Runtime"
     ],
