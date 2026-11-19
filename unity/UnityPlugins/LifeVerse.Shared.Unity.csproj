@@ -10,6 +10,8 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>LifeVerse.Shared</AssemblyName>
+    <!-- PackageId próprio: o NuGet identifica projetos por este nome, e dois projetos 'LifeVerse.Shared' (este e o original) se confundiam no restore de quem os referencia por caminhos diferentes (o Host .NET recebia a DLL da Unity) -->
+    <PackageId>LifeVerse.Shared.Unity</PackageId>
     <RootNamespace>LifeVerse.Shared</RootNamespace>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>

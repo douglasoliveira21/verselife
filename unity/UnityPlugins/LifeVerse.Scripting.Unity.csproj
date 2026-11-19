@@ -6,6 +6,8 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.1</TargetFramework>
     <AssemblyName>LifeVerse.Scripting</AssemblyName>
+    <!-- PackageId próprio: o NuGet identifica projetos por este nome, e dois projetos 'LifeVerse.Scripting' (este e o original) se confundiam no restore de quem os referencia por caminhos diferentes (o Host .NET recebia a DLL da Unity) -->
+    <PackageId>LifeVerse.Scripting.Unity</PackageId>
     <RootNamespace>LifeVerse.Scripting</RootNamespace>
     <LangVersion>12.0</LangVersion>
     <Nullable>enable</Nullable>
