@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
@@ -79,7 +79,7 @@ namespace LifeVerse.Unity.Avatar
         private void Update()
         {
             var keyboard = Keyboard.current;
-            if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; if (keyboard.eKey.wasPressedThisFrame) ToggleVehicle(); }
+            if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; if (keyboard.eKey.wasPressedThisFrame) ToggleVehicle(); if (ObjectSeat.HasValue && State.Seated && (keyboard.wKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)) StandUp(); }
             GestureKeys();
             Advance(Time.deltaTime);
         }
@@ -95,18 +95,36 @@ namespace LifeVerse.Unity.Avatar
             while (_accumulator >= Step) { _accumulator -= Step; if (Driving != null) DriveOnce(); else StepOnce(); }
             if (Driving != null) { State.X = Driving.GamePosition.x; State.Y = Driving.GamePosition.y + LifeVerse.Shared.Vehicles.VehicleFleet.DriverHeight; State.Z = Driving.GamePosition.z; State.Seated = true; Motion = NetworkMotionState.Sit; HeadingDegrees = -Driving.Yaw * Mathf.Rad2Deg; }
             SendHeadLook();
+            if (ObjectSeat.HasValue) { if (State.Seated) _seatSeen = true; else if (_seatSeen) ObjectSeat = null; }   // stood up (X, or the server said so): back to the ground where the person was
+            var shown = ObjectSeat.HasValue && State.Seated ? ObjectSeat.Value : GamePosition; var shownHeading = ObjectSeat.HasValue && State.Seated ? ObjectSeatHeading : HeadingDegrees;
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
             if (view != null)
             {
-                view.External = true; view.SetPose(GamePosition, HeadingDegrees, new Vector3(State.VelocityX, State.VelocityY, State.VelocityZ), Motion);
+                view.External = true; view.SetPose(shown, shownHeading, new Vector3(State.VelocityX, State.VelocityY, State.VelocityZ), Motion);
                 if (Follow != null && view.Visible == Follow.FirstPerson) view.SetVisible(!Follow.FirstPerson);   // one's own body is not drawn from the inside
             }
             if (Follow != null)
             {
                 var h = Follow.Yaw * Mathf.Deg2Rad; var strafe = State.VelocityX * Mathf.Cos(h) + State.VelocityZ * Mathf.Sin(h);   // the part of the velocity along the camera's right
-                Follow.Follow(GamePosition, Mathf.Sqrt(State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ), State.Grounded, strafe);
+                Follow.Follow(shown, Mathf.Sqrt(State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ), State.Grounded, strafe);
             }
         }
+
+        // ---- sitting on an object of the world: the seat belongs to the object and is known only on this computer (the island just learns that the person sits, as on the ground) ----
+        private bool _seatSeen;
+        /// <summary>Where the person is drawn while sitting on an object (game space), or null.</summary>
+        public Vector3? ObjectSeat { get; private set; }
+        public float ObjectSeatHeading { get; private set; }
+
+        /// <summary>Sits on top of an object: the person sits where they are for the island and is drawn on the object. False while flying, swimming, driving or already sitting.</summary>
+        public bool SitOnObject(Vector3 topGamePosition, float headingDegrees)
+        {
+            if (!Spawned || Client == null || State.Seated || State.Flying || State.Swimming || Driving != null) return false;
+            ObjectSeat = topGamePosition; ObjectSeatHeading = headingDegrees; _seatSeen = false; _sitEdge = true; return true;
+        }
+
+        /// <summary>Gets up from the seat (the same toggle as X).</summary>
+        public void StandUp() { if (State.Seated) _sitEdge = true; }
 
         /// <summary>Asks to start or stop flying (the F key, the radial menu).</summary>
         public void RequestFlight() => _flyEdge = true;

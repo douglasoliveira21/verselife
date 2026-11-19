@@ -134,6 +134,8 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => viewer.Objects.Count == sends.Length && editor.Objects.Count == sends.Length, $"os {sends.Length} objetos chegarem aos dois jogadores");
             _checks++;
             var wall = viewer.Objects.Ids.Select(id => viewer.Objects.StateOf(id)).First(s => s.PrimitiveType == "cube" && s.PositionX == -10);
+            { var column = new Vector3(-10f, 0f, 30f); var topmost = float.MinValue; foreach (var id in viewer.Objects.Ids) { var go = viewer.Objects.ViewOf(id); if (go == null) continue; var box = default(UnityEngine.Bounds); var any = false; foreach (var r in go.GetComponentsInChildren<Renderer>()) { if (!any) { box = r.bounds; any = true; } else box.Encapsulate(r.bounds); } if (any && box.min.x <= column.x && box.max.x >= column.x && box.min.z <= column.z && box.max.z >= column.z) topmost = Mathf.Max(topmost, box.max.y); }
+              var hit = viewer.Objects.Pick(new Ray(new Vector3(column.x, 100f, column.z), Vector3.down), 200f, out var pickedId, out var pickedBounds); Expect(hit && Mathf.Abs(pickedBounds.max.y - topmost) < .01f, "um raio de cima acerta o objeto mais alto daquele ponto e dá o topo dele: " + pickedBounds.max.y + " esperado " + topmost); Expect(!viewer.Objects.Pick(new Ray(new Vector3(column.x, 400f, column.z), Vector3.up), 200f, out _, out _), "um raio para o céu não acerta nada"); _checks++; }
             var view = viewer.Objects.ViewOf(wall.Id);
             Expect(Vector3.Distance(view.transform.position, GameSpace.ToUnity(-10, 1.5f, -30)) < 1e-4f, "a posiÃ§Ã£o do objeto passa por GameSpace (z invertido)"); _checks++;
             Expect(Mathf.Approximately(view.transform.localScale.x, 6f) && view.GetComponent<MeshFilter>().sharedMesh.subMeshCount >= 6, "escala e uma superfÃ­cie por face"); _checks++;
@@ -215,6 +217,12 @@ namespace LifeVerse.Unity.Server
             local.Scripted = () => new PlayerInputSample { Forward = 1f }; yield return new WaitForSeconds(.4f); local.Scripted = () => default;
             Expect(remote.ActiveGesture == AvatarView.Gesture.None, "andar interrompe o gesto"); _checks++;
             Expect(remote.NameTag != null && remote.NameTag.GetComponent<TextMesh>().text == "editor", "o nome do jogador flutua sobre o corpo"); _checks++;
+
+            // an object of the world as a seat: the island only learns that the person sits; this computer draws them on top of the object (and the object can be picked by a ray)
+            var seatTop = new Vector3(local.GamePosition.x + 2f, local.GamePosition.y + 1.2f, local.GamePosition.z);
+            Expect(local.SitOnObject(seatTop, 90f), "sentar num objeto é aceito parado"); yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion == NetworkMotionState.Sit, "o outro jogador ver a pessoa sentada");
+            yield return new WaitForSeconds(.4f); Expect(Vector3.Distance(editor.Views.ViewOf(peer).GamePosition, seatTop) < .05f && local.ObjectSeat.HasValue, "o próprio corpo é desenhado sobre o objeto: " + editor.Views.ViewOf(peer).GamePosition + " assento " + seatTop + " sentado=" + local.State.Seated + " objeto=" + local.ObjectSeat.HasValue);
+            local.StandUp(); yield return Until(() => !local.State.Seated && !local.ObjectSeat.HasValue, "levantar do assento do objeto"); yield return new WaitForSeconds(.3f); Expect(!local.State.Seated, "de pé de novo"); _checks++;
 
             // first person: the body is not drawn from the inside and the eyes are at head height
             follow.SetFirstPerson(true); yield return new WaitForSeconds(.4f);
@@ -479,7 +487,37 @@ namespace LifeVerse.Unity.Server
             stub.Routes["GET " + scriptsPath] = "[{\"id\":\"" + scriptId + "\",\"name\":\"porta\"}]"; stub.Routes["GET " + scriptsPath + "/" + scriptId] = "{\"id\":\"" + scriptId + "\",\"name\":\"porta\",\"eventName\":\"on_touch\",\"source\":\"print(1)\"}"; stub.Routes["PUT " + scriptsPath + "/" + scriptId] = "{}";
             var lua = new LifeVerse.Unity.UI.LuaEditorWindow(app.Context, island, objectId); lua.Open(); lua.Open(scriptId); yield return Until(() => lua.Source == "print(1)", "o script abrir no editor");
             lua.Source = "print(2)"; lua.Save(); yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT " + scriptsPath + "/" + scriptId && b.Body.Contains("print(2)") && b.Body.Contains("on_touch")), "o script salvo chegar à API"); _checks++;
-            lua.Source = "print("; lua.Save(); yield return null; Expect(lua.StatusText.StartsWith("Erro"), "um script com erro não é salvo: " + lua.StatusText); _checks++; lua.Close();
+            lua.Source = "print("; lua.Save(); yield return null; Expect(lua.StatusText.StartsWith("Erro"), "um script com erro não é salvo: " + lua.StatusText); _checks++;
+
+            // the manual and the history of the script, then what scripts ask of the person (dialogs and panels)
+            stub.Routes["GET /api/v1/scripting/reference"] = "{\"functions\":[{\"category\":\"Objetos\",\"namespace\":\"object\",\"name\":\"say\",\"signature\":\"object.say(text)\",\"description\":\"Fala.\",\"returns\":\"nada\",\"permission\":\"nenhuma\",\"limits\":\"200 letras\",\"errors\":\"texto grande\",\"example\":\"object.say('oi')\"},{\"category\":\"Tempo\",\"namespace\":\"timer\",\"name\":\"after\",\"signature\":\"timer.after(s, fn)\",\"description\":\"Espera.\",\"returns\":\"id\",\"permission\":\"nenhuma\",\"limits\":\"\",\"errors\":\"\",\"example\":\"\"}],\"events\":[{\"name\":\"on_touch\",\"when\":\"Quando alguém toca.\",\"fields\":\"avatar\",\"example\":\"function on_touch(event) end\"}]}";
+            string inserted = null; var docs = new LifeVerse.Unity.UI.ScriptDocsWindow(app.Context, text => inserted = text); docs.Open(); yield return Until(() => docs.Count == 3, "a documentação carregar (2 funções e 1 evento)");
+            docs.Search("timer"); Expect(docs.Count == 1 && docs.Titles[0].Contains("timer.after"), "a busca acha a função certa"); docs.Search(""); docs.PickCategory("Eventos"); Expect(docs.Count == 1 && docs.Titles[0] == "on_touch", "o filtro de categoria mostra só os eventos");
+            docs.Pick(0); docs.PressInsert(); Expect(inserted != null && inserted.Contains("on_touch") && docs.DetailText.Contains("Quando alguém toca"), "o exemplo do evento é inserido e o detalhe aparece"); docs.Close(); _checks++;
+            stub.Routes["GET " + scriptsPath + "/" + scriptId + "/versions"] = "{\"current\":3,\"versions\":[{\"version\":2,\"name\":\"porta\",\"lines\":4,\"bytes\":60,\"savedAt\":\"2026-11-19T10:00:00Z\"},{\"version\":1,\"name\":\"porta\",\"lines\":2,\"bytes\":20,\"savedAt\":\"2026-11-18T10:00:00Z\"}]}";
+            stub.Routes["GET " + scriptsPath + "/" + scriptId + "/versions/1"] = "{\"version\":1,\"source\":\"print('antiga')\"}"; stub.Routes["POST " + scriptsPath + "/" + scriptId + "/versions/1/restore"] = "{}";
+            var restoredCalled = false; var history = new LifeVerse.Unity.UI.ScriptHistoryWindow(app.Context, island, objectId, scriptId, () => restoredCalled = true); history.Open(); yield return Until(() => history.VersionCount == 2, "as versões anteriores do script");
+            history.Pick(1); yield return Until(() => history.Preview.Contains("antiga") && history.CanRestore, "o código da versão escolhida e o botão de restaurar"); history.Restore();
+            yield return Until(() => restoredCalled && stub.ReceivedAny(b => b.Route == "POST " + scriptsPath + "/" + scriptId + "/versions/1/restore"), "a restauração chegar à API e o editor ser avisado"); history.Close(); _checks++;
+            lua.Close();
+
+            var asked = new List<string>(); var dialogs = new LifeVerse.Unity.UI.ScriptDialogs(ui) { Send = asked.Add }; var dialogId = Guid.NewGuid(); var secondId = Guid.NewGuid();
+            dialogs.OnOperation("{\"operation\":\"script_dialog\",\"id\":\"" + dialogId + "\",\"kind\":\"permission\",\"title\":\"Permissão\",\"message\":\"A porta quer abrir.\",\"buttons\":[\"Permitir\",\"Negar\"],\"timeout\":30,\"objectName\":\"Porta\"}");
+            dialogs.OnOperation("{\"operation\":\"script_dialog\",\"id\":\"" + secondId + "\",\"kind\":\"dialog\",\"message\":\"Qual é a senha?\",\"buttons\":[\"Enviar\"],\"input\":true,\"objectName\":\"Cofre\"}"); yield return null;
+            Expect(dialogs.IsOpen && dialogs.Current.Id == dialogId && dialogs.Waiting == 1 && dialogs.Text.Contains("Porta pergunta") && dialogs.Buttons.Count == 2, "a primeira pergunta aparece e a segunda espera: " + dialogs.Text);
+            dialogs.Press("Permitir"); yield return null; Expect(asked.Count == 1 && asked[0].Contains(dialogId.ToString()) && asked[0].Contains("Permitir") && dialogs.Current.Id == secondId && dialogs.InputField != null, "a resposta vai à ilha e a próxima pergunta, com campo de texto, aparece");
+            dialogs.InputField.value = "abracadabra"; dialogs.Press("Enviar"); Expect(asked.Count == 2 && asked[1].Contains("abracadabra") && !dialogs.IsOpen, "o texto digitado vai junto com a resposta"); yield return null;
+            dialogs.OnOperation("{\"operation\":\"script_dialog\",\"id\":\"" + Guid.NewGuid() + "\",\"kind\":\"payment\",\"message\":\"Pagar 5?\",\"buttons\":[\"Pagar\",\"Recusar\"]}"); yield return null; dialogs.Expire(); yield return null;
+            Expect(asked.Count == 3 && asked[2].Contains("Recusar") && !dialogs.IsOpen, "um pedido de pagamento sem resposta é recusado quando o tempo acaba"); dialogs.OnOperation("isso não é json"); dialogs.OnOperation("{\"operation\":\"outra\"}"); Expect(!dialogs.IsOpen, "mensagens que não são perguntas são ignoradas"); _checks++;
+
+            var clicks = new List<string>(); var panels = new LifeVerse.Unity.UI.ScriptHud(ui) { Send = clicks.Add }; var hudScript = Guid.NewGuid();
+            panels.OnOperation("{\"operation\":\"script_hud\",\"script\":\"" + hudScript + "\",\"visible\":true,\"objectName\":\"Placar\",\"title\":\"Pontos\",\"x\":0.8,\"y\":0.3,\"width\":240,\"elements\":[{\"id\":\"a\",\"type\":\"label\",\"text\":\"Vida\",\"color\":\"#ff0000\"},{\"id\":\"b\",\"type\":\"button\",\"text\":\"Curar\"},{\"id\":\"c\",\"type\":\"progress\",\"text\":\"Energia\",\"value\":30,\"max\":60},{\"id\":\"d\",\"type\":\"input\",\"placeholder\":\"Mensagem\"}]}"); yield return null;
+            Expect(panels.Has(hudScript) && panels.TextOf(hudScript).Contains("Pontos") && panels.TextOf(hudScript).Contains("Vida") && panels.ButtonsOf(hudScript).Contains("Curar") && panels.BarOf(hudScript) != null && panels.InputOf(hudScript) != null, "o painel do script mostra título, texto, botão, barra e campo: " + panels.TextOf(hudScript));
+            panels.Press(hudScript, "Curar"); Expect(clicks.Count == 1 && clicks[0].Contains("\"action\":\"click\"") && clicks[0].Contains("\"element\":\"b\""), "o clique no botão vai à ilha com o elemento");
+            panels.InputOf(hudScript).value = "oi"; panels.OnOperation("{\"operation\":\"script_hud\",\"script\":\"" + hudScript + "\",\"visible\":true,\"title\":\"Pontos\",\"elements\":[{\"id\":\"d\",\"type\":\"input\",\"placeholder\":\"Mensagem\"}]}"); yield return null;
+            Expect(panels.InputOf(hudScript).value == "oi", "uma atualização do script não apaga o que a pessoa digitava");
+            panels.CloseFromMenu(hudScript); Expect(!panels.Has(hudScript) && clicks[clicks.Count - 1].Contains("\"action\":\"close\""), "fechar o painel avisa a ilha");
+            for (var i = 0; i < 12; i++) panels.OnOperation("{\"operation\":\"script_hud\",\"script\":\"" + Guid.NewGuid() + "\",\"visible\":true,\"title\":\"p\",\"elements\":[]}"); Expect(panels.PanelCount == LifeVerse.Unity.UI.ScriptHud.MaxPanels, "no máximo oito painéis ao mesmo tempo: " + panels.PanelCount); panels.Clear(); _checks++;
 
             // the radial menu, the map and the overlay
             var radial = app.Hud.Radial; radial.Open(ui, app.RadialItems(), new Vector2(500, 350)); yield return null;

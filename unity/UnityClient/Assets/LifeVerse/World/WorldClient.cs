@@ -50,6 +50,10 @@ namespace LifeVerse.Unity.World
         public event Action<string> DisconnectedBy;
         public bool SendChat(string text) => Send(new SendChatMessage(text));
         public event Action<HeadLookChangedMessage> HeadLookChanged;
+        /// <summary>A dialog or panel a script of an object asks the person to see (JSON "script_dialog" / "script_hud").</summary>
+        public event Action<string> ScriptOperation;
+        /// <summary>The answer to a script dialog or the click on a script panel (JSON); the island checks it was asked.</summary>
+        public bool SendScriptResponse(string json) => json != null && json.Length <= 2048 && Send(new ScriptDialogResponseMessage(json));
         public event Action<VehicleSpawnedMessage> VehicleSpawned;
         public event Action<IReadOnlyList<LifeVerse.Shared.Vehicles.VehicleSnapshot>> VehicleSnapshotsReceived;
         public string LastVehicleRejection { get; private set; }
@@ -113,7 +117,10 @@ namespace LifeVerse.Unity.World
                     TerrainMessages++;
                     if (!Terrain.ApplySeaLevel(sea.Level, sea.Revision)) Resync("sea"); else if (Ocean != null) Ocean.SeaLevel = Terrain.Map.SeaLevel;
                     break;
-                case BuildOperationAppliedMessage applied: Objects?.ApplyOperation(applied.OperationJson); break;
+                case BuildOperationAppliedMessage applied:
+                    // what a script asks of the person (a dialog, a panel) is for the interface, not for the objects of the world
+                    if (applied.OperationJson.Contains("\"script_dialog\"") || applied.OperationJson.Contains("\"script_hud\"")) ScriptOperation?.Invoke(applied.OperationJson); else Objects?.ApplyOperation(applied.OperationJson);
+                    break;
                 case BuildOperationRejectedMessage refused: LastBuildRejection = refused.Code; break;
                 case TerrainEditRejectedMessage rejection: LastTerrainRejection = rejection.Code; break;
             }

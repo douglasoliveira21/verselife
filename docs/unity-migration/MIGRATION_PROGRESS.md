@@ -270,3 +270,17 @@ Todas falam com as rotas reais do backend, cujos contratos (os `record` de pedid
 **O guarda-roupa do homem.** `client/Assets/wearables` não existe no repositório (nem no Godot, que também o carrega do servidor): não há arquivo para migrar. O homem segue sem roupa, como no Godot; quando houver as roupas, entram como anexos do esqueleto já existente.
 
 **Verificação**: live 14/14; `-lifeverse-world-selfcheck` 150 verificações; 55 de 55 testes Edit.
+
+### Fase 9, sexta parte: scripts de objetos, clique no mundo e assentos
+
+**Editor Lua.** Dois botões novos: **Histórico** (`ScriptHistoryWindow`: as versões guardadas, o código da escolhida, restaurar; `GET .../scripts/{id}/versions`, `/versions/{n}`, `POST .../restore`) e **Documentação** (`ScriptDocsWindow`: `GET /api/v1/scripting/reference`, busca, filtro por categoria, detalhe com permissão, limites e erros, e "Inserir exemplo" no fim do script).
+
+**O que scripts pedem à pessoa.** O servidor da ilha já mandava `script_dialog` e `script_hud` como operação de construção; o `WorldClient` agora separa essas duas do resto (`ScriptOperation`) e responde por `SendScriptResponse` (a ilha confere que a pergunta foi feita a essa pessoa). `ScriptDialogs`: uma pergunta por vez com fila (até 10), campo de texto, contagem regressiva, "Negar"/"Recusar" se fechada ou esgotada em permissão/pagamento. `ScriptHud`: até 8 painéis (texto colorido, botões, barras, campos), a atualização do script não apaga o que a pessoa digita, o X avisa a ilha.
+
+**Clique no mundo.** Clicar num objeto (cursor livre, fora da interface) abre um menu com **Tocar** (`TouchObjectMessage`, o `on_touch` dos scripts), **Sentar aqui** e **Scripts do objeto**. O objeto é achado por um raio contra a caixa do que está desenhado (`WorldObjects.Pick`; os objetos não têm colisor no cliente).
+
+**Assento num objeto.** Como no Godot, a ilha só fica sabendo que a pessoa senta (a mesma entrada `Sit` do chão); este computador a desenha em cima do objeto (`LocalPlayer.SitOnObject`, até 6 m) e ela levanta com X ou qualquer tecla de andar.
+
+**Verificação**: auto-teste 156 verificações; exercício na API real, 14 de 14 (com histórico, restauração e a documentação verdadeira); 55 de 55 testes Edit.
+
+**Fica de fora, com o motivo.** Dedos: o código só mexe em ossos de dedo que o corpo tenha (o `lifeverse_man` tem 18 ossos, sem dedos), então não há o que verificar com os corpos que existem. Anexos e acessórios personalizados (editor e armazenamento do Godot: `AttachmentStore`, `AttachmentEditor`): é um editor inteiro, vai com as ferramentas de construção da Fase 10. "Publicar item novo direto do inventário" também depende dessas ferramentas (o pacote de construção). Passos: dependem do áudio (Fase 11). Roupas do homem, renovação do token e entrada na ilha real: sem mudança (arquivos ausentes, Postgres e supervisor).

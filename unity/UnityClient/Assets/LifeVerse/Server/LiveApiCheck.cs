@@ -267,7 +267,13 @@ namespace LifeVerse.Unity.Server
             Check(create.Result.Status >= 200 && create.Result.Status < 300, "criar um objeto na ilha: " + create.Result.Status + " " + Snip(create.Result.Body));
             var obj = Json.One(create.Result.Body); var objectId = obj.Id("id", "objectId"); if (objectId == Guid.Empty && obj.Has("object")) objectId = new Row(obj.Element.GetProperty("object")).Id(); Check(objectId != Guid.Empty, "o objeto criado tem id: " + Snip(create.Result.Body));
             var lua = new LuaEditorWindow(_ca, _island, objectId); lua.Open(); yield return new WaitForSeconds(1f); lua.NewScript(); lua.Source = "local x = 1\nprint(x)"; lua.Save(); yield return new WaitForSeconds(2f);
-            string list = null; yield return Call(_a, "GET", "/api/v1/worlds/" + _island + "/objects/" + objectId + "/scripts", null, b => list = b); Check(Json.Rows(list).Count >= 1, "o script salvo aparece na lista: " + Snip(list)); lua.LoadList(); lua.Close();
+            string list = null; yield return Call(_a, "GET", "/api/v1/worlds/" + _island + "/objects/" + objectId + "/scripts", null, b => list = b); Check(Json.Rows(list).Count >= 1, "o script salvo aparece na lista: " + Snip(list)); lua.LoadList();
+            // saving again keeps the first code in the history, which can be read and restored; the manual comes from the platform
+            Check(lua.OpenScript != Guid.Empty, "o script salvo ficou aberto no editor"); lua.Source = "local x = 2\nprint(x)"; lua.Save(); yield return new WaitForSeconds(2f);
+            var history = new ScriptHistoryWindow(_ca, _island, objectId, lua.OpenScript, () => { }); history.Open(); yield return Until(() => history.VersionCount >= 1, "o histórico mostrar a versão anterior: " + history.Note);
+            history.Pick(1); yield return Until(() => history.Preview.Contains("local x = 1") && history.CanRestore, "o código da versão 1: " + history.Preview); history.Restore(); yield return new WaitForSeconds(2f);
+            string reopened = null; yield return Call(_a, "GET", "/api/v1/worlds/" + _island + "/objects/" + objectId + "/scripts/" + lua.OpenScript, null, b => reopened = b); Check(Json.One(reopened).First("source", "code").Contains("local x = 1"), "restaurar a versão 1 volta o código: " + Snip(reopened)); history.Close();
+            var docs = new ScriptDocsWindow(_ca, _ => { }); docs.Open(); yield return Until(() => docs.Count > 20, "a documentação real chegar (" + docs.Count + ")"); lua.Close(); docs.Close();
         }
     }
 }

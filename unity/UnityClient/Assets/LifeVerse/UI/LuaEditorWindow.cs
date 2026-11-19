@@ -28,9 +28,19 @@ namespace LifeVerse.Unity.UI
             var head = UiKit.Row(); _name = UiKit.Field("Nome", false, 60, "script"); _eventName = UiKit.Field("Evento", false, 40, "on_start"); _name.style.flexGrow = 1; _eventName.style.width = 150; head.Add(_name); head.Add(_eventName); Body.Add(head);
             _source = UiKit.Field("", false, MaxSourceLength); _source.multiline = true; _source.style.flexGrow = 1; _source.style.minHeight = 260; _source.AddToClassList("lv-mono"); Body.Add(_source);
             _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
-            Body.Add(UiKit.Row(UiKit.Button("Verificar", () => Check()), UiKit.Button("Salvar", Save, "lv-btn-primary"), UiKit.Button("Novo", NewScript), UiKit.Button("Recarregar", LoadList)));
+            Body.Add(UiKit.Row(UiKit.Button("Verificar", () => Check()), UiKit.Button("Salvar", Save, "lv-btn-primary"), UiKit.Button("Novo", NewScript), UiKit.Button("Recarregar", LoadList), UiKit.Button("Histórico", OpenHistory), UiKit.Button("Documentação", OpenDocs)));
             LoadList();
         }
+
+        /// <summary>The versions kept of the open script (needs it to be saved first).</summary>
+        public void OpenHistory()
+        {
+            if (_open == Guid.Empty) { Say("Salve o script primeiro: o histórico guarda as versões de um script salvo.", true); return; }
+            new ScriptHistoryWindow(_c, _island, _object, _open, () => Open(_open)).Open();
+        }
+
+        /// <summary>The manual of the language; "Inserir exemplo" adds the example at the end of the code.</summary>
+        public void OpenDocs() => new ScriptDocsWindow(_c, example => { _source.value = _source.value.TrimEnd() + "\n\n" + example.Trim() + "\n"; Say("Exemplo inserido no fim do script.", false); }).Open();
 
         private string Path => "/api/v1/worlds/" + _island + "/objects/" + _object + "/scripts";
 

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -204,9 +204,15 @@ namespace LifeVerse.Unity.UI
             var cars = new GameObject("Vehicles").AddComponent<VehicleViews>(); cars.transform.SetParent(_world.transform); cars.Attach(Client);
             Follow = _world.AddComponent<FollowCamera>(); Follow.Camera = cam; Follow.Terrain = terrain; Player = _world.AddComponent<LocalPlayer>();
             Hud.Chat.Send = text => Client != null && Client.SendChat(text);
+            // what scripts of objects ask of the person: dialogs, permission requests and panels (the island checks every answer)
+            ScriptDialogs = new ScriptDialogs(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } }; ScriptPanels = new ScriptHud(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } };
+            Client.ScriptOperation += json => { ScriptDialogs.OnOperation(json); ScriptPanels.OnOperation(json); };
         }
 
-        private void TearDownWorld() { if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
+        public ScriptDialogs ScriptDialogs { get; private set; }
+        public ScriptHud ScriptPanels { get; private set; }
+
+        private void TearDownWorld() { ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
 
         // ---- while playing ----
 
@@ -234,8 +240,39 @@ namespace LifeVerse.Unity.UI
             {
                 if (keyboard.enterKey.wasPressedThisFrame) Hud.Chat.Focus();
                 if (keyboard.f3Key.wasPressedThisFrame) Hud.TogglePerformance();
+                if (Mouse.current is { } mouse && mouse.leftButton.wasPressedThisFrame && UnityEngine.Cursor.lockState != CursorLockMode.Locked && !UiKit.IsOver(Ui.Root, mouse.position.ReadValue())) ClickWorld(mouse.position.ReadValue());
                 if (keyboard.qKey.wasPressedThisFrame && !Hud.Radial.IsOpen) OpenRadial(Mouse.current != null ? new Vector2(Mouse.current.position.ReadValue().x, Screen.height - Mouse.current.position.ReadValue().y) / Ui.Panel.scale : new Vector2(Screen.width / 2f, Screen.height / 2f));
             }
+        }
+
+        // ---- objects of the world: click one to touch it (scripts answer), sit on it or open its scripts ----
+
+        /// <summary>The object the last click picked.</summary>
+        public Guid ClickedObject { get; private set; }
+        public FloatingWindow ObjectMenu { get; private set; }
+
+        /// <summary>Opens the menu of the object a click on the screen points at. False when the click hits no object (or the person is not playing).</summary>
+        public bool ClickWorld(Vector2 screen, Vector2? menuAt = null)
+        {
+            if (Current != Phase.Playing || Client?.Objects == null || Follow == null || Follow.Camera == null) return false;
+            if (!Client.Objects.Pick(Follow.Camera.ScreenPointToRay(screen), 40f, out var id, out var box)) return false;
+            ClickedObject = id; var state = Client.Objects.StateOf(id); var top = LifeVerse.Unity.World.GameSpace.ToGame(new Vector3(box.center.x, box.max.y, box.center.z));
+            ObjectMenu?.Close(); var at = menuAt ?? new Vector2(screen.x, Screen.height - screen.y) / Ui.Panel.scale;
+            var menu = new FloatingWindow(Ui, "object-menu", state != null && state.Name.Length > 0 ? state.Name : "Objeto", 220f, -1f, at); menu.MoveTo(at); ObjectMenu = menu;
+            menu.Body.Add(UiKit.Button("Tocar", () => { TouchObject(id); menu.Close(); }, "lv-btn-primary"));
+            menu.Body.Add(UiKit.Button("Sentar aqui", () => { SitOnObject(top); menu.Close(); }));
+            menu.Body.Add(UiKit.Button("Scripts do objeto", () => { new LuaEditorWindow(Context, _island, id).Open(); menu.Close(); }));
+            menu.Open(); return true;
+        }
+
+        /// <summary>Touches an object: its scripts get the on_touch event (the island decides what the touch does).</summary>
+        public bool TouchObject(Guid id) => Client != null && Client.Send(new LifeVerse.Wire.TouchObjectMessage(id.ToString()));
+
+        /// <summary>Sits on top of a point (an object's top), within six metres of the person.</summary>
+        public bool SitOnObject(Vector3 topGame)
+        {
+            if (Player == null || (topGame - Player.GamePosition).magnitude > 6f) { Notices.Show("Chegue mais perto para sentar.", NoticeKind.Info); return false; }
+            return Player.SitOnObject(topGame, Player.HeadingDegrees);
         }
 
         /// <summary>The actions of the radial menu: the gestures, flying, sitting, the car and the first person.</summary>

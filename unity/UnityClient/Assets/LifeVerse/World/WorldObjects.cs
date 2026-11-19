@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -73,6 +73,21 @@ namespace LifeVerse.Unity.World
         public WorldObjectState StateOf(Guid id) => _objects.TryGetValue(id, out var entry) ? entry.State : null;
         public float RangeOf(Guid id) => _objects.TryGetValue(id, out var entry) ? entry.Range : 0f;
         public bool IsCulled(Guid id) => _objects.TryGetValue(id, out var entry) && entry.Culled;
+
+        /// <summary>The nearest object a ray (the cursor) hits, by the bounds of what is drawn, up to a distance. The top of that box is where a person sits.</summary>
+        public bool Pick(Ray ray, float maxDistance, out Guid id, out UnityEngine.Bounds bounds)
+        {
+            id = Guid.Empty; bounds = default; var best = maxDistance;
+            foreach (var pair in _objects)
+            {
+                var entry = pair.Value; if (entry.Object == null || entry.Culled || !entry.Object.activeInHierarchy) continue;
+                var any = false; var box = default(UnityEngine.Bounds);
+                foreach (var renderer in entry.Renderers) { if (renderer == null || !renderer.enabled) continue; if (!any) { box = renderer.bounds; any = true; } else box.Encapsulate(renderer.bounds); }
+                if (!any || !box.IntersectRay(ray, out var distance) || distance > best) continue;
+                best = distance; id = pair.Key; bounds = box;
+            }
+            return id != Guid.Empty;
+        }
 
         private void Awake() => Prepare();
 
