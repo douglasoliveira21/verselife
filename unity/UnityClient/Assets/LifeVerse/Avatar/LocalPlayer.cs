@@ -27,7 +27,15 @@ namespace LifeVerse.Unity.Avatar
     {
         public const float Step = 1f / 60f;
 
-        public WorldClient Client; public TerrainView Terrain; public PlayerViews Views; public FollowCamera Follow;
+        public WorldClient Client; public TerrainView Terrain; public PlayerViews Views; public FollowCamera Follow; public VehicleViews Vehicles;
+        /// <summary>True while the person types in the chat: the avatar types on a keyboard for everybody to see (set by the chat window).</summary>
+        public bool Typing;
+        /// <summary>Running is the normal pace and Shift walks (settings).</summary>
+        public bool AlwaysRun;
+        /// <summary>The vehicle this person drives now, or null.</summary>
+        public VehicleView Driving { get; private set; }
+        public float LastHeadPitchSent { get; private set; }
+        private float _headSentAt = -10f;
         /// <summary>When set it replaces the keyboard (tests and scripted walks).</summary>
         public Func<PlayerInputSample> Scripted;
 
@@ -64,14 +72,14 @@ namespace LifeVerse.Unity.Avatar
             var sample = new PlayerInputSample(); var keyboard = Keyboard.current; if (keyboard == null) return sample;
             sample.Forward = (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed ? 1f : 0f) - (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed ? 1f : 0f);
             sample.Right = (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed ? 1f : 0f) - (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed ? 1f : 0f);
-            sample.Run = keyboard.leftShiftKey.isPressed; sample.Jump = keyboard.spaceKey.isPressed; sample.Descend = keyboard.cKey.isPressed || keyboard.leftCtrlKey.isPressed;
+            sample.Run = keyboard.leftShiftKey.isPressed ^ AlwaysRun; sample.Jump = keyboard.spaceKey.isPressed; sample.Descend = keyboard.cKey.isPressed || keyboard.leftCtrlKey.isPressed;
             return sample;
         }
 
         private void Update()
         {
             var keyboard = Keyboard.current;
-            if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; }
+            if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; if (keyboard.eKey.wasPressedThisFrame) ToggleVehicle(); }
             GestureKeys();
             Advance(Time.deltaTime);
         }
@@ -81,7 +89,12 @@ namespace LifeVerse.Unity.Avatar
         {
             if (!Spawned || Client == null || !Client.Authenticated) return;
             _accumulator = Mathf.Min(_accumulator + delta, .25f);
-            while (_accumulator >= Step) { _accumulator -= Step; StepOnce(); }
+            var driving = Vehicles != null ? Vehicles.DrivenBy(Client.SelfPeerId) : null;
+            if (driving != null && Driving == null) { _history.Clear(); State.Flying = false; State.VelocityX = State.VelocityY = State.VelocityZ = 0f; }
+            Driving = driving;
+            while (_accumulator >= Step) { _accumulator -= Step; if (Driving != null) DriveOnce(); else StepOnce(); }
+            if (Driving != null) { State.X = Driving.GamePosition.x; State.Y = Driving.GamePosition.y + LifeVerse.Shared.Vehicles.VehicleFleet.DriverHeight; State.Z = Driving.GamePosition.z; State.Seated = true; Motion = NetworkMotionState.Sit; HeadingDegrees = -Driving.Yaw * Mathf.Rad2Deg; }
+            SendHeadLook();
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
             if (view != null)
             {
@@ -93,6 +106,36 @@ namespace LifeVerse.Unity.Avatar
                 var h = Follow.Yaw * Mathf.Deg2Rad; var strafe = State.VelocityX * Mathf.Cos(h) + State.VelocityZ * Mathf.Sin(h);   // the part of the velocity along the camera's right
                 Follow.Follow(GamePosition, Mathf.Sqrt(State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ), State.Grounded, strafe);
             }
+        }
+
+        /// <summary>Asks to start or stop flying (the F key, the radial menu).</summary>
+        public void RequestFlight() => _flyEdge = true;
+
+        // ---- vehicles: the server drives the car and pins the driver to it; the client sends the throttle, the steering and the brake ----
+
+        /// <summary>E: get into the nearest vehicle (within 4 m), or out of the one being driven.</summary>
+        public bool ToggleVehicle()
+        {
+            if (!Spawned || Client == null || Vehicles == null) return false;
+            if (Driving != null) { Client.Send(new ExitVehicleMessage()); return true; }
+            var car = Vehicles.Nearest(GamePosition, LifeVerse.Shared.Vehicles.VehicleFleet.EnterRange); if (car == null) return false;
+            State.Flying = false; Client.Send(new EnterVehicleMessage(car.Id)); return true;
+        }
+
+        private void DriveOnce()
+        {
+            var sample = Scripted != null ? Scripted() : ReadKeyboard();
+            Sequence++; Client.Send(new SubmitVehicleInputMessage(Mathf.Clamp(sample.Forward, -1f, 1f), Mathf.Clamp(sample.Right, -1f, 1f), sample.Jump));
+        }
+
+        /// <summary>Tells the others how far up or down the person looks (only through their own eyes), as the shared rules allow: when it changed enough, and again every second.</summary>
+        private void SendHeadLook()
+        {
+            var pitch = Follow != null && Follow.FirstPerson ? Mathf.Clamp(-Follow.Pitch * Mathf.Deg2Rad, -HeadLook.AcceptedPitch, HeadLook.AcceptedPitch) : 0f;
+            Views?.ViewOf(Client.SelfPeerId)?.ApplyHeadLook(pitch);
+            var since = Time.realtimeSinceStartup - _headSentAt;
+            if (!HeadLook.ShouldSend(LastHeadPitchSent, pitch, TimeSpan.FromSeconds(since))) return;
+            _headSentAt = Time.realtimeSinceStartup; LastHeadPitchSent = pitch; Client.Send(new HeadLookMessage(pitch));
         }
 
         // ---- gestures: wave and dance are input flags the server turns into a motion state (sent every step while they last); the others are told once ----
@@ -124,6 +167,7 @@ namespace LifeVerse.Unity.Avatar
         private void StepOnce()
         {
             var sample = Scripted != null ? Scripted() : ReadKeyboard();
+            sample.Typing |= Typing;
             if (_flyEdge) { sample.Fly = true; _flyEdge = false; }
             if (_sitEdge) { sample.Sit = true; _sitEdge = false; }
             // flying is a state the server is asked for (reliable, idempotent), not a per-step input: ask, and take it at once locally as the server will

@@ -5,6 +5,8 @@
         "LifeVerse.Unity.Core",
         "LifeVerse.Unity.World",
         "LifeVerse.Unity.Avatar",
+        "LifeVerse.Unity.UI",
+        "glTFast",
         "Unity.RenderPipelines.Core.Runtime",
         "Unity.RenderPipelines.HighDefinition.Runtime"
     ],

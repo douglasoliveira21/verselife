@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using LifeVerse.IslandServer.Core;
 using LifeVerse.Shared.Terrain;
+using LifeVerse.Shared.Avatar;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Unity.Avatar;
 using LifeVerse.Unity.World;
@@ -27,7 +28,7 @@ namespace LifeVerse.Unity.Server
             new GameObject("World Sync Self Check").AddComponent<WorldSyncSelfCheck>();
         }
 
-        private sealed class Player { public WorldClient Client; public TerrainView Terrain; public OceanView Ocean; public WorldObjects Objects; public PlayerViews Views; }
+        private sealed class Player { public WorldClient Client; public TerrainView Terrain; public OceanView Ocean; public WorldObjects Objects; public PlayerViews Views; public VehicleViews Vehicles; }
 
         private IslandServerCore _server;
         private int _checks;
@@ -36,7 +37,13 @@ namespace LifeVerse.Unity.Server
         /// <summary>With -lifeverse-world-shots PREFIX (and a graphics device) the viewer is drawn too (sky, sea, camera) and photographed before and after the edits.</summary>
         private void SetUpShots(Player viewer, params Player[] hidden)
         {
-            var args = Environment.GetCommandLineArgs(); var index = Array.IndexOf(args, "-lifeverse-world-shots"); if (index < 0 || index + 1 >= args.Length) return;
+            var args = Environment.GetCommandLineArgs(); var index = Array.IndexOf(args, "-lifeverse-world-shots");
+            if (index < 0 || index + 1 >= args.Length)
+            {
+                // without photos there is still a camera and a sky, so the checks that need them (the island look, the culling, the planner) run the same way
+                var plain = new GameObject("Camera") { tag = "MainCamera" }; _camera = plain.AddComponent<Camera>(); plain.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>(); plain.transform.position = GameSpace.ToUnity(-95, 26, -150); plain.transform.LookAt(GameSpace.ToUnity(0, 8, 0));
+                _environment = new GameObject("Environment").AddComponent<IslandEnvironment>(); _environment.Initialize(_camera, -.8f); _environment.DayNightCycle = false; _environment.Hour = 14f; viewer.Ocean.Camera = _camera; return;
+            }
             _shots = args[index + 1];
             foreach (var other in hidden) { other.Terrain.GetComponent<MeshRenderer>().enabled = false; other.Ocean.gameObject.SetActive(false); other.Objects.gameObject.SetActive(false); }
             var cameraObject = new GameObject("Camera") { tag = "MainCamera" }; _camera = cameraObject.AddComponent<Camera>(); _camera.nearClipPlane = .2f; _camera.farClipPlane = 6000f; _camera.fieldOfView = 62f;
@@ -77,8 +84,9 @@ namespace LifeVerse.Unity.Server
             var ocean = new GameObject(name + " ocean").AddComponent<OceanView>(); ocean.transform.SetParent(root.transform);
             var objects = new GameObject(name + " objects").AddComponent<WorldObjects>(); objects.transform.SetParent(root.transform);
             var client = root.AddComponent<WorldClient>(); client.Terrain = terrain; client.Ocean = ocean; client.Objects = objects; client.Token = name;
-            var views = new GameObject(name + " people").AddComponent<PlayerViews>(); views.transform.SetParent(root.transform); views.Attach(client);
-            return new Player { Client = client, Terrain = terrain, Ocean = ocean, Objects = objects, Views = views };
+            var views = new GameObject(name + " people").AddComponent<PlayerViews>(); views.transform.SetParent(root.transform); views.AutoPlan = false; views.Attach(client);
+            var cars = new GameObject(name + " cars").AddComponent<VehicleViews>(); cars.transform.SetParent(root.transform); cars.Attach(client);
+            return new Player { Client = client, Terrain = terrain, Ocean = ocean, Objects = objects, Views = views, Vehicles = cars };
         }
 
         private static void Expect(bool condition, string what) { if (!condition) throw new InvalidOperationException(what); }
@@ -127,20 +135,20 @@ namespace LifeVerse.Unity.Server
             _checks++;
             var wall = viewer.Objects.Ids.Select(id => viewer.Objects.StateOf(id)).First(s => s.PrimitiveType == "cube" && s.PositionX == -10);
             var view = viewer.Objects.ViewOf(wall.Id);
-            Expect(Vector3.Distance(view.transform.position, GameSpace.ToUnity(-10, 1.5f, -30)) < 1e-4f, "a posição do objeto passa por GameSpace (z invertido)"); _checks++;
-            Expect(Mathf.Approximately(view.transform.localScale.x, 6f) && view.GetComponent<MeshFilter>().sharedMesh.subMeshCount >= 6, "escala e uma superfície por face"); _checks++;
+            Expect(Vector3.Distance(view.transform.position, GameSpace.ToUnity(-10, 1.5f, -30)) < 1e-4f, "a posiÃ§Ã£o do objeto passa por GameSpace (z invertido)"); _checks++;
+            Expect(Mathf.Approximately(view.transform.localScale.x, 6f) && view.GetComponent<MeshFilter>().sharedMesh.subMeshCount >= 6, "escala e uma superfÃ­cie por face"); _checks++;
             var tilted = viewer.Objects.Ids.Select(id => viewer.Objects.StateOf(id)).First(s => s.PositionX == 30);
-            Expect(Mathf.Abs(Quaternion.Angle(viewer.Objects.ViewOf(tilted.Id).transform.rotation, GameSpace.RotationToUnity(0, 35, 0))) < .01f, "rotação de 35 graus"); _checks++;
+            Expect(Mathf.Abs(Quaternion.Angle(viewer.Objects.ViewOf(tilted.Id).transform.rotation, GameSpace.RotationToUnity(0, 35, 0))) < .01f, "rotaÃ§Ã£o de 35 graus"); _checks++;
             var materials = view.GetComponent<MeshRenderer>().sharedMaterials; var wallColor = materials[0].GetColor("_BaseColor");
             Expect(Mathf.Abs(wallColor.r - 0xC9 / 255f) < .01f, "a cor do material vem do JSON"); _checks++;
             var glass = viewer.Objects.Ids.Select(id => viewer.Objects.StateOf(id)).First(s => s.PositionX == 0 && s.PositionY == 1.2f);
-            Expect(Mathf.Abs(viewer.Objects.ViewOf(glass.Id).GetComponent<MeshRenderer>().sharedMaterials[0].GetColor("_BaseColor").a - .35f) < .01f, "a transparência vira alfa"); _checks++;
+            Expect(Mathf.Abs(viewer.Objects.ViewOf(glass.Id).GetComponent<MeshRenderer>().sharedMaterials[0].GetColor("_BaseColor").a - .35f) < .01f, "a transparÃªncia vira alfa"); _checks++;
 
             // an update moves it for everybody; a delete removes it
             editor.Client.Send(new SubmitBuildOperationMessage("{\"operation\":\"update\",\"expectedRevision\":1,\"objectId\":\"" + wall.Id + "\",\"object\":{\"primitiveType\":\"cube\",\"positionX\":-10,\"positionY\":1.5,\"positionZ\":-40,\"rotationX\":0,\"rotationY\":0,\"rotationZ\":0,\"scaleX\":6,\"scaleY\":3,\"scaleZ\":5,\"materialJson\":\"{\\\"color\\\":\\\"#C94F3D\\\"}\"}}"));
-            yield return Until(() => Vector3.Distance(viewer.Objects.ViewOf(wall.Id).transform.position, GameSpace.ToUnity(-10, 1.5f, -40)) < 1e-3f, "a atualização mover o objeto"); _checks++;
+            yield return Until(() => Vector3.Distance(viewer.Objects.ViewOf(wall.Id).transform.position, GameSpace.ToUnity(-10, 1.5f, -40)) < 1e-3f, "a atualizaÃ§Ã£o mover o objeto"); _checks++;
             editor.Client.Send(new SubmitBuildOperationMessage("{\"operation\":\"delete\",\"expectedRevision\":1,\"objectId\":\"" + wall.Id + "\"}"));
-            yield return Until(() => viewer.Objects.Count == sends.Length - 1 && !viewer.Objects.Has(wall.Id), "a exclusão tirar o objeto"); _checks++;
+            yield return Until(() => viewer.Objects.Count == sends.Length - 1 && !viewer.Objects.Has(wall.Id), "a exclusÃ£o tirar o objeto"); _checks++;
             editor.Client.Send(new SubmitBuildOperationMessage(Create("cube", -10, 1.5f, -30, 6, 3, 5, "{\"color\":\"#C94F3D\",\"roughness\":0.8}"))); // the wall again, for the photo
             yield return Until(() => viewer.Objects.Count == sends.Length, "a parede de novo");
             if (_shots != null) { _camera.transform.position = GameSpace.ToUnity(-12, 9, -66); _camera.transform.LookAt(GameSpace.ToUnity(8, 2, -28)); yield return Shot("objects"); }
@@ -149,12 +157,12 @@ namespace LifeVerse.Unity.Server
         // The person: walking, running, jumping and flying with the prediction of LocalPlayer against the real server, seen by another player.
         private IEnumerator Walking(Player editor, Player viewer)
         {
-            var peer = editor.Client.SelfPeerId; Expect(peer >= 0 && viewer.Client.SelfPeerId >= 0, "os jogadores sabem o seu número no servidor"); _checks++;
+            var peer = editor.Client.SelfPeerId; Expect(peer >= 0 && viewer.Client.SelfPeerId >= 0, "os jogadores sabem o seu nÃºmero no servidor"); _checks++;
             yield return Until(() => viewer.Views.ViewOf(peer) != null && editor.Views.ViewOf(viewer.Client.SelfPeerId) != null && viewer.Views.TryGetSnapshot(peer, out _), "os corpos aparecerem para os dois");
-            Expect(viewer.Views.Count == 2 && editor.Views.Count == 2, "cada jogador vê os dois corpos: " + viewer.Views.Count + " " + editor.Views.Count); _checks++;
+            Expect(viewer.Views.Count == 2 && editor.Views.Count == 2, "cada jogador vÃª os dois corpos: " + viewer.Views.Count + " " + editor.Views.Count); _checks++;
             var follow = editor.Client.gameObject.AddComponent<FollowCamera>(); follow.Terrain = editor.Terrain; follow.Camera = _camera; follow.Interactive = false; follow.Yaw = 0f;
             var local = editor.Client.gameObject.AddComponent<LocalPlayer>(); local.Attach(editor.Client, editor.Terrain, editor.Views, follow);
-            Expect(local.Spawned, "o jogador local parte de onde o servidor o pôs"); _checks++;
+            Expect(local.Spawned, "o jogador local parte de onde o servidor o pÃ´s"); _checks++;
             var remote = viewer.Views.ViewOf(peer); var start = local.GamePosition;
             Console.WriteLine($"event=walk start={start}");
             var swing = 0f; var input = new PlayerInputSample { Forward = 1f }; var pendingFly = false;
@@ -164,10 +172,10 @@ namespace LifeVerse.Unity.Server
             var t = 0f; while (t < 2.5f) { t += Time.deltaTime; swing = Mathf.Max(swing, Mathf.Abs(Mathf.DeltaAngle(0f, remote.LeftLeg.localEulerAngles.x))); yield return null; }
             viewer.Views.TryGetSnapshot(peer, out var seen); var travelled = Vector3.Distance(start, local.GamePosition);
             Console.WriteLine($"event=walk end={local.GamePosition} travelled={travelled:F2} server={seen.X:F2},{seen.Y:F2},{seen.Z:F2} corrections={local.Corrections} lastError={local.LastError:F3} motion={seen.Motion} swing={swing:F1}");
-            Expect(travelled > 5f && travelled < 8.6f, "andou a pé a cerca de 3 m/s: " + travelled); _checks++;
-            Expect(Vector3.Distance(new Vector3(seen.X, seen.Y, seen.Z), local.GamePosition) < 1.6f, "o servidor e a previsão estão juntos"); _checks++;
+            Expect(travelled > 5f && travelled < 8.6f, "andou a pÃ© a cerca de 3 m/s: " + travelled); _checks++;
+            Expect(Vector3.Distance(new Vector3(seen.X, seen.Y, seen.Z), local.GamePosition) < 1.6f, "o servidor e a previsÃ£o estÃ£o juntos"); _checks++;
             Expect(seen.Motion == NetworkMotionState.Walk && Vector3.Distance(remote.TargetGame, new Vector3(seen.X, seen.Y, seen.Z)) < .01f, "quem olha recebe o estado de andar: " + seen.Motion); _checks++;
-            Expect(swing > 10f, "as pernas do outro jogador balançam ao andar: " + swing); _checks++;
+            Expect(swing > 10f, "as pernas do outro jogador balanÃ§am ao andar: " + swing); _checks++;
             Expect(Mathf.Abs(Mathf.DeltaAngle(remote.Heading, 0f)) < 15f, "o corpo olha para onde anda (-z do jogo): " + remote.Heading); _checks++;
 
             // running
@@ -181,40 +189,40 @@ namespace LifeVerse.Unity.Server
             // jumping: up about 1.4 m and back to the ground
             var ground = local.GamePosition.y; var peak = ground; input.Jump = true; var jumpTime = 0f;
             while (jumpTime < 1.6f) { jumpTime += Time.deltaTime; if (jumpTime > .08f) input.Jump = false; peak = Mathf.Max(peak, local.GamePosition.y); yield return null; }
-            Expect(peak - ground > .9f && peak - ground < 1.8f && Mathf.Abs(local.GamePosition.y - ground) < .05f, "pulou e voltou ao chão: subiu " + (peak - ground) + ", agora " + (local.GamePosition.y - ground)); _checks++;
+            Expect(peak - ground > .9f && peak - ground < 1.8f && Mathf.Abs(local.GamePosition.y - ground) < .05f, "pulou e voltou ao chÃ£o: subiu " + (peak - ground) + ", agora " + (local.GamePosition.y - ground)); _checks++;
 
             // flying: F toggles, space climbs, C comes down; the server agrees
             pendingFly = true; input.Jump = true; yield return Until(() => !pendingFly, "o pedido de voo sair");   // the key press is one step
-            yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion == NetworkMotionState.Fly, "o servidor pôr o jogador em voo");
+            yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion == NetworkMotionState.Fly, "o servidor pÃ´r o jogador em voo");
             yield return new WaitForSeconds(.8f); input.Jump = false;
             Expect(local.GamePosition.y - ground > 2f, "subiu em voo: " + (local.GamePosition.y - ground)); _checks++;
             input.Descend = true;
-            yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion != NetworkMotionState.Fly, "voltar ao chão e parar de voar", 10f);
+            yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion != NetworkMotionState.Fly, "voltar ao chÃ£o e parar de voar", 10f);
             input.Descend = false; yield return new WaitForSeconds(.4f);
             Expect(!local.State.Flying && local.GamePosition.y - ground < .3f, "pousou: " + (local.GamePosition.y - ground)); _checks++;
-            Expect(local.LastError < 1f, "a previsão acompanhou o servidor o tempo todo: " + local.LastError); _checks++;
+            Expect(local.LastError < 1f, "a previsÃ£o acompanhou o servidor o tempo todo: " + local.LastError); _checks++;
 
             // gestures: waving travels as an input flag and reaches the other player as a motion state; applauding is told once through the gesture message
             input = new PlayerInputSample(); yield return new WaitForSeconds(.3f);
-            Expect(local.StartGesture("wave"), "acenar é aceito parado");
+            Expect(local.StartGesture("wave"), "acenar Ã© aceito parado");
             yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion == NetworkMotionState.Wave, "o outro jogador ver o aceno");
             yield return null; var armOut = Mathf.Abs(Mathf.DeltaAngle(0f, remote.RightArm.localEulerAngles.z));
-            Expect(armOut > 100f, "o braço do outro jogador sobe ao acenar: " + armOut); _checks++;
+            Expect(armOut > 100f, "o braÃ§o do outro jogador sobe ao acenar: " + armOut); _checks++;
             yield return new WaitForSeconds(2.6f);
-            Expect(local.StartGesture("applaud"), "aplaudir é aceito");
+            Expect(local.StartGesture("applaud"), "aplaudir Ã© aceito");
             yield return Until(() => remote.ActiveGesture == AvatarView.Gesture.Applaud, "o outro jogador ver os aplausos (mensagem de gesto)"); _checks++;
-            Expect(editor.Views.ViewOf(peer).ActiveGesture == AvatarView.Gesture.Applaud, "e o próprio corpo também aplaude"); _checks++;
+            Expect(editor.Views.ViewOf(peer).ActiveGesture == AvatarView.Gesture.Applaud, "e o prÃ³prio corpo tambÃ©m aplaude"); _checks++;
             local.Scripted = () => new PlayerInputSample { Forward = 1f }; yield return new WaitForSeconds(.4f); local.Scripted = () => default;
             Expect(remote.ActiveGesture == AvatarView.Gesture.None, "andar interrompe o gesto"); _checks++;
             Expect(remote.NameTag != null && remote.NameTag.GetComponent<TextMesh>().text == "editor", "o nome do jogador flutua sobre o corpo"); _checks++;
 
             // first person: the body is not drawn from the inside and the eyes are at head height
             follow.SetFirstPerson(true); yield return new WaitForSeconds(.4f);
-            Expect(!editor.Views.ViewOf(peer).Visible && follow.FirstPerson, "em primeira pessoa o próprio corpo some"); _checks++;
-            if (_camera != null) Expect(Mathf.Abs(follow.Focus.y - (local.GamePosition.y + FollowCamera.EyeHeight)) < .02f && Vector3.Distance(_camera.transform.position, GameSpace.ToUnity(local.GamePosition) + Vector3.up * FollowCamera.EyeHeight) < .1f, "os olhos ficam na altura da cabeça: " + _camera.transform.position);
+            Expect(!editor.Views.ViewOf(peer).Visible && follow.FirstPerson, "em primeira pessoa o prÃ³prio corpo some"); _checks++;
+            if (_camera != null) Expect(Mathf.Abs(follow.Focus.y - (local.GamePosition.y + FollowCamera.EyeHeight)) < .02f && Vector3.Distance(_camera.transform.position, GameSpace.ToUnity(local.GamePosition) + Vector3.up * FollowCamera.EyeHeight) < .1f, "os olhos ficam na altura da cabeÃ§a: " + _camera.transform.position);
             if (_shots != null) { follow.Yaw = 40f; follow.Pitch = 4f; yield return Shot("firstperson"); }
             follow.SetFirstPerson(false); yield return new WaitForSeconds(.3f);
-            Expect(editor.Views.ViewOf(peer).Visible && !follow.FirstPerson, "de volta à terceira pessoa o corpo aparece"); _checks++;
+            Expect(editor.Views.ViewOf(peer).Visible && !follow.FirstPerson, "de volta Ã  terceira pessoa o corpo aparece"); _checks++;
 
             if (_shots != null)
             {
@@ -232,6 +240,110 @@ namespace LifeVerse.Unity.Server
                 var spot = other.GamePosition; _camera.transform.position = GameSpace.ToUnity(spot.x + .8f, spot.y + 1.7f, spot.z - 3.2f); _camera.transform.LookAt(GameSpace.ToUnity(spot.x, spot.y + 1.5f, spot.z));
                 yield return Shot("people"); other.StopGesture();
             }
+        }
+
+        private const string DressedAppearance = "{\"displayName\":\"dressed\",\"skinColor\":\"#8D5524\",\"hairColor\":\"#FFD54F\",\"hairStyle\":\"mohawk\",\"beardStyle\":\"full\",\"bodySettingsJson\":\"{\\\"height\\\":1.1,\\\"shoulder\\\":1.05}\","
+            + "\"equippedItems\":[{\"slot\":\"top\",\"itemKey\":\"tee_basic\",\"tintColor\":\"#FF0000\"},{\"slot\":\"hat\",\"itemKey\":\"cap_basic\",\"tintColor\":\"#0000FF\"},{\"slot\":\"back\",\"itemKey\":\"backpack_basic\",\"tintColor\":\"#00FF00\"}]}";
+
+        // Bodies: a person dressed from the appearance the server sends, and a custom GLB skeleton moved by the game's own clips.
+        private IEnumerator Bodies(Player editor, Player viewer, LocalIslandApi api)
+        {
+            var dressed = NewPlayer("dressed"); dressed.Client.AssetLoader = null;
+            Expect(dressed.Client.Connect("127.0.0.1", _server.GamePort), "conectar quem vem vestido");
+            yield return Until(() => dressed.Client.Authenticated && dressed.Client.SelfPeerId >= 0, "o jogador vestido entrar");
+            var peer = dressed.Client.SelfPeerId;
+            yield return Until(() => editor.Views.ViewOf(peer) != null && editor.Views.ViewOf(peer).Appearance.HairStyle == "mohawk", "o outro jogador receber a aparÃªncia");
+            var view = editor.Views.ViewOf(peer); yield return null;
+            Expect(Vector3.Distance(new Vector3(view.Appearance.Skin.r, view.Appearance.Skin.g, view.Appearance.Skin.b), new Vector3(0x8D / 255f, 0x55 / 255f, 0x24 / 255f)) < .01f, "a cor da pele vem do servidor"); _checks++;
+            Expect(Mathf.Abs(view.Torso.localScale.y - 1.1f) < .01f && Mathf.Abs(view.Torso.localScale.x - 1.05f) < .01f, "a altura e os ombros do controle deslizante: " + view.Torso.localScale); _checks++;
+            var shirt = view.Torso.Find("Torso").GetComponent<MeshRenderer>().sharedMaterial.GetColor("_BaseColor");
+            Expect(shirt.r > .9f && shirt.g < .1f && view.Dressing >= 6, "a camiseta Ã© vermelha e hÃ¡ cabelo, olhos, barba, bonÃ© e mochila: " + view.Dressing); _checks++;
+
+            // a custom body: a template skeleton (Mixamo bone names) that holds one animation of its own, so the game's way of moving the bones can be compared with the loader's
+            var spec = new AnimationSpec("Compare", 1f, new[] { ("upper_arm_l", 2, 1.0f), ("lower_leg_r", 0, -.8f), ("head", 1, .5f) });
+            var glb = LifeVerse.Shared.Avatar.HumanoidTemplate.Build(new TemplateOptions { Naming = BoneNaming.Mixamo, Animations = new[] { spec } });
+            var loading = SkeletalBody.CreateAsync(editor.Views.transform, glb, true); yield return Until(() => loading.IsCompleted, "o corpo personalizado carregar", 15f);
+            if (loading.IsFaulted) throw loading.Exception.GetBaseException();
+            var body = loading.Result; Expect(body != null && body.BoneCount >= 16, "o corpo personalizado tem o esqueleto padrÃ£o: " + (body != null ? body.BoneCount : 0)); _checks++;
+            Expect(Mathf.Abs(body.RenderBounds.size.y - 1.8f) < .1f && Mathf.Abs(body.RenderBounds.min.y - body.transform.position.y) < .05f, "o corpo foi levado a 1,8 m e posto no chÃ£o: " + body.RenderBounds.size + " " + body.RenderBounds.min); _checks++;
+            Expect(body.LoaderClips != null && body.LoaderClips.Length > 0, "o carregador tem a animaÃ§Ã£o do arquivo"); _checks++;
+            var mine = SkeletonClip.Read(glb, "Compare"); Expect(mine != null, "o clipe compartilhado lÃª a animaÃ§Ã£o");
+            body.LoaderClips[0].SampleAnimation(body.Content.gameObject, .5f);
+            var wantedArm = body.ContentRotationOf("upper_arm_l"); var wantedLeg = body.ContentRotationOf("lower_leg_r"); var wantedHead = body.ContentRotationOf("head");
+            body.ApplyClipAt(mine, 0f); body.ApplyClipAt(mine, .5f);
+            Expect(Quaternion.Angle(body.ContentRotationOf("upper_arm_l"), wantedArm) < 1f && Quaternion.Angle(body.ContentRotationOf("lower_leg_r"), wantedLeg) < 1f && Quaternion.Angle(body.ContentRotationOf("head"), wantedHead) < 1f,
+                "os ossos movidos pelo clipe compartilhado ficam onde o carregador os pÃµe: " + Quaternion.Angle(body.ContentRotationOf("upper_arm_l"), wantedArm) + " " + Quaternion.Angle(body.ContentRotationOf("lower_leg_r"), wantedLeg)); _checks++;
+            Expect(Quaternion.Angle(wantedArm, Quaternion.identity) > 30f, "e o clipe realmente move o braÃ§o"); _checks++;
+            UnityEngine.Object.Destroy(body.gameObject);
+
+            // the same body through the appearance (the asset comes from the API): it replaces the simple body and the game's clips move it
+            var assetId = Guid.NewGuid(); editor.Client.AssetLoader = id => System.Threading.Tasks.Task.FromResult(id == assetId ? LifeVerse.Shared.Avatar.HumanoidTemplate.Build(new TemplateOptions { Naming = BoneNaming.Mixamo }) : null);
+            editor.Views.ApplyAppearance(peer, DressedAppearance.TrimEnd('}') + ",\"customModelId\":\"" + assetId + "\",\"customModelTriangles\":24}");
+            yield return Until(() => view.Skeleton != null, "o corpo personalizado aparecer no outro jogador", 15f);
+            yield return Until(() => DefaultClips.Ready, "os clipes do jogo serem lidos", 30f);
+            Expect(DefaultClips.Count >= 8, "os clipes do jogo (idle, walk, run, jump, fall, voo, nado, digitaÃ§Ã£o): " + DefaultClips.Count); _checks++;
+            var procedural = view.GetComponentsInChildren<Renderer>(true).Where(r => !r.transform.IsChildOf(view.Skeleton.transform) && r.gameObject.name != "NameTag").ToList();
+            Expect(procedural.All(r => !r.enabled) && view.Skeleton.GetComponentsInChildren<Renderer>().All(r => r.enabled), "o corpo simples some e o personalizado aparece: ligados do simples = " + string.Join(",", procedural.Where(r => r.enabled).Select(r => r.name)) + "; do personalizado desligados = " + view.Skeleton.GetComponentsInChildren<Renderer>().Count(r => !r.enabled) + " detalhe " + view.Detail); _checks++;
+            uint seq = 0; var before = view.Skeleton.ContentRotationOf("upper_leg_l"); var swing = 0f; var clipName = ""; var started = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - started < 1.8f) { dressed.Client.SendInput(++seq, 0f, -1f, InputFlags.None); yield return null; if (view.Motion == NetworkMotionState.Walk && view.Skeleton.UsingClip) { clipName = view.Skeleton.ClipName; swing = Mathf.Max(swing, Quaternion.Angle(before, view.Skeleton.ContentRotationOf("upper_leg_l"))); } }
+            dressed.Client.SendInput(++seq, 0f, 0f, InputFlags.None);
+            Expect(clipName == "Walk" && swing > 8f, "o corpo personalizado anda com o clipe Walk do jogo: " + clipName + " " + swing); _checks++;
+            yield return new WaitForSeconds(.5f); dressed.Client.SendInput(++seq, 0f, 0f, InputFlags.Sit); yield return Until(() => view.Motion == NetworkMotionState.Sit, "o jogador sentar");
+            yield return new WaitForSeconds(.5f);
+            Expect(!view.Skeleton.UsingClip, "sentar não tem clipe e usa a pose procedural no esqueleto"); _checks++;
+            dressed.Client.SendInput(++seq, 0f, 0f, InputFlags.Sit); yield return Until(() => view.Motion != NetworkMotionState.Sit, "o jogador levantar");
+            if (_shots != null)
+            {
+                yield return new WaitForSeconds(.6f); var spot = view.GamePosition; var from = GameSpace.ToUnity(spot.x + 1.2f, spot.y + 1.3f, spot.z - 3.4f); var at = GameSpace.ToUnity(spot.x, spot.y + 1f, spot.z);
+                viewer.Views.gameObject.SetActive(false); dressed.Views.gameObject.SetActive(false);   // every client draws everybody in this one scene: only the editor's drawing of him is photographed
+                _camera.transform.position = from; _camera.transform.LookAt(at); yield return Shot("body-custom");
+                view.SetDetail(LifeVerse.Shared.Avatar.AvatarDetail.Basic); yield return Shot("body-dressed"); viewer.Views.gameObject.SetActive(true); dressed.Views.gameObject.SetActive(true);
+            }
+            view.SetDetail(LifeVerse.Shared.Avatar.AvatarDetail.Basic); Expect(procedural.Any(r => r.enabled) && view.Skeleton.GetComponentsInChildren<Renderer>().All(r => !r.enabled), "de longe volta o corpo simples"); _checks++;
+            view.SetDetail(LifeVerse.Shared.Avatar.AvatarDetail.Hidden); Expect(view.GetComponentsInChildren<Renderer>().All(r => !r.enabled), "muito longe nÃ£o se desenha nada"); _checks++;
+            view.SetDetail(LifeVerse.Shared.Avatar.AvatarDetail.Full);
+            // the planner: near and in front the whole body, far away nothing
+            var lens = new GameObject("Planner camera").AddComponent<Camera>(); var seat = GameSpace.ToUnity(view.GamePosition);
+            lens.transform.position = seat + new Vector3(0, 1.6f, 4f); lens.transform.LookAt(seat + Vector3.up); editor.Views.PlanDetail(lens); Expect(view.Detail == LifeVerse.Shared.Avatar.AvatarDetail.Full, "perto e à frente o corpo é inteiro: " + view.Detail); _checks++;
+            lens.transform.position = seat + new Vector3(0, 1.6f, 400f); lens.transform.LookAt(seat); editor.Views.PlanDetail(lens); Expect(view.Detail == LifeVerse.Shared.Avatar.AvatarDetail.Hidden, "a 400 m nada é desenhado: " + view.Detail); _checks++;
+            lens.transform.position = seat + new Vector3(0, 1.6f, 4f); lens.transform.LookAt(seat); editor.Views.PlanDetail(lens); UnityEngine.Object.Destroy(lens.gameObject);
+
+            // the body that comes with the game: the man of LifeVerse, read once from the file the build carries and made into a skeleton for this person
+            Expect(LifeVerse.Unity.Avatar.BuiltInBodies.Available, "o corpo do jogo (lifeverse_man) está junto do build: " + LifeVerse.Unity.Avatar.BuiltInBodies.Path); _checks++;
+            var oldBody = view.Skeleton; var loadStart = Time.realtimeSinceStartup; editor.Views.ApplyAppearance(peer, DressedAppearance.TrimEnd('}') + ",\"baseModel\":\"lifeverse_man\"}");
+            yield return Until(() => view.Skeleton != null && view.Skeleton != oldBody && view.Skeleton.BoneCount >= 15, "o corpo do jogo (lifeverse_man) aparecer", 150f);
+            Console.WriteLine($"event=builtin_body seconds={Time.realtimeSinceStartup - loadStart:F1} bones={view.Skeleton.BoneCount} triangles={view.Skeleton.Triangles} height={view.Skeleton.RenderBounds.size.y:F2}");
+            Expect(Mathf.Abs(view.Skeleton.RenderBounds.size.y - 1.8f) < .15f && view.Skeleton.Triangles > 2000 && view.Appearance.CustomModelTriangles == view.Skeleton.Triangles, "o homem do LifeVerse tem 1,8 m, esqueleto padrão e a conta de triângulos: " + view.Skeleton.RenderBounds.size + " " + view.Skeleton.Triangles); _checks++;
+            if (_shots != null) { yield return new WaitForSeconds(.5f); viewer.Views.gameObject.SetActive(false); dressed.Views.gameObject.SetActive(false); var manAt = view.GamePosition; _camera.transform.position = GameSpace.ToUnity(manAt.x + .6f, manAt.y + 1.4f, manAt.z - 3.4f); _camera.transform.LookAt(GameSpace.ToUnity(manAt.x, manAt.y + 1f, manAt.z)); yield return Shot("man"); viewer.Views.gameObject.SetActive(true); dressed.Views.gameObject.SetActive(true); }
+            // the head follows the person's look
+            viewer.Client.Send(new HeadLookMessage(.5f));
+            yield return Until(() => editor.Views.ViewOf(viewer.Client.SelfPeerId) != null && Mathf.Abs(editor.Views.ViewOf(viewer.Client.SelfPeerId).HeadPitch - .5f) < .01f, "a cabeÃ§a do outro jogador acompanhar o olhar"); _checks++;
+            viewer.Client.Send(new HeadLookMessage(3f)); yield return new WaitForSeconds(.4f);
+            Expect(Mathf.Abs(editor.Views.ViewOf(viewer.Client.SelfPeerId).HeadPitch - .5f) < .01f, "um Ã¢ngulo fora do que uma cabeÃ§a faz Ã© recusado pelo servidor"); _checks++;
+            UnityEngine.Object.Destroy(dressed.Client.gameObject);
+            yield return Until(() => editor.Views.ViewOf(peer) == null, "quem saiu sumir para os outros");
+        }
+
+        // Driving: get into the car by the spawn point, drive it (the server simulates it), get out.
+        private IEnumerator Driving(Player editor, Player viewer)
+        {
+            yield return Until(() => viewer.Vehicles.Count == 1 && editor.Vehicles.Count == 1, "o carro da ilha aparecer");
+            var car = viewer.Vehicles.Ids.First(); var follow = viewer.Client.gameObject.AddComponent<FollowCamera>(); follow.Interactive = false; follow.Terrain = viewer.Terrain;
+            var local = viewer.Client.gameObject.AddComponent<LocalPlayer>(); local.Vehicles = viewer.Vehicles; local.Attach(viewer.Client, viewer.Terrain, viewer.Views, follow);
+            Expect(local.ToggleVehicle(), "hÃ¡ um carro a menos de 4 m");
+            yield return Until(() => local.Driving != null && editor.Vehicles.DrivenBy(viewer.Client.SelfPeerId) != null, "o servidor pÃ´r o jogador ao volante");
+            Expect(local.State.Seated && local.Motion == NetworkMotionState.Sit && editor.Views.ViewOf(viewer.Client.SelfPeerId) != null, "ao volante o jogador fica sentado, e o outro vÃª"); _checks++;
+            var start = viewer.Vehicles.ViewOf(car).GamePosition; var input = new PlayerInputSample { Forward = 1f }; local.Scripted = () => input;
+            yield return new WaitForSeconds(2.5f);
+            var moved = Vector3.Distance(start, viewer.Vehicles.ViewOf(car).GamePosition); var seen = Vector3.Distance(start, editor.Vehicles.ViewOf(car).GamePosition);
+            Expect(moved > 4f && seen > 3f && viewer.Vehicles.TryGetSnapshot(car, out var snapshot) && snapshot.Speed > 3f, "o carro andou (a velocidade e o ponto chegam aos dois): " + moved + " " + seen); _checks++;
+            Expect(Vector3.Distance(local.GamePosition, viewer.Vehicles.ViewOf(car).GamePosition) < 1f, "o jogador anda com o carro"); _checks++;
+            if (_shots != null) { var at = viewer.Vehicles.ViewOf(car).GamePosition; _camera.transform.position = GameSpace.ToUnity(at.x + 5f, at.y + 2.2f, at.z - 7f); _camera.transform.LookAt(GameSpace.ToUnity(at.x, at.y + .8f, at.z)); editor.Views.gameObject.SetActive(false); yield return Shot("car"); editor.Views.gameObject.SetActive(true); }
+            input = new PlayerInputSample { Jump = true }; yield return new WaitForSeconds(2.5f);   // brake
+            viewer.Vehicles.TryGetSnapshot(car, out snapshot); Expect(snapshot.Speed < 1f, "o freio para o carro: " + snapshot.Speed); _checks++;
+            input = default; Expect(local.ToggleVehicle(), "descer do carro");
+            yield return Until(() => local.Driving == null && !local.State.Seated, "o jogador descer", 6f); _checks++;
+            UnityEngine.Object.Destroy(local); UnityEngine.Object.Destroy(follow);
         }
 
         private static string JsonString(string text) => System.Text.Json.JsonSerializer.Serialize(text);
@@ -255,12 +367,12 @@ namespace LifeVerse.Unity.Server
             var island = api.IslandId;
 
             var denied = rest.LoginAsync("dono", "errada"); yield return Until(() => denied.IsCompleted, "a resposta do login");
-            Expect(!denied.Result.Ok && denied.Result.Status == 401, "senha errada é recusada (401)"); _checks++;
+            Expect(!denied.Result.Ok && denied.Result.Status == 401, "senha errada Ã© recusada (401)"); _checks++;
             var ok = rest.LoginAsync("dono", "segredo"); yield return Until(() => ok.IsCompleted, "a resposta do login");
             Expect(ok.Result.Ok && rest.AccessToken == stub.AccessToken, "o login devolve o token de acesso"); _checks++;
             using var anonymous = new IslandEntryClient(stub.Url);
             var unauthorized = anonymous.RequestEntryAsync(island); yield return Until(() => unauthorized.IsCompleted, "a entrada sem token");
-            Expect(unauthorized.Result.Status == 401 && !unauthorized.Result.Ok, "sem token a entrada é recusada"); _checks++;
+            Expect(unauthorized.Result.Status == 401 && !unauthorized.Result.Ok, "sem token a entrada Ã© recusada"); _checks++;
 
             // 1) only the REST part: the saved terrain and the objects are drawn before any connection
             var preview = NewPlayer("preview"); var join = preview.Client.gameObject.AddComponent<WorldJoin>(); join.Client = preview.Client; join.StartRetrySeconds = .2f;
@@ -272,12 +384,12 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => preview.Objects.TexturesApplied >= 1 && preview.Objects.ModelsLoaded >= 1, "a textura e o modelo chegarem");
             var slab = preview.Objects.ViewOf(slabId).GetComponent<MeshRenderer>().sharedMaterials[0];
             var picture = slab.GetTexture("_BaseColorMap") as Texture2D; var corner = picture != null ? picture.GetPixel(1, 1) : Color.black;
-            Expect(picture != null && picture.width == 8 && corner.r > .6f && corner.g < .4f, "a textura da lousa veio da API e está na cor base: " + (picture != null ? picture.width + " " + corner : "nenhuma")); _checks++;
+            Expect(picture != null && picture.width == 8 && corner.r > .6f && corner.g < .4f, "a textura da lousa veio da API e estÃ¡ na cor base: " + (picture != null ? picture.width + " " + corner : "nenhuma")); _checks++;
             var model = preview.Objects.ViewOf(boxId).transform.Find("Model"); var modelBounds = model.GetComponentInChildren<Renderer>().bounds;
             Expect(preview.Objects.ViewOf(boxId).GetComponent<MeshRenderer>().enabled == false && Mathf.Abs(modelBounds.size.x - 3f) < .05f && Mathf.Abs(modelBounds.size.y - 1.5f) < .05f && (modelBounds.center - preview.Objects.ViewOf(boxId).transform.position).magnitude < .05f,
-                "o modelo importado (glb) foi normalizado para 1 m e tem o tamanho do objeto (3 m × 1,5 m) e está centrado: " + modelBounds.size + " " + modelBounds.center); _checks++;
+                "o modelo importado (glb) foi normalizado para 1 m e tem o tamanho do objeto (3 m Ã— 1,5 m) e estÃ¡ centrado: " + modelBounds.size + " " + modelBounds.center); _checks++;
             var treeBounds = preview.Objects.ViewOf(treeId).GetComponent<MeshRenderer>().bounds; var grassMesh = preview.Objects.ViewOf(grassId).GetComponent<MeshFilter>().sharedMesh;
-            Expect(preview.Objects.ViewOf(treeId).GetComponent<MeshFilter>().sharedMesh.subMeshCount == 3 && treeBounds.size.y > 1.4f && treeBounds.size.y <= 2.05f && grassMesh.vertexCount == 54, "a árvore tem tronco e duas copas, e a grama 18 folhas: " + treeBounds.size + " " + grassMesh.vertexCount); _checks++;
+            Expect(preview.Objects.ViewOf(treeId).GetComponent<MeshFilter>().sharedMesh.subMeshCount == 3 && treeBounds.size.y > 1.4f && treeBounds.size.y <= 2.05f && grassMesh.vertexCount == 54, "a Ã¡rvore tem tronco e duas copas, e a grama 18 folhas: " + treeBounds.size + " " + grassMesh.vertexCount); _checks++;
             if (_shots != null)
             {
                 var saveCamera = (_camera.transform.position, _camera.transform.rotation);
@@ -293,11 +405,11 @@ namespace LifeVerse.Unity.Server
                 _camera.transform.position = saveCamera.Item1; _camera.transform.rotation = saveCamera.Item2; _environment.Hour = 14f; _environment.SetLook(null);
             }
             preview.Objects.Cull(_camera);
-            Expect(preview.Objects.IsCulled(farId) && !preview.Objects.IsCulled(slabId) && !preview.Objects.ViewOf(farId).GetComponent<MeshRenderer>().enabled, "o objeto a 1,5 km não é desenhado e os próximos sim: " + preview.Objects.CulledCount); _checks++;
+            Expect(preview.Objects.IsCulled(farId) && !preview.Objects.IsCulled(slabId) && !preview.Objects.ViewOf(farId).GetComponent<MeshRenderer>().enabled, "o objeto a 1,5 km nÃ£o Ã© desenhado e os prÃ³ximos sim: " + preview.Objects.CulledCount); _checks++;
             Expect(join.Status == "ready" && join.StartAttempts == 1, "esperou o servidor da ilha iniciar (uma resposta 503) e entrou: " + join.Status + " " + join.Failure); _checks++;
             Expect(join.SnapshotApplied && preview.Terrain.Map.Serialize().SequenceEqual(saved.Serialize()), "o terreno salvo foi desenhado antes de conectar"); _checks++;
             Expect(join.ObjectsLoaded == 7 && preview.Objects.Count == 7, "os sete objetos da ilha foram carregados: " + join.ObjectsLoaded); _checks++;
-            Expect(preview.Client.Connected == false, "ainda sem conexão"); _checks++;
+            Expect(preview.Client.Connected == false, "ainda sem conexÃ£o"); _checks++;
 
             // 2) the whole way in: the ticket opens the island and the server's own map replaces the snapshot
             stub.StartingAnswers = 0;
@@ -308,11 +420,210 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => player.Client.TerrainMessages > 0, "o terreno do servidor chegar");
             Expect(player.Terrain.Map.Serialize().SequenceEqual(serverMap.Serialize()) || player.Terrain.Map.Revision >= 0, "o mapa do servidor substitui o do snapshot"); _checks++;
             Expect(stub.Requests.Count(r => r.EndsWith("/entry-token")) >= 3, "o cliente pediu o bilhete de novo depois do 503"); _checks++;
+            // 3) the game as a person plays it: the login screen, the loading screen, the HUD and the chat, against the same island
+            api.Issue("appuser", false); stub.EntryToken = "appuser"; stub.StartingAnswers = 0;
+            var settingsFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lv-app-settings-" + Guid.NewGuid() + ".json");
+            var oneIsland = Guid.NewGuid(); stub.Routes["GET /api/v1/worlds/islands"] = "[{\"id\":\"" + oneIsland + "\",\"name\":\"Ilha do Sol\",\"category\":\"praia\"},{\"id\":\"" + island + "\",\"name\":\"Ilha de Teste\",\"category\":\"teste\"}]";
+            var app = new GameObject("App").AddComponent<LifeVerse.Unity.UI.GameApp>(); app.SettingsPath = settingsFile; app.Begin(stub.Url, new LifeVerse.Unity.UI.UserSettings { AutoScale = false });
+            yield return null; yield return null;
+            yield return Until(() => app.Login.IslandCount == 2, "a lista de ilhas chegar à tela de entrada"); _checks++;
+            app.Login.User.value = "dono"; app.Login.Password.value = "errada"; app.Login.Island.value = island.ToString(); app.Login.Submit();
+            yield return Until(() => !app.Login.Busy, "a recusa da senha errada voltar à tela");
+            Expect(app.Current == LifeVerse.Unity.UI.GameApp.Phase.Login && app.Login.Status.text.Contains("incorretos"), "senha errada: fica na tela de entrada com a mensagem em português: " + app.Login.Status.text); _checks++;
+            app.Login.Password.value = "segredo"; app.Login.Remember.value = true; app.Login.Submit();
+            yield return Until(() => app.Current == LifeVerse.Unity.UI.GameApp.Phase.Playing, "entrar no jogo pela tela de entrada", 25f);
+            Expect(app.Client.Authenticated && app.Hud.Visible && app.Settings.LastLogin == "dono" && System.IO.File.ReadAllText(settingsFile).Contains("\"LastLogin\": \"dono\""), "entrou pela tela: HUD aberto, usuário lembrado e salvo"); _checks++;
+            yield return Until(() => app.Player != null && app.Player.Spawned, "o jogador do jogo nascer");
+            // chat: what the person types goes to the others, what the others say shows
+            string heard = null; player.Client.ChatReceived += message => heard = message.Message;
+            app.Hud.Chat.Input.value = "  olá, ilha!  "; Expect(app.Hud.Chat.Submit(), "enviar pelo chat");
+            yield return Until(() => heard == "olá, ilha!", "os outros ouvirem o chat"); _checks++;
+            player.Client.SendChat("oi do outro lado"); yield return Until(() => app.Hud.Chat.Lines.Any(l => l.Text == "oi do outro lado" && l.Name == "joiner"), "o chat do outro aparecer na tela"); _checks++;
+            if (_shots != null) { app.Hud.Notices.Show("Você entrou na ilha.", LifeVerse.Unity.UI.NoticeKind.Good); app.Follow.Yaw = 200f; app.Follow.Pitch = 10f; _camera.gameObject.SetActive(false); yield return Shot("game-hud"); _camera.gameObject.SetActive(true); }
+            // the settings reach the world: Baixo turns the shadows off and thins the rain
+            app.Settings.GraphicsPreset = 0; LifeVerse.Unity.UI.GraphicsQuality.Apply(app.Settings); app.ApplySettingsToWorld();
+            var environment = app.Client.Environment; Expect(!environment.ShadowsOn && environment.RainQuality < .5f, "o preset Baixo desliga as sombras e afina a chuva"); _checks++;
+            app.Settings.AlwaysRun = true; app.Settings.InvertY = true; app.ApplySettingsToWorld(); Expect(app.Player.AlwaysRun && app.Follow.InvertY, "os controles chegam ao avatar e à câmera"); _checks++;
+            // 4) the platform windows against the API's own shapes: session renewal, social, wallet, inventory, search, profile, island, scripts, radial menu, map, overlay
+            var ui = app.Ui; var userId = app.Api.UserId; var friend = Guid.NewGuid();
+            stub.Routes["GET /api/v1/social/friends"] = "[{\"id\":\"" + friend + "\",\"username\":\"Ana\"}]";
+            stub.ExpireAccessToken(); var renewed = app.Api.ApiAsync("GET", "/api/v1/social/friends"); yield return Until(() => renewed.IsCompleted, "a chamada com o token vencido");
+            Expect(renewed.Result.Status == 200 && stub.Refreshes >= 1 && app.Api.Refreshes >= 1, "o token vencido é renovado sozinho e a chamada é refeita: " + renewed.Result.Status + " renovações " + stub.Refreshes); _checks++;
+
+            stub.Routes["GET /api/v1/social/friends/requests"] = "[{\"userId\":\"" + Guid.NewGuid() + "\",\"username\":\"Caio\"}]"; stub.Routes["GET /api/v1/social/groups"] = "[{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Os Construtores\",\"role\":\"owner\"}]";
+            stub.Routes["GET /api/v1/social/messages"] = "[{\"content\":\"oi!\",\"senderUserId\":\"" + friend + "\",\"createdAt\":\"2026-11-19T10:00:00Z\"},{\"content\":\"tudo bem?\",\"senderUserId\":\"" + userId + "\",\"createdAt\":\"2026-11-19T10:01:00Z\"}]"; stub.Routes["POST /api/v1/social/messages"] = "{}";
+            var social = new LifeVerse.Unity.UI.SocialWindow(app.Context); social.Open();
+            yield return Until(() => social.FriendCount == 1, "a lista de amigos"); social.Talk(friend, "Ana"); yield return Until(() => social.MessageCount == 2, "a conversa com a Ana");
+            social.MessageField.value = "bora!"; Expect(social.SendMessage(), "enviar a mensagem"); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/social/messages" && b.Body.Contains("bora!") && b.Body.Contains(friend.ToString())), "a mensagem chegar à API"); _checks++;
+            social.Show("Pedidos"); yield return null; social.Show("Grupos"); yield return null; social.Close();
+
+            stub.Routes["GET /api/v1/economy/wallet"] = "{\"id\":\"" + Guid.NewGuid() + "\",\"availableCoins\":250,\"isBlocked\":false}"; stub.Routes["GET /api/v1/economy/wallet/transactions"] = "[{\"description\":\"Bônus\",\"amountCoins\":100},{\"description\":\"Compra\",\"amountCoins\":-30}]"; stub.Routes["POST /api/v1/economy/transfer"] = "{}";
+            var wallet = new LifeVerse.Unity.UI.WalletWindow(app.Context); wallet.Open(); yield return Until(() => wallet.Balance == 250, "o saldo da carteira");
+            Expect(LifeVerse.Unity.UI.WalletWindow.Validate("x", "10", 250, out _, out _) != null && LifeVerse.Unity.UI.WalletWindow.Validate(friend.ToString(), "0", 250, out _, out _) != null && LifeVerse.Unity.UI.WalletWindow.Validate(friend.ToString(), "999", 250, out _, out _) == "Saldo insuficiente.", "a carteira recusa o que não faz sentido antes de perguntar à API"); _checks++;
+            wallet.ToField.value = friend.ToString(); wallet.AmountField.value = "40"; wallet.Send(); yield return null;
+            Expect(wallet.AwaitingConfirmation && !stub.ReceivedAny(b => b.Route == "POST /api/v1/economy/transfer"), "o primeiro toque só pede a confirmação (nada foi enviado)"); _checks++;
+            wallet.Send(); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/economy/transfer" && b.Body.Contains("\"amountCoins\":40") && b.Body.Contains("idempotencyKey")), "a transferência confirmada chegar à API"); _checks++; wallet.Close();
+
+            stub.Routes["GET /api/v1/inventory/items"] = "{\"items\":[{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Cadeira\",\"isFavorite\":true},{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Mesa\",\"isFavorite\":false}]}";
+            var inventory = new LifeVerse.Unity.UI.InventoryWindow(app.Context); inventory.Open(); yield return Until(() => inventory.ItemCount == 2, "os itens do inventário"); inventory.Close(); _checks++;
+            stub.Routes["GET /api/v1/discovery/islands"] = "[{\"id\":\"" + oneIsland + "\",\"name\":\"Ilha do Sol\",\"category\":\"praia\"}]";
+            var search = new LifeVerse.Unity.UI.SearchWindow(app.Context); search.Open(); yield return Until(() => search.ResultCount == 1, "o resultado da busca de ilhas"); search.Close(); _checks++;
+            stub.Routes["GET /api/v1/users/" + userId + "/profile/full"] = "{\"profile\":{\"displayName\":\"Dono da Ilha\",\"about\":\"Construo coisas.\"}}";
+            var profile = new LifeVerse.Unity.UI.ProfileWindow(app.Context); profile.Open(); yield return Until(() => profile.ShownName == "Dono da Ilha", "o perfil da pessoa"); profile.Close(); _checks++;
+            stub.Routes["GET /api/v1/worlds/islands/" + island] = "{\"name\":\"Ilha de Teste\",\"description\":\"Para provar.\",\"category\":\"teste\",\"size\":256,\"maxPlayers\":64,\"runtimeState\":\"running\"}"; stub.Routes["GET /api/v1/worlds/islands/" + island + "/permissions"] = "[]";
+            var about = new LifeVerse.Unity.UI.IslandInfoWindow(app.Context, island); about.Open(); yield return null; yield return null; about.Close();
+
+            // the Lua editor: the syntax check is the island's own interpreter, the scripts come from and go to the API
+            Expect(LifeVerse.Unity.UI.LuaEditorWindow.SyntaxProblem("local a = ") != null && LifeVerse.Unity.UI.LuaEditorWindow.SyntaxProblem("local a = 1\nprint(a)") == null && LifeVerse.Unity.UI.LuaEditorWindow.SyntaxProblem("  ") != null, "o editor acha o erro de sintaxe e aceita o script certo"); _checks++;
+            var objectId = Guid.NewGuid(); var scriptId = Guid.NewGuid(); var scriptsPath = "/api/v1/worlds/" + island + "/objects/" + objectId + "/scripts";
+            stub.Routes["GET " + scriptsPath] = "[{\"id\":\"" + scriptId + "\",\"name\":\"porta\"}]"; stub.Routes["GET " + scriptsPath + "/" + scriptId] = "{\"id\":\"" + scriptId + "\",\"name\":\"porta\",\"eventName\":\"on_touch\",\"source\":\"print(1)\"}"; stub.Routes["PUT " + scriptsPath + "/" + scriptId] = "{}";
+            var lua = new LifeVerse.Unity.UI.LuaEditorWindow(app.Context, island, objectId); lua.Open(); lua.Open(scriptId); yield return Until(() => lua.Source == "print(1)", "o script abrir no editor");
+            lua.Source = "print(2)"; lua.Save(); yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT " + scriptsPath + "/" + scriptId && b.Body.Contains("print(2)") && b.Body.Contains("on_touch")), "o script salvo chegar à API"); _checks++;
+            lua.Source = "print("; lua.Save(); yield return null; Expect(lua.StatusText.StartsWith("Erro"), "um script com erro não é salvo: " + lua.StatusText); _checks++; lua.Close();
+
+            // the radial menu, the map and the overlay
+            var radial = app.Hud.Radial; radial.Open(ui, app.RadialItems(), new Vector2(500, 350)); yield return null;
+            Expect(radial.IsOpen && radial.Slices.Count == 10 && radial.PageCount == 1, "o menu radial abre com as dez ações numa página: " + radial.Slices.Count + " " + radial.PageCount); _checks++;
+            Vector2 Toward(int i) { var angle = LifeVerse.Unity.UI.RadialMenu.AngleOf(i, 10); return radial.Centre + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * 100f; }
+            Expect(radial.SliceAt(Toward(0)) == 0 && radial.SliceAt(Toward(3)) == 3 && radial.SliceAt(Toward(7)) == 7 && radial.SliceAt(radial.Centre) == -1 && radial.SliceAt(radial.Centre + new Vector2(0, -300)) == -1, "o ponteiro acha a fatia certa, e o meio e o fora não são fatia"); _checks++;
+            Expect(radial.Slices[0].Label == "Acenar" && radial.Slices[9].Label == "Voar", "as ações do jogo estão no anel"); var ran = false; var spy = app.RadialItems(); spy[0] = new LifeVerse.Unity.UI.RadialItem("Acenar", () => ran = true); radial.Open(ui, spy, new Vector2(500, 350)); yield return null;
+            Expect(radial.Choose(0) && !radial.IsOpen && ran, "escolher uma fatia fecha o menu e roda a ação"); _checks++;
+            var many = new List<LifeVerse.Unity.UI.RadialItem>(); for (var i = 0; i < 14; i++) many.Add(new LifeVerse.Unity.UI.RadialItem("Item " + i, () => { }));
+            radial.Open(ui, many, new Vector2(5, 5)); yield return null; var kept = radial.Centre; Expect(radial.PageCount == 2 && radial.Slices.Count == 11 && kept.x >= 150f && kept.y >= 150f, "com 14 ações o menu vira duas páginas e o anel não sai da tela: " + radial.PageCount + " " + kept); _checks++;
+            radial.Choose(-1, radial.Centre); Expect(radial.Page == 1 && radial.Slices.Count == 3, "tocar no meio vai para a próxima página"); radial.Close();            yield return new WaitForSeconds(.6f);
+            Expect(app.Hud.Map.Texture != null && app.Hud.Map.OtherDots >= 1, "o mapa foi pintado e mostra as outras pessoas: " + app.Hud.Map.OtherDots); _checks++;
+            Expect(LifeVerse.Unity.UI.Minimap.ColourOf(-5f, 0f).b > LifeVerse.Unity.UI.Minimap.ColourOf(3f, 0f).b && LifeVerse.Unity.UI.Minimap.ColourOf(-1f, 0f).b > LifeVerse.Unity.UI.Minimap.ColourOf(-6f, 0f).b - 200, "a água é azul e a terra não"); _checks++;
+            Expect(app.Hud.TogglePerformance(), "ligar a sobreposição de desempenho"); yield return new WaitForSeconds(.8f); Expect(app.Hud.Perf.Fps > 1f && app.Hud.Perf.FrameMs > 0f, "a sobreposição mede quadros por segundo: " + app.Hud.Perf.Fps); _checks++; app.Hud.TogglePerformance();
+
+            if (_shots != null)
+            {
+                _camera.gameObject.SetActive(false); app.Hud.Perf.style.display = UnityEngine.UIElements.DisplayStyle.Flex;
+                var w1 = new LifeVerse.Unity.UI.SocialWindow(app.Context); w1.Open(); w1.MoveTo(new Vector2(250, 90)); w1.Talk(friend, "Ana");
+                var w2 = new LifeVerse.Unity.UI.WalletWindow(app.Context); w2.Open(); w2.MoveTo(new Vector2(720, 90)); var w3 = new LifeVerse.Unity.UI.InventoryWindow(app.Context); w3.Open(); w3.MoveTo(new Vector2(720, 380));
+                yield return new WaitForSeconds(.5f); app.Hud.Radial.Open(ui, app.RadialItems(), new Vector2(150, 480)); yield return Shot("platform-ui");
+                app.Hud.Radial.Close(); w1.Close(); w2.Close(); w3.Close(); app.Hud.Perf.style.display = UnityEngine.UIElements.DisplayStyle.None; _camera.gameObject.SetActive(true);
+            }
+            // 5) the rest of the platform: character creator, groups, people actions, editable profile, market, island management, events and places, item rights and offers
+            var other = Guid.NewGuid(); var groupId = Guid.NewGuid(); var storeId = Guid.NewGuid(); var productId = Guid.NewGuid(); var itemId = Guid.NewGuid();
+            var creator = new LifeVerse.Unity.UI.CharacterWindow(app.Context, LifeVerse.Unity.UI.CharacterDraft.Starter("Tester"), false); creator.Open(); yield return null;
+            Expect(creator.Draft.Problems().Count == 0 && creator.Preview.Shown != null && creator.Preview.Texture != null, "o criador abre com o personagem inicial válido e a prévia"); _checks++;
+            creator.Draft.HairStyle = "mohawk"; creator.Draft.SkinColor = "#8D5524"; creator.Draft.Body["height"] = 1.1f; creator.Changed(); yield return null;
+            Expect(creator.Preview.View.Appearance.HairStyle == "mohawk" && creator.Preview.View.Torso.localScale.y > 1.09f, "mudar o personagem muda a prévia na hora"); _checks++;
+            if (_shots != null) { _camera.gameObject.SetActive(false); creator.MoveTo(new Vector2(250, 30)); yield return Shot("creator"); _camera.gameObject.SetActive(true); }
+            creator.Draft.DisplayName = "a"; creator.Save(); yield return new WaitForSeconds(.3f); Expect(!stub.ReceivedAny(b => b.Route == "PUT /api/v1/users/me/avatar"), "um personagem inválido não é enviado"); _checks++;
+            creator.Draft.DisplayName = "Tester Silva"; creator.Save(); yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT /api/v1/users/me/avatar" && b.Body.Contains("\"displayName\":\"Tester Silva\"") && b.Body.Contains("\"hairStyle\":\"mohawk\"") && b.Body.Contains("equippedItems") && b.Body.Contains("\"bodySettingsJson\"")), "o personagem salvo chegar à API"); _checks++;
+            yield return Until(() => !creator.IsSaving, "o salvamento terminar");
+
+            stub.Routes["GET /api/v1/groups/mine"] = "[{\"id\":\"" + groupId + "\",\"name\":\"Os Construtores\",\"role\":\"owner\"}]"; stub.Routes["POST /api/v1/groups"] = "{}"; stub.Routes["GET /api/v1/social/groups/invites"] = "[{\"inviteId\":\"" + Guid.NewGuid() + "\",\"groupName\":\"Pintores\",\"fromUsername\":\"Ana\"}]";
+            stub.Routes["GET /api/v1/groups/" + groupId] = "{\"group\":{\"description\":\"Quem constrói.\"}}"; stub.Routes["GET /api/v1/groups/" + groupId + "/members"] = "[{\"userId\":\"" + other + "\",\"username\":\"Beto\",\"role\":\"member\"}]"; stub.Routes["GET /api/v1/groups/" + groupId + "/requests"] = "[{\"id\":\"" + Guid.NewGuid() + "\",\"username\":\"Caio\"}]"; stub.Routes["POST /api/v1/groups/" + groupId + "/invites"] = "{}";
+            var groups = new LifeVerse.Unity.UI.GroupsWindow(app.Context); groups.Open(); yield return Until(() => groups.MineCount == 1, "os grupos da pessoa");
+            groups.Show("Convites"); yield return Until(() => groups.InviteCount == 1, "os convites de grupo"); groups.Show("Criar"); groups.NameField.value = "Novo Clube"; groups.Create(); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/groups" && b.Body.Contains("Novo Clube")), "o grupo criado chegar à API"); _checks++;
+            var detail = new LifeVerse.Unity.UI.GroupDetailWindow(app.Context, groupId, "Os Construtores"); detail.Open(); yield return Until(() => detail.MemberCount == 1 && detail.RequestCount == 1, "os membros e os pedidos do grupo"); _checks++; detail.Close(); groups.Close();
+
+            stub.Routes["GET /api/v1/social/presence/" + other] = "{\"status\":\"busy\"}"; stub.Routes["POST /api/v1/social/blocks/" + other] = "{}"; stub.Routes["POST /api/v1/social/reports"] = "{}"; stub.Routes["POST /api/v1/social/friends/requests"] = "{}";
+            var person = new LifeVerse.Unity.UI.PersonActionsWindow(app.Context, other, "Beto"); person.Open(); yield return null;
+            person.Report(); yield return new WaitForSeconds(.2f); Expect(!stub.ReceivedAny(b => b.Route == "POST /api/v1/social/reports"), "denunciar sem motivo não envia nada"); person.ReasonField.value = "assedio no chat"; person.Report(); person.Block();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/social/reports" && b.Body.Contains(other.ToString()) && b.Body.Contains("assedio no chat")) && stub.ReceivedAny(b => b.Route == "POST /api/v1/social/reports") , "a denúncia chegar à API"); _checks++; person.Close();
+            Expect(LifeVerse.Unity.UI.PersonActionsWindow.PresenceWords("busy") == "ocupada" && LifeVerse.Unity.UI.PersonActionsWindow.PresenceWords("invisible") == "offline", "a presença em português"); _checks++;
+            app.Hud.Presence.value = "away"; yield return null;
+
+            stub.Routes["PUT /api/v1/users/me/profile/details"] = "{}"; stub.Routes["POST /api/v1/users/me/profile/posts"] = "{}"; stub.Routes["GET /api/v1/users/" + userId + "/profile/feed"] = "[{\"text\":\"Primeira publicação\"}]";
+            var mine = new LifeVerse.Unity.UI.ProfileWindow(app.Context); mine.Open(); yield return Until(() => mine.ShownName == "Dono da Ilha" && mine.Editable, "o próprio perfil abrir editável");
+            mine.Bio = "Nova bio sem acento."; mine.SaveBio(); mine.PostText = "Ola, mundo!"; mine.Publish();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT /api/v1/users/me/profile/details" && b.Body.Contains("Nova bio")) && stub.ReceivedAny(b => b.Route == "POST /api/v1/users/me/profile/posts" && b.Body.Contains("Ola, mundo!")), "a bio e a publicação chegarem à API"); _checks++; mine.Close();
+
+            stub.Routes["GET /api/v1/economy/products"] = "[{\"id\":\"" + productId + "\",\"name\":\"Sofá azul\",\"priceCoins\":120,\"description\":\"Um sofá.\"}]"; stub.Routes["POST /api/v1/economy/products/" + productId + "/purchase"] = "{}"; stub.Routes["GET /api/v1/economy/orders"] = "[{\"productName\":\"Mesa\",\"status\":\"delivered\",\"priceCoins\":50}]";
+            stub.Routes["GET /api/v1/economy/rental-plans"] = "[{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Mensal\",\"priceCoins\":900,\"days\":30}]"; stub.Routes["GET /api/v1/discovery/stores/mine"] = "[{\"id\":\"" + storeId + "\",\"name\":\"Loja do Dono\",\"isOpen\":true}]"; stub.Routes["POST /api/v1/discovery/stores"] = "{}";
+            var market = new LifeVerse.Unity.UI.MarketWindow(app.Context); market.Open(); yield return Until(() => market.ProductCount == 1, "os produtos do mercado");
+            market.Buy(productId, 120, "Sofá azul"); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/economy/products/" + productId + "/purchase" && b.Body.Contains("idempotencyKey")), "a compra chegar à API com a chave de idempotência"); _checks++;
+            market.Show("Pedidos"); yield return Until(() => market.OrderCount == 1, "os pedidos"); market.Show("Aluguel"); yield return Until(() => market.PlanCount == 1, "os planos de aluguel"); market.Show("Minhas lojas"); yield return Until(() => market.StoreCount == 1, "as lojas da pessoa");
+            market.StoreNameField.value = "Outra Loja"; market.CreateStore(); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/discovery/stores" && b.Body.Contains("Outra Loja")), "a loja criada chegar à API"); _checks++; market.Close();
+
+            stub.Routes["PUT /api/v1/worlds/islands/" + island] = "{}"; stub.Routes["POST /api/v1/worlds/islands/" + island + "/permissions"] = "{}"; stub.Routes["PUT /api/v1/worlds/islands/" + island + "/land/rules"] = "{}"; var parcelA = Guid.NewGuid(); var parcelB = Guid.NewGuid(); stub.Routes["GET /api/v1/worlds/islands/" + island + "/land"] = "{\"islandId\":\"" + island + "\",\"size\":256,\"cellSize\":4,\"version\":1,\"parcels\":[{\"id\":\"" + parcelA + "\",\"name\":\"Terreno 1\",\"ownerName\":\"Dono\",\"salePrice\":500,\"runs\":[[0,0,1],[1,-2,2]]},{\"id\":\"" + parcelB + "\",\"name\":\"Terreno 2\",\"ownerName\":\"Dono\"}]}";
+            var manage = new LifeVerse.Unity.UI.IslandManageWindow(app.Context, island); manage.Open(); yield return Until(() => manage.NameValue == "Ilha de Teste", "os dados da ilha na gestão");
+            Expect(LifeVerse.Unity.UI.IslandManageWindow.ValidateGeneral("ab", "10", "256", out _, out _) != null && LifeVerse.Unity.UI.IslandManageWindow.ValidateGeneral("Ilha", "0", "256", out _, out _) != null && LifeVerse.Unity.UI.IslandManageWindow.ValidateGeneral("Ilha", "10", "10", out _, out _) != null && LifeVerse.Unity.UI.IslandManageWindow.ValidateGeneral("Ilha", "10", "256", out var mp, out var m) == null && mp == 10 && m == 256, "a gestão confere os dados da ilha"); _checks++;
+            manage.SaveGeneral(); manage.GrantPermission(); manage.SaveRules();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT /api/v1/worlds/islands/" + island && b.Body.Contains("\"name\":\"Ilha de Teste\"") && b.Body.Contains("\"maxPlayers\":64")) && stub.ReceivedAny(b => b.Route == "PUT /api/v1/worlds/islands/" + island + "/land/rules" && b.Body.Contains("accessMode") && b.Body.Contains("applyToExisting")), "a ilha e as regras salvas chegarem à API"); _checks++;
+            manage.Show("Terrenos"); yield return Until(() => manage.Parcels.ParcelCount == 2, "os terrenos da ilha"); _checks++;
+            var land = "/api/v1/worlds/islands/" + island + "/land"; yield return Until(() => manage.Parcels.Grid.Size == 64, "a grade de células da ilha (256 m / 4 m = 64 x 64)"); _checks++;
+            stub.Routes["GET " + land + "/parcels/" + parcelA + "/about"] = "{\"cells\":[[0,0],[1,0]]}"; stub.Routes["GET " + land + "/parcels/" + parcelA + "/access"] = "[]";
+            foreach (var verb in new[] { "split", "expand", "shrink" }) stub.Routes["POST " + land + "/parcels/" + parcelA + "/" + verb] = "{}";
+            stub.Routes["POST " + land + "/merge"] = "{}"; stub.Routes["PUT " + land + "/parcels/" + parcelA + "/media"] = "{}"; stub.Routes["PUT " + land + "/parcels/" + parcelA + "/environment"] = "{}";
+            manage.Parcels.Choose(parcelA, "Terreno 1"); yield return null; Expect(manage.Parcels.Grid.Owned == 7 && manage.Parcels.Grid.Origin == -32, "as células do terreno escolhido vêm das corridas da própria lista: " + manage.Parcels.Grid.Owned); _checks++; manage.Parcels.Grid.Toggle((3, 3)); manage.Parcels.Grid.Toggle((4, 3)); manage.Parcels.Grid.Toggle((-40, 3)); manage.Parcels.NewNameField.value = "Terreno Novo";
+            manage.Parcels.Split(); manage.Parcels.Reshape("expand", "Terreno ampliado."); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST " + land + "/parcels/" + parcelA + "/split" && b.Body.Contains("\"cells\":[[3,3],[4,3]]") && b.Body.Contains("Terreno Novo")) && stub.ReceivedAny(b => b.Route == "POST " + land + "/parcels/" + parcelA + "/expand" && b.Body.Contains("extraObjects")), "dividir e ampliar chegarem à API com as células escolhidas"); _checks++;
+            manage.Parcels.MarkForMerge(parcelA, true); manage.Parcels.MarkForMerge(parcelB, true); manage.Parcels.Merge(); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST " + land + "/merge" && b.Body.Contains(parcelB.ToString()) && b.Body.Contains("primaryId")), "juntar os terrenos marcados chegar à API"); _checks++;
+            manage.Parcels.MusicField.value = "ftp://x"; manage.Parcels.SaveMedia(); manage.Parcels.EnvironmentField.value = "{ não é json"; manage.Parcels.SaveEnvironment(); yield return new WaitForSeconds(.3f);
+            Expect(!stub.ReceivedAny(b => b.Route == "PUT " + land + "/parcels/" + parcelA + "/media") && !stub.ReceivedAny(b => b.Route == "PUT " + land + "/parcels/" + parcelA + "/environment"), "música com endereço errado e ambiente que não é JSON não são enviados"); _checks++;
+            manage.Parcels.MusicField.value = "https://exemplo.com/musica.mp3"; manage.Parcels.EnvironmentField.value = "{\"hour\":18}"; manage.Parcels.SaveMedia(); manage.Parcels.SaveEnvironment();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT " + land + "/parcels/" + parcelA + "/media" && b.Body.Contains("musica.mp3")) && stub.ReceivedAny(b => b.Route == "PUT " + land + "/parcels/" + parcelA + "/environment" && b.Body.Contains("hour")), "a música e o ambiente do terreno chegarem à API"); _checks++; manage.Close();
+
+            stub.Routes["GET /api/v1/discovery/events"] = "[{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Festa na praia\",\"startsAt\":\"2026-12-01T20:00:00Z\",\"capacity\":80}]"; stub.Routes["GET /api/v1/discovery/events/mine"] = "[]"; stub.Routes["POST /api/v1/discovery/events"] = "{}";
+            stub.Routes["GET /api/v1/discovery/landmarks"] = "[{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Meu cantinho\",\"islandId\":\"" + island + "\"}]"; stub.Routes["POST /api/v1/discovery/landmarks"] = "{}"; stub.Routes["GET /api/v1/discovery/photos"] = "[]";
+            var discover = new LifeVerse.Unity.UI.DiscoveryWindow(app.Context, app, () => new Vector3(3f, 1f, -4f), () => 1.5f); discover.Open(); yield return Until(() => discover.EventCount == 1, "os eventos");
+            Expect(LifeVerse.Unity.UI.DiscoveryWindow.ValidateEvent("ab", "10", "1", out _, out _) != null && LifeVerse.Unity.UI.DiscoveryWindow.ValidateEvent("Festa", "0", "1", out _, out _) != null && LifeVerse.Unity.UI.DiscoveryWindow.ValidateEvent("Festa", "10", "-2", out _, out _) != null && LifeVerse.Unity.UI.DiscoveryWindow.ValidateEvent("Festa", "10", "1,5", out var people, out var hours) == null && people == 10 && Mathf.Abs((float)hours - 1.5f) < 1e-4f, "o evento é conferido antes de enviar"); _checks++;
+            discover.Show("Meus eventos"); discover.EventName.value = "Festa de teste"; discover.CreateEvent(); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/discovery/events" && b.Body.Contains("Festa de teste") && b.Body.Contains(island.ToString())), "o evento criado chegar à API"); _checks++;
+            discover.Show("Marcos"); yield return Until(() => discover.LandmarkCount == 1, "os marcos"); discover.MarkName.value = "Aqui"; discover.SaveLandmark();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/discovery/landmarks" && b.Body.Contains("\"positionX\":3") && b.Body.Contains("\"positionZ\":-4")), "o marco salvo na posição do jogo chegar à API"); _checks++;
+            if (_shots == null) { discover.Show("Fotos"); discover.TakePhoto(); yield return Until(() => discover.LastPhotoPath != null && System.IO.File.Exists(discover.LastPhotoPath), "a foto aparecer na pasta", 10f); _checks++; System.IO.File.Delete(discover.LastPhotoPath); }
+            discover.Close();
+
+            stub.Routes["GET /api/v1/inventory/items/" + itemId + "/rights"] = "{\"itemId\":\"x\",\"permissions\":{\"owner\":7,\"group\":0,\"nextOwner\":3},\"revision\":5}"; stub.Routes["PUT /api/v1/inventory/items/" + itemId + "/rights"] = "{}"; stub.Routes["POST /api/v1/inventory/items/" + itemId + "/offers"] = "{}"; stub.Routes["GET /api/v1/inventory/items/" + itemId + "/history"] = "[{\"summary\":\"Criado\",\"at\":\"2026-11-01T10:00:00Z\"}]";
+            stub.Routes["GET /api/v1/inventory/offers"] = "[{\"id\":\"" + Guid.NewGuid() + "\",\"itemName\":\"Cadeira\",\"fromUsername\":\"Ana\"}]"; stub.Routes["GET /api/v1/inventory/transfers"] = "[{\"itemName\":\"Mesa\",\"status\":\"done\"}]";
+            var rights = new LifeVerse.Unity.UI.ItemWindow(app.Context, itemId, "Cadeira"); rights.Open(); yield return Until(() => rights.Loaded, "os direitos do item");
+            Expect(rights.Owner == 7 && rights.NextOwner == 3 && rights.Group == 0 && rights.Bit(0, 2).value && !rights.Bit(0, 3).value, "os direitos do item aparecem nas colunas: " + rights.Owner + " " + rights.NextOwner);  _checks++;
+            rights.Bit(2, 3).value = true; Expect(rights.Bit(2, 2).value && rights.NextOwner == 15, "ligar revender liga transferir (a regra do shared)"); _checks++; rights.Bit(2, 2).value = false; Expect(!rights.Bit(2, 3).value, "desligar transferir desliga revender"); _checks++;
+            rights.Save(); yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT /api/v1/inventory/items/" + itemId + "/rights" && b.Body.Contains("\"owner\":7") && b.Body.Contains("\"expectedRevision\":5")), "os direitos salvos chegarem à API com a revisão"); _checks++;
+            rights.ToField.value = other.ToString(); rights.Offer(); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/inventory/items/" + itemId + "/offers" && b.Body.Contains(other.ToString()) && b.Body.Contains("idempotencyKey")), "a oferta do item chegar à API"); _checks++; rights.Close();
+            var offers = new LifeVerse.Unity.UI.OffersWindow(app.Context); offers.Open(); yield return Until(() => offers.OfferCount == 1 && offers.TransferCount == 1, "as ofertas e as transferências"); _checks++; offers.Close(); creator.Close();
+            // 7) files, versions, profile pictures, marriage, conversations of groups and of the island, selling a product
+            var asset = Guid.NewGuid(); var photoFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lv-test-" + Guid.NewGuid().ToString("N") + ".png"); System.IO.File.WriteAllBytes(photoFile, LifeVerse.Unity.Server.TestAssets.Png(new Color32(40, 120, 200, 255), 16));
+            stub.Routes["POST /api/v1/assets/upload"] = "{\"id\":\"" + asset + "\",\"name\":\"foto\",\"storageKey\":\"chave-1\"}"; stub.Routes["POST /api/v1/discovery/photos"] = "{}";
+            LifeVerse.Unity.UI.UploadResult sent = null; LifeVerse.Unity.UI.Uploads.Send(app.Context, photoFile, "textures", r => sent = r); yield return Until(() => sent != null, "o envio do arquivo terminar");
+            Expect(sent.Ok && sent.AssetId == asset && sent.StorageKey == "chave-1" && stub.ReceivedAny(b => b.Route == "POST /api/v1/assets/upload" && b.Body.Contains("name=category") && b.Body.Contains("textures") && b.Body.Contains("name=file") && b.Body.Contains(".png")), "o arquivo sobe por multipart com o campo category e volta o identificador"); _checks++;
+            Expect(!LifeVerse.Unity.UI.Uploads.Read(409, "{}").Ok && LifeVerse.Unity.UI.Uploads.Read(409, "{}").Message.Contains("cheio") && !LifeVerse.Unity.UI.Uploads.Read(400, "{\"detail\":\"Empty files are not accepted.\"}").Ok && LifeVerse.Unity.UI.Uploads.Read(400, "{\"detail\":\"Empty files are not accepted.\"}").Message.Contains("Empty files"), "as recusas do envio viram frases"); _checks++;
+            var shoot = new LifeVerse.Unity.UI.DiscoveryWindow(app.Context, app, () => Vector3.zero, () => 0f); shoot.Open(); shoot.PickAndSendPhoto(photoFile);
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/discovery/photos" && b.Body.Contains("chave-1") && b.Body.Contains(island.ToString()) && b.Body.Contains("\"isPublic\":false")), "a foto enviada ser registrada na plataforma"); _checks++; shoot.Close();
+            var assetV = Guid.NewGuid(); stub.Routes["GET /api/v1/assets/" + assetV + "/versions"] = "{\"versions\":[{\"version\":1,\"current\":false,\"size\":2048,\"at\":\"2026-10-01T10:00:00Z\"},{\"version\":2,\"current\":true,\"size\":4096,\"at\":\"2026-11-01T10:00:00Z\"}]}";
+            var versions = new LifeVerse.Unity.UI.ItemWindow(app.Context, itemId, "Cadeira", assetV); versions.Open(); yield return Until(() => versions.VersionCount == 2, "as versões do arquivo do item"); _checks++; versions.Close();
+            stub.Routes["GET /api/v1/users/" + userId + "/profile/full"] = "{\"profile\":{\"displayName\":\"Dono da Ilha\",\"about\":\"Construo coisas.\"},\"gallery\":[{\"id\":\"" + Guid.NewGuid() + "\",\"assetId\":\"" + asset + "\",\"isMain\":true},{\"id\":\"" + Guid.NewGuid() + "\",\"assetId\":\"" + Guid.NewGuid() + "\"}]}";
+            stub.Routes["POST /api/v1/users/me/profile/gallery"] = "{}"; stub.Routes["PUT /api/v1/users/me/profile/cover"] = "{}";
+            var gallery = new LifeVerse.Unity.UI.GalleryWindow(app.Context); gallery.Open(); yield return Until(() => gallery.Images == 2, "a galeria do perfil"); gallery.AddAsset(asset); gallery.SetCover(asset);
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/users/me/profile/gallery" && b.Body.Contains(asset.ToString())) && stub.ReceivedAny(b => b.Route == "PUT /api/v1/users/me/profile/cover" && b.Body.Contains(asset.ToString())), "a imagem da galeria e a capa chegarem à API"); _checks++; gallery.Close();
+            stub.Routes["GET /api/v1/marriage"] = "{\"current\":null,\"incoming\":[{\"id\":\"" + Guid.NewGuid() + "\",\"fromId\":\"" + other + "\",\"fromName\":\"Ana\",\"message\":\"\",\"createdAt\":\"2026-11-19T10:00:00Z\"}],\"outgoing\":[]}"; stub.Routes["POST /api/v1/marriage/propose"] = "{}";
+            var marriage = new LifeVerse.Unity.UI.MarriageWindow(app.Context); marriage.Open(); yield return Until(() => marriage.Count == 1, "os pedidos de casamento"); marriage.WhoField.value = other.ToString(); marriage.Propose();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/marriage/propose" && b.Body.Contains(other.ToString())), "o pedido de casamento chegar à API"); _checks++; marriage.Close();
+            Expect(LifeVerse.Unity.UI.MarriageWindow.StateWords("accepted") == "casados" && LifeVerse.Unity.UI.MarriageWindow.StateWords("proposed") == "pedido em aberto", "o estado do casamento em português"); _checks++;
+            stub.Routes["GET /api/v1/social/messages"] = "[{\"content\":\"oi pessoal\",\"senderUserId\":\"" + other + "\",\"senderName\":\"Beto\",\"createdAt\":\"2026-11-19T10:00:00Z\"}]"; stub.Routes["POST /api/v1/social/messages"] = "{}";
+            var groupRoom = new LifeVerse.Unity.UI.GroupDetailWindow(app.Context, groupId, "Os Construtores"); groupRoom.Open(); yield return Until(() => groupRoom.Chat.LineCount == 1, "a conversa do grupo"); groupRoom.Chat.Input.value = "oi grupo"; groupRoom.Chat.Send();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/social/messages" && b.Body.Contains("oi grupo") && b.Body.Contains("\"groupId\":\"" + groupId + "\"")), "a mensagem do grupo chegar à API com o grupo"); _checks++; groupRoom.Close();
+            var chatWindow = new LifeVerse.Unity.UI.SocialWindow(app.Context); chatWindow.Open(); chatWindow.Show("Ilha"); yield return Until(() => chatWindow.IslandChat.LineCount == 1, "o histórico da ilha"); chatWindow.IslandChat.Input.value = "bom dia, ilha"; chatWindow.IslandChat.Send();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/social/messages" && b.Body.Contains("bom dia, ilha") && b.Body.Contains("\"islandId\":\"" + island + "\"")), "a mensagem da ilha chegar à API com a ilha"); _checks++; chatWindow.Close();
+            Expect(LifeVerse.Unity.UI.MarketWindow.ValidateProduct("", "Cadeira", "10", out _, out _) != null && LifeVerse.Unity.UI.MarketWindow.ValidateProduct(asset.ToString(), "ab", "10", out _, out _) != null && LifeVerse.Unity.UI.MarketWindow.ValidateProduct(asset.ToString(), "Cadeira", "-5", out _, out _) != null && LifeVerse.Unity.UI.MarketWindow.ValidateProduct(asset.ToString(), "Cadeira", "10", out var forSale, out var priceCoins) == null && forSale == asset && priceCoins == 10, "o produto é conferido antes de ser publicado"); _checks++;
+            stub.Routes["POST /api/v1/economy/products"] = "{}"; var seller = new LifeVerse.Unity.UI.MarketWindow(app.Context); seller.Open(); seller.SellAsset.value = asset.ToString(); seller.SellName.value = "Cadeira nova"; seller.SellPrice.value = "75"; seller.Publish();
+            yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/economy/products" && b.Body.Contains(asset.ToString()) && b.Body.Contains("\"priceCoins\":75") && b.Body.Contains("\"buyerRights\":7")), "o produto publicado chegar à API com os direitos padrão"); _checks++; seller.Close(); System.IO.File.Delete(photoFile);
+            // the session cannot be renewed: the person goes back to the login screen with the message
+            stub.ExpireSession(); var gone = app.Api.ApiAsync("GET", "/api/v1/social/friends"); yield return Until(() => gone.IsCompleted, "a chamada com a sessão acabada");
+            yield return Until(() => app.Current == LifeVerse.Unity.UI.GameApp.Phase.Login, "voltar à tela de entrada com a sessão acabada");
+            Expect(gone.Result.Status == 401 && app.Login.Status.text.Contains("sessão acabou"), "sem renovação a pessoa volta ao login com a mensagem: " + app.Login.Status.text); _checks++;
+            app.Login.Password.value = "segredo"; app.Login.Remember.value = true; app.Login.Submit(); yield return Until(() => app.Current == LifeVerse.Unity.UI.GameApp.Phase.Playing, "entrar de novo depois da sessão acabada", 25f);
+            app.BackToLogin(); Expect(app.Current == LifeVerse.Unity.UI.GameApp.Phase.Login && !app.Hud.Visible, "voltar à tela de entrada fecha o HUD"); _checks++;
+            UnityEngine.Object.Destroy(app.gameObject); if (System.IO.File.Exists(settingsFile)) System.IO.File.Delete(settingsFile);
+            // 6) a new account: the API refuses the entry (409) until the character exists, so the creator opens by itself, and saving it enters the island
+            stub.RequireAvatar = true; stub.AvatarSaved = false; api.Issue("appuser2", false); stub.EntryToken = "appuser2"; yield return new WaitForSeconds(.3f);
+            var app2 = new GameObject("App2").AddComponent<LifeVerse.Unity.UI.GameApp>(); app2.SettingsPath = settingsFile; app2.Begin(stub.Url, new LifeVerse.Unity.UI.UserSettings { AutoScale = false }); yield return null; yield return null;
+            app2.Login.User.value = "dono"; app2.Login.Password.value = "segredo"; app2.Login.Island.value = island.ToString(); app2.Login.Submit();
+            LifeVerse.Unity.UI.CharacterWindow firstTime = null;
+            yield return Until(() => { foreach (var child in app2.Ui.WindowLayer.Children()) if (child is LifeVerse.Unity.UI.CharacterWindow cw) firstTime = cw; return firstTime != null; }, "o criador de personagem abrir sozinho quando a API pede o avatar", 25f);
+            Expect(app2.Current == LifeVerse.Unity.UI.GameApp.Phase.Loading && firstTime.Title.text.Contains("Crie"), "a primeira vez: o criador abre na tela de carregamento"); _checks++;
+            firstTime.Draft.DisplayName = "Novato Teste"; firstTime.Save();
+            yield return Until(() => app2.Current == LifeVerse.Unity.UI.GameApp.Phase.Playing && app2.Client != null && app2.Client.Authenticated, "entrar na ilha depois de criar o personagem", 30f); _checks++;
+            UnityEngine.Object.Destroy(app2.gameObject); stub.RequireAvatar = false; if (System.IO.File.Exists(settingsFile)) System.IO.File.Delete(settingsFile);
         }
 
         private IEnumerator Steps(Action<Tuple<Player, Player>> created, Action<Tuple<Player, Player>> unused)
         {
-            var api = new LocalIslandApi(); api.Issue("editor", true); api.Issue("viewer", false);
+            var api = new LocalIslandApi(); api.Issue("editor", true); api.Issue("viewer", false); api.Issue("dressed", false, 0, 0, DressedAppearance);
+            api.Vehicles.Add(new VehicleRow(Guid.NewGuid(), "Carro", "car", 0f, 1.5f, 0f, 20f));   // by the spawn point of the viewer
             var config = IslandServerConfig.From(name => name switch
             {
                 "LIFEVERSE_ISLAND_ID" => api.IslandId.ToString(), "LIFEVERSE_API_URL" => "http://local", "LIFEVERSE_SERVICE_KEY" => new string('k', 32),
@@ -327,7 +638,7 @@ namespace LifeVerse.Unity.Server
             var editor = NewPlayer("editor"); var viewer = NewPlayer("viewer");
             Expect(editor.Client.Connect("127.0.0.1", _server.GamePort) && viewer.Client.Connect("127.0.0.1", _server.GamePort), "conectar os clientes");
             yield return Until(() => editor.Client.Authenticated && viewer.Client.Authenticated && editor.Terrain.HasLiveData && viewer.Terrain.HasLiveData, "entrar na ilha e receber o terreno");
-            Expect(editor.Client.CanEditTerrain && !viewer.Client.CanEditTerrain, "só o editor pode esculpir"); _checks++;
+            Expect(editor.Client.CanEditTerrain && !viewer.Client.CanEditTerrain, "sÃ³ o editor pode esculpir"); _checks++;
             SetUpShots(viewer, editor);
             yield return Shot("before");
             Expect(editor.Client.ProtocolMismatch == 0 && viewer.Client.RejectCode == null, "sem recusas"); _checks++;
@@ -335,9 +646,9 @@ namespace LifeVerse.Unity.Server
             // the expected ground, computed independently with the same shared rules
             var expected = new TerrainMap();
             for (var i = 0; i < 3; i++) { editor.Client.Send(new SubmitTerrainEditMessage((int)TerrainTool.Raise, 20, 10, 12, 1f, 0)); expected.Apply(TerrainTool.Raise, 20, 10, 12, 1f, 0); yield return null; }
-            yield return Until(() => viewer.Terrain.Map.Revision == expected.Revision && editor.Terrain.Map.Revision == expected.Revision, "as três edições chegarem aos dois jogadores"); yield return null;
-            Expect(viewer.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa de quem olha é idêntico ao esperado"); _checks++;
-            Expect(editor.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa de quem esculpiu também"); _checks++;
+            yield return Until(() => viewer.Terrain.Map.Revision == expected.Revision && editor.Terrain.Map.Revision == expected.Revision, "as trÃªs ediÃ§Ãµes chegarem aos dois jogadores"); yield return null;
+            Expect(viewer.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa de quem olha Ã© idÃªntico ao esperado"); _checks++;
+            Expect(editor.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa de quem esculpiu tambÃ©m"); _checks++;
             var hill = expected.HeightAt(74, 69); Expect(hill > .5f, "o morro subiu");
             yield return null; yield return null; // LateUpdate redraws the mesh
             var mesh = viewer.Terrain.GetComponent<MeshFilter>().sharedMesh;
@@ -345,16 +656,18 @@ namespace LifeVerse.Unity.Server
 
             for (var i = 0; i < 6; i++) { editor.Client.Send(new SubmitTerrainEditMessage((int)TerrainTool.Paint, 20, 10, 10, 1f, 3)); expected.Apply(TerrainTool.Paint, 20, 10, 10, 1f, 3); yield return null; } // rock on the new hill
             yield return Until(() => viewer.Terrain.Map.Revision == expected.Revision, "a pintura chegar a quem olha");
-            Expect(viewer.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa com a pintura é idêntico"); _checks++;
+            Expect(viewer.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa com a pintura Ã© idÃªntico"); _checks++;
             yield return Shot("after");
             yield return Objects(editor, viewer);
             yield return Walking(editor, viewer);
+            yield return Bodies(editor, viewer, api);
+            yield return Driving(editor, viewer);
             viewer.Client.Send(new SubmitTerrainEditMessage((int)TerrainTool.Raise, 0, 0, 5, 1f, 0));
             yield return Until(() => viewer.Client.LastTerrainRejection != null, "a recusa ao visitante");
-            Expect(viewer.Client.LastTerrainRejection == "no_permission", "o visitante não esculpe: " + viewer.Client.LastTerrainRejection); _checks++;
+            Expect(viewer.Client.LastTerrainRejection == "no_permission", "o visitante nÃ£o esculpe: " + viewer.Client.LastTerrainRejection); _checks++;
 
             editor.Client.Send(new SubmitSeaLevelMessage(2f));
-            yield return Until(() => Mathf.Approximately(viewer.Ocean.SeaLevel, 2f) && Mathf.Approximately(viewer.Terrain.Map.SeaLevel, 2f), "o nível do mar mudar para quem olha");
+            yield return Until(() => Mathf.Approximately(viewer.Ocean.SeaLevel, 2f) && Mathf.Approximately(viewer.Terrain.Map.SeaLevel, 2f), "o nÃ­vel do mar mudar para quem olha");
             _checks++;
 
             yield return new WaitForSeconds(1.2f); // the server limits history steps like edits; the stroke has long ended

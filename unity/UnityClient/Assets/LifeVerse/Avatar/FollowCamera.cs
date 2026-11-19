@@ -19,6 +19,8 @@ namespace LifeVerse.Unity.Avatar
         public const float MinDistance = 1.2f, MaxDistance = 14f, HeadHeight = 1.55f, EyeHeight = 1.62f, ClearGround = .35f;
         /// <summary>When false the mouse and the wheel are ignored (a menu is open, or a test is driving it).</summary>
         public bool Interactive = true;
+        /// <summary>Degrees of turn per pixel of mouse, and whether pushing the mouse up looks down (settings).</summary>
+        public float Sensitivity = .15f; public bool InvertY;
         public bool FirstPerson { get; private set; }
         public FirstPersonOptions Options = new FirstPersonOptions();
         public Vector3 Focus { get; private set; }
@@ -45,7 +47,7 @@ namespace LifeVerse.Unity.Avatar
             if (!Interactive) return;
             var mouse = Mouse.current; if (mouse == null) return;
             var looking = FirstPerson ? Cursor.lockState == CursorLockMode.Locked : mouse.rightButton.isPressed;
-            if (looking) { var delta = mouse.delta.ReadValue(); Yaw += delta.x * .15f; Pitch = Mathf.Clamp(Pitch - delta.y * .15f, FirstPerson ? -85f : -60f, FirstPerson ? 85f : 80f); }
+            if (looking) { var delta = mouse.delta.ReadValue(); Yaw += delta.x * Sensitivity; Pitch = Mathf.Clamp(Pitch - delta.y * Sensitivity * (InvertY ? -1f : 1f), FirstPerson ? -85f : -60f, FirstPerson ? 85f : 80f); }
             if (!FirstPerson) { var wheel = mouse.scroll.ReadValue().y; if (Mathf.Abs(wheel) > .01f) Distance = Mathf.Clamp(Distance - Mathf.Sign(wheel) * .6f, MinDistance, MaxDistance); }
             var keyboard = Keyboard.current; if (keyboard != null && keyboard.vKey.wasPressedThisFrame) Toggle();
         }

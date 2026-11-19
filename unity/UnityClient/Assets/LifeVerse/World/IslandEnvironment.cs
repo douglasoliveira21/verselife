@@ -31,6 +31,14 @@ namespace LifeVerse.Unity.World
         private ParticleSystem _rain;
         /// <summary>0 to 1: how much rain falls now (the player can turn weather effects down in the graphics settings).</summary>
         public float RainQuality = 1f;
+        private HDShadowSettings _shadowSettings;
+
+        /// <summary>The shadows of the sun and how far they reach (the graphics preset): none on Baixo, 60 to 250 m above it.</summary>
+        public void SetShadows(bool on, float distance)
+        {
+            Create(); ShadowsOn = on; _sunData.EnableShadows(on); if (_shadowSettings != null && distance > 0f) _shadowSettings.maxShadowDistance.value = distance;
+        }
+        public bool ShadowsOn { get; private set; } = true;
         public float RainAmount { get; private set; }
         public const float SkyNits = 14000f;
         private static readonly Color ZenithDay = new Color(.17f, .42f, .84f), HorizonDay = new Color(.74f, .86f, .97f), ZenithNight = new Color(.004f, .01f, .045f), HorizonNight = new Color(.03f, .045f, .1f), Sunset = new Color(1f, .52f, .22f);
@@ -93,6 +101,7 @@ namespace LifeVerse.Unity.World
             var bloom = _profile.Add<Bloom>(); bloom.intensity.Override(.2f); bloom.threshold.Override(1f); bloom.scatter.Override(.65f); // the sun disc and bright lamps glow
             BuildSunDisc();
             _clouds = _profile.Add<CloudLayer>(); _clouds.opacity.Override(1f);
+            _shadowSettings = _profile.Add<HDShadowSettings>(); _shadowSettings.maxShadowDistance.Override(120f);
             _cloudMap = ProceduralTextures.Clouds(512, 5); _clouds.layerA.cloudMap.Override(_cloudMap); _clouds.layerA.opacityR.Override(1f); _clouds.layerA.opacityG.Override(0f); _clouds.layerA.opacityB.Override(0f); _clouds.layerA.opacityA.Override(0f);
             _volume = new GameObject("World Volume").AddComponent<Volume>(); _volume.transform.SetParent(transform, false); _volume.isGlobal = true; _volume.sharedProfile = _profile; _volume.priority = 0;
 

@@ -1,0 +1,4 @@
+﻿
+# the body that comes with the game is copied from client/Assets/avatars at build time
+/Assets/StreamingAssets/avatars/
+/Assets/StreamingAssets/avatars.meta

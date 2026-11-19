@@ -28,9 +28,9 @@ namespace LifeVerse.Unity.Server
         public HttpClient Http => _http ??= new HttpClient(new NotFound()) { BaseAddress = new Uri("http://local/") };
 
         /// <summary>Accepts the token as a ticket for a player with that name (and the right to sculpt the island when <paramref name="canEdit"/>).</summary>
-        public Admission Issue(string token, bool canEdit, float spawnX = 0, float spawnZ = 0)
+        public Admission Issue(string token, bool canEdit, float spawnX = 0, float spawnZ = 0, string appearanceJson = "{}")
         {
-            var admission = new Admission(Guid.NewGuid(), Guid.NewGuid(), _island, Guid.NewGuid(), Guid.NewGuid(), 11, DateTimeOffset.UtcNow.AddHours(1), token, "{}", canEdit, spawnX, spawnZ, 256, null, null, null, null);
+            var admission = new Admission(Guid.NewGuid(), Guid.NewGuid(), _island, Guid.NewGuid(), Guid.NewGuid(), 11, DateTimeOffset.UtcNow.AddHours(1), token, appearanceJson, canEdit, spawnX, spawnZ, 256, null, null, null, null);
             lock (_tickets) _tickets[token] = admission;
             return admission;
         }
@@ -50,7 +50,9 @@ namespace LifeVerse.Unity.Server
         public Task<IReadOnlyList<ServerCommand>> HeartbeatAsync(int players, ServerReport report, CancellationToken ct) => Task.FromResult<IReadOnlyList<ServerCommand>>(Array.Empty<ServerCommand>());
         public Task<LocationAnswer> SaveLocationsAsync(IReadOnlyList<PlayerLocation> players, CancellationToken ct) => Task.FromResult(new LocationAnswer(players.Count, null));
         public Task<int> ConfirmArrivalAsync(Guid transferId, CancellationToken ct) => Task.FromResult(204);
-        public Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<VehicleRow>>(Array.Empty<VehicleRow>());
+        /// <summary>The vehicles this island has (the tests put one near the spawn point).</summary>
+        public readonly List<VehicleRow> Vehicles = new List<VehicleRow>();
+        public Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<VehicleRow>>(Vehicles.ToArray());
                 /// <summary>Accepts create, update and delete the way the real API answers them: the object as the island will see it ("objectState"), or the id of what went away.</summary>
         public Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct)
         {

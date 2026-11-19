@@ -8,6 +8,7 @@
         "LifeVerse.Unity.Platform",
         "LifeVerse.Unity.World",
         "LifeVerse.Unity.Avatar",
+        "LifeVerse.Unity.UI",
         "Unity.RenderPipelines.HighDefinition.Runtime",
         "Unity.RenderPipelines.Core.Runtime"
     ],

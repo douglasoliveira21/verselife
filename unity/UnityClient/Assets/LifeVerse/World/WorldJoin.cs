@@ -25,10 +25,12 @@ namespace LifeVerse.Unity.World
         public int ObjectsLoaded { get; private set; }
         public int StartAttempts { get; private set; }
         public IslandLookService Look { get; private set; }
+        /// <summary>The HTTP status behind a failure to enter (409: the person has no avatar yet), or 0.</summary>
+        public int FailureStatus { get; private set; }
 
         public IEnumerator Join(IslandEntryClient api, Guid islandId, bool connect = true)
         {
-            Done = false; Failure = null; StartAttempts = 0;
+            Done = false; Failure = null; StartAttempts = 0; FailureStatus = 0;
             EntryResult entry = null;
             while (true)
             {
@@ -36,7 +38,7 @@ namespace LifeVerse.Unity.World
                 var request = api.RequestEntryAsync(islandId); while (!request.IsCompleted) yield return null;
                 entry = request.Result;
                 if (entry.Ok) break;
-                if (!entry.Starting) { Fail(entry.Message); yield break; }
+                if (!entry.Starting) { FailureStatus = entry.Status; Fail(entry.Message); yield break; }
                 if (++StartAttempts > MaxStartAttempts) { Fail("A ilha não iniciou a tempo. Tente de novo em instantes."); yield break; }
                 var until = Time.realtimeSinceStartup + StartRetrySeconds; while (Time.realtimeSinceStartup < until) yield return null;
             }
@@ -46,7 +48,8 @@ namespace LifeVerse.Unity.World
             var snapshot = api.GetSnapshotAsync(islandId); var objects = api.GetObjectsAsync(islandId);
             while (!snapshot.IsCompleted || !objects.IsCompleted) yield return null;
             if (snapshot.Result.Ok && Client.Terrain != null) { Client.Terrain.Apply(TerrainMap.FromJson(snapshot.Result.TerrainJson)); if (Client.Ocean != null) Client.Ocean.SeaLevel = Client.Terrain.Map.SeaLevel; SnapshotApplied = true; }
-            if (Client.Objects != null) Client.Objects.AssetLoader = asset => api.GetAssetAsync(islandId, asset);   // pictures and models come from the API on demand
+            Client.AssetLoader = asset => api.GetAssetAsync(islandId, asset);
+            if (Client.Objects != null) Client.Objects.AssetLoader = Client.AssetLoader;   // pictures and models come from the API on demand
             if (objects.Result != null && Client.Objects != null) ObjectsLoaded = Client.Objects.Load(objects.Result);
             if (Client.Environment != null)
             {

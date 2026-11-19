@@ -58,16 +58,16 @@ Critério de "Concluído": compila, testes relevantes passam, comportamento orig
 
 | Id | Funcionalidade | Origem | Destino | Classe | Estado |
 |---|---|---|---|---|---|
-| D1 | Movimento (andar, correr, pular, voar, nadar, sentar) | `PlayerController`, `shared/Networking/AuthoritativeMovement`, `MovementStateResolver` | seguidor cinemático + `shared` | A | **Em migração**: `LocalPlayer` prevê com o mesmo `AuthoritativeMovement` a 60 Hz, envia a entrada, reconcilia pela última entrada confirmada; andar, correr, pular, voar (`SetFlightMessage`) testados contra o servidor real. Faltam nadar visto de dentro, sentar em assentos, veículos e obstáculos de objetos na previsão |
+| D1 | Movimento (andar, correr, pular, voar, nadar, sentar) | `PlayerController`, `shared/Networking/AuthoritativeMovement`, `MovementStateResolver` | seguidor cinemático + `shared` | A | **Em migração**: `LocalPlayer` prevê com o mesmo `AuthoritativeMovement` a 60 Hz, envia a entrada, reconcilia pela última entrada confirmada; andar, correr, pular, voar (`SetFlightMessage`) testados contra o servidor real. **Veículos** (entrar, dirigir, sair) e olhar (`HeadLook`). Faltam nadar visto de dentro, sentar em assentos de objetos e obstáculos de objetos na previsão |
 | D2 | Câmeras (terceira, primeira, livre, construção, foto) | `PlayerController`, `BuildCamera`, `Camera/`, `shared/Camera` | Cinemachine ou câmera própria | E | **Em migração**: câmera de terceira pessoa (`FollowCamera`: órbita com o botão direito, roda, não entra no terreno). **Primeira pessoa** (V; bob, sway e olhos estáveis do `shared`). Faltam colisão dos olhos, livre, construção e foto |
 | D3 | Entrada e atalhos | `project.godot` [input] (19 ações) | Input System | E | Não iniciado |
-| D4 | Avatar procedural e corpos GLB | `AvatarRig` (+11), `BuiltInBodies`, `shared/Avatar` | `LifeVerse.Unity.Avatar` | E | **Em migração**: corpo procedural simples (`AvatarView`: tronco, cabeça com nariz, braços e pernas articulados) para todos os jogadores, interpolado pelos snapshots. Faltam o corpo do `HumanoidTemplate`, corpos GLB, aparência (`AppearanceJson`) |
-| D5 | Criação e personalização de personagem | `CharacterCreator` (+5), `AppearanceWindow` | UI nova | E | Não iniciado |
+| D4 | Avatar procedural e corpos GLB | `AvatarRig` (+11), `BuiltInBodies`, `shared/Avatar` | `LifeVerse.Unity.Avatar` | E | **Em migração**: corpo procedural simples (`AvatarView`: tronco, cabeça com nariz, braços e pernas articulados) para todos os jogadores, interpolado pelos snapshots. **Aparência vestida do servidor** (cores, cabelo, barba, itens, controles deslizantes), **corpo GLB personalizado** (`SkeletalBody`, glTFast) e o **homem do LifeVerse** (`lifeverse_man`, do arquivo do jogo). Faltam as roupas dele e os anexos/roupas personalizados |
+| D5 | Criação e personalização de personagem | `CharacterCreator` (+5), `AppearanceWindow` | UI nova | E | **Feito** (criador com prévia ao vivo; o homem do LifeVerse carrega do arquivo do jogo) |
 | D6 | Roupas, acessórios, anexos em ossos | `AvatarRig.Wearables/Attachments`, `Attachments/`, `shared/Avatar/AttachmentPoints` | idem | E | Não iniciado |
-| D7 | Animações padrão, gestos, digitação, passos | `DefaultAvatarAnimations`, `AvatarRig.*`, `tools/blender` | Animator/Playables | E | Não iniciado |
-| D8 | Nível de detalhe por distância | `AvatarRig.Detail`, `shared/Avatar/AvatarDetailPlanner` | idem | A | Não iniciado |
-| D9 | Menu radial e interação contextual | `RadialMenu`, `ContextInteraction`, `shared/Gameplay/RadialMath` | UI nova | E | Não iniciado |
-| D10 | Mãos em primeira pessoa e olhar | `AvatarRig.FirstPerson/Look/Fingers` | idem | E | Não iniciado |
+| D7 | Animações padrão, gestos, digitação, passos | `DefaultAvatarAnimations`, `AvatarRig.*`, `tools/blender` | Animator/Playables | E | **Em migração**: clipes do jogo (os mesmos arquivos) no corpo personalizado pelo `SkeletonClip` do `shared`, conferidos contra o carregador; gestos e digitação; faltam clipes próprios da pessoa e passos (áudio) |
+| D8 | Nível de detalhe por distância | `AvatarRig.Detail`, `shared/Avatar/AvatarDetailPlanner` | idem | A | **Feito** com o planejador compartilhado (distância, visibilidade, orçamento); falta medir o custo real |
+| D9 | Menu radial e interação contextual | `RadialMenu`, `ContextInteraction`, `shared/Gameplay/RadialMath` | UI nova | E | **Feito** o menu radial com a geometria compartilhada; falta a interação contextual sobre pessoas e objetos |
+| D10 | Mãos em primeira pessoa e olhar | `AvatarRig.FirstPerson/Look/Fingers` | idem | E | **Parcial**: olhar vertical enviado e visto (`HeadLook`) e primeira pessoa; faltam mãos e dedos |
 
 ## E. Construção
 
@@ -84,20 +84,20 @@ Critério de "Concluído": compila, testes relevantes passam, comportamento orig
 
 | Id | Tela | Origem | Estado |
 |---|---|---|---|
-| F1 | Login, registro, seleção de ilha, carregamento | `LoginScreen`, `Login/` (13), `LoadingScreen`, `StartPlace` | Não iniciado |
-| F2 | HUD, barra superior e inferior, notificações | `ViewerUI` (+3), `Interface/`, `Notifications/` | Não iniciado |
-| F3 | Chat, mensagens privadas, amigos, pessoas | `SocialPanel`, `PeoplePanel`, `PersonActions` | Não iniciado |
-| F4 | Grupos | `GroupsWindow` (+5), `Groups/` (9) | Não iniciado |
-| F5 | Perfil | `ProfileWindow` (+5), `ProfileApi` | Não iniciado |
-| F6 | Inventário, versões, direitos de item, ofertas, objetos perdidos | `InventoryPanel` (+1), `AssetVersionsWindow`, `ItemRightsWindow`, `ItemOffersWindow`, `LostObjectsWindow` | Não iniciado |
-| F7 | Busca e descoberta | `SearchWindow` (+8), `DiscoveryPanel` | Não iniciado |
+| F1 | Login, registro, seleção de ilha, carregamento | `LoginScreen`, `Login/` (13), `LoadingScreen`, `StartPlace` | **Em migração**: entrar e criar conta, carregamento, voltar à tela se a conexão cai. **Lista de ilhas públicas e renovação automática do token**; o login de jogador não tem segundo fator. Falta a vitrine de fundo |
+| F2 | HUD, barra superior e inferior, notificações | `ViewerUI` (+3), `Interface/`, `Notifications/` | **Em migração**: barras superior e inferior, notificações com histórico, janelas flutuantes. **Mapa** e **barra de desempenho** (F3). Falta a central de notificações como janela |
+| F3 | Chat, mensagens privadas, amigos, pessoas | `SocialPanel`, `PeoplePanel`, `PersonActions` | **Feito** (chat, pessoas, amigos, conversa privada, de grupo e da ilha, presença, bloqueios, denúncias) |
+| F4 | Grupos | `GroupsWindow` (+5), `Groups/` (9) | **Feito** (criar, buscar, convidar, membros, pedidos); falta perfil de grupo e papéis |
+| F5 | Perfil | `ProfileWindow` (+5), `ProfileApi` | **Feito** (texto, publicações, galeria, capa, casamento); falta o feed com imagens |
+| F6 | Inventário, versões, direitos de item, ofertas, objetos perdidos | `InventoryPanel` (+1), `AssetVersionsWindow`, `ItemRightsWindow`, `ItemOffersWindow`, `LostObjectsWindow` | **Feito** (visões, direitos, ofertas, transferências, histórico, versões); falta organizar em pastas |
+| F7 | Busca e descoberta | `SearchWindow` (+8), `DiscoveryPanel` | **Feito** (ilhas, busca, eventos, marcos, fotos com envio); faltam as lojas na descoberta |
 | F8 | Editor de construção (painéis) | `Build/` | Não iniciado |
-| F9 | Configurações (gráficos, áudio, controles, rede, interface, acessibilidade) | `SettingsPanel`, `Settings/` (16), `GraphicsQuality`, `Accessibility` | Não iniciado |
-| F10 | Economia: carteira, compra e transferência de VerseCoin, marketplace | `WalletWindow`, `MarketplacePanel`, `EconomyRates` | Não iniciado |
-| F11 | Gestão de ilha e de terreno | `IslandManagement/` (19), `LandManagement/`, `RealEstate/`, `ParcelInfo/` | Não iniciado |
-| F12 | Editor Lua, documentação, histórico, diálogos e HUD de script | `LuaScriptEditor`, `ScriptEditorWindow`, `ScriptDocsWindow`, `ScriptHistoryWindow`, `ScriptDialogWindow`, `ScriptHudLayer`, `HudEditor` | Não iniciado |
-| F13 | Tema visual (vidro escuro, `#1B262E`, `#6D818D`, `#12F2E0`, `#F4A340`, Inter, cantos 14–16 px) | `ViewerTheme`, `UiStyle`, `UiDraw`, `FloatingWindow` | Não iniciado |
-| F14 | Sobreposição de desempenho | `PerformanceOverlay` | Não iniciado |
+| F9 | Configurações (gráficos, áudio, controles, rede, interface, acessibilidade) | `SettingsPanel`, `Settings/` (16), `GraphicsQuality`, `Accessibility` | **Em migração**: gráficos (presets), áudio (volumes salvos), controles, interface, acessibilidade. Faltam rede, teclas reconfiguráveis e o áudio real |
+| F10 | Economia: carteira, compra e transferência de VerseCoin, marketplace | `WalletWindow`, `MarketplacePanel`, `EconomyRates` | **Feito** (carteira, mercado, pedidos, aluguel, lojas e publicar produto) |
+| F11 | Gestão de ilha e de terreno | `IslandManagement/` (19), `LandManagement/`, `RealEstate/`, `ParcelInfo/` | **Feito** (dados, permissões, regras, terrenos: vender/comprar, listas, expulsar, dividir, ampliar, encolher, juntar, música, ambiente, auditoria, histórico); falta o editor de terreno |
+| F12 | Editor Lua, documentação, histórico, diálogos e HUD de script | `LuaScriptEditor`, `ScriptEditorWindow`, `ScriptDocsWindow`, `ScriptHistoryWindow`, `ScriptDialogWindow`, `ScriptHudLayer`, `HudEditor` | **Parcial**: editor com verificação de sintaxe, abrir e salvar; faltam documentação, histórico, diálogos e HUD de script |
+| F13 | Tema visual (vidro escuro, `#1B262E`, `#6D818D`, `#12F2E0`, `#F4A340`, Inter, cantos 14–16 px) | `ViewerTheme`, `UiStyle`, `UiDraw`, `FloatingWindow` | **Feito** no UI Toolkit (`Theme.uss`, Inter, `FloatingWindow`); falta o ícone SVG |
+| F14 | Sobreposição de desempenho | `PerformanceOverlay` | **Feito** (F3) |
 
 ## G. Inventário, economia e scripting
 

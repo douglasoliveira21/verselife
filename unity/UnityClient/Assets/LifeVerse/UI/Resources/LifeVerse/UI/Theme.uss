@@ -1,0 +1,142 @@
+/* O tema "vidro escuro" do LifeVerse: as mesmas cores e raios do UiStyle do cliente Godot (medidas nas referências de design), a fonte Inter. */
+
+.lv-root {
+    flex-grow: 1;
+    -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular");
+    font-size: 14px;
+    color: #FFFFFF;
+}
+
+.lv-root Label, .lv-root Button, .lv-root TextField, .lv-root Toggle { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular"); }
+
+.lv-muted { color: #A9B3BD; }
+.lv-dim { color: #7B858C; }
+.lv-small { font-size: 12px; }
+.lv-title-text { font-size: 18px; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
+.lv-bold { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
+.lv-accent { color: #2EE6D0; }
+.lv-good { color: #22C55E; }
+.lv-warn { color: #F59E0B; }
+.lv-bad { color: #FF6B6B; }
+
+/* painéis de vidro */
+.lv-glass {
+    background-color: rgba(27, 38, 46, 0.88);
+    border-width: 1px; border-color: #6D818D;
+    border-radius: 14px;
+    padding: 10px;
+}
+
+.lv-window {
+    position: absolute;
+    background-color: rgba(27, 38, 46, 0.94);
+    border-width: 1px; border-color: #6D818D;
+    border-radius: 14px;
+    min-width: 220px; min-height: 90px;
+}
+.lv-window-title {
+    flex-direction: row; align-items: center; justify-content: space-between;
+    background-color: rgba(30, 42, 55, 0.92);
+    border-top-left-radius: 14px; border-top-right-radius: 14px;
+    border-bottom-width: 1px; border-bottom-color: rgba(109, 129, 141, 0.8);
+    padding: 8px 14px;
+}
+.lv-window-body { padding: 12px; flex-grow: 1; }
+.lv-btn.lv-close { width: 26px; height: 26px; padding: 0; margin: 0; border-radius: 8px; background-color: rgba(0, 0, 0, 0); border-width: 0; font-size: 16px; color: #A9B3BD; }
+.lv-btn.lv-close:hover { background-color: rgba(239, 68, 68, 0.35); color: #FFFFFF; }
+
+/* botões */
+.lv-btn {
+    background-color: #252D33; color: #FFFFFF;
+    border-width: 1px; border-color: #91979B; border-radius: 10px;
+    padding: 7px 14px; margin: 2px;
+    -unity-text-align: middle-center;
+}
+.lv-btn:hover { background-color: #34414A; color: #FFFFFF; }
+.lv-btn:active { background-color: #1A2126; }
+.lv-btn:disabled { background-color: #2B3035; color: #7B858C; border-color: #4E5D67; }
+.lv-btn-primary { background-color: #0A3A3C; border-color: #12F2E0; }
+.lv-btn-primary:hover { background-color: #12706F; }
+.lv-btn-primary:active { background-color: #07292B; }
+.lv-btn-secondary { background-color: #4B3D30; border-color: #F4A340; }
+.lv-btn-secondary:hover { background-color: #6B4E2E; }
+.lv-btn-selected { background-color: #0A3A3C; border-color: #12F2E0; }
+.lv-btn-flat { background-color: rgba(0, 0, 0, 0); border-width: 0; }
+
+/* campos de texto */
+.lv-field TextField, TextField.lv-field { margin: 3px 0; }
+.lv-field .unity-base-text-field__input, TextField.lv-field .unity-base-text-field__input {
+    background-color: #2A3239; color: #FFFFFF;
+    border-width: 1px; border-color: #91979B; border-radius: 10px;
+    padding: 7px 12px;
+}
+TextField.lv-field:focus .unity-base-text-field__input { border-color: #12F2E0; border-width: 2px; }
+
+/* linhas e listas */
+.lv-row { background-color: rgba(35, 45, 54, 0.7); border-radius: 8px; padding: 6px 10px; margin: 2px 0; }
+.lv-divider { height: 1px; background-color: #4E5D67; margin: 8px 0; }
+
+/* barras */
+.lv-bar {
+    background-color: rgba(27, 38, 46, 0.86);
+    border-width: 1px; border-color: #A9BCC3; border-radius: 12px;
+    padding: 6px 12px; flex-direction: row; align-items: center;
+}
+
+/* barra de progresso */
+.lv-progress { height: 6px; background-color: #2A3239; border-radius: 3px; }
+.lv-progress-fill { height: 6px; background-color: #12F2E0; border-radius: 3px; width: 0; }
+
+/* notificações */
+.lv-toast {
+    background-color: rgba(27, 38, 46, 0.95); border-width: 1px; border-color: #6D818D; border-left-width: 4px; border-radius: 10px;
+    padding: 8px 12px; margin: 3px 0; max-width: 360px;
+}
+.lv-toast-info { border-left-color: #12F2E0; }
+.lv-toast-good { border-left-color: #22C55E; }
+.lv-toast-warn { border-left-color: #F59E0B; }
+.lv-toast-bad { border-left-color: #EF4444; }
+
+/* chat */
+.lv-chat-line { margin: 1px 0; white-space: normal; }
+
+/* alternadores */
+.lv-toggle { margin: 4px 0; }
+.lv-toggle .unity-toggle__input { margin-right: 8px; }
+Slider.lv-slider { margin: 4px 0; }
+
+/* controles do UI Toolkit (o tema padrão do runtime está vazio: todo o visual vem daqui) */
+.unity-base-field__label { color: #A9B3BD; min-width: 130px; }
+.unity-base-popup-field__input, .unity-popup-field__input {
+    background-color: #2A3239; color: #FFFFFF; border-width: 1px; border-color: #91979B; border-radius: 10px; padding: 6px 12px; margin: 3px 0; flex-grow: 1;
+}
+.unity-base-popup-field__input:hover { border-color: #12F2E0; }
+.unity-base-popup-field__arrow { background-color: #A9B3BD; width: 10px; height: 10px; -unity-background-scale-mode: scale-to-fit; }
+
+.unity-toggle__input { flex-direction: row; align-items: center; }
+.unity-toggle__checkmark {
+    width: 20px; height: 20px; border-radius: 6px; border-width: 1px; border-color: #91979B; background-color: #2A3239; margin-right: 10px; flex-shrink: 0;
+}
+.unity-toggle__input:checked > .unity-toggle__checkmark { background-color: #12706F; border-color: #12F2E0; }
+.unity-toggle__input:checked > .unity-toggle__checkmark > * { background-color: #FFFFFF; }
+.unity-toggle__input:hover > .unity-toggle__checkmark { border-color: #12F2E0; }
+
+.unity-base-slider__drag-container { flex-grow: 1; }
+.unity-base-slider__tracker { height: 6px; background-color: #2A3239; border-radius: 3px; border-width: 0; margin-top: 0; }
+.unity-base-slider__dragger { width: 18px; height: 18px; border-radius: 9px; background-color: #12F2E0; border-width: 0; top: -6px; }
+.unity-base-slider--horizontal { margin: 6px 0; }
+.unity-base-slider__input { margin: 6px 0; }
+
+.unity-scroll-view__vertical-scroller { width: 10px; }
+.unity-base-slider--vertical .unity-base-slider__tracker, .unity-scroller--vertical .unity-base-slider__tracker { width: 6px; height: auto; }
+.unity-scroller .unity-base-slider__dragger { width: 8px; height: auto; border-radius: 4px; background-color: #6D818D; top: 0; }
+.unity-scroller__low-button, .unity-scroller__high-button { display: none; }
+/* a barra de baixo tem muitos botões: menores */
+.lv-bar .lv-btn { padding: 5px 9px; margin: 1px; font-size: 13px; }
+.lv-mono { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Medium"); }
+
+
+/* itens de uma lista rolável não encolhem (senão se sobrepõem) */
+.unity-scroll-view__content-container > * { flex-shrink: 0; }
+.unity-scroll-view__content-container { flex-shrink: 0; }
+

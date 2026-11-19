@@ -4,7 +4,8 @@
     "references": [
         "LifeVerse.Unity.Core",
         "LifeVerse.Unity.World",
-        "Unity.InputSystem"
+        "Unity.InputSystem",
+        "glTFast"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

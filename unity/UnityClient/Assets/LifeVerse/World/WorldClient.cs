@@ -20,6 +20,8 @@ namespace LifeVerse.Unity.World
         public WorldObjects Objects;
         public IslandEnvironment Environment;   // when set, the island's saved look (hour, weather, fog) is read from the API on joining and applied
         public string Token = "";
+        /// <summary>Gets the bytes of an asset of the island (a texture, a model, a custom body); set when joining through the REST door.</summary>
+        public Func<Guid, System.Threading.Tasks.Task<byte[]>> AssetLoader;
 
         private WireClient _client;
         private float _lastResync = -10f;
@@ -44,6 +46,14 @@ namespace LifeVerse.Unity.World
         public event Action<AppearanceChangedMessage> AppearanceChanged;
         public event Action<GestureChangedMessage> GestureChanged;
         public event Action<WorldSnapshot> SnapshotReceived;
+        public event Action<ReceiveChatMessage> ChatReceived;
+        public event Action<string> DisconnectedBy;
+        public bool SendChat(string text) => Send(new SendChatMessage(text));
+        public event Action<HeadLookChangedMessage> HeadLookChanged;
+        public event Action<VehicleSpawnedMessage> VehicleSpawned;
+        public event Action<IReadOnlyList<LifeVerse.Shared.Vehicles.VehicleSnapshot>> VehicleSnapshotsReceived;
+        public string LastVehicleRejection { get; private set; }
+        public int VehicleSnapshotsSeen { get; private set; }
         public int Snapshots { get; private set; }
 
         /// <summary>One step of movement input for the server (game space: x right, z toward the viewer).</summary>
@@ -53,7 +63,7 @@ namespace LifeVerse.Unity.World
         {
             _client = new WireClient();
             _client.MessageReceived += OnMessage;
-            _client.Disconnected += reason => _log.Add("disconnected: " + reason);
+            _client.Disconnected += reason => { _log.Add("disconnected: " + reason); DisconnectedBy?.Invoke(reason.ToString()); };
             return _client.Connect(host, port);
         }
 
@@ -83,6 +93,13 @@ namespace LifeVerse.Unity.World
                 case DespawnPlayerMessage gone: PlayerDespawned?.Invoke(gone); break;
                 case AppearanceChangedMessage changed: AppearanceChanged?.Invoke(changed); break;
                 case GestureChangedMessage gesture: GestureChanged?.Invoke(gesture); break;
+                case ReceiveChatMessage chat: ChatReceived?.Invoke(chat); break;
+                case HeadLookChangedMessage look: HeadLookChanged?.Invoke(look); break;
+                case VehicleSpawnedMessage car: VehicleSpawned?.Invoke(car); break;
+                case VehicleRejectedMessage refused: LastVehicleRejection = refused.Code; break;
+                case VehicleSnapshotsMessage cars:
+                    if (VehicleCodec.TryDecode(cars.Payload, out _, out var vehicles)) { VehicleSnapshotsSeen++; VehicleSnapshotsReceived?.Invoke(vehicles); }
+                    break;
                 case SnapshotMessage snapshot:
                     if (SnapshotCodec.TryDecode(snapshot.Payload, out var world)) { Snapshots++; SnapshotReceived?.Invoke(world); }
                     break;

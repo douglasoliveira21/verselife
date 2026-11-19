@@ -31,6 +31,96 @@ namespace LifeVerse.Unity.World
 
         public IslandEntryClient(string apiBaseUrl, TimeSpan? timeout = null) { _baseUrl = apiBaseUrl.TrimEnd('/'); _http = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) }; }
 
+                /// <summary>The refresh token and when the access token ends (15 minutes after signing in): the client asks for a new pair a minute before, or when the API refuses the old one.</summary>
+        public string RefreshToken { get; private set; } = "";
+        public DateTimeOffset ExpiresAt { get; private set; } = DateTimeOffset.MaxValue;
+        public int Refreshes { get; private set; }
+        /// <summary>The id of the signed-in person (from the login answer).</summary>
+        public Guid UserId { get; private set; }
+        /// <summary>Told when the session cannot be renewed (the refresh token was refused): the person has to sign in again.</summary>
+        public event Action SessionExpired;
+        private readonly SemaphoreSlim _refreshing = new SemaphoreSlim(1, 1);
+
+        private void KeepSession(JsonElement answer)
+        {
+            UseToken(answer.GetProperty("accessToken").GetString() ?? "");
+            if (answer.TryGetProperty("user", out var user) && user.TryGetProperty("id", out var id) && Guid.TryParse(id.GetString(), out var userId)) UserId = userId;
+            RefreshToken = answer.TryGetProperty("refreshToken", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() ?? "" : "";
+            ExpiresAt = answer.TryGetProperty("accessTokenExpiresAt", out var e) && e.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(e.GetString(), out var when) ? when : DateTimeOffset.MaxValue;
+        }
+
+        /// <summary>Asks for a new pair of tokens. False (and <see cref="SessionExpired"/>) when the API refuses.</summary>
+        public async Task<bool> RefreshAsync(CancellationToken ct = default)
+        {
+            if (RefreshToken.Length == 0) return false;
+            await _refreshing.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                var stale = RefreshToken;
+                using var response = await _http.PostAsync(_baseUrl + "/api/v1/auth/refresh", new StringContent(JsonSerializer.Serialize(new { refreshToken = stale }), Encoding.UTF8, "application/json"), ct).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode) { if ((int)response.StatusCode == 401 || (int)response.StatusCode == 400) { RefreshToken = ""; SessionExpired?.Invoke(); } return false; }
+                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false)); KeepSession(document.RootElement); Refreshes++; return true;
+            }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException || exception is JsonException || exception is KeyNotFoundException) { return false; }
+            finally { _refreshing.Release(); }
+        }
+
+        /// <summary>A request with the access token: renewed first when it is about to end, and once more when the API says 401 and a renewal works.</summary>
+        public async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string json, CancellationToken ct = default)
+        {
+            if (RefreshToken.Length > 0 && ExpiresAt - DateTimeOffset.UtcNow < TimeSpan.FromSeconds(60)) await RefreshAsync(ct).ConfigureAwait(false);
+            HttpRequestMessage Make() => new HttpRequestMessage(method, url) { Content = json == null ? null : new StringContent(json, Encoding.UTF8, "application/json") };
+            var response = await _http.SendAsync(Make(), ct).ConfigureAwait(false);
+            if ((int)response.StatusCode == 401 && RefreshToken.Length > 0 && await RefreshAsync(ct).ConfigureAwait(false)) { response.Dispose(); response = await _http.SendAsync(Make(), ct).ConfigureAwait(false); }
+            return response;
+        }
+
+        /// <summary>Like <see cref="SendAsync"/> for a body that cannot be written twice (a file): <paramref name="make"/> builds it again for the retry after a renewal.</summary>
+        public async Task<HttpResponseMessage> SendContentAsync(HttpMethod method, string url, Func<HttpContent> make, CancellationToken ct = default)
+        {
+            if (RefreshToken.Length > 0 && ExpiresAt - DateTimeOffset.UtcNow < TimeSpan.FromSeconds(60)) await RefreshAsync(ct).ConfigureAwait(false);
+            var response = await _http.SendAsync(new HttpRequestMessage(method, url) { Content = make() }, ct).ConfigureAwait(false);
+            if ((int)response.StatusCode == 401 && RefreshToken.Length > 0 && await RefreshAsync(ct).ConfigureAwait(false)) { response.Dispose(); response = await _http.SendAsync(new HttpRequestMessage(method, url) { Content = make() }, ct).ConfigureAwait(false); }
+            return response;
+        }
+
+        /// <summary>Sends a file to the platform (POST /api/v1/assets/upload with the "file" and "category" fields: objects, textures, sounds, animations, clothing, accessories or models; up to 100 MB). Returns the status and the body.</summary>
+        public Task<(int Status, string Body)> UploadAsync(string fileName, byte[] bytes, string category, string path = "/api/v1/assets/upload", CancellationToken ct = default) =>
+            FileCallAsync(HttpMethod.Post, path, fileName, bytes, category, ct);
+
+        /// <summary>Any call that carries one file as multipart form data (an upload, a new version of an asset).</summary>
+        public async Task<(int Status, string Body)> FileCallAsync(HttpMethod method, string path, string fileName, byte[] bytes, string category, CancellationToken ct = default)
+        {
+            try
+            {
+                HttpContent Make()
+                {
+                    var form = new MultipartFormDataContent(); var file = new ByteArrayContent(bytes); file.Headers.ContentType = new MediaTypeHeaderValue(MimeOf(fileName)); form.Add(file, "file", System.IO.Path.GetFileName(fileName));
+                    if (!string.IsNullOrEmpty(category)) form.Add(new StringContent(category), "category"); return form;
+                }
+                using var response = await SendContentAsync(method, _baseUrl + path, Make, ct).ConfigureAwait(false);
+                return ((int)response.StatusCode, await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return (0, ""); }
+        }
+
+        public static string MimeOf(string fileName) => System.IO.Path.GetExtension(fileName ?? "").ToLowerInvariant() switch
+        {
+            ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", ".gif" => "image/gif", ".glb" => "model/gltf-binary", ".gltf" => "model/gltf+json", ".dae" => "model/vnd.collada+xml",
+            ".wav" => "audio/wav", ".mp3" => "audio/mpeg", ".ogg" => "audio/ogg", _ => "application/octet-stream",
+        };
+
+        /// <summary>Any call of the platform API as the signed-in person: the status and the body ("" when it could not be reached, status 0). <paramref name="path"/> starts with /api/.</summary>
+        public async Task<(int Status, string Body)> ApiAsync(string method, string path, string json = null, CancellationToken ct = default)
+        {
+            try
+            {
+                using var response = await SendAsync(new HttpMethod(method), _baseUrl + path, json, ct).ConfigureAwait(false);
+                return ((int)response.StatusCode, await response.Content.ReadAsStringAsync().ConfigureAwait(false));
+            }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return (0, ""); }
+        }
+
         public void UseToken(string accessToken) { AccessToken = accessToken; _http.DefaultRequestHeaders.Authorization = string.IsNullOrEmpty(accessToken) ? null : new AuthenticationHeaderValue("Bearer", accessToken); }
 
         public async Task<LoginResult> LoginAsync(string login, string password, CancellationToken ct = default)
@@ -42,7 +132,21 @@ namespace LifeVerse.Unity.World
                 if (!response.IsSuccessStatusCode) return new LoginResult { Status = (int)response.StatusCode, Message = LoginMessage((int)response.StatusCode) };
                 using var document = JsonDocument.Parse(body);
                 var token = document.RootElement.GetProperty("accessToken").GetString() ?? "";
-                UseToken(token); return new LoginResult { Ok = token.Length > 0, Status = (int)response.StatusCode, AccessToken = token };
+                KeepSession(document.RootElement); return new LoginResult { Ok = token.Length > 0, Status = (int)response.StatusCode, AccessToken = token };
+            }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException || exception is JsonException || exception is KeyNotFoundException) { return new LoginResult { Message = "Sem resposta da API: " + exception.Message }; }
+        }
+
+        /// <summary>Creates an account (the API signs the new person in and answers with the same tokens as a login).</summary>
+        public async Task<LoginResult> RegisterAsync(string username, string email, string password, CancellationToken ct = default)
+        {
+            try
+            {
+                using var response = await _http.PostAsync(_baseUrl + "/api/v1/auth/register", new StringContent(JsonSerializer.Serialize(new { username, email, password }), Encoding.UTF8, "application/json"), ct).ConfigureAwait(false);
+                var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false); var status = (int)response.StatusCode;
+                if (!response.IsSuccessStatusCode) return new LoginResult { Status = status, Message = status == 409 ? "Esse nome de usuário ou e-mail já está em uso." : status == 400 || status == 422 ? "Os dados não foram aceitos: confira o nome, o e-mail e a senha (de 6 a 128 caracteres, com maiúscula, minúscula e número)." : LoginMessage(status) };
+                using var document = JsonDocument.Parse(body); var token = document.RootElement.GetProperty("accessToken").GetString() ?? "";
+                KeepSession(document.RootElement); return new LoginResult { Ok = token.Length > 0, Status = status, AccessToken = token };
             }
             catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException || exception is JsonException || exception is KeyNotFoundException) { return new LoginResult { Message = "Sem resposta da API: " + exception.Message }; }
         }
@@ -53,7 +157,7 @@ namespace LifeVerse.Unity.World
         {
             try
             {
-                using var response = await _http.PostAsync($"{_baseUrl}/api/v1/worlds/islands/{islandId}/entry-token", new StringContent(string.Empty), ct).ConfigureAwait(false);
+                using var response = await SendAsync(HttpMethod.Post, $"{_baseUrl}/api/v1/worlds/islands/{islandId}/entry-token", string.Empty, ct).ConfigureAwait(false);
                 var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false); var status = (int)response.StatusCode;
                 if (status == 503 && IsStarting(body)) return new EntryResult { Starting = true, Status = status, Message = "Iniciando a ilha…" };
                 if (!response.IsSuccessStatusCode) return new EntryResult { Status = status, Message = EntryFailure(status) };
@@ -84,7 +188,7 @@ namespace LifeVerse.Unity.World
         {
             try
             {
-                using var response = await _http.GetAsync($"{_baseUrl}/api/v1/worlds/islands/{islandId}/snapshot", ct).ConfigureAwait(false);
+                using var response = await SendAsync(HttpMethod.Get, $"{_baseUrl}/api/v1/worlds/islands/{islandId}/snapshot", null, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode) return new IslandSnapshotResult { Status = (int)response.StatusCode };
                 using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync().ConfigureAwait(false));
                 return new IslandSnapshotResult
@@ -96,11 +200,18 @@ namespace LifeVerse.Unity.World
         }
 
         /// <summary>The objects of the island: a JSON array, as the API sends it (null when it could not be read).</summary>
+        /// <summary>The public islands, for the list on the login screen (no sign-in needed).</summary>
+        public async Task<string> GetIslandsAsync(CancellationToken ct = default)
+        {
+            try { using var response = await _http.GetAsync(_baseUrl + "/api/v1/worlds/islands", ct).ConfigureAwait(false); return response.IsSuccessStatusCode ? await response.Content.ReadAsStringAsync().ConfigureAwait(false) : null; }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return null; }
+        }
+
         public async Task<string> GetObjectsAsync(Guid islandId, CancellationToken ct = default)
         {
             try
             {
-                using var response = await _http.GetAsync($"{_baseUrl}/api/v1/worlds/islands/{islandId}/objects", ct).ConfigureAwait(false);
+                using var response = await SendAsync(HttpMethod.Get, $"{_baseUrl}/api/v1/worlds/islands/{islandId}/objects", null, ct).ConfigureAwait(false);
                 return response.IsSuccessStatusCode ? await response.Content.ReadAsStringAsync().ConfigureAwait(false) : null;
             }
             catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return null; }
@@ -111,7 +222,7 @@ namespace LifeVerse.Unity.World
         {
             try
             {
-                using var response = await _http.GetAsync($"{_baseUrl}/api/v1/worlds/islands/{islandId}/environment", ct).ConfigureAwait(false);
+                using var response = await SendAsync(HttpMethod.Get, $"{_baseUrl}/api/v1/worlds/islands/{islandId}/environment", null, ct).ConfigureAwait(false);
                 return response.IsSuccessStatusCode ? await response.Content.ReadAsStringAsync().ConfigureAwait(false) : null;
             }
             catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return null; }
@@ -124,7 +235,7 @@ namespace LifeVerse.Unity.World
             {
                 try
                 {
-                    using var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
+                    using var response = await SendAsync(HttpMethod.Get, url, null, ct).ConfigureAwait(false);
                     if (response.IsSuccessStatusCode) return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
                 }
                 catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { }
