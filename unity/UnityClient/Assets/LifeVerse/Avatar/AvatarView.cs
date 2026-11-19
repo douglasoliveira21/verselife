@@ -21,6 +21,29 @@ namespace LifeVerse.Unity.Avatar
         public float Speed { get; private set; }
         public float Heading { get; private set; }   // degrees about the vertical, the Unity heading of the body
 
+        /// <summary>The short gestures the network carries besides wave and dance (the numbers are those of <c>ExtraGestures.States</c>).</summary>
+        public enum Gesture { None, Applaud, Point, Greet, Laugh, SitFloor }
+        public Gesture ActiveGesture { get; private set; }
+        private float _gestureLeft;
+        private TextMesh _tag;
+        public bool Visible { get; private set; } = true;
+        public Transform NameTag => _tag != null ? _tag.transform : null;
+
+        /// <summary>Plays one of the extra gestures for a few seconds (the island told everybody who can see this person).</summary>
+        public void PlayGesture(int id, float seconds = 2.5f)
+        {
+            if (id < 0 || id >= System.Enum.GetValues(typeof(Gesture)).Length - 1) return;
+            ActiveGesture = (Gesture)(id + 1); _gestureLeft = seconds;
+        }
+
+        public void StopGesture() { ActiveGesture = Gesture.None; _gestureLeft = 0f; }
+
+        /// <summary>Shows or hides the body and the name (the local player's body is hidden in first person).</summary>
+        public void SetVisible(bool visible)
+        {
+            Visible = visible; foreach (var renderer in GetComponentsInChildren<Renderer>(true)) renderer.enabled = visible;
+        }
+
         private Transform _body, _head, _leftArm, _rightArm, _leftLeg, _rightLeg;
         private Vector3 _targetGame, _velocityGame; private float _targetYaw, _sinceSnapshot; private bool _placed;
         private float _phase, _swing, _bodyPitch, _sitDrop;
@@ -62,6 +85,18 @@ namespace LifeVerse.Unity.Avatar
             Part(_head, PrimitiveType.Cube, "Nose", new Vector3(0, -.05f, .5f), new Vector3(.12f, .14f, .25f), skin);
             _leftArm = Limb(_body, "LeftArm", new Vector3(-.29f, 1.46f, 0), .56f, .09f, shirt); _rightArm = Limb(_body, "RightArm", new Vector3(.29f, 1.46f, 0), .56f, .09f, shirt);
             _leftLeg = Limb(_body, "LeftLeg", new Vector3(-.11f, .94f, 0), .94f, .11f, trousers); _rightLeg = Limb(_body, "RightLeg", new Vector3(.11f, .94f, 0), .94f, .11f, trousers);
+            var tag = new GameObject("NameTag"); tag.transform.SetParent(transform, false); tag.transform.localPosition = new Vector3(0f, 2.05f, 0f);
+            _tag = tag.AddComponent<TextMesh>(); _tag.text = DisplayName; _tag.fontSize = 64; _tag.characterSize = .035f; _tag.anchor = TextAnchor.LowerCenter; _tag.alignment = TextAlignment.Center; _tag.color = Color.white;
+            _tag.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); tag.GetComponent<MeshRenderer>().sharedMaterial = _tag.font.material; tag.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        /// <summary>The name turns to face the camera and hides far away; it never shows on one's own body.</summary>
+        private void LateUpdate()
+        {
+            if (_tag == null) return;
+            var camera = Camera.main; var show = Visible && !External && camera != null;
+            if (show) { var away = camera.transform.position - _tag.transform.position; show = away.sqrMagnitude < 45f * 45f; if (show) _tag.transform.rotation = Quaternion.LookRotation(away.normalized, Vector3.up); } // TextMesh is read from its back, so it looks at the camera, not away from it
+            _tag.gameObject.SetActive(show);
         }
 
         /// <summary>A snapshot of the server: where this person is (game space), how fast, which way and what they are doing.</summary>
@@ -122,6 +157,20 @@ namespace LifeVerse.Unity.Avatar
                 case NetworkMotionState.Wave: legL = legR = 0f; armL = 0f; armR = 0f; armSideL = -4f; armSideR = 140f + Mathf.Sin(_phase * 3f) * 22f; break;
                 case NetworkMotionState.Dance: legL = Mathf.Sin(_phase) * 30f; legR = -legL; armL = -(120f + Mathf.Sin(_phase) * 40f); armR = -(120f - Mathf.Sin(_phase) * 40f); drop = Mathf.Abs(Mathf.Sin(_phase)) * .08f; break;
                 case NetworkMotionState.Typing: legL = legR = 0f; armL = armR = -70f; armSideL = armSideR = 6f; break;
+            }
+            if (Speed > .8f && ActiveGesture != Gesture.None) StopGesture();
+            if (ActiveGesture != Gesture.None && motion !=NetworkMotionState.Fly && motion != NetworkMotionState.Swim && motion != NetworkMotionState.Sit)
+            {
+                _gestureLeft -= delta; if (_gestureLeft <= 0f) ActiveGesture = Gesture.None;
+                legL = legR = 0f; armSideL = -4f; armSideR = 4f; armL = armR = 0f; pitch = 0f; drop = 0f;
+                switch (ActiveGesture)
+                {
+                    case Gesture.Applaud: armL = armR = -75f; armSideL = 12f + Mathf.Sin(_phase * 6f) * 14f; armSideR = -armSideL; break;
+                    case Gesture.Point: armR = -95f; armSideR = 4f; break;
+                    case Gesture.Greet: pitch = 38f; armL = armR = 8f; break;
+                    case Gesture.Laugh: pitch = -12f; armL = armR = -50f; drop = Mathf.Abs(Mathf.Sin(_phase * 8f)) * .04f; break;
+                    case Gesture.SitFloor: legL = legR = -85f; armL = armR = -35f; drop = .5f; break;
+                }
             }
             _bodyPitch = Ease(_bodyPitch, pitch, delta); _sitDrop = Ease(_sitDrop, drop, delta);
             _body.localRotation = Quaternion.Euler(_bodyPitch, 0f, 0f); _body.localPosition = new Vector3(0f, -_sitDrop, 0f);

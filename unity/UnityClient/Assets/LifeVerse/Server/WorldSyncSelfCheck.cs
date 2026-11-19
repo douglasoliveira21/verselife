@@ -194,6 +194,28 @@ namespace LifeVerse.Unity.Server
             Expect(!local.State.Flying && local.GamePosition.y - ground < .3f, "pousou: " + (local.GamePosition.y - ground)); _checks++;
             Expect(local.LastError < 1f, "a previsão acompanhou o servidor o tempo todo: " + local.LastError); _checks++;
 
+            // gestures: waving travels as an input flag and reaches the other player as a motion state; applauding is told once through the gesture message
+            input = new PlayerInputSample(); yield return new WaitForSeconds(.3f);
+            Expect(local.StartGesture("wave"), "acenar é aceito parado");
+            yield return Until(() => viewer.Views.TryGetSnapshot(peer, out var s) && s.Motion == NetworkMotionState.Wave, "o outro jogador ver o aceno");
+            yield return null; var armOut = Mathf.Abs(Mathf.DeltaAngle(0f, remote.RightArm.localEulerAngles.z));
+            Expect(armOut > 100f, "o braço do outro jogador sobe ao acenar: " + armOut); _checks++;
+            yield return new WaitForSeconds(2.6f);
+            Expect(local.StartGesture("applaud"), "aplaudir é aceito");
+            yield return Until(() => remote.ActiveGesture == AvatarView.Gesture.Applaud, "o outro jogador ver os aplausos (mensagem de gesto)"); _checks++;
+            Expect(editor.Views.ViewOf(peer).ActiveGesture == AvatarView.Gesture.Applaud, "e o próprio corpo também aplaude"); _checks++;
+            local.Scripted = () => new PlayerInputSample { Forward = 1f }; yield return new WaitForSeconds(.4f); local.Scripted = () => default;
+            Expect(remote.ActiveGesture == AvatarView.Gesture.None, "andar interrompe o gesto"); _checks++;
+            Expect(remote.NameTag != null && remote.NameTag.GetComponent<TextMesh>().text == "editor", "o nome do jogador flutua sobre o corpo"); _checks++;
+
+            // first person: the body is not drawn from the inside and the eyes are at head height
+            follow.SetFirstPerson(true); yield return new WaitForSeconds(.4f);
+            Expect(!editor.Views.ViewOf(peer).Visible && follow.FirstPerson, "em primeira pessoa o próprio corpo some"); _checks++;
+            if (_camera != null) Expect(Mathf.Abs(follow.Focus.y - (local.GamePosition.y + FollowCamera.EyeHeight)) < .02f && Vector3.Distance(_camera.transform.position, GameSpace.ToUnity(local.GamePosition) + Vector3.up * FollowCamera.EyeHeight) < .1f, "os olhos ficam na altura da cabeça: " + _camera.transform.position);
+            if (_shots != null) { follow.Yaw = 40f; follow.Pitch = 4f; yield return Shot("firstperson"); }
+            follow.SetFirstPerson(false); yield return new WaitForSeconds(.3f);
+            Expect(editor.Views.ViewOf(peer).Visible && !follow.FirstPerson, "de volta à terceira pessoa o corpo aparece"); _checks++;
+
             if (_shots != null)
             {
                 viewer.Views.gameObject.SetActive(false); local.Scripted = () => new PlayerInputSample { Forward = 1f, Run = true };
@@ -203,6 +225,13 @@ namespace LifeVerse.Unity.Server
             }
             local.Scripted = () => default; yield return new WaitForSeconds(.3f);
             UnityEngine.Object.Destroy(local); UnityEngine.Object.Destroy(follow);
+            if (_shots != null)
+            {
+                // the other player seen from the front with the name over the head, and a wave
+                yield return null; var other = editor.Views.ViewOf(viewer.Client.SelfPeerId); other.PlayGesture(0, 30f);
+                var spot = other.GamePosition; _camera.transform.position = GameSpace.ToUnity(spot.x + .8f, spot.y + 1.7f, spot.z - 3.2f); _camera.transform.LookAt(GameSpace.ToUnity(spot.x, spot.y + 1.5f, spot.z));
+                yield return Shot("people"); other.StopGesture();
+            }
         }
 
         private static string JsonString(string text) => System.Text.Json.JsonSerializer.Serialize(text);

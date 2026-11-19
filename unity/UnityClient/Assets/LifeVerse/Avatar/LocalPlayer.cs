@@ -72,6 +72,7 @@ namespace LifeVerse.Unity.Avatar
         {
             var keyboard = Keyboard.current;
             if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; }
+            GestureKeys();
             Advance(Time.deltaTime);
         }
 
@@ -82,8 +83,42 @@ namespace LifeVerse.Unity.Avatar
             _accumulator = Mathf.Min(_accumulator + delta, .25f);
             while (_accumulator >= Step) { _accumulator -= Step; StepOnce(); }
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
-            if (view != null) { view.External = true; view.SetPose(GamePosition, HeadingDegrees, new Vector3(State.VelocityX, State.VelocityY, State.VelocityZ), Motion); }
-            if (Follow != null) Follow.Follow(GamePosition);
+            if (view != null)
+            {
+                view.External = true; view.SetPose(GamePosition, HeadingDegrees, new Vector3(State.VelocityX, State.VelocityY, State.VelocityZ), Motion);
+                if (Follow != null && view.Visible == Follow.FirstPerson) view.SetVisible(!Follow.FirstPerson);   // one's own body is not drawn from the inside
+            }
+            if (Follow != null)
+            {
+                var h = Follow.Yaw * Mathf.Deg2Rad; var strafe = State.VelocityX * Mathf.Cos(h) + State.VelocityZ * Mathf.Sin(h);   // the part of the velocity along the camera's right
+                Follow.Follow(GamePosition, Mathf.Sqrt(State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ), State.Grounded, strafe);
+            }
+        }
+
+        // ---- gestures: wave and dance are input flags the server turns into a motion state (sent every step while they last); the others are told once ----
+        private float _waveLeft, _danceLeft;
+        public const float WaveSeconds = 2.5f, DanceSeconds = 5f;
+        public bool Gesturing => _waveLeft > 0f || _danceLeft > 0f || (Views != null && Views.ViewOf(Client.SelfPeerId) is { } own && own.ActiveGesture != AvatarView.Gesture.None);
+
+        /// <summary>Starts a gesture by name: wave, dance, applaud, point, greet, laugh, sitfloor. Not while sitting, flying, swimming or moving.</summary>
+        public bool StartGesture(string name)
+        {
+            if (!Spawned || State.Seated || State.Flying || State.Swimming) return false;
+            switch (name)
+            {
+                case "wave": _waveLeft = WaveSeconds; _danceLeft = 0f; return true;
+                case "dance": _danceLeft = DanceSeconds; _waveLeft = 0f; return true;
+            }
+            var id = System.Array.IndexOf(new[] { "applaud", "point", "greet", "laugh", "sitfloor" }, name); if (id < 0) return false;
+            _waveLeft = _danceLeft = 0f; Client.Send(new GestureMessage(id)); Views?.ViewOf(Client.SelfPeerId)?.PlayGesture(id, ExtraGestures.Seconds); return true;
+        }
+
+        private void GestureKeys()
+        {
+            var keyboard = Keyboard.current; if (keyboard == null) return;
+            if (keyboard.gKey.wasPressedThisFrame) StartGesture("wave"); if (keyboard.hKey.wasPressedThisFrame) StartGesture("dance");
+            if (keyboard.jKey.wasPressedThisFrame) StartGesture("applaud"); if (keyboard.kKey.wasPressedThisFrame) StartGesture("point");
+            if (keyboard.lKey.wasPressedThisFrame) StartGesture("greet"); if (keyboard.nKey.wasPressedThisFrame) StartGesture("laugh");
         }
 
         private void StepOnce()
@@ -103,6 +138,9 @@ namespace LifeVerse.Unity.Avatar
             var x = fx * sample.Forward + rx * sample.Right; var z = fz * sample.Forward + rz * sample.Right;
             var length = Mathf.Sqrt(x * x + z * z); if (length > 1f) { x /= length; z /= length; }
             var flags = InputFlags.None;
+            // moving, jumping, flying or sitting ends a gesture
+            if (length > .05f || sample.Jump || sample.Fly || sample.Sit || State.Flying || State.Seated || State.Swimming) { _waveLeft = _danceLeft = 0f; Views?.ViewOf(Client.SelfPeerId)?.StopGesture(); }
+            if (_waveLeft > 0f) { flags |= InputFlags.Wave; _waveLeft -= Step; } else if (_danceLeft > 0f) { flags |= InputFlags.Dance; _danceLeft -= Step; }
             if (sample.Run) flags |= InputFlags.Run; if (sample.Jump) flags |= InputFlags.Jump; if (sample.Descend) flags |= InputFlags.Descend;
             if (sample.Fly) flags |= InputFlags.Fly; if (sample.Sit) flags |= InputFlags.Sit; if (sample.Typing) flags |= InputFlags.Typing;
             Sequence++; Client.SendInput(Sequence, x, z, flags);

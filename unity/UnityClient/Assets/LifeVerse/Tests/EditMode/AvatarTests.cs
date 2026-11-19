@@ -49,6 +49,26 @@ namespace LifeVerse.Unity.Tests.EditMode
         }
 
         [Test]
+        public void AGestureLastsItsTimeAndWalkingEndsIt()
+        {
+            var view = Make(); view.ApplySnapshot(new PlayerSnapshot(1, 0, 0, 0, 0, 0, 0, 0f, NetworkMotionState.Idle, 0));
+            view.PlayGesture(0, 1f); Assert.AreEqual(AvatarView.Gesture.Applaud, view.ActiveGesture); view.Tick(.5f); Assert.AreEqual(AvatarView.Gesture.Applaud, view.ActiveGesture);
+            view.Tick(.6f); Assert.AreEqual(AvatarView.Gesture.None, view.ActiveGesture);
+            view.PlayGesture(2, 5f); view.ApplySnapshot(new PlayerSnapshot(1, 0, 0, 0, 0, 0, -3f, 0f, NetworkMotionState.Walk, 0)); view.Tick(.05f);
+            Assert.AreEqual(AvatarView.Gesture.None, view.ActiveGesture);
+            view.PlayGesture(99); Assert.AreEqual(AvatarView.Gesture.None, view.ActiveGesture, "um número de gesto que a rede não carrega é ignorado");
+        }
+
+        [Test]
+        public void HidingTheBodyHidesEveryPartAndShowingBringsThemBack()
+        {
+            var view = Make(); view.SetVisible(false);
+            foreach (var renderer in view.GetComponentsInChildren<Renderer>(true)) Assert.IsFalse(renderer.enabled);
+            view.SetVisible(true); Assert.IsTrue(view.Visible);
+            foreach (var renderer in view.GetComponentsInChildren<Renderer>(true)) Assert.IsTrue(renderer.enabled);
+        }
+
+        [Test]
         public void ARemoteBodyFollowsTheSnapshotsAndASnapshotFarAwayMovesItAtOnce()
         {
             var view = Make(); view.ApplySnapshot(new PlayerSnapshot(1, 0, 0, 0, 0, 0, 0, 0f, NetworkMotionState.Idle, 0));

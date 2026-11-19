@@ -157,3 +157,15 @@ Novo assembly `LifeVerse.Unity.Avatar` (`Assets/LifeVerse/Avatar`); o `WorldClie
 **Verificação**: `-lifeverse-world-selfcheck` com 49 verificações (as de antes mais 14 de pessoas) contra o servidor real: o jogador anda 7,9 m em 2,5 s (3,2 m/s), servidor e previsão a 3 cm, 0 correções; corre a 6,4 m/s; pula 1,4 m e volta ao chão; o servidor o põe em voo e ele sobe, desce e pousa; o outro jogador vê o corpo, o estado, a direção e as pernas balançando. 26 de 26 testes de modo Edit (5 novos). Foto: `avatar-third-person.png`.
 
 **Não feito nesta parte**: o corpo do `HumanoidTemplate` e as animações compartilhadas (`AnimationClips`), corpos GLB, roupas e anexos, aparência, primeira pessoa e olhar, gestos, sentar em assentos, nadar com água por volta, veículos, obstáculos dos objetos na previsão (o servidor corrige), passos, nomes sobre a cabeça, e a interface. Os controles não foram testados com um teclado de verdade (os testes usam a entrada por script; o ambiente não tem teclado).
+
+### Fase 8, segunda parte: gestos, primeira pessoa e nomes
+
+**Gestos.** Acenar (G, 2,5 s) e dançar (H, 5 s) viajam como flags de entrada que o servidor transforma em estado de movimento; **achado**: o servidor não segura o estado (a flag é limpa após um passo), então o cliente reenvia a flag a cada passo enquanto o gesto dura. Aplaudir (J), apontar (K), cumprimentar (L), rir (N) e sentar no chão vão uma vez pela `GestureMessage` e o servidor repassa aos outros, que tocam por 2,5 s (`ExtraGestures.Seconds`). Andar, pular, voar, nadar ou sentar encerra o gesto. `LocalPlayer.StartGesture(nome)` é o ponto de entrada para a interface futura.
+
+**Primeira pessoa (V).** `FollowCamera.SetFirstPerson`: olhos a 1,62 m, mouse com o cursor travado, e as regras compartilhadas do Godot (`HeadBob`, `CameraSway`, `EyeStabilizer` de `shared/Camera`); o próprio corpo some. Falta a colisão dos olhos com objetos (`EyeCollision` não ligada), as mãos e o olhar. O C do Godot (primeira pessoa) está no Unity como descer; a tecla V alterna a câmera.
+
+**Nomes.** `TextMesh` sobre a cabeça, de frente para a câmera, some além de 45 m e no próprio corpo. Funciona no HDRP; o texto fica um pouco apagado (sombreador de fonte do Unity).
+
+**Verificação**: self-check com 56 verificações (7 novas: o aceno chega como estado e levanta o braço do outro, o aplauso chega pela mensagem, andar o interrompe, o nome, os olhos em primeira pessoa e o corpo escondido); 28 de 28 testes Edit. Fotos: `avatar-people-nametag.png`, `avatar-first-person.png`.
+
+**Ainda não**: as animações compartilhadas (`AnimationClips`) e o corpo do `HumanoidTemplate` (o corpo atual não tem ossos padrão), corpos GLB, aparência/roupas/anexos, mãos e olhar, sentar em assentos, veículos, passos.

@@ -25,8 +25,10 @@ namespace LifeVerse.Unity.Avatar
         public void Attach(WorldClient client)
         {
             Client = client;
-            client.PlayerSpawned += OnSpawn; client.PlayerDespawned += OnDespawn; client.SnapshotReceived += OnSnapshot;
+            client.PlayerSpawned += OnSpawn; client.PlayerDespawned += OnDespawn; client.SnapshotReceived += OnSnapshot; client.GestureChanged += OnGesture;
         }
+
+        private void OnGesture(GestureChangedMessage gesture) { if (_views.TryGetValue(gesture.PeerId, out var view)) view.PlayGesture(gesture.GestureId, ExtraGestures.Seconds); }
 
         private static Color ColorOf(string name)
         {
@@ -60,6 +62,6 @@ namespace LifeVerse.Unity.Avatar
             }
         }
 
-        private void OnDestroy() { if (Client != null) { Client.PlayerSpawned -= OnSpawn; Client.PlayerDespawned -= OnDespawn; Client.SnapshotReceived -= OnSnapshot; } }
+        private void OnDestroy() { if (Client != null) { Client.PlayerSpawned -= OnSpawn; Client.PlayerDespawned -= OnDespawn; Client.SnapshotReceived -= OnSnapshot; Client.GestureChanged -= OnGesture; } }
     }
 }
