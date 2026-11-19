@@ -51,7 +51,17 @@ namespace LifeVerse.Unity.Server
         public Task<LocationAnswer> SaveLocationsAsync(IReadOnlyList<PlayerLocation> players, CancellationToken ct) => Task.FromResult(new LocationAnswer(players.Count, null));
         public Task<int> ConfirmArrivalAsync(Guid transferId, CancellationToken ct) => Task.FromResult(204);
         public Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct) => Task.FromResult<IReadOnlyList<VehicleRow>>(Array.Empty<VehicleRow>());
-        public Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct) => Task.FromResult((404, "{}"));
+                /// <summary>Accepts create, update and delete the way the real API answers them: the object as the island will see it ("objectState"), or the id of what went away.</summary>
+        public Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct)
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(json); var root = document.RootElement; var operation = root.GetProperty("operation").GetString();
+            if (operation == "delete") return Task.FromResult((200, "{\"operation\":\"delete\",\"objectId\":\"" + root.GetProperty("objectId").GetGuid() + "\"}"));
+            if (operation != "create" && operation != "update") return Task.FromResult((404, "{}"));
+            var id = operation == "create" ? Guid.NewGuid() : root.GetProperty("objectId").GetGuid(); var fields = new Dictionary<string, object>();
+            foreach (var property in root.GetProperty("object").EnumerateObject()) fields[property.Name] = property.Value.ValueKind == System.Text.Json.JsonValueKind.Number ? (object)property.Value.GetDouble() : property.Value.ValueKind == System.Text.Json.JsonValueKind.String ? property.Value.GetString() : null;
+            fields["id"] = id; fields["ownerUserId"] = root.GetProperty("userId").GetGuid(); fields["revision"] = 1;
+            return Task.FromResult((200, System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object> { ["operation"] = operation, ["objectId"] = id, ["objectState"] = fields })));
+        }
         public Task<string> LandSyncAsync(long cursor, CancellationToken ct) => Task.FromResult<string>(null);
         public Task<(int Status, string Body)> GetAppearanceAsync(Guid avatarId, CancellationToken ct) => Task.FromResult((404, "{}"));
         public Task DeregisterAsync(CancellationToken ct) => Task.CompletedTask;

@@ -31,6 +31,7 @@ namespace LifeVerse.Unity.World
         private Texture2D _albedo;
         private MeshFilter _filter;
         private MeshRenderer _renderer;
+        private MeshCollider _collider;
         private Material _material;
         /// <summary>Texels per side of the baked ground texture.</summary>
         public int AlbedoSize = 1024;
@@ -51,6 +52,9 @@ namespace LifeVerse.Unity.World
             var prototype = Resources.Load<Material>("LifeVerse/TerrainMaterial");
             _material = prototype != null ? new Material(prototype) : new Material(Shader.Find("HDRP/Lit"));
             _renderer.sharedMaterial = _material;
+            // like the Godot terrain (CastShadow Off): the ground receives the shadows of objects but does not cast its own, which in HDRP shadowed the whole ground around the camera
+            _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _collider = gameObject.AddComponent<MeshCollider>(); // the ground the avatar will stand on; rebuilt with the mesh (the server simulates the same heights)
         }
 
         public void Apply(TerrainMap map) { Create(); _map = map; Rebuild(); }
@@ -72,22 +76,33 @@ namespace LifeVerse.Unity.World
                 for (var x = 0; x < count; x++)
                 {
                     var i = z * count + x;
-                    vertices[i] = new Vector3(x * size - half, _map.HeightAt(x, z), z * size - half);
-                    normals[i] = new Vector3(_map.HeightAt(x - 1, z) - _map.HeightAt(x + 1, z), 2f * size, _map.HeightAt(x, z - 1) - _map.HeightAt(x, z + 1)).normalized;
+                    vertices[i] = GameSpace.ToUnity(x * size - half, _map.HeightAt(x, z), z * size - half); // the game's z axis is flipped on screen (see GameSpace)
+                    normals[i] = GameSpace.ToUnity(new Vector3(_map.HeightAt(x - 1, z) - _map.HeightAt(x + 1, z), 2f * size, _map.HeightAt(x, z - 1) - _map.HeightAt(x, z + 1)).normalized);
                     uv[i] = new Vector2((float)x / cells, (float)z / cells);
                 }
             var indices = new int[cells * cells * 6]; var n = 0;
             for (var z = 0; z < cells; z++)
                 for (var x = 0; x < cells; x++)
                 {
-                    var a = z * count + x; // clockwise seen from above: Unity draws the front face of a clockwise triangle
-                    indices[n++] = a; indices[n++] = a + count; indices[n++] = a + 1;
-                    indices[n++] = a + 1; indices[n++] = a + count; indices[n++] = a + count + 1;
+                    var a = z * count + x; // the same order as the Godot client: with z flipped it is clockwise seen from above, the front face in Unity
+                    indices[n++] = a; indices[n++] = a + 1; indices[n++] = a + count;
+                    indices[n++] = a + 1; indices[n++] = a + count + 1; indices[n++] = a + count;
                 }
             if (_mesh == null) _mesh = new Mesh { name = "IslandTerrain", indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
             _mesh.Clear(); _mesh.vertices = vertices; _mesh.normals = normals; _mesh.uv = uv; _mesh.triangles = indices; _mesh.RecalculateBounds(); _mesh.RecalculateTangents();
             _filter.sharedMesh = _mesh;
+            _collider.sharedMesh = null; _collider.sharedMesh = _mesh;
         }
+
+        /// <summary>The first point of the ground on a ray, or null. Uses the collider, so it follows every edit the server sent.</summary>
+        public Vector3? Raycast(Ray ray, float distance = 1000f) // a ray of the Unity scene; the answer is a Unity point (GameSpace.ToGame turns it back)
+        {
+            Physics.SyncTransforms();
+            return _collider != null && _collider.Raycast(ray, out var hit, distance) ? hit.point : (Vector3?)null;
+        }
+
+        /// <summary>The ground height under a place, or null off the island. Same answer as the server's TerrainMap.SampleHeight, through the collider.</summary>
+        public float? GroundHeight(float worldX, float worldZ) => Raycast(new Ray(GameSpace.ToUnity(worldX, TerrainMap.MaxHeight + 10f, worldZ), Vector3.down), TerrainMap.MaxHeight - TerrainMap.MinHeight + 20f) is { } hit ? hit.y : (float?)null;
 
         /// <summary>Large, slow variation over the island (periodic over 256 m): bends the tiles of the ground layers and lights and darkens big patches, so the 5 m repeat of the layer texture does not show.</summary>
         private static float[] Macro() => _macro ??= ProceduralTextures.Fbm(128, 4, 4, 77);
@@ -136,6 +151,10 @@ namespace LifeVerse.Unity.World
                         var sample = Sample(layers[layer], u, v); var large = Sample(layers[layer], u2, v2).r / 255f; var factor = (.78f + .44f * large) * patch * weights[layer];
                         r += sample.r * factor; g += sample.g * factor; b += sample.b * factor;
                     }
+                    // the shore: where the ground is within a metre of the sea level, a band of foam (the Godot ocean draws it from the depth under the water)
+                    var heightHere = _map.SampleHeight(worldX, worldZ); var offset = heightHere - _map.SeaLevel;
+                    var foam = (1f - Mathf.SmoothStep(0f, 1f, Mathf.Abs(offset + .2f) / .55f)) * Mathf.SmoothStep(.25f, .75f, MacroAt(worldX * 3f, worldZ * 3f, 5) + .2f);
+                    if (foam > 0f) { r = Mathf.Lerp(r / total, 240f, foam * .7f) * total; g = Mathf.Lerp(g / total, 245f, foam * .7f) * total; b = Mathf.Lerp(b / total, 250f, foam * .7f) * total; }
                     pixels[(j - j0) * width + (i - i0)] = new Color32((byte)Mathf.Clamp(r / total, 0, 255), (byte)Mathf.Clamp(g / total, 0, 255), (byte)Mathf.Clamp(b / total, 0, 255), 255);
                 }
             }

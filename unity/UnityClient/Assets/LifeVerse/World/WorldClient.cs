@@ -16,6 +16,7 @@ namespace LifeVerse.Unity.World
     {
         public TerrainView Terrain;
         public OceanView Ocean;
+        public WorldObjects Objects;
         public string Token = "";
 
         private WireClient _client;
@@ -30,6 +31,7 @@ namespace LifeVerse.Unity.World
         public int ResyncsAsked { get; private set; }
         public int TerrainMessages { get; private set; }
         public string LastTerrainRejection { get; private set; }
+        public string LastBuildRejection { get; private set; }
         public IReadOnlyList<string> Log => _log;
         /// <summary>Told when the server accepts a person: the number the server gave this player (their id in snapshots).</summary>
         public int SelfPeerId { get; private set; } = -1;
@@ -73,6 +75,8 @@ namespace LifeVerse.Unity.World
                     TerrainMessages++;
                     if (!Terrain.ApplySeaLevel(sea.Level, sea.Revision)) Resync("sea"); else if (Ocean != null) Ocean.SeaLevel = Terrain.Map.SeaLevel;
                     break;
+                case BuildOperationAppliedMessage applied: Objects?.ApplyOperation(applied.OperationJson); break;
+                case BuildOperationRejectedMessage refused: LastBuildRejection = refused.Code; break;
                 case TerrainEditRejectedMessage rejection: LastTerrainRejection = rejection.Code; break;
             }
         }

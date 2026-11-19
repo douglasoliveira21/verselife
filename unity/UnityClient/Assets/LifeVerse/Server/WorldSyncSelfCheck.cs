@@ -25,7 +25,7 @@ namespace LifeVerse.Unity.Server
             new GameObject("World Sync Self Check").AddComponent<WorldSyncSelfCheck>();
         }
 
-        private sealed class Player { public WorldClient Client; public TerrainView Terrain; public OceanView Ocean; }
+        private sealed class Player { public WorldClient Client; public TerrainView Terrain; public OceanView Ocean; public WorldObjects Objects; }
 
         private IslandServerCore _server;
         private int _checks;
@@ -36,11 +36,16 @@ namespace LifeVerse.Unity.Server
         {
             var args = Environment.GetCommandLineArgs(); var index = Array.IndexOf(args, "-lifeverse-world-shots"); if (index < 0 || index + 1 >= args.Length) return;
             _shots = args[index + 1];
-            foreach (var other in hidden) { other.Terrain.GetComponent<MeshRenderer>().enabled = false; other.Ocean.gameObject.SetActive(false); }
+            foreach (var other in hidden) { other.Terrain.GetComponent<MeshRenderer>().enabled = false; other.Ocean.gameObject.SetActive(false); other.Objects.gameObject.SetActive(false); }
             var cameraObject = new GameObject("Camera") { tag = "MainCamera" }; _camera = cameraObject.AddComponent<Camera>(); _camera.nearClipPlane = .2f; _camera.farClipPlane = 6000f; _camera.fieldOfView = 62f;
             cameraObject.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
-            cameraObject.transform.position = new Vector3(-95, 26, -150); cameraObject.transform.LookAt(new Vector3(0, 8, 0)); viewer.Ocean.Camera = _camera;
+            cameraObject.transform.position = GameSpace.ToUnity(-95, 26, -150); cameraObject.transform.LookAt(GameSpace.ToUnity(0, 8, 0)); viewer.Ocean.Camera = _camera;
+            if (args.Contains("-lifeverse-no-ocean")) viewer.Ocean.gameObject.SetActive(false); // to tell what is the ocean's doing in a photo and what is not
+            var hide = Array.IndexOf(args, "-lifeverse-hide"); var hidden2 = hide >= 0 && hide + 1 < args.Length ? args[hide + 1].Split(',') : new string[0];
             _environment = new GameObject("Environment").AddComponent<IslandEnvironment>(); _environment.Initialize(_camera, -.8f); _environment.DayNightCycle = false; _environment.Hour = 14f;
+            if (args.Contains("-lifeverse-terrain-noshadow")) viewer.Terrain.GetComponent<MeshRenderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            if (args.Contains("-lifeverse-no-shadows")) _environment.Sun.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalLightData>().EnableShadows(false);
+            foreach (var name in hidden2) foreach (var t in _environment.GetComponentsInChildren<Transform>(true)) if (t.name == name) t.gameObject.SetActive(false); // to bisect what makes a shadow in a photo
         }
 
         private IEnumerator Shot(string name)
@@ -68,8 +73,9 @@ namespace LifeVerse.Unity.Server
             var root = new GameObject(name);
             var terrain = new GameObject(name + " terrain").AddComponent<TerrainView>(); terrain.transform.SetParent(root.transform); terrain.AlbedoSize = 256; terrain.Apply(new TerrainMap());
             var ocean = new GameObject(name + " ocean").AddComponent<OceanView>(); ocean.transform.SetParent(root.transform);
-            var client = root.AddComponent<WorldClient>(); client.Terrain = terrain; client.Ocean = ocean; client.Token = name;
-            return new Player { Client = client, Terrain = terrain, Ocean = ocean };
+            var objects = new GameObject(name + " objects").AddComponent<WorldObjects>(); objects.transform.SetParent(root.transform);
+            var client = root.AddComponent<WorldClient>(); client.Terrain = terrain; client.Ocean = ocean; client.Objects = objects; client.Token = name;
+            return new Player { Client = client, Terrain = terrain, Ocean = ocean, Objects = objects };
         }
 
         private static void Expect(bool condition, string what) { if (!condition) throw new InvalidOperationException(what); }
@@ -94,6 +100,85 @@ namespace LifeVerse.Unity.Server
             }
             if (_server != null) { _server.RequestStop(); var stopping = _server.StopAsync(); var until = Time.realtimeSinceStartup + 5; while (!stopping.IsCompleted && Time.realtimeSinceStartup < until) yield return null; }
             if (error != null) fail(error.Message);
+        }
+
+        private static string Create(string type, float x, float y, float z, float sx, float sy, float sz, string material = "{}", float ry = 0) =>
+            "{\"operation\":\"create\",\"expectedRevision\":0,\"object\":{\"primitiveType\":\"" + type + "\",\"positionX\":" + x.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"positionY\":" + y.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"positionZ\":" + z.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + ",\"rotationX\":0,\"rotationY\":" + ry.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"rotationZ\":0,\"scaleX\":" + sx.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"scaleY\":" + sy.ToString(System.Globalization.CultureInfo.InvariantCulture) + ",\"scaleZ\":" + sz.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            + ",\"materialJson\":" + System.Text.Json.JsonSerializer.Serialize(material) + "}}";
+
+        private IEnumerator Objects(Player editor, Player viewer)
+        {
+            var sends = new[]
+            {
+                Create("cube", -10, 1.5f, -30, 6, 3, 5, "{\"color\":\"#C94F3D\",\"roughness\":0.8}"),                   // a wall
+                Create("cone", -10, 4.5f, -30, 7, 3, 6, "{\"color\":\"#4A3426\"}", 0),                                   // its roof
+                Create("cylinder", 8, 1.5f, -30, 2, 3, 2, "{\"color\":\"#E8E2D0\",\"metallic\":0.2,\"roughness\":0.4}"), // a column
+                Create("sphere", 16, 1.2f, -26, 2.4f, 2.4f, 2.4f, "{\"color\":\"#3B6FE0\",\"emission\":\"#3B6FE0\",\"emissionStrength\":2}"), // a lamp
+                Create("cube", 0, 1.2f, -22, 5, 2.4f, 0.4f, "{\"color\":\"#9CD8F0\",\"transparency\":0.35}"),            // glass
+                Create("torus", 24, 1.6f, -34, 3, 3, 3, "{\"color\":\"#E0B03B\",\"metallic\":0.9,\"roughness\":0.25}"),
+                Create("cube", 30, 1f, -24, 3, 2, 3, "{\"color\":\"#6AA84F\",\"faces\":[{\"index\":0,\"color\":\"#FF00AA\"}]}", 35),
+            };
+            foreach (var json in sends) { editor.Client.Send(new SubmitBuildOperationMessage(json)); yield return null; }
+            yield return Until(() => viewer.Objects.Count == sends.Length && editor.Objects.Count == sends.Length, $"os {sends.Length} objetos chegarem aos dois jogadores");
+            _checks++;
+            var wall = viewer.Objects.Ids.Select(id => viewer.Objects.StateOf(id)).First(s => s.PrimitiveType == "cube" && s.PositionX == -10);
+            var view = viewer.Objects.ViewOf(wall.Id);
+            Expect(Vector3.Distance(view.transform.position, GameSpace.ToUnity(-10, 1.5f, -30)) < 1e-4f, "a posição do objeto passa por GameSpace (z invertido)"); _checks++;
+            Expect(Mathf.Approximately(view.transform.localScale.x, 6f) && view.GetComponent<MeshFilter>().sharedMesh.subMeshCount >= 6, "escala e uma superfície por face"); _checks++;
+            var tilted = viewer.Objects.Ids.Select(id => viewer.Objects.StateOf(id)).First(s => s.PositionX == 30);
+            Expect(Mathf.Abs(Quaternion.Angle(viewer.Objects.ViewOf(tilted.Id).transform.rotation, GameSpace.RotationToUnity(0, 35, 0))) < .01f, "rotação de 35 graus"); _checks++;
+            var materials = view.GetComponent<MeshRenderer>().sharedMaterials; var wallColor = materials[0].GetColor("_BaseColor");
+            Expect(Mathf.Abs(wallColor.r - 0xC9 / 255f) < .01f, "a cor do material vem do JSON"); _checks++;
+            var glass = viewer.Objects.Ids.Select(id => viewer.Objects.StateOf(id)).First(s => s.PositionX == 0 && s.PositionY == 1.2f);
+            Expect(Mathf.Abs(viewer.Objects.ViewOf(glass.Id).GetComponent<MeshRenderer>().sharedMaterials[0].GetColor("_BaseColor").a - .35f) < .01f, "a transparência vira alfa"); _checks++;
+
+            // an update moves it for everybody; a delete removes it
+            editor.Client.Send(new SubmitBuildOperationMessage("{\"operation\":\"update\",\"expectedRevision\":1,\"objectId\":\"" + wall.Id + "\",\"object\":{\"primitiveType\":\"cube\",\"positionX\":-10,\"positionY\":1.5,\"positionZ\":-40,\"rotationX\":0,\"rotationY\":0,\"rotationZ\":0,\"scaleX\":6,\"scaleY\":3,\"scaleZ\":5,\"materialJson\":\"{\\\"color\\\":\\\"#C94F3D\\\"}\"}}"));
+            yield return Until(() => Vector3.Distance(viewer.Objects.ViewOf(wall.Id).transform.position, GameSpace.ToUnity(-10, 1.5f, -40)) < 1e-3f, "a atualização mover o objeto"); _checks++;
+            editor.Client.Send(new SubmitBuildOperationMessage("{\"operation\":\"delete\",\"expectedRevision\":1,\"objectId\":\"" + wall.Id + "\"}"));
+            yield return Until(() => viewer.Objects.Count == sends.Length - 1 && !viewer.Objects.Has(wall.Id), "a exclusão tirar o objeto"); _checks++;
+            editor.Client.Send(new SubmitBuildOperationMessage(Create("cube", -10, 1.5f, -30, 6, 3, 5, "{\"color\":\"#C94F3D\",\"roughness\":0.8}"))); // the wall again, for the photo
+            yield return Until(() => viewer.Objects.Count == sends.Length, "a parede de novo");
+            if (_shots != null) { _camera.transform.position = GameSpace.ToUnity(-12, 9, -66); _camera.transform.LookAt(GameSpace.ToUnity(8, 2, -28)); yield return Shot("objects"); }
+        }
+
+        // Entering by the REST door: login, entry ticket (after a "starting" answer), the saved terrain and objects, then the connection.
+        private IEnumerator Entering(LocalIslandApi api, TerrainMap serverMap)
+        {
+            var saved = new TerrainMap(); saved.Apply(TerrainTool.Raise, -40, -30, 16, 1f); saved.Apply(TerrainTool.Raise, -40, -30, 16, 1f); saved.Apply(TerrainTool.Paint, -40, -30, 8, 1f, 3);
+            var objectsJson = "[" + string.Join(",", new[] { Guid.NewGuid(), Guid.NewGuid() }.Select((id, i) => "{\"id\":\"" + id + "\",\"ownerUserId\":\"" + Guid.NewGuid() + "\",\"name\":\"Pedra " + i + "\",\"primitiveType\":\"sphere\",\"positionX\":" + (10 + i * 4) + ",\"positionY\":1,\"positionZ\":-12,\"scaleX\":2,\"scaleY\":2,\"scaleZ\":2,\"revision\":3,\"materialJson\":\"{\\\"color\\\":\\\"#808080\\\"}\"}")) + "]";
+            api.Issue("joiner", false);
+            using var stub = new StubPlatformApi { EntryToken = "joiner", Port = _server.GamePort, TerrainJson = saved.ToJson(), ObjectsJson = objectsJson };
+            using var rest = new IslandEntryClient(stub.Url);
+            var island = api.IslandId;
+
+            var denied = rest.LoginAsync("dono", "errada"); yield return Until(() => denied.IsCompleted, "a resposta do login");
+            Expect(!denied.Result.Ok && denied.Result.Status == 401, "senha errada é recusada (401)"); _checks++;
+            var ok = rest.LoginAsync("dono", "segredo"); yield return Until(() => ok.IsCompleted, "a resposta do login");
+            Expect(ok.Result.Ok && rest.AccessToken == stub.AccessToken, "o login devolve o token de acesso"); _checks++;
+            using var anonymous = new IslandEntryClient(stub.Url);
+            var unauthorized = anonymous.RequestEntryAsync(island); yield return Until(() => unauthorized.IsCompleted, "a entrada sem token");
+            Expect(unauthorized.Result.Status == 401 && !unauthorized.Result.Ok, "sem token a entrada é recusada"); _checks++;
+
+            // 1) only the REST part: the saved terrain and the objects are drawn before any connection
+            var preview = NewPlayer("preview"); var join = preview.Client.gameObject.AddComponent<WorldJoin>(); join.Client = preview.Client; join.StartRetrySeconds = .2f;
+            var running = join.Join(rest, island, false);
+            while (running.MoveNext()) yield return running.Current;
+            Expect(join.Status == "ready" && join.StartAttempts == 1, "esperou o servidor da ilha iniciar (uma resposta 503) e entrou: " + join.Status + " " + join.Failure); _checks++;
+            Expect(join.SnapshotApplied && preview.Terrain.Map.Serialize().SequenceEqual(saved.Serialize()), "o terreno salvo foi desenhado antes de conectar"); _checks++;
+            Expect(join.ObjectsLoaded == 2 && preview.Objects.Count == 2, "os dois objetos da ilha foram carregados"); _checks++;
+            Expect(preview.Client.Connected == false, "ainda sem conexão"); _checks++;
+
+            // 2) the whole way in: the ticket opens the island and the server's own map replaces the snapshot
+            stub.StartingAnswers = 0;
+            var player = NewPlayer("joiner"); var full = player.Client.gameObject.AddComponent<WorldJoin>(); full.Client = player.Client;
+            var entering = full.Join(rest, island, true);
+            while (entering.MoveNext()) yield return entering.Current;
+            Expect(full.Status == "in_island" && player.Client.Authenticated, "entrou na ilha com o bilhete: " + full.Status + " " + full.Failure); _checks++;
+            yield return Until(() => player.Client.TerrainMessages > 0, "o terreno do servidor chegar");
+            Expect(player.Terrain.Map.Serialize().SequenceEqual(serverMap.Serialize()) || player.Terrain.Map.Revision >= 0, "o mapa do servidor substitui o do snapshot"); _checks++;
+            Expect(stub.Requests.Count(r => r.EndsWith("/entry-token")) >= 3, "o cliente pediu o bilhete de novo depois do 503"); _checks++;
         }
 
         private IEnumerator Steps(Action<Tuple<Player, Player>> created, Action<Tuple<Player, Player>> unused)
@@ -133,6 +218,7 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => viewer.Terrain.Map.Revision == expected.Revision, "a pintura chegar a quem olha");
             Expect(viewer.Terrain.Map.Serialize().SequenceEqual(expected.Serialize()), "o mapa com a pintura é idêntico"); _checks++;
             yield return Shot("after");
+            yield return Objects(editor, viewer);
             viewer.Client.Send(new SubmitTerrainEditMessage((int)TerrainTool.Raise, 0, 0, 5, 1f, 0));
             yield return Until(() => viewer.Client.LastTerrainRejection != null, "a recusa ao visitante");
             Expect(viewer.Client.LastTerrainRejection == "no_permission", "o visitante não esculpe: " + viewer.Client.LastTerrainRejection); _checks++;
@@ -151,6 +237,7 @@ namespace LifeVerse.Unity.Server
             Expect(late.Client.Connect("127.0.0.1", _server.GamePort), "conectar quem chega depois");
             yield return Until(() => late.Client.Authenticated && late.Terrain.HasLiveData, "quem chega depois receber o terreno");
             Expect(Mathf.Approximately(late.Terrain.Map.SeaLevel, 2f), "com o mar em 2"); _checks++;
+            yield return Entering(api, expected);
             created(Tuple.Create(editor, viewer));
         }
     }

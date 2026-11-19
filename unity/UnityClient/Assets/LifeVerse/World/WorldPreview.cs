@@ -55,12 +55,14 @@ namespace LifeVerse.Unity.World
                 ("night", new Vector3(-95, 18, -150), new Vector3(0, 8, 0), 22f, "clear"),
                 ("storm", new Vector3(-95, 22, -150), new Vector3(0, 8, 0), 13f, "storm"),
                 ("under", new Vector3(30, -4.5f, -120), new Vector3(0, -2f, 0), 14f, "clear"),
+                ("waves", new Vector3(-20, .9f, -170), new Vector3(10, 0f, -60), 15f, "clear"),
+                ("rain", new Vector3(-60, 6f, -60), new Vector3(10, 8f, 10), 13f, "rain"),
                 ("beach", new Vector3(0, 2.5f, -150), new Vector3(0, 1f, -90), 15f, "clear"),
                 ("ground", new Vector3(-10, 1.7f, -40), new Vector3(15, 6f, 10), 11f, "clear"),
             };
             foreach (var view in views)
             {
-                camera.transform.position = view.Position; camera.transform.LookAt(view.Target);
+                camera.transform.position = GameSpace.ToUnity(view.Position); camera.transform.LookAt(GameSpace.ToUnity(view.Target));
                 environment.Hour = view.Hour; environment.Weather = view.Weather;
                 for (var i = 0; i < 40; i++) { environment.Apply(.1f); yield return null; }
                 var path = $"{Prefix}-{view.Name}.png"; Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));

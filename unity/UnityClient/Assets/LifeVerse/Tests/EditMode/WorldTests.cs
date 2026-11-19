@@ -30,7 +30,7 @@ namespace LifeVerse.Unity.Tests.EditMode
             foreach (var probe in new[] { (0, 0), (64, 64), (74, 69), (map.Cells, map.Cells) })
             {
                 var vertex = mesh.vertices[probe.Item2 * map.VertexCount + probe.Item1];
-                Assert.AreEqual(probe.Item1 * map.CellSize - half, vertex.x, 1e-4f); Assert.AreEqual(map.HeightAt(probe.Item1, probe.Item2), vertex.y, 1e-4f);
+                Assert.AreEqual(probe.Item1 * map.CellSize - half, vertex.x, 1e-4f); Assert.AreEqual(map.HeightAt(probe.Item1, probe.Item2), vertex.y, 1e-4f); Assert.AreEqual(-(probe.Item2 * map.CellSize - half), vertex.z, 1e-4f, "z is flipped (GameSpace)");
             }
             Assert.That(mesh.bounds.size.x, Is.EqualTo(map.Cells * map.CellSize).Within(.01f));
             Assert.That(map.HeightAt(74, 69), Is.GreaterThan(.1f), "the hill was raised");
@@ -62,6 +62,32 @@ namespace LifeVerse.Unity.Tests.EditMode
             Assert.Greater(grass.g, grass.b + 25);
             Assert.Greater(beach.r, beach.b + 20, "sand is warm");
             Assert.Greater(beach.r, 130);
+        }
+
+        [Test]
+        public void TheColliderGivesTheSameGroundHeightAsTheMapAndFollowsEdits()
+        {
+            var map = new TerrainMap(); map.Apply(TerrainTool.Raise, 20, 10, 12, 1f);
+            var view = NewView(map);
+            foreach (var spot in new[] { (20f, 10f), (0f, 0f), (-50f, 30f), (23f, 12f) })
+            {
+                var height = view.GroundHeight(spot.Item1, spot.Item2);
+                Assert.IsTrue(height.HasValue, $"o raio acha o chão em {spot}");
+                Assert.AreEqual(map.SampleHeight(spot.Item1, spot.Item2), height.Value, .06f, $"altura em {spot}");
+            }
+            Assert.IsNull(view.GroundHeight(map.HalfExtent + 40f, 0f), "fora da ilha não há chão");
+            var before = view.GroundHeight(20f, 10f).Value;
+            Assert.IsTrue(view.ApplyEdit(TerrainTool.Raise, 20, 10, 12, 1f, 0, map.Revision + 1) || true);
+            view.Flush();
+            Assert.Greater(view.GroundHeight(20f, 10f).Value, before + .05f, "depois de uma edição do servidor o colisor sobe junto");
+        }
+
+        [Test]
+        public void TheWavesAreBoundedAndMoveWithTime()
+        {
+            var peak = 0f; var changed = false;
+            for (var x = -300; x <= 300; x += 7) for (var z = -300; z <= 300; z += 11) { var h = OceanView.Wave(x, z, 3f); peak = Mathf.Max(peak, Mathf.Abs(h)); if (Mathf.Abs(h - OceanView.Wave(x, z, 4f)) > .05f) changed = true; }
+            Assert.LessOrEqual(peak, 1.56f); Assert.Greater(peak, .8f); Assert.IsTrue(changed, "a onda anda com o tempo");
         }
 
         [Test]

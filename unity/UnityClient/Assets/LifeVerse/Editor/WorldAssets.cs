@@ -21,7 +21,7 @@ namespace LifeVerse.Unity.EditorTools
         {
             Directory.CreateDirectory(Folder);
             var shader = Shader.Find("HDRP/Lit") ?? throw new InvalidOperationException("O shader HDRP/Lit não foi encontrado: o HDRP está instalado e ativo?");
-            BuildTerrain(shader); BuildOcean(shader);
+            BuildTerrain(shader); BuildOcean(shader); BuildRain(); BuildObjects(shader);
             AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
             Debug.Log("[LifeVerse] Materiais do mundo criados em " + Folder);
         }
@@ -49,6 +49,26 @@ namespace LifeVerse.Unity.EditorTools
             material.SetColor("_BaseColor", Color.white); material.SetFloat("_Metallic", 0f); material.SetFloat("_Smoothness", .06f);
             material.SetTexture("_DetailMap", Attach(material, ProceduralTextures.DetailGrain(256, 41), "GroundDetail"));
             material.SetFloat("_DetailAlbedoScale", 1.1f); material.SetFloat("_DetailNormalScale", 0f); material.SetFloat("_DetailSmoothnessScale", 0f);
+            HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
+        }
+
+        /// <summary>The two looks every object starts from (opaque, and see-through for objects with transparency); WorldObjects copies one and sets colour, glow, roughness and metal.</summary>
+        private static void BuildObjects(Shader shader)
+        {
+            var opaque = Fresh("ObjectMaterial", shader);
+            opaque.SetColor("_BaseColor", Color.white); opaque.SetFloat("_Metallic", 0f); opaque.SetFloat("_Smoothness", .3f); opaque.SetColor("_EmissiveColor", Color.black);
+            HDShaderUtils.ResetMaterialKeywords(opaque); EditorUtility.SetDirty(opaque);
+            var blend = Fresh("ObjectMaterialBlend", shader);
+            blend.SetFloat("_SurfaceType", 1f); blend.SetFloat("_BlendMode", 0f); blend.SetFloat("_ZWrite", 0f); blend.SetFloat("_TransparentZWrite", 0f);
+            blend.SetColor("_BaseColor", Color.white); blend.SetFloat("_Metallic", 0f); blend.SetFloat("_Smoothness", .3f); blend.SetColor("_EmissiveColor", Color.black);
+            HDShaderUtils.ResetMaterialKeywords(blend); EditorUtility.SetDirty(blend);
+        }
+
+        private static void BuildRain()
+        {
+            var shader = Shader.Find("HDRP/Unlit") ?? throw new InvalidOperationException("O shader HDRP/Unlit não foi encontrado.");
+            var material = Fresh("RainMaterial", shader);
+            material.SetColor("_UnlitColor", new Color(.78f, .85f, .96f, .45f)); material.SetFloat("_SurfaceType", 1f); material.SetFloat("_BlendMode", 0f); material.SetFloat("_ZWrite", 0f);
             HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
         }
 
