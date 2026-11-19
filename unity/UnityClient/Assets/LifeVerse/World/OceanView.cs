@@ -39,7 +39,10 @@ namespace LifeVerse.Unity.World
             plane.AddComponent<MeshFilter>().sharedMesh = BuildMesh();
             var renderer = plane.AddComponent<MeshRenderer>(); renderer.sharedMaterial = _material;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; renderer.receiveShadows = false;
+            Foam = gameObject.AddComponent<ShoreFoam>(); Foam.Ocean = this;   // the surf on the shore, per pixel
         }
+
+        public ShoreFoam Foam { get; private set; }
 
         private static float Axis(int i) { var u = (float)i / Cells * 2f - 1f; return Mathf.Sign(u) * Mathf.Pow(Mathf.Abs(u), 3f) * PlaneSize * .5f; }
 

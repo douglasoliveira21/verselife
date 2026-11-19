@@ -21,7 +21,7 @@ namespace LifeVerse.Unity.EditorTools
         {
             Directory.CreateDirectory(Folder);
             var shader = Shader.Find("HDRP/Lit") ?? throw new InvalidOperationException("O shader HDRP/Lit não foi encontrado: o HDRP está instalado e ativo?");
-            BuildTerrain(shader); BuildOcean(shader); BuildRain(); BuildObjects(shader);
+            BuildTerrain(shader); BuildOcean(shader); BuildRain(); BuildObjects(shader); BuildSun(); BuildFoam();
             AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
             Debug.Log("[LifeVerse] Materiais do mundo criados em " + Folder);
         }
@@ -55,13 +55,46 @@ namespace LifeVerse.Unity.EditorTools
         /// <summary>The two looks every object starts from (opaque, and see-through for objects with transparency); WorldObjects copies one and sets colour, glow, roughness and metal.</summary>
         private static void BuildObjects(Shader shader)
         {
-            var opaque = Fresh("ObjectMaterial", shader);
-            opaque.SetColor("_BaseColor", Color.white); opaque.SetFloat("_Metallic", 0f); opaque.SetFloat("_Smoothness", .3f); opaque.SetColor("_EmissiveColor", Color.black);
-            HDShaderUtils.ResetMaterialKeywords(opaque); EditorUtility.SetDirty(opaque);
-            var blend = Fresh("ObjectMaterialBlend", shader);
-            blend.SetFloat("_SurfaceType", 1f); blend.SetFloat("_BlendMode", 0f); blend.SetFloat("_ZWrite", 0f); blend.SetFloat("_TransparentZWrite", 0f);
-            blend.SetColor("_BaseColor", Color.white); blend.SetFloat("_Metallic", 0f); blend.SetFloat("_Smoothness", .3f); blend.SetColor("_EmissiveColor", Color.black);
-            HDShaderUtils.ResetMaterialKeywords(blend); EditorUtility.SetDirty(blend);
+            BuildObject(shader, "ObjectMaterial", false, false); BuildObject(shader, "ObjectMaterialBlend", true, false);
+            BuildObject(shader, "ObjectMaterialDouble", false, true); BuildObject(shader, "ObjectMaterialBlendDouble", true, true);
+        }
+
+        /// <summary>
+        /// HDRP only draws a map when the material has its keyword on, and the keywords are set here, in the editor. So every prototype already carries neutral maps (white colour,
+        /// flat normal, a mask of ones, black-times-white glow): a picture put in at run time then just replaces the neutral one, and the numbers (colour, remap range) keep working.
+        /// </summary>
+        private static void BuildObject(Shader shader, string name, bool blended, bool doubleSided)
+        {
+            var material = Fresh(name, shader);
+            if (blended) { material.SetFloat("_SurfaceType", 1f); material.SetFloat("_BlendMode", 0f); material.SetFloat("_ZWrite", 0f); material.SetFloat("_TransparentZWrite", 0f); }
+            if (doubleSided) { material.SetFloat("_DoubleSidedEnable", 1f); material.SetFloat("_DoubleSidedNormalMode", 1f); }
+            material.SetColor("_BaseColor", Color.white); material.SetFloat("_Metallic", 0f); material.SetFloat("_Smoothness", .3f); material.SetColor("_EmissiveColor", Color.black);
+            material.SetTexture("_BaseColorMap", Attach(material, Flat(new Color32(255, 255, 255, 255), false), "NeutralBase"));
+            material.SetTexture("_NormalMap", Attach(material, Flat(new Color32(128, 128, 255, 255), true), "NeutralNormal"));
+            material.SetTexture("_MaskMap", Attach(material, Flat(new Color32(255, 255, 255, 255), true), "NeutralMask"));
+            material.SetTexture("_EmissiveColorMap", Attach(material, Flat(new Color32(255, 255, 255, 255), false), "NeutralGlow"));
+            material.SetFloat("_MetallicRemapMin", 0f); material.SetFloat("_MetallicRemapMax", 0f); material.SetFloat("_SmoothnessRemapMin", .7f); material.SetFloat("_SmoothnessRemapMax", .7f);
+            HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
+        }
+
+        private static Texture2D Flat(Color32 colour, bool linear)
+        {
+            var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false, linear) { wrapMode = TextureWrapMode.Repeat };
+            var pixels = new Color32[16]; for (var i = 0; i < pixels.Length; i++) pixels[i] = colour; texture.SetPixels32(pixels); texture.Apply(); return texture;
+        }
+
+        private static void BuildFoam()
+        {
+            var shader = Shader.Find("LifeVerse/ShoreFoam") ?? throw new InvalidOperationException("O shader LifeVerse/ShoreFoam não foi encontrado (erro de compilação do shader?).");
+            var material = Fresh("FoamMaterial", shader); EditorUtility.SetDirty(material);
+        }
+
+        private static void BuildSun()
+        {
+            var shader = Shader.Find("HDRP/Unlit") ?? throw new InvalidOperationException("O shader HDRP/Unlit não foi encontrado.");
+            var material = Fresh("SunMaterial", shader);
+            material.SetColor("_UnlitColor", Color.black); material.SetColor("_EmissiveColor", new Color(1f, .96f, .82f) * 80000f); material.SetFloat("_UseEmissiveIntensity", 0f);
+            HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
         }
 
         private static void BuildRain()

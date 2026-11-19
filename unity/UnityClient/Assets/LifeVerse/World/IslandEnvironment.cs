@@ -42,18 +42,26 @@ namespace LifeVerse.Unity.World
         private float _seaLevel = -.8f;
         private float _underwaterWeight;
 
-        // what the parcel under the player changes, and how far that has taken over (0 to 1)
-        private float? _parcelHour; private string _parcelWeather; private float _parcelLight = 1f; private bool _parcelOn; private float _blend;
+        // The look the island owner set (hour, weather, fog, light, sky tint) or the parcel under the player sets: it takes over gradually (0 to 1), and the island's own
+        // settings stay underneath and come back when it goes away. Same rules as the Godot IslandEnvironmentController.
+        private LifeVerse.Shared.Land.ParcelEnvironment _look; private LifeVerse.Shared.Land.ParcelEnvironment _lastLook = new LifeVerse.Shared.Land.ParcelEnvironment(); private float _blend;
 
-        public float HourShown => _parcelHour is { } target && _blend > 0 ? Mathf.Repeat(Hour + ShortestHourDelta(Hour, target) * _blend, 24f) : Hour;
-        public string WeatherShown => _parcelWeather != null && _blend >= .5f ? _parcelWeather : Weather;
-        public float LightShown => Mathf.Lerp(1f, _parcelLight, _blend);
+        /// <summary>How far the look has taken over, 0 to 1.</summary>
+        public float LookBlend => _blend;
+        public bool LookActive => _look != null;
+        public float HourShown => _lastLook.Hour is { } target && _blend > 0 ? Mathf.Repeat(Hour + ShortestHourDelta(Hour, target) * _blend, 24f) : Hour;
+        public string WeatherShown => _lastLook.Weather != null && _blend >= .5f ? _lastLook.Weather : Weather;
+        public float LightShown => Mathf.Lerp(1f, _lastLook.Light ?? 1f, _blend);
         public Light Sun { get { Create(); return _sun; } }
         public Volume Volume => _volume;
 
         private static float ShortestHourDelta(float from, float to) { var d = Mathf.Repeat(to - from, 24f); return d > 12f ? d - 24f : d; }
 
-        public void SetParcelLook(float? hour, string weather, float light) { _parcelHour = hour; _parcelWeather = weather; _parcelLight = light; _parcelOn = hour != null || weather != null || !Mathf.Approximately(light, 1f); }
+        /// <summary>Sets (or, with null or an empty look, removes) the look that takes over: the island's, or a parcel's.</summary>
+        public void SetLook(LifeVerse.Shared.Land.ParcelEnvironment look) { _look = look != null && !look.IsEmpty ? look : null; if (_look != null) _lastLook = _look; }
+        public void SetParcelLook(float? hour, string weather, float light) => SetLook(new LifeVerse.Shared.Land.ParcelEnvironment(hour, weather, null, light, null));
+        /// <summary>For tests: jump straight to the end of the fade.</summary>
+        public void FinishBlend() => _blend = _look == null ? 0f : 1f;
 
         public void Initialize(Camera camera, float seaLevel) { Create(); _camera = camera; _seaLevel = seaLevel; }
 
@@ -82,6 +90,8 @@ namespace LifeVerse.Unity.World
             _fog = _profile.Add<Fog>(); _fog.enabled.Override(true); _fog.meanFreePath.Override(6000f); _fog.baseHeight.Override(-50f); _fog.maximumHeight.Override(60f);
             _fog.enableVolumetricFog.Override(false); _fog.colorMode.Override(FogColorMode.SkyColor);
             _profile.Add<Tonemapping>().mode.Override(TonemappingMode.ACES);
+            var bloom = _profile.Add<Bloom>(); bloom.intensity.Override(.2f); bloom.threshold.Override(1f); bloom.scatter.Override(.65f); // the sun disc and bright lamps glow
+            BuildSunDisc();
             _clouds = _profile.Add<CloudLayer>(); _clouds.opacity.Override(1f);
             _cloudMap = ProceduralTextures.Clouds(512, 5); _clouds.layerA.cloudMap.Override(_cloudMap); _clouds.layerA.opacityR.Override(1f); _clouds.layerA.opacityG.Override(0f); _clouds.layerA.opacityB.Override(0f); _clouds.layerA.opacityA.Override(0f);
             _volume = new GameObject("World Volume").AddComponent<Volume>(); _volume.transform.SetParent(transform, false); _volume.isGlobal = true; _volume.sharedProfile = _profile; _volume.priority = 0;
@@ -91,6 +101,32 @@ namespace LifeVerse.Unity.World
             var waterFog = _underwaterProfile.Add<Fog>(); waterFog.enabled.Override(true); waterFog.meanFreePath.Override(40f); waterFog.colorMode.Override(FogColorMode.ConstantColor); waterFog.color.Override(new Color(.04f, .30f, .44f)); waterFog.baseHeight.Override(-200f); waterFog.maximumHeight.Override(200f);
             var filter = _underwaterProfile.Add<ColorAdjustments>(); filter.colorFilter.Override(new Color(.55f, .85f, 1f)); filter.postExposure.Override(.8f);
             _underwater = new GameObject("Underwater Volume").AddComponent<Volume>(); _underwater.transform.SetParent(transform, false); _underwater.isGlobal = true; _underwater.sharedProfile = _underwaterProfile; _underwater.priority = 10; _underwater.weight = 0;
+        }
+
+        // ---- the sun in the sky: a bright disc on the sun's direction (the gradient sky has none), about 1.8 degrees wide, glowing through the bloom ----
+        private GameObject _sunDisc; private Material _sunDiscMaterial;
+        public const float SunDiscDistance = 1800f, SunDiscNits = 80000f;
+
+        private void BuildSunDisc()
+        {
+            _sunDisc = GameObject.CreatePrimitive(PrimitiveType.Sphere); _sunDisc.name = "Sun Disc"; _sunDisc.transform.SetParent(transform, false);
+            var collider = _sunDisc.GetComponent<Collider>(); if (collider != null) { if (Application.isPlaying) Destroy(collider); else DestroyImmediate(collider); }
+            var renderer = _sunDisc.GetComponent<MeshRenderer>(); renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; renderer.receiveShadows = false;
+            var prototype = Resources.Load<Material>("LifeVerse/SunMaterial");
+            if (prototype != null) { _sunDiscMaterial = new Material(prototype); renderer.sharedMaterial = _sunDiscMaterial; }
+            _sunDisc.transform.localScale = Vector3.one * (SunDiscDistance * 2f * Mathf.Tan(.9f * Mathf.Deg2Rad));
+        }
+
+        /// <summary>How visible the sun disc is, 0 to 1: gone below the horizon and behind a heavy sky.</summary>
+        public float SunDiscVisibility { get; private set; }
+
+        private void UpdateSunDisc(float elevation, float above, float overcast)
+        {
+            SunDiscVisibility = above * Mathf.Clamp01(1f - overcast * 1.25f);
+            var origin = _camera != null ? _camera.transform.position : Vector3.zero;
+            _sunDisc.transform.position = origin - _sun.transform.forward * SunDiscDistance;
+            _sunDisc.SetActive(SunDiscVisibility > .01f);
+            if (_sunDiscMaterial != null) _sunDiscMaterial.SetColor("_EmissiveColor", new Color(1f, .96f, .82f) * (SunDiscNits * SunDiscVisibility));
         }
 
         private void BuildRain()
@@ -116,7 +152,7 @@ namespace LifeVerse.Unity.World
         private void Update()
         {
             if (DayNightCycle) Hour = Mathf.Repeat(Hour + Time.deltaTime * TimeScale, 24f);
-            _blend = Mathf.MoveTowards(_blend, _parcelOn ? 1f : 0f, Time.deltaTime / BlendSeconds);
+            _blend = Mathf.MoveTowards(_blend, _look != null ? 1f : 0f, Time.deltaTime / BlendSeconds);
             Apply(Time.deltaTime);
         }
 
@@ -134,7 +170,10 @@ namespace LifeVerse.Unity.World
             var horizon = Color.Lerp(HorizonNight, HorizonDay, day); var glow = lowSun * above; horizon = Color.Lerp(horizon, Sunset, glow * .9f); _sky.multiplier.value = SkyNits * (1f + 2.5f * glow);
             var overcast = WeatherShown switch { "cloudy" => .3f, "rain" => .6f, "storm" => .8f, "fog" => .7f, _ => 0f };
             Color Dull(Color c) { var grey = c.grayscale * .9f; return Color.Lerp(c, new Color(grey, grey, grey * 1.05f), overcast); }
-            _sky.top.value = Dull(Color.Lerp(ZenithNight, ZenithDay, day)).linear; _sky.middle.value = Dull(horizon).linear; _sky.bottom.value = Dull(horizon * .8f).linear; _sky.multiplier.value = _sky.multiplier.value * (1f - .4f * overcast);
+            // a tint chosen for the sky (a parcel or the island) colours it by up to 55 % while the look is in force: colour * tint * 1.6, as the Godot sky shader does
+            var tint = _lastLook.Sky != null && LifeVerse.Shared.Land.ParcelEnvironment.IsColour(_lastLook.Sky) && ColorUtility.TryParseHtmlString(_lastLook.Sky, out var tintColor) ? tintColor : Color.white; var tintAmount = _lastLook.Sky == null ? 0f : .55f * _blend;
+            Color Tinted(Color c) => tintAmount > 0f ? Color.Lerp(c, new Color(c.r * tint.r * 1.6f, c.g * tint.g * 1.6f, c.b * tint.b * 1.6f), tintAmount) : c;
+            _sky.top.value = Tinted(Dull(Color.Lerp(ZenithNight, ZenithDay, day))).linear; _sky.middle.value = Tinted(Dull(horizon)).linear; _sky.bottom.value = Tinted(Dull(horizon * .8f)).linear; _sky.multiplier.value = _sky.multiplier.value * (1f - .4f * overcast);
             var weather = WeatherShown; var cover = weather switch { "cloudy" => .72f, "rain" => .85f, "storm" => .95f, "fog" => .8f, _ => .5f };
             var dim = weather switch { "cloudy" => .75f, "rain" => .55f, "storm" => .4f, "fog" => .6f, _ => 1f };
             // the sun stays on (the sky is lit by it) and fades with the day; at night a faint bluish moon lights the ground from the opposite side
@@ -142,7 +181,8 @@ namespace LifeVerse.Unity.World
             var sunLux = Mathf.Max(NoonLux * day * LightShown * dim, .05f); _sunData.SetIntensity(sunLux, LightUnit.Lux);
             _moon.transform.rotation = Quaternion.LookRotation(-_sun.transform.forward); _moonData.SetIntensity(MoonLux * (1f - day) * LightShown, LightUnit.Lux);
             _exposure.fixedExposure.value = 13.5f; // a daylight camera at all hours: the night is dark because its light and its sky are dark, not because the camera opens up
-            var targetFog = weather switch { "fog" => 1f, "rain" => .45f, "storm" => .7f, "cloudy" => .2f, _ => 0f };
+            var targetFog = Mathf.Clamp01((weather switch { "fog" => 1f, "rain" => .45f, "storm" => .7f, "cloudy" => .2f, _ => 0f }) + (_lastLook.Fog ?? 0f) * _blend);
+            UpdateSunDisc(elevation, above, overcast);
             _fogDensity = Mathf.MoveTowards(_fogDensity, targetFog, Mathf.Clamp01(delta * 2f) * 2f);
             _fog.meanFreePath.value = Mathf.Lerp(8000f, weather == "fog" ? 90f : weather == "storm" ? 350f : 700f, _fogDensity);
             _clouds.opacity.value = Mathf.Lerp(.35f, 1f, cover); _clouds.layerA.opacityR.value = Mathf.Lerp(.5f, 1f, cover);

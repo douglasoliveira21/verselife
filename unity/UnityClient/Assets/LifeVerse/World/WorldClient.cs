@@ -17,6 +17,7 @@ namespace LifeVerse.Unity.World
         public TerrainView Terrain;
         public OceanView Ocean;
         public WorldObjects Objects;
+        public IslandEnvironment Environment;   // when set, the island's saved look (hour, weather, fog) is read from the API on joining and applied
         public string Token = "";
 
         private WireClient _client;

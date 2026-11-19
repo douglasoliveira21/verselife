@@ -143,13 +143,23 @@ namespace LifeVerse.Unity.Server
             if (_shots != null) { _camera.transform.position = GameSpace.ToUnity(-12, 9, -66); _camera.transform.LookAt(GameSpace.ToUnity(8, 2, -28)); yield return Shot("objects"); }
         }
 
+        private static string JsonString(string text) => System.Text.Json.JsonSerializer.Serialize(text);
+
         // Entering by the REST door: login, entry ticket (after a "starting" answer), the saved terrain and objects, then the connection.
         private IEnumerator Entering(LocalIslandApi api, TerrainMap serverMap)
         {
             var saved = new TerrainMap(); saved.Apply(TerrainTool.Raise, -40, -30, 16, 1f); saved.Apply(TerrainTool.Raise, -40, -30, 16, 1f); saved.Apply(TerrainTool.Paint, -40, -30, 8, 1f, 3);
             var objectsJson = "[" + string.Join(",", new[] { Guid.NewGuid(), Guid.NewGuid() }.Select((id, i) => "{\"id\":\"" + id + "\",\"ownerUserId\":\"" + Guid.NewGuid() + "\",\"name\":\"Pedra " + i + "\",\"primitiveType\":\"sphere\",\"positionX\":" + (10 + i * 4) + ",\"positionY\":1,\"positionZ\":-12,\"scaleX\":2,\"scaleY\":2,\"scaleZ\":2,\"revision\":3,\"materialJson\":\"{\\\"color\\\":\\\"#808080\\\"}\"}")) + "]";
+            // a picture on a slab, an imported model, a tree and a patch of grass, and a rock a kilometre away that must not be drawn
+            var textureId = Guid.NewGuid(); var modelId = Guid.NewGuid(); var slabId = Guid.NewGuid(); var boxId = Guid.NewGuid(); var treeId = Guid.NewGuid(); var grassId = Guid.NewGuid(); var farId = Guid.NewGuid();
+            string Obj(Guid id, string name, string type, float x, float scale, string material = "{}", string geometry = "{}") =>
+                "{\"id\":\"" + id + "\",\"ownerUserId\":\"" + Guid.NewGuid() + "\",\"name\":\"" + name + "\",\"primitiveType\":\"" + type + "\",\"positionX\":" + x + ",\"positionY\":2,\"positionZ\":-12,\"scaleX\":" + scale + ",\"scaleY\":" + scale + ",\"scaleZ\":" + scale
+                + ",\"revision\":1,\"materialJson\":" + JsonString(material) + ",\"geometryJson\":" + JsonString(geometry) + "}";
+            objectsJson = objectsJson.TrimEnd(']') + "," + string.Join(",", Obj(slabId, "Lousa", "cube", 20, 2, "{\"color\":\"#FFFFFF\",\"texture\":\"" + textureId + "\"}"), Obj(boxId, "Caixa", "mesh", 30, 3, "{}", "{\"assetId\":\"" + modelId + "\"}"),
+                Obj(treeId, "Arvore", "tree", 36, 2), Obj(grassId, "Grama", "grass", 40, 1), Obj(farId, "Longe", "cube", 1500, 1)) + "]";
             api.Issue("joiner", false);
-            using var stub = new StubPlatformApi { EntryToken = "joiner", Port = _server.GamePort, TerrainJson = saved.ToJson(), ObjectsJson = objectsJson };
+            using var stub = new StubPlatformApi { EntryToken = "joiner", Port = _server.GamePort, TerrainJson = saved.ToJson(), ObjectsJson = objectsJson, LookJson = "{\"look\":{\"hour\":22,\"weather\":\"rain\",\"light\":0.6}}" };
+            stub.Assets[textureId.ToString()] = TestAssets.Png(new Color32(220, 40, 40, 255)); stub.Assets[modelId.ToString()] = TestAssets.Glb();
             using var rest = new IslandEntryClient(stub.Url);
             var island = api.IslandId;
 
@@ -163,11 +173,39 @@ namespace LifeVerse.Unity.Server
 
             // 1) only the REST part: the saved terrain and the objects are drawn before any connection
             var preview = NewPlayer("preview"); var join = preview.Client.gameObject.AddComponent<WorldJoin>(); join.Client = preview.Client; join.StartRetrySeconds = .2f;
+            preview.Client.Environment = _environment; preview.Objects.Camera = _camera;
             var running = join.Join(rest, island, false);
             while (running.MoveNext()) yield return running.Current;
+            _environment.FinishBlend();
+            Expect(join.Look != null && join.Look.Refreshes == 1 && _environment.LookActive && Mathf.Abs(_environment.HourShown - 22f) < .01f && _environment.WeatherShown == "rain", "a hora e o clima salvos da ilha (22h, chuva) vieram da API: " + _environment.HourShown + " " + _environment.WeatherShown); _checks++;
+            yield return Until(() => preview.Objects.TexturesApplied >= 1 && preview.Objects.ModelsLoaded >= 1, "a textura e o modelo chegarem");
+            var slab = preview.Objects.ViewOf(slabId).GetComponent<MeshRenderer>().sharedMaterials[0];
+            var picture = slab.GetTexture("_BaseColorMap") as Texture2D; var corner = picture != null ? picture.GetPixel(1, 1) : Color.black;
+            Expect(picture != null && picture.width == 8 && corner.r > .6f && corner.g < .4f, "a textura da lousa veio da API e está na cor base: " + (picture != null ? picture.width + " " + corner : "nenhuma")); _checks++;
+            var model = preview.Objects.ViewOf(boxId).transform.Find("Model"); var modelBounds = model.GetComponentInChildren<Renderer>().bounds;
+            Expect(preview.Objects.ViewOf(boxId).GetComponent<MeshRenderer>().enabled == false && Mathf.Abs(modelBounds.size.x - 3f) < .05f && Mathf.Abs(modelBounds.size.y - 1.5f) < .05f && (modelBounds.center - preview.Objects.ViewOf(boxId).transform.position).magnitude < .05f,
+                "o modelo importado (glb) foi normalizado para 1 m e tem o tamanho do objeto (3 m × 1,5 m) e está centrado: " + modelBounds.size + " " + modelBounds.center); _checks++;
+            var treeBounds = preview.Objects.ViewOf(treeId).GetComponent<MeshRenderer>().bounds; var grassMesh = preview.Objects.ViewOf(grassId).GetComponent<MeshFilter>().sharedMesh;
+            Expect(preview.Objects.ViewOf(treeId).GetComponent<MeshFilter>().sharedMesh.subMeshCount == 3 && treeBounds.size.y > 1.4f && treeBounds.size.y <= 2.05f && grassMesh.vertexCount == 54, "a árvore tem tronco e duas copas, e a grama 18 folhas: " + treeBounds.size + " " + grassMesh.vertexCount); _checks++;
+            if (_shots != null)
+            {
+                var saveCamera = (_camera.transform.position, _camera.transform.rotation);
+                _environment.Hour = 16f; _environment.SetLook(null); _environment.FinishBlend();   // afternoon, to see the models, the picture and the plants
+                for (var i = 0; i < 30; i++) { _environment.Apply(.1f); yield return null; }
+                _camera.transform.position = GameSpace.ToUnity(22, 4.5f, -24); _camera.transform.LookAt(GameSpace.ToUnity(32, 1.5f, -12)); yield return Shot("assets");
+                _environment.Hour = 17.3f; for (var i = 0; i < 30; i++) { _environment.Apply(.1f); yield return null; }   // the sun low, to see its disc
+                _camera.transform.position = GameSpace.ToUnity(22, 2.5f, -24); _camera.transform.LookAt(_camera.transform.position - _environment.Sun.transform.forward * 100f + Vector3.down * 4f); yield return Shot("sun");
+                var shoreMap = preview.Terrain.Map; var shoreX = float.NaN;
+                for (var ix = shoreMap.Cells; ix > 0 && float.IsNaN(shoreX); ix--) if (shoreMap.HeightAt(ix, shoreMap.Cells / 2) > shoreMap.SeaLevel + .2f) shoreX = (ix - shoreMap.Cells / 2f) * shoreMap.CellSize;
+                if (!float.IsNaN(shoreX)) { _environment.Hour = 14f; yield return null; _camera.transform.position = GameSpace.ToUnity(shoreX - 12f, 5f, 0f); _camera.transform.LookAt(GameSpace.ToUnity(shoreX + 8f, -.5f, 14f)); for (var i = 0; i < 30; i++) yield return null; yield return Shot("foam"); }
+                Expect(preview.Ocean.Foam != null && preview.Ocean.Foam.Baked, "a espuma da orla foi preparada a partir do terreno"); _checks++;
+                _camera.transform.position = saveCamera.Item1; _camera.transform.rotation = saveCamera.Item2; _environment.Hour = 14f; _environment.SetLook(null);
+            }
+            preview.Objects.Cull(_camera);
+            Expect(preview.Objects.IsCulled(farId) && !preview.Objects.IsCulled(slabId) && !preview.Objects.ViewOf(farId).GetComponent<MeshRenderer>().enabled, "o objeto a 1,5 km não é desenhado e os próximos sim: " + preview.Objects.CulledCount); _checks++;
             Expect(join.Status == "ready" && join.StartAttempts == 1, "esperou o servidor da ilha iniciar (uma resposta 503) e entrou: " + join.Status + " " + join.Failure); _checks++;
             Expect(join.SnapshotApplied && preview.Terrain.Map.Serialize().SequenceEqual(saved.Serialize()), "o terreno salvo foi desenhado antes de conectar"); _checks++;
-            Expect(join.ObjectsLoaded == 2 && preview.Objects.Count == 2, "os dois objetos da ilha foram carregados"); _checks++;
+            Expect(join.ObjectsLoaded == 7 && preview.Objects.Count == 7, "os sete objetos da ilha foram carregados: " + join.ObjectsLoaded); _checks++;
             Expect(preview.Client.Connected == false, "ainda sem conexão"); _checks++;
 
             // 2) the whole way in: the ticket opens the island and the server's own map replaces the snapshot

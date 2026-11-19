@@ -115,6 +115,30 @@ namespace LifeVerse.Unity.Tests.EditMode
             environment.SetParcelLook(22f, "rain", .5f);
             Assert.AreEqual(12f, environment.HourShown, .001f, "nothing happens until time passes");
             Assert.AreEqual("clear", environment.WeatherShown);
+            environment.FinishBlend();
+            Assert.AreEqual(22f, environment.HourShown, .001f, "no fim da transição vale a hora da parcela"); Assert.AreEqual("rain", environment.WeatherShown); Assert.AreEqual(.5f, environment.LightShown, .001f);
+            environment.SetLook(null); environment.FinishBlend();
+            Assert.AreEqual(12f, environment.HourShown, .001f, "a ilha volta a ter a sua hora");
+        }
+
+        [Test]
+        public void TheIslandLookFromTheApiSetsHourWeatherFogAndSkyTint()
+        {
+            _root = new GameObject("env"); var environment = _root.AddComponent<IslandEnvironment>(); environment.DayNightCycle = false; environment.Hour = 12f;
+            var look = LifeVerse.Shared.Land.ParcelEnvironment.Parse("{\"hour\":19.5,\"weather\":\"fog\",\"fog\":0.5,\"light\":0.8,\"sky\":\"#FF8040\"}");
+            Assert.IsFalse(look.IsEmpty); environment.SetLook(look); environment.FinishBlend(); environment.Apply(1f);
+            Assert.AreEqual(19.5f, environment.HourShown, .001f); Assert.AreEqual("fog", environment.WeatherShown); Assert.AreEqual(.8f, environment.LightShown, .001f);
+            Assert.IsTrue(environment.LookActive);
+            environment.Hour = 12f; environment.SetLook(new LifeVerse.Shared.Land.ParcelEnvironment()); Assert.IsFalse(environment.LookActive, "um visual vazio não vale");
+        }
+
+        [Test]
+        public void TheSunDiscShowsInTheDayAndHidesAtNightAndBehindStorms()
+        {
+            _root = new GameObject("env"); var environment = _root.AddComponent<IslandEnvironment>(); environment.DayNightCycle = false;
+            environment.Hour = 12f; environment.Apply(1f); Assert.Greater(environment.SunDiscVisibility, .95f);
+            environment.Hour = 23f; environment.Apply(1f); Assert.AreEqual(0f, environment.SunDiscVisibility, .01f);
+            environment.Hour = 12f; environment.Weather = "storm"; environment.Apply(1f); Assert.AreEqual(0f, environment.SunDiscVisibility, .01f);
         }
     }
 }

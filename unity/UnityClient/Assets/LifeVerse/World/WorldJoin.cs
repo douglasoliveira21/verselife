@@ -24,6 +24,7 @@ namespace LifeVerse.Unity.World
         public bool SnapshotApplied { get; private set; }
         public int ObjectsLoaded { get; private set; }
         public int StartAttempts { get; private set; }
+        public IslandLookService Look { get; private set; }
 
         public IEnumerator Join(IslandEntryClient api, Guid islandId, bool connect = true)
         {
@@ -45,7 +46,14 @@ namespace LifeVerse.Unity.World
             var snapshot = api.GetSnapshotAsync(islandId); var objects = api.GetObjectsAsync(islandId);
             while (!snapshot.IsCompleted || !objects.IsCompleted) yield return null;
             if (snapshot.Result.Ok && Client.Terrain != null) { Client.Terrain.Apply(TerrainMap.FromJson(snapshot.Result.TerrainJson)); if (Client.Ocean != null) Client.Ocean.SeaLevel = Client.Terrain.Map.SeaLevel; SnapshotApplied = true; }
+            if (Client.Objects != null) Client.Objects.AssetLoader = asset => api.GetAssetAsync(islandId, asset);   // pictures and models come from the API on demand
             if (objects.Result != null && Client.Objects != null) ObjectsLoaded = Client.Objects.Load(objects.Result);
+            if (Client.Environment != null)
+            {
+                Look = Client.Environment.GetComponent<IslandLookService>() ?? Client.Environment.gameObject.AddComponent<IslandLookService>();
+                Look.Environment = Client.Environment; Look.Api = api; Look.Island = islandId;
+                var refresh = Look.RefreshAsync(); while (!refresh.IsCompleted) yield return null;   // the saved hour and weather are there before the first frame of the island
+            }
 
             if (!connect) { Status = "ready"; Done = true; yield break; }
             Status = "connecting"; Client.Token = entry.Token;

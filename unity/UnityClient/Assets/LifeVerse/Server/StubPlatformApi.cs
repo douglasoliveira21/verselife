@@ -16,6 +16,8 @@ namespace LifeVerse.Unity.Server
         public readonly List<string> Requests = new List<string>();
         public int StartingAnswers = 1;           // the first entry requests answer 503 "starting", like an island whose server is booting
         public string EntryToken = "", Host = "127.0.0.1", TerrainJson = "{}", EnvironmentJson = "{}", ObjectsJson = "[]";
+        public string LookJson = "{\"look\":{}}";
+        public readonly Dictionary<string, byte[]> Assets = new Dictionary<string, byte[]>();   // asset id (lower-case, with hyphens) -> bytes
         public int Port, ProtocolVersion = 11;
         public string ValidLogin = "dono", ValidPassword = "segredo", AccessToken = "token-de-acesso";
 
@@ -57,6 +59,12 @@ namespace LifeVerse.Unity.Server
             }
             else if (path.EndsWith("/snapshot")) json = JsonSerializer.Serialize(new { terrainJson = TerrainJson, environmentJson = EnvironmentJson });
             else if (path.EndsWith("/objects")) json = ObjectsJson;
+            else if (path.EndsWith("/environment")) json = LookJson;
+            else if (path.Contains("/assets/") && path.EndsWith("/file") && Assets.TryGetValue(path.Split('/')[path.Split('/').Length - 2], out var asset))
+            {
+                context.Response.StatusCode = 200; context.Response.ContentType = "application/octet-stream"; context.Response.ContentLength64 = asset.Length;
+                context.Response.OutputStream.Write(asset, 0, asset.Length); context.Response.Close(); return;
+            }
             else status = 404;
             var bytes = Encoding.UTF8.GetBytes(json);
             context.Response.StatusCode = status; context.Response.ContentType = "application/json"; context.Response.ContentLength64 = bytes.Length;

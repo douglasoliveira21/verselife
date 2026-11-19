@@ -43,6 +43,15 @@ namespace LifeVerse.Unity.World
             return sum;
         }
 
+        /// <summary>A tiling grey noise (fractal, stretched to use the whole range), linear colour space: a mask for shaders.</summary>
+        public static Texture2D GreyNoise(int size, int baseCells, int octaves, int seed)
+        {
+            var field = Fbm(size, baseCells, octaves, seed); var pixels = new Color32[size * size];
+            for (var i = 0; i < pixels.Length; i++) { var v = (byte)(Mathf.Clamp01((field[i] - .5f) * 2.4f + .5f) * 255f); pixels[i] = new Color32(v, v, v, 255); }
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, true, true) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, name = "GreyNoise" };
+            texture.SetPixels32(pixels); texture.Apply(true); return texture;
+        }
+
         /// <summary>The ground texture of one layer: noise between a dark and a light colour (coarse blotches over fine grain).</summary>
         public static Color32[] Ground(Color dark, Color light, int seed, int size = 256)
         {

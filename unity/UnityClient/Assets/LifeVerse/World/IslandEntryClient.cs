@@ -106,6 +106,32 @@ namespace LifeVerse.Unity.World
             catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return null; }
         }
 
+        /// <summary>The look of the island (hour, weather, fog, light, sky) and its music, as the API sends it: {"look":{...},"media":{...}}; null when it could not be read.</summary>
+        public async Task<string> GetEnvironmentAsync(Guid islandId, CancellationToken ct = default)
+        {
+            try
+            {
+                using var response = await _http.GetAsync($"{_baseUrl}/api/v1/worlds/islands/{islandId}/environment", ct).ConfigureAwait(false);
+                return response.IsSuccessStatusCode ? await response.Content.ReadAsStringAsync().ConfigureAwait(false) : null;
+            }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return null; }
+        }
+
+        /// <summary>The bytes of an asset (a texture, a model): from the island's own endpoint first, then from the person's own files, as the Godot client does. Null when neither has it.</summary>
+        public async Task<byte[]> GetAssetAsync(Guid islandId, Guid assetId, CancellationToken ct = default)
+        {
+            foreach (var url in new[] { $"{_baseUrl}/api/v1/worlds/islands/{islandId}/assets/{assetId}/file", $"{_baseUrl}/api/v1/assets/{assetId}/download" })
+            {
+                try
+                {
+                    using var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
+                    if (response.IsSuccessStatusCode) return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { }
+            }
+            return null;
+        }
+
         public void Dispose() => _http.Dispose();
     }
 }
