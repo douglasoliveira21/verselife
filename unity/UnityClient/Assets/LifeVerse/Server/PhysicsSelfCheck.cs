@@ -26,6 +26,50 @@ namespace LifeVerse.Unity.Server
             Application.Quit(failure == null ? 0 : 1);
         }
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void BootReport()
+        {
+            if (!Environment.GetCommandLineArgs().Contains("-lifeverse-physics-report")) return;
+            try { foreach (var line in Report()) Console.WriteLine(line); Console.WriteLine("UNITY_DONE"); Application.Quit(0); }
+            catch (Exception exception) { Console.WriteLine("UNITY_FAILED " + exception.Message); Application.Quit(1); }
+        }
+
+        /// <summary>
+        /// The same scenarios, parameters and measurements as a small Godot project that reproduces island-server/Scripts/ServerPhysics.cs (RigidBody3D, damping .05/.6,
+        /// material), so the two engines can be compared line by line. Flat ground at y = 0, 60 Hz, a 1 m ball (radius .5) or box.
+        /// </summary>
+        public static IReadOnlyList<string> Report()
+        {
+            const float dt = 1f / 60f; var lines = new List<string>(); var terrain = new TerrainMap();
+            string Settle(string name, PhysicsBodyDefinition[] defs, Guid id, float groundTop)
+            {
+                using var physics = new UnityIslandPhysics(); physics.SetTerrain(terrain); physics.Sync(defs);
+                var peak = 0f; var vmax = 0f; var landedAt = -1f; var frame = 0; BodyPose pose;
+                do
+                {
+                    frame++; physics.Step(dt); pose = physics.Poses().Single(); var t = frame * dt;
+                    if (landedAt < 0) { vmax = Math.Max(vmax, -(physics.VelocityOf(id)?.Y ?? 0f)); if (pose.Y - .5f <= groundTop + .02f) landedAt = t; }
+                    if (landedAt >= 0) peak = Math.Max(peak, pose.Y);
+                } while (!pose.Asleep && frame * dt <= 14f);
+                return $"RESULT {name} land_t={landedAt:F2} impact_speed={vmax:F2} rest_y={pose.Y:F3} peak_after_landing={peak:F3} time_to_sleep={frame * dt:F2} slept={pose.Asleep.ToString().ToLowerInvariant()}";
+            }
+            var a = Guid.NewGuid(); lines.Add(Settle("drop", new[] { Def(a, "sphere", 5, 4.5f, 5, 1, Json("physical")) }, a, 0));
+            var b = Guid.NewGuid(); lines.Add(Settle("bounce", new[] { Def(b, "sphere", 5, 5.5f, 5, 1, Json("physical", 1f, 1f)) }, b, 0));
+            var box = Guid.NewGuid(); var c = Guid.NewGuid();
+            lines.Add(Settle("on_box", new[] { Def(box, "cube", 12, .5f, 12, 1, "{}"), Def(c, "sphere", 12, 5.5f, 12, 1, Json("physical")) }, c, 1));
+            var d = Guid.NewGuid(); lines.Add(Settle("box_drop", new[] { Def(d, "cube", 5, 3.5f, 5, 1, Json("physical")) }, d, 0));
+            // kick: one second to settle, then one impulse of 3.6 N.s along +X (speed 4 * mass 1 * 0.9, what a walker gives); how far it rolls and when it stops
+            using (var physics = new UnityIslandPhysics())
+            {
+                var e = Guid.NewGuid(); physics.SetTerrain(terrain); physics.Sync(new[] { Def(e, "sphere", 5, .5f, 5, 1, Json("physical")) });
+                for (var i = 0; i < 120; i++) physics.Step(dt);
+                var x0 = physics.Poses().Single().X; physics.Apply(e, "impulse", new Vec3(3.6f, 0, 0)); var frame = 0; BodyPose pose;
+                do { frame++; physics.Step(dt); pose = physics.Poses().Single(); } while (!pose.Asleep && frame * dt <= 14f - 2f);
+                lines.Add($"RESULT kick roll_distance={pose.X - x0:F3} time_to_sleep={frame * dt:F2} slept={pose.Asleep.ToString().ToLowerInvariant()}");
+            }
+            return lines;
+        }
+
         private static string Json(string mode, float mass = 1f, float bounce = 0f) => $"{{\"mode\":\"{mode}\",\"mass\":{mass.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"bounce\":{bounce.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}";
 
         private static PhysicsBodyDefinition Def(Guid id, string type, float x, float y, float z, float scale, string physics, float sx = 0, float sy = 0, float sz = 0) =>

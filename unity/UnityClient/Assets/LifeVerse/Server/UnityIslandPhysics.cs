@@ -18,6 +18,13 @@ namespace LifeVerse.Unity.Server
     public sealed class UnityIslandPhysics : IIslandPhysics
     {
         public const int BodyLimit = 200;
+        /// <summary>
+        /// Damping of the bodies. The Godot server uses .6 (angular) and .05 (linear); with the same numbers a PhysX ball rolls 11.6 m after the standard kick against 8.4 m in Godot,
+        /// and 1.0 gives 8.1 m: the angular value is calibrated on that one scenario (rolling ball), so boxes that slide may still differ.
+        /// </summary>
+        public static float AngularDamping = 1.0f, LinearDamping = .05f;
+        /// <summary>How the friction of a body and of what it touches are combined (set by the comparison tool; Average is the engine default).</summary>
+        public static PhysicsMaterialCombine FrictionCombineMode = PhysicsMaterialCombine.Average;
         private const float FellOutBelow = -60f, FixedStep = 1f / 60f;
 
         private sealed class Body
@@ -163,9 +170,10 @@ namespace LifeVerse.Unity.Server
             body.Signature = signature;
             foreach (var collider in body.Object.GetComponents<Collider>()) Kill(collider);
             body.Reach = AddShape(body.Object, def.PrimitiveType, settings.CollisionShape, scale, true);
-            var material = new PhysicsMaterial { dynamicFriction = settings.Friction, staticFriction = settings.Friction, bounciness = settings.Bounce };
+            // Godot adds the two bounces (the ground has none, so the body keeps its own) and Unity averages them by default: Maximum gives the Godot result against a ground without bounce
+            var material = new PhysicsMaterial { dynamicFriction = settings.Friction, staticFriction = settings.Friction, bounciness = settings.Bounce, bounceCombine = PhysicsMaterialCombine.Maximum, frictionCombine = FrictionCombineMode };
             foreach (var collider in body.Object.GetComponents<Collider>()) collider.material = material;
-            var rb = body.Rigidbody; rb.mass = Mathf.Clamp(settings.Mass, PhysicsRules.MinMass, PhysicsRules.MaxMass); rb.angularDamping = .6f; rb.linearDamping = .05f; rb.WakeUp();
+            var rb = body.Rigidbody; rb.mass = Mathf.Clamp(settings.Mass, PhysicsRules.MinMass, PhysicsRules.MaxMass); rb.angularDamping = AngularDamping; rb.linearDamping = LinearDamping; rb.WakeUp();
         }
 
         private void SyncFixed(PhysicsBodyDefinition def, PhysicsSettings settings)
@@ -254,6 +262,7 @@ namespace LifeVerse.Unity.Server
 
         public Rigidbody BodyOf(Guid id) => _bodies.TryGetValue(id, out var body) ? body.Rigidbody : null;
 
-        public void Dispose() { Kill(_root); _bodies.Clear(); _fixed.Clear(); }
+        /// <summary>Gone at once, not at the end of the frame: Unity has a single physics world, and what is only "to be destroyed" still collides with whatever comes next.</summary>
+        public void Dispose() { if (_root != null) UnityEngine.Object.DestroyImmediate(_root); _bodies.Clear(); _fixed.Clear(); }
     }
 }

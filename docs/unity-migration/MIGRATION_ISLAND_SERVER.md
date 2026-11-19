@@ -83,8 +83,22 @@ A física fica atrás de `IIslandPhysics` (`Core`): o `Core` mantém os corpos e
 
 Verificado no PhysX real, dentro do player (`LifeVerse.exe -lifeverse-physics-selfcheck`, 15 verificações): a bola cai, repousa na altura certa, dorme e dá contato com o chão com a velocidade da queda; cai sobre uma caixa fixa; é chutada por quem anda; recebe impulso/velocidade de script; quica; repousa no terreno esculpido. Verificado de ponta a ponta: o servidor dentro do player carrega a bola da API, ela cai e dorme, e 64 clientes recebem 147 mensagens de física cada, sem desconexões. O `Core` é testado com uma física de mentira (sincronização, passo, empurrão, mudança de pose, quem chega depois).
 
-**Diferenças em relação ao Godot, não medidas**: PhysX e Godot Physics resolvem contatos de forma diferente (empilhamento, quique, atrito combinado: o Unity usa a média, não a regra do Godot), então a mesma cena não se comporta idêntica; o cilindro é uma malha convexa de 24 lados; o impulso de script muda a velocidade na hora; o contato informa a velocidade relativa antes do impacto. Corpos acima de 200 são ignorados (como no Godot). Falta comparar cenas reais lado a lado, medir o custo com 200 corpos e confirmar o `Rigidbody` com `ContinuousDynamic` em objetos finos.
+**Comparação medida com o Godot** (2026-11-19, `unity/PhysicsComparison`: um projeto Godot separado reproduz os parâmetros do `ServerPhysics.cs`; o player Unity roda `-lifeverse-physics-report`; chão plano, 60 Hz):
 
+| Cenário | Godot 4.7.2 | Unity (PhysX) |
+|---|---|---|
+| bola solta de 4,5 m: impacto em / velocidade | 0,93 s / 8,40 m/s | 0,90 s / 8,63 m/s |
+| ... repouso (y do centro) / dorme em | 0,490 / 1,43 s | 0,500 / 1,28 s |
+| bola com quique 1,0 de 5,5 m: pico depois do impacto | 4,67 (não dorme em 14 s) | 5,33 (não dorme em 14 s) |
+| bola sobre caixa fixa: repouso / dorme em | 1,490 / 1,42 s | 1,500 / 1,28 s |
+| caixa física de 3,5 m: repouso / dorme em | 0,490 / 1,30 s | 0,500 / 1,07 s |
+| chute de 3,6 N·s: distância rolada | 8,37 m (não dorme em 12 s) | 8,11 m (não dorme em 12 s) |
+
+Leitura: queda, repouso e empilhamento batem dentro de ~2 cm e ~0,2 s; o PhysX adormece um pouco antes. O Godot afunda 1 cm no chão (0,490), o PhysX não. Dois ajustes saíram da comparação: o quique (o Godot **soma** os quiques dos dois lados e o chão não tem; o Unity faz a média por padrão, o que dava um pico de 1,7 m: agora `bounceCombine = Maximum`) e o rolamento (com o amortecimento angular 0,6 o PhysX rolava 11,6 m contra 8,4 m do Godot; **calibrei o amortecimento angular para 1,0**, que dá 8,1 m — calibração de um único cenário, uma bola rolando; caixas deslizando e atrito de outros materiais não foram comparados). O modo de combinação do atrito quase não mudou o resultado (média, mínimo e produto: 11,6 a 11,9 m com 0,6). O quique elástico (1,0) tem pico 14% maior no PhysX e nunca dorme, nos dois motores.
+
+Não comparado: pilhas de várias caixas, rotação inicial, objetos finos em alta velocidade (túnel), custo com 200 corpos, corpos grandes sobre terreno inclinado, colisão entre dois corpos físicos. Também nada foi medido com os atritos de `PhysicsRules.Materials` (madeira, gelo etc.).
+
+Um defeito do meu código apareceu na comparação: o `Dispose` do `UnityIslandPhysics` usava a destruição adiada da Unity (fim do quadro), então corpos "destruídos" ainda colidiam com o cenário seguinte dentro do mesmo quadro. Agora destrói na hora. Não afeta o servidor (que vive o tempo todo e tem quadros entre as mudanças), só quem cria e destrói mundos seguidos.
 ### Scripts: o que está e o que falta
 
 O `IslandScripting*.cs` do Godot não depende de engine, então o `Core` o compila direto de `island-server/Scripts` (um `Compile Include` no `.csproj`; uma correção lá vale para os dois servidores). Só duas coisas foram escritas: `ServerConfiguration` (a parte que o código de scripts lê) e `HttpCompat` (sobrecargas do .NET 5+ que faltam no `netstandard2.1`). **Quando o servidor Godot for aposentado, essas fontes precisam ser movidas para o `Core`.** Verificado com Lua real: toque e chat. **Não verificado**: os demais eventos, HUD, mídia, efeitos, pagamentos, NPCs e gestos no servidor (o código é o mesmo do Godot, mas não há teste meu); Lua dentro do player Unity (só o compilador Lua foi autoverificado). **Física de objetos**: veja a seção abaixo.
