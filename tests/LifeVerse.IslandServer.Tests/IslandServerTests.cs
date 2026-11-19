@@ -517,17 +517,70 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
         a.Wire.Disconnect();
         Assert.True(await island.PumpAsync(() => b.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("\"unlock\""))));
     }
+    private static string Parcel(Guid id, string extra, string runs = "[[10,10,14],[11,10,14],[12,10,14]]") => $"{{\"id\":\"{id}\",{extra},\"runs\":{runs}}}";
+
     [Fact]
-    public async Task UnsupportedFeaturesAnswerWithAClearRejectionInsteadOfSilence()
+    public async Task APlayerInsideLandThatClosesIsMovedOutByTheServer()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana", 50, 46); // dentro do que vai ser a parcela
+        var parcel = Guid.NewGuid();
+        island.Api.LandJson = $"{{\"access\":{{\"admins\":[],\"parcels\":[{Parcel(parcel, $"\"mode\":\"private\",\"owner\":\"{Guid.NewGuid()}\"")}]}},\"cursor\":1}}";
+        var moved = await island.PumpAsync(() => a.Position(a.PeerId) is { } p && (p.X < 40 || p.X >= 60 || p.Z < 40 || p.Z >= 52));
+        Assert.True(moved, $"pos={a.Position(a.PeerId)} logs={string.Join(" | ", island.Logs.ToString().Split('\n').Where(l => l.Contains("land")))}");
+        island.Api.LandJson = $"{{\"access\":{{\"admins\":[],\"parcels\":[{Parcel(parcel, $"\"mode\":\"private\",\"owner\":\"{a.Admission!.UserId}\"")}]}},\"cursor\":2}}"; // virou dona: pode voltar
+        await island.PumpForAsync(900); // a ilha recebe a nova regra no próximo land-sync
+        a.Wire.Send(new RequestTeleportMessage("", 50, 46));
+        Assert.True(await island.PumpAsync(() => a.All<TeleportResultMessage>().Any(t => t.Ok), 6000));
+    }
+
+    [Fact]
+    public async Task TeleportsFollowTheParcelRules()
     {
         using var island = new IslandHarness();
         await island.StartAsync();
         var a = await island.JoinAsync("Ana");
-        a.Wire.Send(new RequestTeleportMessage("x", 1, 1));
-        Assert.True(await island.PumpAsync(() => a.All<TeleportResultMessage>().Count > 0));
-        Assert.Equal("unsupported", a.Last<TeleportResultMessage>()!.Code);
+        var free = Guid.NewGuid(); var forced = Guid.NewGuid(); var disabled = Guid.NewGuid(); var closed = Guid.NewGuid();
+        island.Api.LandJson = "{\"access\":{\"admins\":[],\"parcels\":[" + Parcel(closed, $"\"mode\":\"private\",\"owner\":\"{Guid.NewGuid()}\"", "[[-18,-20,-18]]") + "]},"
+            + "\"teleport\":{\"parcels\":[" + Parcel(free, "\"mode\":\"free\"", "[[20,20,22]]") + "," + Parcel(forced, "\"mode\":\"forced\",\"arrival\":{\"x\":-100,\"z\":-100,\"yaw\":1.5}", "[[30,30,32]]") + "," + Parcel(disabled, "\"mode\":\"disabled\"", "[[40,40,42]]") + "]},\"cursor\":1}";
+        await island.PumpForAsync(800);
+        async Task<TeleportResultMessage> Ask(string parcel, float x, float z)
+        {
+            var before = a.All<TeleportResultMessage>().Count;
+            a.Wire.Send(new RequestTeleportMessage(parcel, x, z));
+            Assert.True(await island.PumpAsync(() => a.All<TeleportResultMessage>().Count > before));
+            await island.PumpForAsync(1100); // a pausa entre pedidos
+            return a.Last<TeleportResultMessage>()!;
+        }
+        Assert.Equal("unknown_parcel", (await Ask(Guid.NewGuid().ToString(), 0, 0)).Code);
+        Assert.Equal("invalid", (await Ask("nao-e-guid", 0, 0)).Code);
+        Assert.Equal("teleport_disabled", (await Ask(disabled.ToString(), 0, 0)).Code);
+        var toForced = await Ask("", 122, 122); // cai numa parcela "forced": vai para o ponto de chegada dela
+        Assert.True(toForced.Ok); Assert.Equal(-100f, toForced.X); Assert.Equal(1.5f, toForced.Yaw);
+        Assert.Equal("no_access", (await Ask("", -72, -72)).Code); // terra fechada
+        var spot = await Ask("", 10, 12);
+        Assert.True(spot.Ok); Assert.Equal(10f, spot.X);
+        a.Wire.Send(new RequestTeleportMessage("", 1, 1)); a.Wire.Send(new RequestTeleportMessage("", 2, 2));
+        Assert.True(await island.PumpAsync(() => a.All<TeleportResultMessage>().Any(t => t.Code == "rate_limit")));
     }
 
+    [Fact]
+    public async Task ParcelOwnersSculptOnlyTheirLandAndTheLandEventsReachEveryone()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var owner = await island.JoinAsync("Dona"); var other = await island.JoinAsync("Outro", 3, 0);
+        island.Api.LandJson = "{\"terrain\":{\"parcels\":[" + Parcel(Guid.NewGuid(), $"\"editors\":[\"{owner.Admission!.UserId}\"]") + "]},\"events\":[{\"operation\":\"delete\",\"objectId\":\"" + Guid.NewGuid() + "\",\"returned\":true}],\"cursor\":1}";
+        Assert.True(await island.PumpAsync(() => other.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("returned"))));
+
+        other.Wire.Send(new SubmitTerrainEditMessage(0, 50, 46, 2, .5f, 0));
+        Assert.True(await island.PumpAsync(() => other.All<TerrainEditRejectedMessage>().Any(r => r.Code == "no_permission")));
+        owner.Wire.Send(new SubmitTerrainEditMessage(0, 50, 46, 2, .5f, 0));
+        Assert.True(await island.PumpAsync(() => other.All<TerrainPatchedMessage>().Count > 0)); // com máscara: todos recebem os vértices que mudaram
+        owner.Wire.Send(new SubmitSeaLevelMessage(3f));
+        Assert.True(await island.PumpAsync(() => owner.All<TerrainEditRejectedMessage>().Any(r => r.Code == "no_permission"))); // o mar é dos editores da ilha
+    }
     [Fact]
     public async Task AnIslandNobodyJoinsShutsDownByItselfWhenAskedTo()
     {

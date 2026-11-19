@@ -69,6 +69,9 @@ public sealed class FakeApi : IIslandApi
     public Func<string, (int Status, string Body)> BuildAnswer = json => (200, json);
     public Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct) { BuildRequests.Enqueue(json); return Task.FromResult(BuildAnswer(json)); }
 
+    public volatile string? LandJson;
+    public Task<string?> LandSyncAsync(long cursor, CancellationToken ct) => Task.FromResult(LandJson);
+
     public readonly List<VehicleRow> Vehicles = new();
     public Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct) { lock (Vehicles) return Task.FromResult<IReadOnlyList<VehicleRow>>(Vehicles.ToList()); }
 
@@ -123,7 +126,7 @@ public sealed class IslandHarness : IDisposable
             ["LIFEVERSE_TICKET_PROTOCOL"] = ticketProtocol.ToString(), ["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"] = idleMinutes.ToString(),
         };
         var config = IslandServerConfig.From(name => environment.GetValueOrDefault(name));
-        Server = new Core.IslandServer(config, Api, new IslandLog(Logs), options ?? new IslandServerOptions(HeartbeatSeconds: .3, LocationSeconds: .5, DisconnectDelaySeconds: .15, VehicleSyncSeconds: .3));
+        Server = new Core.IslandServer(config, Api, new IslandLog(Logs), options ?? new IslandServerOptions(HeartbeatSeconds: .3, LocationSeconds: .5, DisconnectDelaySeconds: .15, VehicleSyncSeconds: .3, LandSyncSeconds: .3));
     }
 
     public async Task StartAsync() { await Server.StartAsync(); _run = Server.RunAsync(); }

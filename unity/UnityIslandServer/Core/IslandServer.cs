@@ -15,7 +15,7 @@ namespace LifeVerse.IslandServer.Core;
 
 /// <summary>Os tempos do servidor. Os padrões são os do servidor Godot; os testes os encurtam.</summary>
 public sealed record IslandServerOptions(double HeartbeatSeconds = 15, double LocationSeconds = 20, double WorldSaveSeconds = 60,
-    double SuspendSeconds = 10, double VehicleSyncSeconds = 15, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25);
+    double SuspendSeconds = 10, double VehicleSyncSeconds = 15, double LandSyncSeconds = 10, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25);
 
 /// <summary>O que o servidor mede de si mesmo (vai para o health check, o heartbeat e os testes de carga).</summary>
 public sealed record IslandServerStats(int Players, long Ticks, double TickAverageMs, double TickP99Ms, double TickMaxMs, double TickRate,
@@ -42,6 +42,7 @@ public sealed partial class IslandServer : IDisposable
         public readonly Queue<DateTimeOffset> ChatTimes = new();
         public DateTimeOffset? LastGesture, LastHeadLook;
         public readonly Queue<DateTimeOffset> TerrainTimes = new(), BuildTimes = new();
+        public DateTimeOffset? LastPushLog, LastTeleport;
         public DateTimeOffset LastTerrainRequest, LastTerrainImport, LastStrokeAt;
         public readonly List<TerrainPatch> UndoStack = new(), RedoStack = new();
     }
@@ -72,7 +73,7 @@ public sealed partial class IslandServer : IDisposable
     private double _time, _snapshotAccumulator, _locationAccumulator, _worldSaveAccumulator;
     private double? _emptySince;
     private TcpListener? _health;
-    private Task? _healthTask, _heartbeatTask, _stopTask, _vehicleTask;
+    private Task? _healthTask, _heartbeatTask, _stopTask, _vehicleTask, _landTask;
     private int _playerCount;
     private long _ticks, _snapshotsSent, _snapshotBytes, _messages, _tickFailures;
     private double _tickMaxMs, _tickWindowStart;
@@ -129,6 +130,7 @@ public sealed partial class IslandServer : IDisposable
             if (!_wire.Start(_config.GamePort, _config.LoopbackOnly)) throw new InvalidOperationException($"LiteNetLib failed to listen on {_config.GamePort}.");
             _heartbeatTask = HeartbeatLoopAsync();
             _vehicleTask = VehicleSyncLoopAsync();
+            _landTask = LandSyncLoopAsync();
             _ready = true;
             _log.Write("server_started", new { _config.InstanceId, _config.IslandId, gamePort = _wire.Port, healthPort = HealthPort, wire = WireProtocol.Version, ticket = _config.TicketProtocolVersion, engine = "wire" });
         }
@@ -186,6 +188,7 @@ public sealed partial class IslandServer : IDisposable
             if (!player.Authenticated) continue;
             if (PinDriver(player)) continue;
             player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin, null);
+            if (_access.HasZones) KeepOutOfClosedLand(player);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with { Flags = player.LatestInput.Flags & (InputFlags.Run | InputFlags.Descend) };
         }
@@ -286,7 +289,7 @@ public sealed partial class IslandServer : IDisposable
             case EnterVehicleMessage enter: OnEnterVehicle(player, enter.VehicleId); break;
             case ExitVehicleMessage: OnExitVehicle(player); break;
             case SubmitVehicleInputMessage drive: if (float.IsFinite(drive.Throttle) && float.IsFinite(drive.Steer)) _fleet.SetInput(peerId, drive.Throttle, drive.Steer, drive.Brake); break;
-            case RequestTeleportMessage teleport: _wire.Send(peerId, new TeleportResultMessage(false, "unsupported", teleport.X, teleport.Z, 0)); break;
+            case RequestTeleportMessage teleport: OnTeleport(player, teleport); break;
             default: break; // voz, anexos, aparência, toque e diálogos de scripts: ainda sem equivalente (ver MIGRATION_PROGRESS.md, Fase 6)
         }
     }
@@ -487,7 +490,8 @@ public sealed partial class IslandServer : IDisposable
 
     private bool TryBeginTerrainAction(Player player)
     {
-        if (!player.CanEditTerrain) { _wire.Send(player.PeerId, new TerrainEditRejectedMessage("no_permission")); return false; }
+        // island editors may sculpt anywhere; people who own, rent or build on parcels may sculpt inside them (see OnTerrainEdit)
+        if (!player.CanEditTerrain && !_rights.HasAny(player.UserId)) { _wire.Send(player.PeerId, new TerrainEditRejectedMessage("no_permission")); return false; }
         var now = DateTimeOffset.UtcNow;
         while (player.TerrainTimes.Count > 0 && now - player.TerrainTimes.Peek() > TimeSpan.FromSeconds(1)) player.TerrainTimes.Dequeue();
         if (player.TerrainTimes.Count >= NetworkProtocol.MaxTerrainEditsPerSecond) { _wire.Send(player.PeerId, new TerrainEditRejectedMessage("rate_limit")); return false; }
@@ -514,13 +518,15 @@ public sealed partial class IslandServer : IDisposable
         { RejectTerrain(actor, "invalid_edit"); return; }
         var radius = Math.Clamp(edit.Radius, 1f, TerrainMap.MaxBrushRadius); var strength = Math.Clamp(edit.Strength, 0f, 1f); // everyone replays the clamped values
         var tool = (TerrainTool)edit.Tool;
-        var before = _terrain.Capture(edit.X, edit.Z, radius, brush.Square, null);
-        if (!_terrain.Apply(tool, edit.X, edit.Z, radius, strength, layer, brush, null)) return;
+        // people without island-wide rights change only the ground their parcels own, and nothing that touches a neighbour's boundary
+        var mask = actor.CanEditTerrain ? null : _rights.MaskFor(actor.UserId, _terrain);
+        var before = _terrain.Capture(edit.X, edit.Z, radius, brush.Square, mask);
+        if (!_terrain.Apply(tool, edit.X, edit.Z, radius, strength, layer, brush, mask)) return;
         _terrainDirty = true;
         RememberStroke(actor, before);
-        if (brush.IsDefault && tool <= TerrainTool.Noise)
+        if (mask is null && brush.IsDefault && tool <= TerrainTool.Noise)
             foreach (var target in _players.Values.Where(p => p.Authenticated)) _wire.Send(target.PeerId, new TerrainEditedMessage(edit.Tool, edit.X, edit.Z, radius, strength, edit.Layer, _terrain.Revision));
-        else BroadcastPatch(_terrain.Capture(edit.X, edit.Z, radius, brush.Square, null));
+        else BroadcastPatch(_terrain.Capture(edit.X, edit.Z, radius, brush.Square, mask));
     }
 
     private void RejectTerrain(Player player, string terrainCode) => _wire.Send(player.PeerId, new TerrainEditRejectedMessage(terrainCode));
@@ -536,7 +542,9 @@ public sealed partial class IslandServer : IDisposable
 
     private void OnSeaLevel(Player actor, float level)
     {
-        if (!TryBeginTerrainAction(actor) || !_terrain.SetSeaLevel(level)) return;
+        if (!TryBeginTerrainAction(actor)) return;
+        if (!actor.CanEditTerrain) { RejectTerrain(actor, "no_permission"); return; } // the sea belongs to island editors
+        if (!_terrain.SetSeaLevel(level)) return;
         _terrainDirty = true;
         foreach (var target in _players.Values.Where(p => p.Authenticated)) _wire.Send(target.PeerId, new SeaLevelChangedMessage(_terrain.SeaLevel, _terrain.Revision));
     }
@@ -566,6 +574,7 @@ public sealed partial class IslandServer : IDisposable
     {
         if (heights.Length > NetworkProtocol.MaxTerrainImportBytes || DateTimeOffset.UtcNow - actor.LastTerrainImport < TimeSpan.FromSeconds(5)) { RejectTerrain(actor, "rate_limit"); return; }
         if (!TryBeginTerrainAction(actor)) return;
+        if (!actor.CanEditTerrain) { RejectTerrain(actor, "no_permission"); return; } // importing a whole map is for island editors
         actor.LastTerrainImport = DateTimeOffset.UtcNow;
         var undo = _terrain.ImportHeights16(heights);
         if (undo is null) { RejectTerrain(actor, "invalid_heightmap"); return; }

@@ -38,6 +38,8 @@ public interface IIslandApi : IDisposable
     Task<IReadOnlyList<VehicleRow>> GetVehiclesAsync(CancellationToken ct);
     /// <summary>Repassa uma operação de construção à API em nome do jogador. Devolve o estado HTTP e o corpo (aceito ou o motivo da recusa).</summary>
     Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct);
+    /// <summary>O que a API diz sobre as terras desde <paramref name="cursor"/> (JSON bruto: access, terrain, teleport, rules, events, cursor). Null se a API recusar.</summary>
+    Task<string?> LandSyncAsync(long cursor, CancellationToken ct);
     Task DeregisterAsync(CancellationToken ct);
 }
 
@@ -106,6 +108,12 @@ public sealed class HttpIslandApi : IIslandApi
     {
         using var response = await _http.PostAsync($"{Server}/transfers/{transferId}/arrived", new StringContent(string.Empty), ct).ConfigureAwait(false);
         return (int)response.StatusCode;
+    }
+
+    public async Task<string?> LandSyncAsync(long cursor, CancellationToken ct)
+    {
+        using var response = await _http.GetAsync($"{Server}/land-sync?since={cursor}", ct).ConfigureAwait(false);
+        return response.IsSuccessStatusCode ? await response.Content.ReadAsStringAsync().ConfigureAwait(false) : null;
     }
 
     public async Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct)
