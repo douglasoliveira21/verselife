@@ -40,6 +40,8 @@ public interface IIslandApi : IDisposable
     Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct);
     /// <summary>O que a API diz sobre as terras desde <paramref name="cursor"/> (JSON bruto: access, terrain, teleport, rules, events, cursor). Null se a API recusar.</summary>
     Task<string?> LandSyncAsync(long cursor, CancellationToken ct);
+    /// <summary>Como o avatar é agora, segundo a API (JSON com appearanceJson e displayName).</summary>
+    Task<(int Status, string Body)> GetAppearanceAsync(Guid avatarId, CancellationToken ct);
     Task DeregisterAsync(CancellationToken ct);
 }
 
@@ -108,6 +110,12 @@ public sealed class HttpIslandApi : IIslandApi
     {
         using var response = await _http.PostAsync($"{Server}/transfers/{transferId}/arrived", new StringContent(string.Empty), ct).ConfigureAwait(false);
         return (int)response.StatusCode;
+    }
+
+    public async Task<(int Status, string Body)> GetAppearanceAsync(Guid avatarId, CancellationToken ct)
+    {
+        using var response = await _http.GetAsync($"{_config.ApiBaseUrl}/api/v1/platform/avatars/{avatarId}/appearance", ct).ConfigureAwait(false);
+        return ((int)response.StatusCode, await response.Content.ReadAsStringAsync().ConfigureAwait(false));
     }
 
     public async Task<string?> LandSyncAsync(long cursor, CancellationToken ct)

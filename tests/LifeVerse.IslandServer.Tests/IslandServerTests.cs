@@ -607,6 +607,44 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Equal(before, near.All<ReceiveVoiceMessage>().Count);
     }
     [Fact]
+    public async Task AppearanceIsAskedFromTheAPIAndToldToEveryoneWithACooldownThatDefersInsteadOfDropping()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana"); var b = await island.JoinAsync("Beto");
+        island.Api.AppearanceBody = System.Text.Json.JsonSerializer.Serialize(new { appearanceJson = "{\"hair\":\"red\"}", displayName = "Ana Nova" });
+        a.Wire.Send(new RefreshAppearanceMessage());
+        Assert.True(await island.PumpAsync(() => b.All<AppearanceChangedMessage>().Count == 1));
+        Assert.Equal("Ana Nova", b.Last<AppearanceChangedMessage>()!.DisplayName);
+        Assert.Contains("red", b.Last<AppearanceChangedMessage>()!.AppearanceJson);
+        island.Api.AppearanceBody = System.Text.Json.JsonSerializer.Serialize(new { appearanceJson = "{\"hair\":\"blue\"}", displayName = "Ana Nova" });
+        a.Wire.Send(new RefreshAppearanceMessage()); a.Wire.Send(new RefreshAppearanceMessage()); // logo depois: adiado, uma só vez
+        await island.PumpForAsync(500);
+        Assert.Single(b.All<AppearanceChangedMessage>());
+        Assert.True(await island.PumpAsync(() => b.All<AppearanceChangedMessage>().Count == 2, 8000));
+        Assert.Contains("blue", b.Last<AppearanceChangedMessage>()!.AppearanceJson);
+        Assert.Equal(2, island.Api.AppearanceRequests);
+    }
+
+    [Fact]
+    public async Task LiveAttachmentPreviewsAreRelayedOnlyForWornAttachmentsWithValidNumbers()
+    {
+        using var island = new IslandHarness();
+        await island.StartAsync();
+        var worn = Guid.NewGuid();
+        var appearance = System.Text.Json.JsonSerializer.Serialize(new { bodyAttachmentsJson = $"[{{\"id\":\"{worn}\"}}]" });
+        var a = await island.JoinAsync("Ana", appearance: appearance); var b = await island.JoinAsync("Beto");
+        var ok = new float[] { 0, 0, 0, 0, 0, 0, 1, 1, 1 };
+        a.Wire.Send(new AttachmentLiveMessage(Guid.NewGuid().ToString(), ok)); // não é dela
+        await island.PumpForAsync(150);
+        a.Wire.Send(new AttachmentLiveMessage(worn.ToString(), new float[] { 0, 0, 0, 0, 0, 0, 1e9f, 1, 1 })); // escala fora do limite
+        await island.PumpForAsync(150);
+        Assert.Empty(b.All<AttachmentLiveChangedMessage>());
+        a.Wire.Send(new AttachmentLiveMessage(worn.ToString(), ok));
+        Assert.True(await island.PumpAsync(() => b.All<AttachmentLiveChangedMessage>().Count == 1));
+        Assert.Equal(a.PeerId, b.Last<AttachmentLiveChangedMessage>()!.PeerId);
+    }
+    [Fact]
     public async Task AnIslandNobodyJoinsShutsDownByItselfWhenAskedTo()
     {
         using var island = new IslandHarness(idleMinutes: 1, options: new IslandServerOptions(HeartbeatSeconds: 5));

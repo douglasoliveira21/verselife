@@ -23,11 +23,11 @@ public sealed class FakeApi : IIslandApi
     public string TerrainJson = "{}";
     public TimeSpan ValidationDelay = TimeSpan.Zero;
 
-    public Admission Issue(string name, float spawnX = 0, float spawnZ = 0, int protocol = 11, Guid? avatar = null, float? resumeX = null, float? resumeZ = null, Guid? transfer = null, bool canEdit = false)
+    public Admission Issue(string name, float spawnX = 0, float spawnZ = 0, int protocol = 11, Guid? avatar = null, float? resumeX = null, float? resumeZ = null, Guid? transfer = null, bool canEdit = false, string appearance = "{}")
     {
         var token = Guid.NewGuid().ToString("N");
         var admission = new Admission(Guid.NewGuid(), avatar ?? Guid.NewGuid(), IslandId, Guid.NewGuid(), Guid.NewGuid(), protocol, DateTimeOffset.UtcNow.AddMinutes(5),
-            name, "{}", canEdit, spawnX, spawnZ, 256, resumeX, 0, resumeZ, transfer) { };
+            name, appearance, canEdit, spawnX, spawnZ, 256, resumeX, 0, resumeZ, transfer) { };
         Tickets[token] = admission;
         Tokens[admission.UserId] = token;
         return admission;
@@ -68,6 +68,10 @@ public sealed class FakeApi : IIslandApi
     public readonly ConcurrentQueue<string> BuildRequests = new();
     public Func<string, (int Status, string Body)> BuildAnswer = json => (200, json);
     public Task<(int Status, string Body)> BuildOperationAsync(string json, CancellationToken ct) { BuildRequests.Enqueue(json); return Task.FromResult(BuildAnswer(json)); }
+
+    public int AppearanceRequests;
+    public volatile string AppearanceBody = "{\"appearanceJson\":\"{}\",\"displayName\":\"\"}";
+    public Task<(int Status, string Body)> GetAppearanceAsync(Guid avatarId, CancellationToken ct) { Interlocked.Increment(ref AppearanceRequests); return Task.FromResult((200, AppearanceBody)); }
 
     public volatile string? LandJson;
     public Task<string?> LandSyncAsync(long cursor, CancellationToken ct) => Task.FromResult(LandJson);
@@ -140,9 +144,9 @@ public sealed class IslandHarness : IDisposable
     }
 
     /// <summary>Conecta, manda o bilhete e espera a resposta (AuthResult).</summary>
-    public async Task<TestClient> JoinAsync(string name, float x = 0, float z = 0, Guid? avatar = null, bool canEdit = false)
+    public async Task<TestClient> JoinAsync(string name, float x = 0, float z = 0, Guid? avatar = null, bool canEdit = false, string appearance = "{}")
     {
-        var admission = Api.Issue(name, x, z, avatar: avatar, canEdit: canEdit);
+        var admission = Api.Issue(name, x, z, avatar: avatar, canEdit: canEdit, appearance: appearance);
         var client = Connect(); client.Admission = admission;
         await PumpAsync(() => client.Wire.IsConnected);
         client.Wire.Send(new AuthenticateMessage(Api.TokenOf(admission), WireProtocol.Version));

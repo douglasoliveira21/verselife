@@ -43,7 +43,9 @@ public sealed partial class IslandServer : IDisposable
         public readonly Queue<DateTimeOffset> ChatTimes = new();
         public DateTimeOffset? LastGesture, LastHeadLook;
         public readonly Queue<DateTimeOffset> TerrainTimes = new(), BuildTimes = new();
-        public DateTimeOffset? LastPushLog, LastTeleport;
+        public DateTimeOffset? LastPushLog, LastTeleport, LastAppearance, LastAttachmentLive;
+        public bool LateAppearance;
+        public string? WornJson; public HashSet<Guid> WornIds = new();
         public DateTimeOffset LastTerrainRequest, LastTerrainImport, LastStrokeAt;
         public readonly List<TerrainPatch> UndoStack = new(), RedoStack = new();
     }
@@ -280,6 +282,8 @@ public sealed partial class IslandServer : IDisposable
             case SubmitInputMessage input: OnInput(player, input); break;
             case SetFlightMessage flight: OnFlight(player, flight.Enabled); break;
             case SendChatMessage chat: OnChat(player, chat.Message); break;
+            case RefreshAppearanceMessage: OnRefreshAppearance(player); break;
+            case AttachmentLiveMessage live: OnAttachmentLive(player, live); break;
             case SubmitVoiceMessage voice: OnVoice(player, voice); break;
             case GestureMessage gesture: OnGesture(player, gesture.GestureId); break;
             case HeadLookMessage look: OnHeadLook(player, look.Pitch); break;
