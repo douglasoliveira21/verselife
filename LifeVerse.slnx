@@ -17,7 +17,11 @@
   <Folder Name="/Shared/">
     <Project Path="shared/LifeVerse.Shared.csproj" />
   </Folder>
+  <Folder Name="/Unity Wire/">
+    <Project Path="unity/UnityWire/LifeVerse.Wire.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="tests/LifeVerse.Api.Tests/LifeVerse.Api.Tests.csproj" />
+    <Project Path="tests/LifeVerse.Wire.Tests/LifeVerse.Wire.Tests.csproj" />
   </Folder>
 </Solution>
