@@ -1,4 +1,7 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project>
+  <!-- obj próprio: os dois projetos estão na mesma pasta e dividiriam o project.assets.json (cada restauração apagaria os pacotes do outro) -->
+  <PropertyGroup><BaseIntermediateOutputPath>obj\shared\</BaseIntermediateOutputPath></PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
   <!--
     Compila o código-fonte de ../../shared para a Unity (netstandard2.1) SEM alterar o projeto shared.
     O resultado vai para UnityClient/Assets/LifeVerse/Plugins por build-plugins.ps1.
@@ -28,4 +31,5 @@
     <PackageReference Include="Concentus" Version="2.2.2" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
 </Project>

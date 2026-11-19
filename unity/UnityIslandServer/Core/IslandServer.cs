@@ -16,7 +16,7 @@ namespace LifeVerse.IslandServer.Core;
 
 /// <summary>Os tempos do servidor. Os padrões são os do servidor Godot; os testes os encurtam.</summary>
 public sealed record IslandServerOptions(double HeartbeatSeconds = 15, double LocationSeconds = 20, double WorldSaveSeconds = 60,
-    double SuspendSeconds = 10, double VehicleSyncSeconds = 15, double LandSyncSeconds = 10, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25);
+    double SuspendSeconds = 10, double VehicleSyncSeconds = 15, double LandSyncSeconds = 10, double ScriptSyncSeconds = 15, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25);
 
 /// <summary>O que o servidor mede de si mesmo (vai para o health check, o heartbeat e os testes de carga).</summary>
 public sealed record IslandServerStats(int Players, long Ticks, double TickAverageMs, double TickP99Ms, double TickMaxMs, double TickRate,
@@ -77,8 +77,10 @@ public sealed partial class IslandServer : IDisposable
     private double _time, _snapshotAccumulator, _locationAccumulator, _worldSaveAccumulator;
     private double? _emptySince;
     private TcpListener? _health;
-    private Task? _healthTask, _heartbeatTask, _stopTask, _vehicleTask, _landTask;
+    private Task? _healthTask, _heartbeatTask, _stopTask, _vehicleTask, _landTask, _scriptTask;
     private int _playerCount;
+    private readonly object _tickGate = new();
+    private bool _wireClosed;
     private long _ticks, _snapshotsSent, _snapshotBytes, _messages, _tickFailures;
     private double _tickMaxMs, _tickWindowStart;
     private long _tickWindowCount;
@@ -132,6 +134,7 @@ public sealed partial class IslandServer : IDisposable
             _terrain = TerrainMap.FromJson(_terrainJson);
             _log.Write("world_snapshot_loaded", new { snapshot.Version, snapshot.IntegrityHash });
             if (!_wire.Start(_config.GamePort, _config.LoopbackOnly)) throw new InvalidOperationException($"LiteNetLib failed to listen on {_config.GamePort}.");
+            await StartScriptingAsync(ct).ConfigureAwait(false);
             _heartbeatTask = HeartbeatLoopAsync();
             _vehicleTask = VehicleSyncLoopAsync();
             _landTask = LandSyncLoopAsync();
@@ -166,7 +169,7 @@ public sealed partial class IslandServer : IDisposable
     {
         if (_stopped) return;
         var started = Stopwatch.GetTimestamp();
-        try { Step(delta); }
+        try { lock (_tickGate) { if (_wireClosed) return; Step(delta); } }
         catch (Exception exception) { Interlocked.Increment(ref _tickFailures); _log.Write("tick_failed", new { error = exception.Message, exception.StackTrace }); }
         var ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
         lock (_tickMs) { _tickMs.Enqueue(ms); if (_tickMs.Count > 600) _tickMs.Dequeue(); }
@@ -186,12 +189,16 @@ public sealed partial class IslandServer : IDisposable
         if (!_ready || _stopping) return;
         var dt = Math.Min(delta, 1f / 20f);
         SweepLocks();
-        _fleet.Tick(dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin);
+        _scripting?.Update(_players.Values.Where(x => x.Authenticated).Select(PresenceOf).ToList());
+        TickPhysics(delta);
+        _fleet.Tick(dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin, _scripting?.Now ?? 0, (car, by, arrived) => _scripting?.VehicleArrived(car, by, arrived));
+        _scripting?.Npcs?.Tick(_scripting.Now, dt);
         foreach (var player in _players.Values)
         {
             if (!player.Authenticated) continue;
             if (PinDriver(player)) continue;
-            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin, null);
+            player.Motion = AuthoritativeMovement.Step(player.State, player.LatestInput, dt, _terrain.SampleHeight, _terrain.SeaLevel, _terrain.HalfExtent + TerrainMap.OceanMargin, _scripting?.Obstacles);
+            ApplyScriptGesture(player);
             if (_access.HasZones) KeepOutOfClosedLand(player);
             player.LastProcessedInput = player.LatestInput.Sequence;
             player.LatestInput = player.LatestInput with { Flags = player.LatestInput.Flags & (InputFlags.Run | InputFlags.Descend) };
@@ -223,12 +230,20 @@ public sealed partial class IslandServer : IDisposable
     {
         _stopping = true; _stopRequested = true;
         _cts.Cancel();
+        try { if (_scripting is not null) await _scripting.ShutdownAsync().ConfigureAwait(false); }
+        catch (Exception exception) { _log.Write("script_state_flush_failed", new { error = exception.Message }); }
         try { if (_terrainDirty) await SaveWorldAsync(CancellationToken.None).ConfigureAwait(false); }
         catch (Exception exception) { _log.Write("world_snapshot_save_failed", new { error = exception.Message }); }
         await SaveLocationsAsync(_players.Values.Where(p => p.Authenticated).ToList(), CancellationToken.None).ConfigureAwait(false);
-        foreach (var peer in _players.Keys.ToList()) _wire.Disconnect(peer);
-        _wire.Poll();
-        _wire.Dispose();
+        // o último passo da simulação termina antes de fechar a porta: o LiteNetLib não aceita Poll e Stop ao mesmo tempo
+        lock (_tickGate)
+        {
+            foreach (var peer in _players.Keys.ToList()) _wire.Disconnect(peer);
+            _wire.Poll();
+            _wire.Dispose();
+            _wireClosed = true;
+            _physics?.Dispose();
+        }
         try { _health?.Stop(); } catch (SocketException) { }
         if (_registered)
         {
@@ -243,7 +258,7 @@ public sealed partial class IslandServer : IDisposable
     {
         _stopping = true;
         _cts.Cancel();
-        if (!_stopped) { try { _wire.Dispose(); } catch { } try { _health?.Stop(); } catch { } }
+        if (!_stopped) { lock (_tickGate) { if (!_wireClosed) { _wireClosed = true; try { _wire.Dispose(); } catch { } } } try { _health?.Stop(); } catch { } }
         _api.Dispose();
     }
 
@@ -258,7 +273,7 @@ public sealed partial class IslandServer : IDisposable
     private void OnPeerDisconnected(int peerId, WireDisconnectReason reason)
     {
         _fleet.Release(peerId);
-        _voice.Forget(peerId);
+        _voice.Forget(peerId); _scriptGestures.Remove(peerId);
         if (!_players.Remove(peerId, out var player)) return;
         if (player.Authenticated)
         {
@@ -282,6 +297,8 @@ public sealed partial class IslandServer : IDisposable
             case SubmitInputMessage input: OnInput(player, input); break;
             case SetFlightMessage flight: OnFlight(player, flight.Enabled); break;
             case SendChatMessage chat: OnChat(player, chat.Message); break;
+            case TouchObjectMessage touch: OnTouch(player, touch.ObjectId); break;
+            case ScriptDialogResponseMessage dialog: OnScriptDialog(player, dialog.Json); break;
             case RefreshAppearanceMessage: OnRefreshAppearance(player); break;
             case AttachmentLiveMessage live: OnAttachmentLive(player, live); break;
             case SubmitVoiceMessage voice: OnVoice(player, voice); break;
@@ -354,6 +371,8 @@ public sealed partial class IslandServer : IDisposable
         SendTerrain(player);
         foreach (var vehicle in _fleet.Vehicles) SendVehicle(player.PeerId, vehicle);
         SendLocks(player.PeerId);
+        SendScriptState(player.PeerId);
+        SendPhysicsState(player.PeerId);
         _log.Write("peer_authenticated", new { player.PeerId, admission.UserId, admission.AvatarId });
         if (admission.TransferId is { } trip) _ = ConfirmArrivalAsync(player.PeerId, trip); // quem viajou: a API só conclui a viagem quando esta ilha diz que a pessoa chegou
     }
@@ -426,6 +445,7 @@ public sealed partial class IslandServer : IDisposable
         sender.ChatTimes.Enqueue(now);
         foreach (var target in _players.Values.Where(x => x.Authenticated && DistanceSquared(sender, x) <= 30f * 30f))
             _wire.Send(target.PeerId, new ReceiveChatMessage(sender.PeerId, sender.DisplayName, message, now.ToUnixTimeMilliseconds()));
+        _scripting?.OnChat(PresenceOf(sender), message);
     }
 
     private void OnGesture(Player player, int gestureId)
@@ -475,6 +495,7 @@ public sealed partial class IslandServer : IDisposable
             }
             // Um snapshot é um datagrama sem fragmentação (LiteNetLib: ~1020 bytes). Com muita gente por perto ele vai em vários pacotes do MESMO tick;
             // o próprio jogador vai sempre no primeiro, para a confirmação das suas entradas (LastProcessedInput) não depender de um pacote que se perca.
+            if (_scripting?.Npcs is { } npcs) _visible.AddRange(npcs.Snapshots(target.State.X, target.State.Y, target.State.Z, _config.InterestRadius));
             var self = _visible.FindIndex(x => x.PeerId == target.PeerId);
             if (self > 0) { var me = _visible[self]; _visible.RemoveAt(self); _visible.Insert(0, me); }
             for (var offset = 0; offset < _visible.Count || offset == 0; offset += SnapshotPlayersPerPacket)
@@ -541,7 +562,7 @@ public sealed partial class IslandServer : IDisposable
         var mask = actor.CanEditTerrain ? null : _rights.MaskFor(actor.UserId, _terrain);
         var before = _terrain.Capture(edit.X, edit.Z, radius, brush.Square, mask);
         if (!_terrain.Apply(tool, edit.X, edit.Z, radius, strength, layer, brush, mask)) return;
-        _terrainDirty = true;
+        _terrainDirty = true; _scripting?.RegionChanged("terrain");
         RememberStroke(actor, before);
         if (mask is null && brush.IsDefault && tool <= TerrainTool.Noise)
             foreach (var target in _players.Values.Where(p => p.Authenticated)) _wire.Send(target.PeerId, new TerrainEditedMessage(edit.Tool, edit.X, edit.Z, radius, strength, edit.Layer, _terrain.Revision));
@@ -564,7 +585,7 @@ public sealed partial class IslandServer : IDisposable
         if (!TryBeginTerrainAction(actor)) return;
         if (!actor.CanEditTerrain) { RejectTerrain(actor, "no_permission"); return; } // the sea belongs to island editors
         if (!_terrain.SetSeaLevel(level)) return;
-        _terrainDirty = true;
+        _terrainDirty = true; _scripting?.RegionChanged("sea_level");
         foreach (var target in _players.Values.Where(p => p.Authenticated)) _wire.Send(target.PeerId, new SeaLevelChangedMessage(_terrain.SeaLevel, _terrain.Revision));
     }
 
@@ -575,7 +596,7 @@ public sealed partial class IslandServer : IDisposable
         if (from.Count == 0) { RejectTerrain(actor, undo ? "nothing_to_undo" : "nothing_to_redo"); return; }
         var patch = from[from.Count - 1]; from.RemoveAt(from.Count - 1);
         to.Add(_terrain.Restore(patch));
-        _terrainDirty = true; actor.LastStrokeAt = DateTimeOffset.MinValue;
+        _terrainDirty = true; _scripting?.RegionChanged("terrain"); actor.LastStrokeAt = DateTimeOffset.MinValue;
         BroadcastPatch(patch);
     }
 
@@ -598,7 +619,7 @@ public sealed partial class IslandServer : IDisposable
         var undo = _terrain.ImportHeights16(heights);
         if (undo is null) { RejectTerrain(actor, "invalid_heightmap"); return; }
         if (undo.Count == 0) return;
-        _terrainDirty = true;
+        _terrainDirty = true; _scripting?.RegionChanged("terrain");
         actor.UndoStack.Add(undo); actor.RedoStack.Clear(); if (actor.UndoStack.Count > 20) actor.UndoStack.RemoveAt(0);
         foreach (var target in _players.Values.Where(p => p.Authenticated)) SendTerrain(target);
     }
@@ -636,13 +657,15 @@ public sealed partial class IslandServer : IDisposable
     private void OnEnterVehicle(Player player, int vehicleId)
     {
         var result = _fleet.Enter(player.PeerId, vehicleId, player.State.X, player.State.Y, player.State.Z);
-        if (result == EnterResult.Ok) { _log.Write("vehicle_entered", new { player.PeerId, vehicleId }); return; }
+        if (result == EnterResult.Ok) { _log.Write("vehicle_entered", new { player.PeerId, vehicleId }); if (_fleet.Get(vehicleId) is { } entered) _scripting?.VehicleSeat(entered, true, PresenceOf(player)); return; }
         _wire.Send(player.PeerId, new VehicleRejectedMessage(result switch { EnterResult.TooFar => "too_far", EnterResult.Occupied => "occupied", EnterResult.AlreadyDriving => "already_driving", _ => "no_vehicle" }));
     }
 
     private void OnExitVehicle(Player player)
     {
+        var left = _fleet.VehicleOf(player.PeerId);
         if (!_fleet.Exit(player.PeerId, _terrain.SampleHeight, out var x, out var y, out var z)) return;
+        if (left is not null) _scripting?.VehicleSeat(left, false, PresenceOf(player));
         player.State.X = x; player.State.Y = y + AuthoritativeMovement.GroundOffset; player.State.Z = z;
         player.State.VelocityX = player.State.VelocityY = player.State.VelocityZ = 0; player.State.Seated = false;
         _log.Write("vehicle_exited", new { player.PeerId });
@@ -741,7 +764,7 @@ public sealed partial class IslandServer : IDisposable
     private async Task SendHeartbeatAsync()
     {
         var stats = Stats();
-        var report = new ServerReport(PlayerReports(), stats.TickRate, stats.TickAverageMs, GC.GetTotalMemory(false) / (1024.0 * 1024.0), (long)stats.UptimeSeconds, stats.TickRate);
+        var report = new ServerReport(PlayerReports(), stats.TickRate, stats.TickAverageMs, GC.GetTotalMemory(false) / (1024.0 * 1024.0), (long)stats.UptimeSeconds, stats.TickRate, _physics?.BodyCount ?? 0, _physics?.FixedCount ?? 0, _physics?.MaxBodies ?? 0, 0);
         var commands = await _api.HeartbeatAsync(stats.Players, report, _cts.Token).ConfigureAwait(false);
         if (commands.Count > 0) _inbox.Enqueue(() => ApplyCommands(commands));
     }

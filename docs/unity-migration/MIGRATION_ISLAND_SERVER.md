@@ -11,7 +11,7 @@ unity/UnityIslandServer/
   LoadTest/ LifeVerse.IslandServer.LoadTest   N clientes simulados por UDP contra um servidor em execução
 unity/UnityClient/Assets/LifeVerse/Server/
           IslandServerBehaviour         componente do Unity Dedicated Server (só dá o relógio e o código de saída)
-tests/LifeVerse.IslandServer.Tests      48 testes xUnit (UDP real + HTTP real)
+tests/LifeVerse.IslandServer.Tests      51 testes xUnit (UDP real + HTTP real)
 ```
 
 Toda a regra está no `Core`. Os dois hospedeiros só dão o relógio e a saída:
@@ -53,6 +53,8 @@ Concorrência: tudo que mexe no estado roda em `Update()`, na thread do hospedei
 | Terras (`land-sync` a cada 10 s): parcelas fechadas e banimentos (jogador é movido para o ponto permitido mais próximo), teletransporte (livre, forçado, desativado, com cooldown de 1 s), terreno por donos de parcela (máscara), eventos de terra repassados a todos | sim | sim (sem `LandInfo` e `LandRules` de voz/script) | `APlayerInsideLandThatCloses…`, `TeleportsFollowTheParcelRules`, `ParcelOwnersSculpt…` |
 | Voz proximal: pacotes Opus repassados a quem está a 25 m, limite de tamanho (400 B) e de taxa (60/s), parcelas sem voz | sim | sim | `VoiceReachesOnlyListenersInRange…` |
 | Aparência: o cliente só pede "atualizar"; o servidor consulta `avatars/{id}/appearance` e avisa todos (pausa de 3 s que adia em vez de descartar); prévia de anexos só para o que o jogador veste, com limites | sim | sim | `AppearanceIsAskedFromTheAPI…`, `LiveAttachmentPreviews…` |
+| Scripts de objetos (Lua/MoonSharp): carga de objetos e scripts (`island-content`), toque, duplo clique, chat, entrar/sair de objetos, timers, mudanças de objeto pela via de construção, NPCs, gestos, veículos, região, estado persistido ao encerrar | sim | sim, **compilando o mesmo `IslandScripting` de `island-server/`** (fonte única, sem cópia) | `ObjectScriptsAnswerTouches…`, `AnIslandWhoseScriptContentCannotBeLoaded…` (só toque e chat com Lua real) |
+| Física de objetos (corpos, fixos, terreno, empurrão, poses) | sim (Godot Physics) | sim, só no Unity Dedicated Server (PhysX) | `PhysicsGetsTheObjects…` (fake) + autoverificação de 15 itens no PhysX |
 | Posições salvas a cada 20 s e ao sair; liberação de viajantes; confirmação de chegada | sim | sim | `ATravellerWhoseTrip…`, `ATravellerArriving…` |
 | Heartbeat a cada 15 s, comandos `kick`, `notice`, `shutdown` | sim | sim | `AKickFromTheAdminPanel…`, `AShutdownCommand…` |
 | Health check TCP/HTTP: 200 `healthy` / 503 `starting` | sim | sim, com métricas (jogadores, tick médio e p99, uptime) | `StartRegisters…` |
@@ -72,9 +74,20 @@ Estas mensagens do protocolo chegam ao servidor e são respondidas com uma recus
 
 
 
-| Scripts de objetos (MoonSharp), NPCs, física de objetos, mídia, HUD | `TouchObject`, `ScriptDialogResponse` | o `LifeVerse.Scripting.dll` já roda na Unity (Fase 3); falta o `IslandScripting` (~17 arquivos) e a física (S4) |
 
 | Convivência de bilhetes na API | — | ver abaixo |
+
+### Física de objetos (S4)
+
+A física fica atrás de `IIslandPhysics` (`Core`): o `Core` mantém os corpos em dia com os objetos (a cada 0,5 s, quando a versão dos objetos muda), empurra os corpos com quem anda, avança a simulação e manda aos jogadores só as poses que mudaram (a cada 0,1 s, operação `physics`, 40 corpos por mensagem; quem entra recebe todas). A implementação é `UnityIslandPhysics` (PhysX da Unity, `Physics.simulationMode = Script`, passo fixo de 1/60 s): objetos "físicos" viram `Rigidbody`, sólidos fixos viram colisores, o terreno vira um `MeshCollider` refeito quando é esculpido; esferas, caixas e cilindros (malha convexa); massa, atrito e quique vêm de `PhysicsRules`. O host .NET **não tem física** (os objetos não caem lá): quem precisa de física usa o Unity Dedicated Server.
+
+Verificado no PhysX real, dentro do player (`LifeVerse.exe -lifeverse-physics-selfcheck`, 15 verificações): a bola cai, repousa na altura certa, dorme e dá contato com o chão com a velocidade da queda; cai sobre uma caixa fixa; é chutada por quem anda; recebe impulso/velocidade de script; quica; repousa no terreno esculpido. Verificado de ponta a ponta: o servidor dentro do player carrega a bola da API, ela cai e dorme, e 64 clientes recebem 147 mensagens de física cada, sem desconexões. O `Core` é testado com uma física de mentira (sincronização, passo, empurrão, mudança de pose, quem chega depois).
+
+**Diferenças em relação ao Godot, não medidas**: PhysX e Godot Physics resolvem contatos de forma diferente (empilhamento, quique, atrito combinado: o Unity usa a média, não a regra do Godot), então a mesma cena não se comporta idêntica; o cilindro é uma malha convexa de 24 lados; o impulso de script muda a velocidade na hora; o contato informa a velocidade relativa antes do impacto. Corpos acima de 200 são ignorados (como no Godot). Falta comparar cenas reais lado a lado, medir o custo com 200 corpos e confirmar o `Rigidbody` com `ContinuousDynamic` em objetos finos.
+
+### Scripts: o que está e o que falta
+
+O `IslandScripting*.cs` do Godot não depende de engine, então o `Core` o compila direto de `island-server/Scripts` (um `Compile Include` no `.csproj`; uma correção lá vale para os dois servidores). Só duas coisas foram escritas: `ServerConfiguration` (a parte que o código de scripts lê) e `HttpCompat` (sobrecargas do .NET 5+ que faltam no `netstandard2.1`). **Quando o servidor Godot for aposentado, essas fontes precisam ser movidas para o `Core`.** Verificado com Lua real: toque e chat. **Não verificado**: os demais eventos, HUD, mídia, efeitos, pagamentos, NPCs e gestos no servidor (o código é o mesmo do Godot, mas não há teste meu); Lua dentro do player Unity (só o compilador Lua foi autoverificado). **Física de objetos**: veja a seção abaixo.
 
 ## Convivência com a API (decisão pendente)
 
@@ -88,6 +101,12 @@ A API grava um único `ProtocolVersion` (11) nos bilhetes e o servidor Godot exi
 4. **`HttpIslandApi` só estava coberto por uma API de mentira em memória**; `HttpApiTests` exercita o HTTP de verdade.
 5. **O subtarget "Server" ficava gravado no projeto Unity** depois do build do servidor Linux e quebrava o build Windows ("Dedicated Server support for Win is not installed"). `BuildWindows` agora fixa `StandaloneBuildSubtarget.Player`.
 6. **Os `.csproj` escritos à mão estavam ignorados pelo git** (a regra `**/*.csproj` de `unity/.gitignore` serve aos projetos gerados pela Unity). O commit `4e73996` ficou sem `LifeVerse.Wire.csproj`, `LifeVerse.Shared.Unity.csproj` e `LifeVerse.Scripting.Unity.csproj`: um clone limpo não compilaria. A regra ganhou exceções para as pastas `UnityWire`, `UnityPlugins` e `UnityIslandServer`; os três arquivos entram no próximo commit.
+## Linux: o que o teste mostrou e o que continua aberto
+
+- Funciona em Linux **glibc** (Ubuntu). **O player da Unity não roda em Alpine (musl)**, e a produção atual usa contêineres Alpine (o API e o servidor Godot): o servidor Unity precisará de uma imagem Debian/Ubuntu (ou camada de compatibilidade glibc, não testada). O `Host` .NET roda em Alpine (o .NET tem alvo `linux-musl`), **mas não foi executado em Linux**: o Ubuntu do WSL não tem o SDK .NET.
+- Não testado: contêiner (Docker), Easypanel, o Supervisor, portas UDP expostas ao mundo, HTTPS contra a API real, `LIFEVERSE_*` pelo Easypanel, carga de longa duração, vazamento de memória.
+- Cuidado ao medir: bots que andam perto de uma bola física a empurram o tempo todo (mensagens de física contínuas); com 1 cliente parado longe dela a bola dorme e só 1 mensagem é enviada.
+
 ## Como operar
 
 Variáveis (iguais às do Godot): `LIFEVERSE_INSTANCE_ID`, `LIFEVERSE_ISLAND_ID`*, `LIFEVERSE_API_URL`*, `LIFEVERSE_SERVICE_KEY`* (≥ 32), `LIFEVERSE_HOSTNAME`, `LIFEVERSE_GAME_PORT` (7777, **UDP**), `LIFEVERSE_HEALTH_PORT` (7070, TCP), `LIFEVERSE_MAX_PLAYERS`, `LIFEVERSE_SNAPSHOT_RATE`, `LIFEVERSE_INTEREST_RADIUS`, `LIFEVERSE_IDLE_SHUTDOWN_MINUTES`, `LIFEVERSE_CHAT_BLOCKED_TERMS`. Novas: `LIFEVERSE_TICKET_PROTOCOL` (11), `LIFEVERSE_TICK_RATE` (60), `LIFEVERSE_LOOPBACK_ONLY` (`1` só aceita o próprio computador).
@@ -112,13 +131,13 @@ Integração com o Supervisor: a mesma porta de saúde (`/` responde 200/503 em 
 
 | Verificação | Resultado |
 |---|---|
-| `dotnet test LifeVerse.IslandServer.Tests` | 48 de 48 (execuções repetidas, sem instabilidade); inclui 64 jogadores por UDP no loopback: 60,2 Hz, tick médio 0,53 ms, p99 3,9 ms, 0 falhas |
+| `dotnet test LifeVerse.IslandServer.Tests` | 51 de 51 (execuções repetidas, sem instabilidade); inclui 64 jogadores por UDP no loopback: 60,2 Hz, tick médio 0,53 ms, p99 3,9 ms, 0 falhas |
 | `dotnet test LifeVerse.Wire.Tests` (depois da mudança do id) | 25 de 25 |
 | `Core` compila para `netstandard2.1` (Unity) e `net8.0` | 0 avisos, 0 erros |
-| Unity Dedicated Server **Linux** (`BuildLinuxServer`) | compila: 161 MB, 0 erros, 0 avisos. **Não executado** (sem Linux/WSL) |
+| Unity Dedicated Server **Linux** (`BuildLinuxServer`) | compila (162 MB, 0 erros) e **foi executado** no Ubuntu 26.04 (glibc 2.43) do WSL 2, a 2026-11-19, com a API de mentira em Python: sobe sem GPU nem Vulkan (`-batchmode -nographics`), registra, carrega mundo, objetos e a bola de física, e responde saúde 200 a 60 Hz (tick 0,44 ms, p99 3,0 ms); **64 clientes** do Windows pela rede do WSL (UDP): 64 admitidos, 38,9 snapshots/s por cliente, 0 desconexões; **SIGTERM** (o sinal do Supervisor): salva as posições dos jogadores, se retira da API (`DELETE`), registra `server_stopped` e o processo sai |
 | **Unity player Windows (Mono) como servidor**, `-lifeverse-server`, API de mentira por HTTP (`HttpListener` em PowerShell), clientes em outro processo | **64 de 64 clientes** admitidos por UDP, 39,8 pacotes de snapshot/s por cliente (2 pacotes por snapshot a 20 Hz), 0 desconexões, 0 `tick_failed`; saúde 200 com 60 Hz, tick 0,9 ms (p99 3,3 ms); 64 validações e 65 gravações de posição na API; encerramento por comando `shutdown` do admin: salva, se retira (`DELETE`), código de saída 0 |
 | `Host` com configuração inválida ou API inalcançável | código de saída 1 e log estruturado |
 
 Reproduzir a carga contra um servidor em execução (`Host` ou Unity): `dotnet run --project unity\UnityIslandServer\LoadTest -- --port 17777 --clients 64 --seconds 20` (os bilhetes são `unity-<n>`; é preciso uma API que os aceite).
 
-Não verificado: execução num Linux real, **150 ms de latência com perda** (o teste de perda do Wire cobre só o transporte), física/scripts/construção/veículos/voz, Supervisor, IL2CPP, múltiplas ilhas ao mesmo tempo, carga com os clientes em outra máquina. O teste de 64 clientes roda cliente e servidor no mesmo computador: os tempos de tick incluem a concorrência por CPU, e nada foi medido com um cliente Unity de verdade (ainda não existe).
+Não verificado: **150 ms de latência com perda** (o teste de perda do Wire cobre só o transporte), física/scripts/construção/veículos/voz, Supervisor, IL2CPP, múltiplas ilhas ao mesmo tempo, carga com os clientes em outra máquina. O teste de 64 clientes roda cliente e servidor no mesmo computador: os tempos de tick incluem a concorrência por CPU, e nada foi medido com um cliente Unity de verdade (ainda não existe).

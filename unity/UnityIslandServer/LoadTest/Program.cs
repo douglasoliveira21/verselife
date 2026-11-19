@@ -32,7 +32,7 @@ var withSnapshots = clients.Count(b => b.Snapshots > 0);
 var rate = clients.Where(b => b.Authenticated).Select(b => b.Snapshots / Math.Max(1, b.SecondsAuthenticated)).DefaultIfEmpty(0).Average();
 var maxSeen = clients.Select(b => b.MaxPlayersInSnapshot).DefaultIfEmpty(0).Max();
 var rtt = clients.Where(b => b.Client.IsConnected).Select(b => b.Client.RoundTripMilliseconds).DefaultIfEmpty(0).Average();
-Console.WriteLine($"clientes={count} admitidos={admitted} com_snapshots={withSnapshots} snapshots_por_s_por_cliente={rate:F1} jogadores_no_snapshot_max={maxSeen} rtt_ms={rtt:F1} desconectados={clients.Count(b => b.Disconnected)} recusas={string.Join(',', clients.Select(b => b.RejectCode).Where(c => c != null).Distinct())}");
+Console.WriteLine($"clientes={count} admitidos={admitted} com_snapshots={withSnapshots} snapshots_por_s_por_cliente={rate:F1} jogadores_no_snapshot_max={maxSeen} rtt_ms={rtt:F1} desconectados={clients.Count(b => b.Disconnected)} mensagens_de_fisica_por_cliente={clients.Average(b => b.PhysicsMessages):F1} corpos_dormindo_vistos={clients.Count(b => b.PhysicsAsleep > 0)} recusas={string.Join(',', clients.Select(b => b.RejectCode).Where(c => c != null).Distinct())}");
 foreach (var bot in clients) bot.Client.Dispose();
 return admitted == count && withSnapshots == count ? 0 : 1;
 
@@ -42,7 +42,7 @@ sealed class Bot(int index, string token)
     public readonly WireClient Client = new();
     private bool _sent; private readonly Stopwatch _since = new();
     public bool Authenticated, Disconnected; public string? RejectCode;
-    public long Snapshots; public int MaxPlayersInSnapshot; private uint _lastTick; private int _chunk;
+    public long Snapshots, PhysicsMessages, PhysicsAsleep; public int MaxPlayersInSnapshot; private uint _lastTick; private int _chunk;
     public double SecondsAuthenticated => _since.IsRunning ? _since.Elapsed.TotalSeconds : 0;
 
     public void Init() { Client.Disconnected += _ => Disconnected = true; Client.MessageReceived += OnMessage; }
@@ -58,6 +58,7 @@ sealed class Bot(int index, string token)
         switch (message)
         {
             case AuthResultMessage result: Authenticated = result.Success; if (!result.Success) RejectCode = result.Code; else _since.Start(); break;
+            case BuildOperationAppliedMessage applied when applied.OperationJson.Contains("\"physics\""): PhysicsMessages++; if (applied.OperationJson.Contains("\"asleep\":true")) PhysicsAsleep++; break;
             case SnapshotMessage snapshot when SnapshotCodec.TryDecode(snapshot.Payload, out var decoded):
                 Snapshots++;
                 // um snapshot grande chega em vários pacotes do mesmo tick: soma os jogadores desse tick

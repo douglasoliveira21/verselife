@@ -644,6 +644,61 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.True(await island.PumpAsync(() => b.All<AttachmentLiveChangedMessage>().Count == 1));
         Assert.Equal(a.PeerId, b.Last<AttachmentLiveChangedMessage>()!.PeerId);
     }
+    private const string TouchAndChatScript = "function on_touch(e) chat.say('oi ' .. e.avatar_name) end function on_chat(e) if e.message == 'ping' then chat.say('pong') end end";
+
+    [Fact]
+    public async Task ObjectScriptsAnswerTouchesAndChatWithinRange()
+    {
+        using var island = new IslandHarness();
+        var objectId = Guid.NewGuid();
+        island.Api.ContentJson = FakeApi.Content(objectId, "Placa", 2, 2, TouchAndChatScript);
+        await island.StartAsync();
+        var near = await island.JoinAsync("Ana", 0, 0); var far = await island.JoinAsync("Longe", 90, 90);
+        near.Wire.Send(new TouchObjectMessage(objectId.ToString()));
+        Assert.True(await island.PumpAsync(() => near.All<ReceiveChatMessage>().Any(m => m.DisplayName == "Placa" && m.Message == "oi Ana"), 10000));
+        far.Wire.Send(new TouchObjectMessage(objectId.ToString())); // longe demais do objeto
+        near.Wire.Send(new SendChatMessage("ping"));
+        Assert.True(await island.PumpAsync(() => near.All<ReceiveChatMessage>().Any(m => m.DisplayName == "Placa" && m.Message == "pong"), 10000));
+        Assert.DoesNotContain(far.All<ReceiveChatMessage>(), m => m.Message == "oi Longe");
+    }
+
+    [Fact]
+    public async Task AnIslandWhoseScriptContentCannotBeLoadedStillStartsAndPlays()
+    {
+        using var island = new IslandHarness();
+        island.Api.ContentJson = null; // island-content responde 500
+        await island.StartAsync();
+        Assert.True(island.Server.Ready);
+        var a = await island.JoinAsync("Ana");
+        Assert.True(a.Authenticated);
+        Assert.Contains("scripts_load_failed", island.Logs.ToString());
+    }
+    [Fact]
+    public async Task PhysicsGetsTheObjectsStepsAndTellsPlayersOnlyWhatChanged()
+    {
+        var physics = new FakePhysics();
+        using var island = new IslandHarness(physics);
+        var ball = Guid.NewGuid();
+        island.Api.ContentJson = FakeApi.Content(ball, "Bola", 5, 5, "", physics: "{\"mode\":\"physical\",\"mass\":2}");
+        await island.StartAsync();
+        var a = await island.JoinAsync("Ana", 0, 0);
+        Assert.True(await island.PumpAsync(() => { lock (physics.Syncs) return physics.Syncs.Count > 0; }, 10000));
+        lock (physics.Syncs) { var def = Assert.Single(physics.Syncs[^1]); Assert.Equal(ball, def.Id); Assert.Contains("physical", def.PhysicsJson); }
+        Assert.True(physics.TerrainSets > 0);
+        Assert.Equal(0, physics.Steps); // sem corpos não há o que simular
+
+        lock (physics.Current) physics.Current.Add(new BodyPose(ball, 5, 4, 5, 0, 0, 0, 1, false)); // a bola começa a cair
+        Assert.True(await island.PumpAsync(() => physics.Steps > 5 && physics.Pushes > 0)); // o passo e o empurrão de quem anda
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("\"physics\"") && m.OperationJson.Contains(ball.ToString()))));
+        var first = a.All<BuildOperationAppliedMessage>().Count(m => m.OperationJson.Contains("\"physics\""));
+        await island.PumpForAsync(500);
+        Assert.Equal(first, a.All<BuildOperationAppliedMessage>().Count(m => m.OperationJson.Contains("\"physics\""))); // parada no ar sem mudar: nada novo
+
+        lock (physics.Current) physics.Current[0] = new BodyPose(ball, 5, 0.5f, 5, 0, 0, 0, 1, true); // pousou e dormiu
+        Assert.True(await island.PumpAsync(() => a.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("\"asleep\":true"))));
+        var late = await island.JoinAsync("Beto"); // quem chega depois recebe as poses atuais
+        Assert.True(await island.PumpAsync(() => late.All<BuildOperationAppliedMessage>().Any(m => m.OperationJson.Contains("\"physics\"") && m.OperationJson.Contains(ball.ToString()))));
+    }
     [Fact]
     public async Task AnIslandNobodyJoinsShutsDownByItselfWhenAskedTo()
     {

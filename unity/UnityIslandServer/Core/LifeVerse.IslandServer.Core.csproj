@@ -17,14 +17,21 @@
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
     <Compile Include="..\..\UnityPlugins\Polyfills.cs" Link="Polyfills.cs" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="System.Net.Http.Json" Version="8.0.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\UnityWire\LifeVerse.Wire.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- O código de scripts da ilha já não depende de engine: é compilado direto de island-server/ (fonte única, sem cópia). Só a física (ServerPhysics, Godot) fica de fora. -->
+    <Compile Include="..\..\..\island-server\Scripts\IslandScripting*.cs" Link="Scripting\%(Filename)%(Extension)" />
+  </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
     <ProjectReference Include="..\..\..\shared\LifeVerse.Shared.csproj" />
+    <ProjectReference Include="..\..\..\scripting\LifeVerse.Scripting.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.1'">
     <ProjectReference Include="..\..\UnityPlugins\LifeVerse.Shared.Unity.csproj" />
+    <ProjectReference Include="..\..\UnityPlugins\LifeVerse.Scripting.Unity.csproj" />
   </ItemGroup>
 </Project>

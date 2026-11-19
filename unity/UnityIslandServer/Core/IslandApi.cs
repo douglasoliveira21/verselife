@@ -26,6 +26,8 @@ public sealed record PlayerLocation(Guid UserId, float X, float Y, float Z);
 /// <summary>Tudo o que o servidor de ilha pede à API. Uma interface para que os testes usem uma API de mentira sem rede.</summary>
 public interface IIslandApi : IDisposable
 {
+    /// <summary>O cliente HTTP já autenticado com a chave de serviço (o código de scripts da ilha fala com a API por ele).</summary>
+    System.Net.Http.HttpClient Http { get; }
     Task RegisterAsync(IslandServerConfig config, CancellationToken ct);
     /// <summary>Valida o bilhete de entrada. Null quando a API o recusa.</summary>
     Task<Admission?> ValidateTicketAsync(string token, Guid islandId, CancellationToken ct);
@@ -50,6 +52,7 @@ public sealed class HttpIslandApi : IIslandApi
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(10) };
+    public HttpClient Http => _http;
     private readonly IslandServerConfig _config;
 
     public HttpIslandApi(IslandServerConfig config)

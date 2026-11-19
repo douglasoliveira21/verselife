@@ -10,8 +10,33 @@ using LifeVerse.Wire;
 namespace LifeVerse.IslandServer.Tests;
 
 /// <summary>A API de mentira: guarda o que o servidor pediu e responde com bilhetes combinados no teste.</summary>
+/// <summary>O HTTP cru da API de mentira: serve island-content aos scripts e guarda o que eles gravam.</summary>
+public sealed class ScriptHandler(FakeApi api) : HttpMessageHandler
+{
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var path = request.RequestUri!.AbsolutePath;
+        if (path.EndsWith("/island-content") && api.ContentJson is { } content) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(content) });
+        if (path.EndsWith("/island-content")) return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError));
+        if (path.EndsWith("/script-state")) { api.ScriptStateWrites.Enqueue(request.Content!.ReadAsStringAsync(cancellationToken).GetAwaiter().GetResult()); return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NoContent)); }
+        return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+    }
+}
+
 public sealed class FakeApi : IIslandApi
 {
+    public volatile string? ContentJson;
+    public readonly ConcurrentQueue<string> ScriptStateWrites = new();
+    private System.Net.Http.HttpClient? _http;
+    public System.Net.Http.HttpClient Http => _http ??= new System.Net.Http.HttpClient(new ScriptHandler(this)) { BaseAddress = new Uri("http://fake/") };
+
+    public static string Content(Guid objectId, string name, float x, float z, string source, Guid? owner = null, string physics = "{}") => System.Text.Json.JsonSerializer.Serialize(new
+    {
+        objects = new[] { new { id = objectId, ownerUserId = owner ?? Guid.NewGuid(), name, primitiveType = "cube", physicsJson = physics, positionX = x, positionY = 0f, positionZ = z, scaleX = 1f, scaleY = 1f, scaleZ = 1f, revision = 1 } },
+        scripts = new[] { new { id = Guid.NewGuid(), objectId, ownerUserId = owner ?? Guid.NewGuid(), name = "teste", source, version = 1, instructionBudget = 100000, paused = false } },
+        state = new { }, grants = Array.Empty<object>(), islandName = "Teste",
+    });
+
     public readonly ConcurrentDictionary<string, Admission> Tickets = new();
     public readonly ConcurrentQueue<IReadOnlyList<ServerCommand>> PendingCommands = new();
     public readonly ConcurrentQueue<PlayerLocation> SavedLocations = new();
@@ -120,7 +145,7 @@ public sealed class IslandHarness : IDisposable
     public readonly List<TestClient> Clients = new();
     private Task? _run;
 
-    public IslandHarness(int maxPlayers = 64, float interestRadius = 100, IslandServerOptions? options = null, int ticketProtocol = 11, int idleMinutes = 0)
+    public IslandHarness(IIslandPhysics? physics = null, int maxPlayers = 64, float interestRadius = 100, IslandServerOptions? options = null, int ticketProtocol = 11, int idleMinutes = 0)
     {
         var environment = new Dictionary<string, string>
         {
@@ -130,7 +155,8 @@ public sealed class IslandHarness : IDisposable
             ["LIFEVERSE_TICKET_PROTOCOL"] = ticketProtocol.ToString(), ["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"] = idleMinutes.ToString(),
         };
         var config = IslandServerConfig.From(name => environment.GetValueOrDefault(name));
-        Server = new Core.IslandServer(config, Api, new IslandLog(Logs), options ?? new IslandServerOptions(HeartbeatSeconds: .3, LocationSeconds: .5, DisconnectDelaySeconds: .15, VehicleSyncSeconds: .3, LandSyncSeconds: .3));
+        Server = new Core.IslandServer(config, Api, new IslandLog(Logs), options ?? new IslandServerOptions(HeartbeatSeconds: .3, LocationSeconds: .5, DisconnectDelaySeconds: .15, VehicleSyncSeconds: .3, LandSyncSeconds: .3, ScriptSyncSeconds: .4));
+        if (physics is not null) Server.Physics = physics;
     }
 
     public async Task StartAsync() { await Server.StartAsync(); _run = Server.RunAsync(); }
@@ -187,4 +213,24 @@ public sealed class IslandHarness : IDisposable
         try { StopAsync().GetAwaiter().GetResult(); } catch { }
         Server.Dispose();
     }
+}
+
+/// <summary>Uma física de mentira: guarda o que o servidor pediu e devolve as poses que o teste combinar.</summary>
+public sealed class FakePhysics : IIslandPhysics
+{
+    public readonly List<IReadOnlyList<LifeVerse.IslandServer.Scripts.PhysicsBodyDefinition>> Syncs = new();
+    public readonly List<BodyPose> Current = new();
+    public int Steps, TerrainSets, Pushes;
+    public int BodyCount => Current.Count;
+    public int FixedCount => 0;
+    public int MaxBodies => 200;
+    public Action<Guid, Guid?, bool, float>? Contacted { get; set; }
+    public void SetTerrain(LifeVerse.Shared.Terrain.TerrainMap terrain) => Interlocked.Increment(ref TerrainSets);
+    public void Sync(IEnumerable<LifeVerse.IslandServer.Scripts.PhysicsBodyDefinition> definitions) { lock (Syncs) Syncs.Add(definitions.ToList()); }
+    public void Step(float seconds) => Interlocked.Increment(ref Steps);
+    public IReadOnlyList<BodyPose> Poses() { lock (Current) return Current.ToList(); }
+    public void Push(float feetX, float feetY, float feetZ, float velocityX, float velocityZ) => Interlocked.Increment(ref Pushes);
+    public bool Apply(Guid id, string action, LifeVerse.Scripting.Vec3 value) => action == "impulse";
+    public LifeVerse.Scripting.Vec3? VelocityOf(Guid id) => null;
+    public void Dispose() { }
 }

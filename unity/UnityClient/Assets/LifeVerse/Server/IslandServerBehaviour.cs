@@ -38,7 +38,7 @@ namespace LifeVerse.Unity.Server
                 var config = IslandServerConfig.FromEnvironment();
                 QualitySettings.vSyncCount = 0;
                 Application.targetFrameRate = config.TickRate;
-                _server = new IslandServerCore(config, new HttpIslandApi(config));
+                _server = new IslandServerCore(config, new HttpIslandApi(config)) { Physics = new UnityIslandPhysics() };
                 _starting = _server.StartAsync();
             }
             catch (Exception exception)

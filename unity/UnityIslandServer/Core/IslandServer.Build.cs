@@ -89,6 +89,7 @@ public sealed partial class IslandServer
             return;
         }
         if (command.Operation == "return") { AnnounceReturned(accepted); return; }
+        _scripting?.OnObjectApplied(accepted);
         foreach (var target in _players.Values.Where(x => x.Authenticated)) _wire.Send(target.PeerId, new BuildOperationAppliedMessage(accepted));
         if (command.Operation == "delete") BroadcastUnlock(_locks.Release(targets, actor.UserId), actor.UserId);
         else if (targets.Length > 0 && _locks.HolderOf(targets[0], DateTimeOffset.UtcNow) == actor.UserId) _locks.TryAcquire(targets, actor.UserId, DateTimeOffset.UtcNow, out _); // working on it keeps the lease alive
@@ -151,12 +152,12 @@ public sealed partial class IslandServer
         {
             using var document = JsonDocument.Parse(accepted);
             if (document.RootElement.TryGetProperty("healed", out var healed) && healed.ValueKind == JsonValueKind.Array && healed.GetArrayLength() > 0)
-                BroadcastApplied(new { operation = "structure", objects = healed }); // what hung under the returned objects was re-hung: everybody sees the new tree
+            { var structure = JsonSerializer.Serialize(new { operation = "structure", objects = healed }); _scripting?.OnObjectApplied(structure); ToAll(structure); } // what hung under the returned objects was re-hung: everybody sees the new tree
             if (!document.RootElement.TryGetProperty("objectIds", out var ids)) return;
             foreach (var id in ids.EnumerateArray())
             {
                 if (!Guid.TryParse(id.GetString(), out var objectId)) continue;
-                BroadcastApplied(new { operation = "delete", objectId, returned = true });
+                { var removal = JsonSerializer.Serialize(new { operation = "delete", objectId, returned = true }); _scripting?.OnObjectApplied(removal); ToAll(removal); }
                 foreach (var holder in _locks.Snapshot(DateTimeOffset.UtcNow).Where(x => x.Object == objectId)) BroadcastUnlock(_locks.Release(new[] { objectId }, holder.User), holder.User);
             }
         }
