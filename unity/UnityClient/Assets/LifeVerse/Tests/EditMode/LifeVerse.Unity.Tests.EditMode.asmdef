@@ -1,0 +1,30 @@
+{
+    "name": "LifeVerse.Unity.Tests.EditMode",
+    "rootNamespace": "LifeVerse.Unity.Tests.EditMode",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "LifeVerse.Unity.Core",
+        "LifeVerse.Unity.Platform"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "LifeVerse.Shared.dll",
+        "LifeVerse.Scripting.dll",
+        "MoonSharp.Interpreter.dll",
+        "LifeVerse.Wire.dll",
+        "LiteNetLib.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
