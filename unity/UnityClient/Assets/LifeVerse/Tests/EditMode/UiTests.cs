@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.IO;
 using LifeVerse.Unity.UI;
@@ -197,5 +197,25 @@ namespace LifeVerse.Unity.Tests.EditMode
             var big = new CellGrid(); big.Build(4096, 8); Assert.AreEqual(256, big.Size, "no máximo 256 x 256 células"); var none = new CellGrid(); none.Build(256, 0); Assert.AreEqual(0, none.Size);
             grid.SetOwnedRuns(new[] { new[] { 0, -2, 2 }, new[] { 1, 5, 5 } }); Assert.AreEqual(6, grid.Owned, "uma corrida é [linha, primeira, última] e inclui as duas pontas");
             using var document = System.Text.Json.JsonDocument.Parse("{\"runs\":[[0,0,1],[1,-2,2]]}"); var runs = CellGrid.RunsOf(document.RootElement); Assert.AreEqual(2, runs.Length); CollectionAssert.AreEqual(new[] { 1, -2, 2 }, runs[1]);
-        }   }
+        }   
+        [Test]
+        public void BuildCommandsAreWrittenAsTheIslandTakesThemAndRefusalsBecomeSentences()
+        {
+            var state = BuildCommands.NewState("cube", new Vector3(1, 2, 3)); var payload = BuildCommands.Payload(state);
+            Assert.AreEqual(1f, payload["positionX"]); Assert.AreEqual("cube", payload["primitiveType"]); Assert.AreEqual("{\"collision\":true}", payload["physicsJson"]); Assert.AreEqual("[]", payload["contentJson"]);
+            using var document = System.Text.Json.JsonDocument.Parse(BuildCommands.Command("update", state.Id, 7, payload)); var root = document.RootElement;
+            Assert.AreEqual("update", root.GetProperty("operation").GetString()); Assert.AreEqual(7, root.GetProperty("expectedRevision").GetInt32()); Assert.AreEqual(2f, root.GetProperty("object").GetProperty("positionY").GetSingle());
+            Assert.IsTrue(BuildCommands.RejectionText("locked:Ana").StartsWith("Ana")); Assert.IsTrue(BuildCommands.RejectionText("revision_conflict").Contains("Outra pessoa")); Assert.IsTrue(BuildCommands.RejectionText("nunca_visto").Contains("nunca_visto"));
+            Assert.IsTrue(BuildCommands.Entries.All(e => LifeVerse.Shared.Building.PrimitiveCatalog.IsKnown(e.Type)), "toda forma do painel é uma forma que a ilha aceita");
+        }
+
+        [Test]
+        public void TheGizmoHandleIsPickedByItsDistanceToTheSegmentAndSalesAreChecked()
+        {
+            var a = new Vector2(0, 0); var b = new Vector2(100, 0);
+            Assert.AreEqual(0f, BuildEditor.DistanceToSegment(new Vector2(50, 0), a, b), 1e-4f); Assert.AreEqual(10f, BuildEditor.DistanceToSegment(new Vector2(50, 10), a, b), 1e-4f); Assert.AreEqual(5f, BuildEditor.DistanceToSegment(new Vector2(-5, 0), a, b), 1e-4f, "antes do começo vale a distância ao ponto"); Assert.AreEqual(3f, BuildEditor.DistanceToSegment(new Vector2(3, 0), a, a), 1e-4f, "um segmento sem comprimento é um ponto");
+            Assert.IsNull(BuildWindow.SaleProblem("copy", "250", out var amount)); Assert.AreEqual(250, amount); Assert.IsNotNull(BuildWindow.SaleProblem("copy", "10000001", out _)); Assert.IsNotNull(BuildWindow.SaleProblem("copy", "1,5", out _)); Assert.IsNotNull(BuildWindow.SaleProblem("tudo", "1", out _));
+            Assert.AreEqual("Sem permissão para editar o terreno.", TerrainEditor.RejectionText("no_permission")); Assert.IsTrue(TerrainEditor.RejectionText("x").Contains("x"));
+        }
+    }
 }

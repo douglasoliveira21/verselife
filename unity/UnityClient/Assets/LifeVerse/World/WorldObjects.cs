@@ -10,10 +10,11 @@ namespace LifeVerse.Unity.World
     /// <summary>An object of the island as the API and the server describe it (the same fields as the Godot BuildObjectState).</summary>
     public sealed class WorldObjectState
     {
-        public Guid Id, OwnerUserId; public Guid? GroupId, ParentObjectId;
+        public Guid Id, OwnerUserId, CreatorUserId; public Guid? GroupId, ParentObjectId; public string Description = "", PermissionsJson = "{}"; public bool EditLocked; public int OwnerRights = 15, NextOwnerRights = 15;
         public string Name = "Object", PrimitiveType = "cube", MaterialJson = "{}", GeometryJson = "{}", PhysicsJson = "{}", ContentJson = "[]";
         public float PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX = 1, ScaleY = 1, ScaleZ = 1, PivotX, PivotY, PivotZ;
         public int Revision = 1;
+        public WorldObjectState Copy() => (WorldObjectState)MemberwiseClone();
 
         public static WorldObjectState Parse(JsonElement e)
         {
@@ -22,7 +23,7 @@ namespace LifeVerse.Unity.World
             string Text(string name, string fallback) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback;
             return new WorldObjectState
             {
-                Id = e.GetProperty("id").GetGuid(), OwnerUserId = Optional("ownerUserId") ?? Guid.Empty, GroupId = Optional("groupId"), ParentObjectId = Optional("parentObjectId"),
+                Id = e.GetProperty("id").GetGuid(), OwnerUserId = Optional("ownerUserId") ?? Guid.Empty, CreatorUserId = Optional("creatorUserId") ?? Guid.Empty, Description = Text("description", ""), PermissionsJson = Text("permissionsJson", "{}"), EditLocked = e.TryGetProperty("editLocked", out var locked) && locked.ValueKind == JsonValueKind.True, OwnerRights = (int)Number("ownerRights", 15), NextOwnerRights = (int)Number("nextOwnerRights", 15), GroupId = Optional("groupId"), ParentObjectId = Optional("parentObjectId"),
                 Name = Text("name", "Object"), PrimitiveType = Text("primitiveType", "cube"), MaterialJson = Text("materialJson", "{}"), GeometryJson = Text("geometryJson", "{}"),
                 PhysicsJson = Text("physicsJson", "{}"), ContentJson = Text("contentJson", "[]"),
                 PositionX = Number("positionX"), PositionY = Number("positionY"), PositionZ = Number("positionZ"), RotationX = Number("rotationX"), RotationY = Number("rotationY"), RotationZ = Number("rotationZ"),
@@ -139,6 +140,9 @@ namespace LifeVerse.Unity.World
         }
 
         public void Remove(Guid id) { if (_objects.TryGetValue(id, out var entry)) { Destroy(entry.Object); _objects.Remove(id); } }
+
+        /// <summary>Draws an object again from the state the island last confirmed (a preview was refused).</summary>
+        public void Refresh(Guid id) { if (_objects.TryGetValue(id, out var entry) && entry.State != null) Upsert(entry.State); }
 
         public void Clear() { foreach (var entry in _objects.Values) Destroy(entry.Object); _objects.Clear(); }
 

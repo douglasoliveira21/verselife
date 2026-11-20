@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.IO;
 using System.Linq;
@@ -74,7 +74,11 @@ namespace LifeVerse.Unity.UI
             ((SettingsWindow)window).Show("Interface"); yield return Shot("settings-interface");
             window = hud.WindowOf("settings"); window.Close(); Expect(hud.WindowOf("settings") == null, "fechar a janela a tira"); _checks++;
             hud.Toggle("help", () => Hud.HelpWindow(ui)); Expect(hud.WindowOf("help") == null, "o botão de novo fecha a janela aberta"); _checks++;
-            Expect(notices.VisibleCount >= 1 && notices.Unread >= 3, "as notificações aparecem e contam como não lidas: " + notices.VisibleCount + " " + notices.Unread); _checks++;
+            // the build panel and the terrain tools, as they open before any island answers
+            var context = new ApiContext { Ui = ui, Api = new LifeVerse.Unity.World.IslandEntryClient("http://127.0.0.1:1"), Notices = notices, CurrentIsland = () => Guid.Empty };
+            var builder = new BuildEditor(context, () => null, () => null, () => Vector3.zero, () => null); var build = new BuildWindow(context, builder); build.Open(); build.Show("Criar"); yield return null; yield return null; yield return Shot("build-create");
+            build.Show("Forma"); yield return null; yield return Shot("build-shape"); build.Show("Dados"); yield return null; yield return Shot("build-data"); Expect(build.resolvedStyle.width > 300f, "o painel de construção abre e desenha"); build.Close();
+            var terrainTools = new TerrainEditor(context, () => null, () => null, () => null); var terrain = new TerrainWindow(context, terrainTools); terrain.Open(); terrain.Select(LifeVerse.Shared.Terrain.TerrainTool.Paint); yield return null; yield return null; yield return Shot("terrain-paint"); Expect(terrain.PaintVisible && terrain.LayerButtons == 8, "as ferramentas de terreno mostram os oito materiais ao pintar"); _checks++; terrain.Close();            Expect(notices.VisibleCount >= 1 && notices.Unread >= 3, "as notificações aparecem e contam como não lidas: " + notices.VisibleCount + " " + notices.Unread); _checks++;
         }
     }
 }

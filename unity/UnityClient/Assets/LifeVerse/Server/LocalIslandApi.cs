@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -28,9 +28,9 @@ namespace LifeVerse.Unity.Server
         public HttpClient Http => _http ??= new HttpClient(new NotFound()) { BaseAddress = new Uri("http://local/") };
 
         /// <summary>Accepts the token as a ticket for a player with that name (and the right to sculpt the island when <paramref name="canEdit"/>).</summary>
-        public Admission Issue(string token, bool canEdit, float spawnX = 0, float spawnZ = 0, string appearanceJson = "{}")
+        public Admission Issue(string token, bool canEdit, float spawnX = 0, float spawnZ = 0, string appearanceJson = "{}", Guid? userId = null)
         {
-            var admission = new Admission(Guid.NewGuid(), Guid.NewGuid(), _island, Guid.NewGuid(), Guid.NewGuid(), 11, DateTimeOffset.UtcNow.AddHours(1), token, appearanceJson, canEdit, spawnX, spawnZ, 256, null, null, null, null);
+            var admission = new Admission(userId ?? Guid.NewGuid(), Guid.NewGuid(), _island, Guid.NewGuid(), Guid.NewGuid(), 11, DateTimeOffset.UtcNow.AddHours(1), token, appearanceJson, canEdit, spawnX, spawnZ, 256, null, null, null, null);
             lock (_tickets) _tickets[token] = admission;
             return admission;
         }
@@ -61,7 +61,7 @@ namespace LifeVerse.Unity.Server
             if (operation != "create" && operation != "update") return Task.FromResult((404, "{}"));
             var id = operation == "create" ? Guid.NewGuid() : root.GetProperty("objectId").GetGuid(); var fields = new Dictionary<string, object>();
             foreach (var property in root.GetProperty("object").EnumerateObject()) fields[property.Name] = property.Value.ValueKind == System.Text.Json.JsonValueKind.Number ? (object)property.Value.GetDouble() : property.Value.ValueKind == System.Text.Json.JsonValueKind.String ? property.Value.GetString() : null;
-            fields["id"] = id; fields["ownerUserId"] = root.GetProperty("userId").GetGuid(); fields["revision"] = 1;
+            fields["id"] = id; fields["ownerUserId"] = root.GetProperty("userId").GetGuid(); fields["creatorUserId"] = root.GetProperty("userId").GetGuid(); fields["revision"] = root.TryGetProperty("expectedRevision", out var seen) && seen.ValueKind == System.Text.Json.JsonValueKind.Number ? seen.GetInt32() + 1 : 1;
             return Task.FromResult((200, System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object> { ["operation"] = operation, ["objectId"] = id, ["objectState"] = fields })));
         }
         public Task<string> LandSyncAsync(long cursor, CancellationToken ct) => Task.FromResult<string>(null);

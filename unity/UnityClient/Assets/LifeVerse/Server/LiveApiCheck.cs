@@ -102,6 +102,7 @@ namespace LifeVerse.Unity.Server
             yield return Step("island management: general, permissions, rules", Manage());
             yield return Step("land: parcels, cells, split, expand, merge, media", Land());
             yield return Step("scripts: list, save, syntax", Scripts());
+            yield return Step("build: limits, objects, audit, saved constructions", Build());
         }
 
         // ---- the steps ----
@@ -261,6 +262,25 @@ namespace LifeVerse.Unity.Server
             var audit = _a.ApiAsync("GET", "/api/v1/worlds/islands/" + _island + "/land/parcels/" + id + "/audit", null); yield return Wait(audit); Check(audit.Result.Status == 200, "auditoria: " + audit.Result.Status); manage.Close();
         }
 
+
+        private IEnumerator Build()
+        {
+            var editor = new BuildEditor(_ca, () => null, () => null, () => Vector3.zero, () => null); var window = new BuildWindow(_ca, editor); window.Open(); window.Show("Limites"); yield return Until(() => window.LimitsText.Contains("objetos"), "os limites da construção chegarem: " + window.LimitsText);
+            Check(window.LimitsText.Contains("Ilha:"), "os limites falam da ilha: " + window.LimitsText);
+            var create = _a.ApiAsync("POST", "/api/v1/worlds/islands/" + _island + "/objects", JsonSerializer.Serialize(new { primitiveType = "cube", name = "Parede", positionX = 4, positionY = 1, positionZ = 4, rotationX = 0, rotationY = 0, rotationZ = 0, scaleX = 2, scaleY = 2, scaleZ = 1, materialJson = "{\"color\":\"#C0392B\"}", geometryJson = "{\"hollow\":0.3}", physicsJson = "{\"collision\":true}", contentJson = "[]" })); yield return Wait(create);
+            Check(create.Result.Status >= 200 && create.Result.Status < 300, "criar o objeto: " + create.Result.Status + " " + Snip(create.Result.Body));
+            var root = Json.One(create.Result.Body); var objectId = root.Id("id", "objectId"); if (objectId == Guid.Empty && root.Has("object")) objectId = root.Child("object").Id(); Check(objectId != Guid.Empty, "o objeto tem id: " + Snip(create.Result.Body));
+            string listed = null; yield return Call(_a, "GET", "/api/v1/worlds/islands/" + _island + "/objects", null, b => listed = b); var mine = Json.Rows(listed).FirstOrDefault(r => r.Id() == objectId); Check(mine.Text("name") == "Parede" && WorldObjectState.Parse(mine.Element).ScaleX == 2f, "a lista de objetos traz o que o editor lê: " + Snip(listed));
+            var state = WorldObjectState.Parse(mine.Element); Check(LifeVerse.Shared.Building.PrimParams.Parse(state.GeometryJson).Hollow > .25f && state.CreatorUserId == _aId, "oco, criador e dono vêm no formato certo: " + state.CreatorUserId);
+            string audit = null; yield return Call(_a, "GET", "/api/v1/worlds/islands/" + _island + "/objects/" + objectId + "/audit", null, b => audit = b); var rows = Json.Rows(audit); Check(rows.Count >= 1 && BuildWindow.OperationLabel(rows[0].Text("operation")) != "", "o histórico do objeto tem registros: " + Snip(audit));
+            var source = new LifeVerse.Shared.Building.SourceObject(state.PrimitiveType, state.Name, state.Description, state.PositionX, state.PositionY, state.PositionZ, state.RotationX, state.RotationY, state.RotationZ, state.ScaleX, state.ScaleY, state.ScaleZ, state.MaterialJson, state.GeometryJson, state.PhysicsJson, state.ContentJson, state.GroupId, state.Id, null);
+            var package = LifeVerse.Shared.Building.BuildPackages.Serialize(LifeVerse.Shared.Building.BuildPackages.Create("Casinha", new[] { source })); var save = _a.ApiAsync("POST", "/api/v1/inventory/build-packages", package); yield return Wait(save);
+            Check(save.Result.Status >= 200 && save.Result.Status < 300, "guardar a construção: " + save.Result.Status + " " + Snip(save.Result.Body)); var itemId = Json.One(save.Result.Body).Id("itemId", "id"); Check(itemId != Guid.Empty, "a construção guardada tem id: " + Snip(save.Result.Body));
+            string back = null; yield return Call(_a, "GET", "/api/v1/inventory/build-packages/" + itemId, null, b => back = b); var parsed = LifeVerse.Shared.Building.BuildPackages.Parse(back, out var why); Check(parsed != null && parsed.Name == "Casinha" && parsed.Objects.Length == 1, "a construção volta inteira: " + why + " " + Snip(back));
+            string inventory = null; yield return Call(_a, "GET", "/api/v1/inventory/items?view=all&page=1&pageSize=100", null, b => inventory = b); var itemRow = Json.Rows(inventory).FirstOrDefault(r => r.Id("id", "itemId") == itemId); Check(itemRow.Text("name") == "Casinha", "a construção aparece no inventário: " + Snip(inventory));
+            var kind = itemRow.First("content", "category", "kind").ToLowerInvariant(); Check(kind.Contains("build") || kind.Contains("package") || kind.Contains("object"), "o inventário diz que é uma construção (a lista do painel usa isso): " + kind);
+            window.Close();
+        }
         private IEnumerator Scripts()
         {
             var create = _a.ApiAsync("POST", "/api/v1/worlds/islands/" + _island + "/objects", JsonSerializer.Serialize(new { primitiveType = "cube", name = "Caixa", positionX = 0, positionY = 1, positionZ = 0, rotationX = 0, rotationY = 0, rotationZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1, materialJson = "{}", geometryJson = "{}", physicsJson = "{}", contentJson = "[]" })); yield return Wait(create);

@@ -1,4 +1,4 @@
-# Migração para Unity 6 HDRP — Checklist de funcionalidades
+﻿# Migração para Unity 6 HDRP — Checklist de funcionalidades
 
 Cada linha é uma funcionalidade do LifeVerse com a sua correspondência planejada na Unity. A classificação é **por área** (medida no nível de arquivo na auditoria). A classificação **por classe** é a Fase 2b e será registrada aqui antes de a área ser migrada.
 
@@ -91,10 +91,10 @@ Critério de "Concluído": compila, testes relevantes passam, comportamento orig
 | F5 | Perfil | `ProfileWindow` (+5), `ProfileApi` | **Feito** (texto, publicações, galeria, capa, casamento); falta o feed com imagens |
 | F6 | Inventário, versões, direitos de item, ofertas, objetos perdidos | `InventoryPanel` (+1), `AssetVersionsWindow`, `ItemRightsWindow`, `ItemOffersWindow`, `LostObjectsWindow` | **Feito** (visões, direitos, ofertas, transferências, histórico, versões); falta organizar em pastas |
 | F7 | Busca e descoberta | `SearchWindow` (+8), `DiscoveryPanel` | **Feito** (ilhas, busca, eventos, marcos, fotos com envio); faltam as lojas na descoberta |
-| F8 | Editor de construção (painéis) | `Build/` | Não iniciado |
+| F8 | Editor de construção (painéis) | `Build/` | **Em migração (Fase 10)**: selecionar, mover/girar/esticar com setas, criar, copiar, apagar, desfazer, reservas de edição, forma, aparência, física, dados e venda, conteúdo, alinhar, construções do inventário, auditoria, limites. Faltam imã, arrasto ao vivo, escolher face clicando, desenho de mídia, mapas de textura no painel |
 | F9 | Configurações (gráficos, áudio, controles, rede, interface, acessibilidade) | `SettingsPanel`, `Settings/` (16), `GraphicsQuality`, `Accessibility` | **Em migração**: gráficos (presets), áudio (volumes salvos), controles, interface, acessibilidade. Faltam rede, teclas reconfiguráveis e o áudio real |
 | F10 | Economia: carteira, compra e transferência de VerseCoin, marketplace | `WalletWindow`, `MarketplacePanel`, `EconomyRates` | **Feito** (carteira, mercado, pedidos, aluguel, lojas e publicar produto) |
-| F11 | Gestão de ilha e de terreno | `IslandManagement/` (19), `LandManagement/`, `RealEstate/`, `ParcelInfo/` | **Feito** (dados, permissões, regras, terrenos: vender/comprar, listas, expulsar, dividir, ampliar, encolher, juntar, música, ambiente, auditoria, histórico); falta o editor de terreno |
+| F11 | Gestão de ilha e de terreno | `IslandManagement/` (19), `LandManagement/`, `RealEstate/`, `ParcelInfo/` | **Feito** (dados, permissões, regras, terrenos: vender/comprar, listas, expulsar, dividir, ampliar, encolher, juntar, música, ambiente, auditoria, histórico); editor de terreno feito (Fase 10: pincéis, pintura, desfazer, mar, exportar/importar); falta a prévia da pincelada |
 | F12 | Editor Lua, documentação, histórico, diálogos e HUD de script | `LuaScriptEditor`, `ScriptEditorWindow`, `ScriptDocsWindow`, `ScriptHistoryWindow`, `ScriptDialogWindow`, `ScriptHudLayer`, `HudEditor` | **Parcial**: editor com verificação de sintaxe, abrir e salvar; faltam documentação, histórico, diálogos e HUD de script |
 | F13 | Tema visual (vidro escuro, `#1B262E`, `#6D818D`, `#12F2E0`, `#F4A340`, Inter, cantos 14–16 px) | `ViewerTheme`, `UiStyle`, `UiDraw`, `FloatingWindow` | **Feito** no UI Toolkit (`Theme.uss`, Inter, `FloatingWindow`); falta o ícone SVG |
 | F14 | Sobreposição de desempenho | `PerformanceOverlay` | **Feito** (F3) |

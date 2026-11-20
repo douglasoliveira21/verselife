@@ -71,6 +71,7 @@ namespace LifeVerse.Unity.UI
             Hud.Register("Inventário", "inventory", () => new InventoryWindow(Context));
             Hud.Register("Carteira", "wallet", () => new WalletWindow(Context));
             Hud.Register("Buscar", "search", () => new SearchWindow(Context));
+            Hud.Register("Construir", "build", () => { ToggleBuild(); return null; });
             Hud.Register("Mais", "more", MoreWindow);
             Hud.Register("Configurações", "settings", () => { var window = new SettingsWindow(Ui, SettingsPath); window.Changed += ApplySettingsToWorld; return window; });
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui));
@@ -207,12 +208,34 @@ namespace LifeVerse.Unity.UI
             // what scripts of objects ask of the person: dialogs, permission requests and panels (the island checks every answer)
             ScriptDialogs = new ScriptDialogs(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } }; ScriptPanels = new ScriptHud(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } };
             Client.ScriptOperation += json => { ScriptDialogs.OnOperation(json); ScriptPanels.OnOperation(json); };
+            Builder = new BuildEditor(Context, () => Client, () => Follow != null ? Follow.Camera : null, () => Player != null ? Player.GamePosition : Vector3.zero, () => Client != null ? Client.Terrain : null);
+            TerrainTools = new TerrainEditor(Context, () => Client, () => Follow != null ? Follow.Camera : null, () => Client != null ? Client.Terrain : null);
         }
 
         public ScriptDialogs ScriptDialogs { get; private set; }
         public ScriptHud ScriptPanels { get; private set; }
+        public BuildEditor Builder { get; private set; }
+        public TerrainEditor TerrainTools { get; private set; }
+        public BuildWindow BuildPanel { get; private set; }
+        public TerrainWindow TerrainPanel { get; private set; }
 
-        private void TearDownWorld() { ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
+        /// <summary>B: starts or ends the build mode (the panel, the selection, the gizmo).</summary>
+        public void ToggleBuild()
+        {
+            if (Current != Phase.Playing || Builder == null) return;
+            if (Builder.Active) { BuildPanel?.Close(); BuildPanel = null; Builder.SetActive(false); return; }
+            TerrainTools.SetActive(false); TerrainPanel?.Close(); TerrainPanel = null; Builder.SetActive(true); BuildPanel = new BuildWindow(Context, Builder); BuildPanel.Open();
+        }
+
+        /// <summary>T: starts or ends the terrain tools.</summary>
+        public void ToggleTerrain()
+        {
+            if (Current != Phase.Playing || TerrainTools == null) return;
+            if (TerrainTools.Active) { TerrainPanel?.Close(); TerrainPanel = null; TerrainTools.SetActive(false); return; }
+            Builder.SetActive(false); BuildPanel?.Close(); BuildPanel = null; TerrainTools.SetActive(true); TerrainPanel = new TerrainWindow(Context, TerrainTools); TerrainPanel.Open();
+        }
+
+        private void TearDownWorld() { BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
 
         // ---- while playing ----
 
@@ -236,11 +259,14 @@ namespace LifeVerse.Unity.UI
                 var others = new List<Vector3>(); if (views != null) foreach (var peer in views.Peers) if (peer != Client.SelfPeerId) others.Add(views.ViewOf(peer).GamePosition);
                 Hud.Map.Place(Player.GamePosition, others);
             }
+            Builder?.Tick(Time.unscaledDeltaTime); TerrainTools?.Tick(Time.unscaledDeltaTime);
             if (Keyboard.current is { } keyboard && !Hud.Chat.Typing)
             {
                 if (keyboard.enterKey.wasPressedThisFrame) Hud.Chat.Focus();
                 if (keyboard.f3Key.wasPressedThisFrame) Hud.TogglePerformance();
-                if (Mouse.current is { } mouse && mouse.leftButton.wasPressedThisFrame && UnityEngine.Cursor.lockState != CursorLockMode.Locked && !UiKit.IsOver(Ui.Root, mouse.position.ReadValue())) ClickWorld(mouse.position.ReadValue());
+                if (keyboard.bKey.wasPressedThisFrame) ToggleBuild();
+                if (keyboard.tKey.wasPressedThisFrame) ToggleTerrain();
+                if ((Builder == null || !Builder.Active) && (TerrainTools == null || !TerrainTools.Active) && Mouse.current is { } mouse && mouse.leftButton.wasPressedThisFrame && UnityEngine.Cursor.lockState != CursorLockMode.Locked && !UiKit.IsOver(Ui.Root, mouse.position.ReadValue())) ClickWorld(mouse.position.ReadValue());
                 if (keyboard.qKey.wasPressedThisFrame && !Hud.Radial.IsOpen) OpenRadial(Mouse.current != null ? new Vector2(Mouse.current.position.ReadValue().x, Screen.height - Mouse.current.position.ReadValue().y) / Ui.Panel.scale : new Vector2(Screen.width / 2f, Screen.height / 2f));
             }
         }
@@ -262,7 +288,35 @@ namespace LifeVerse.Unity.UI
             menu.Body.Add(UiKit.Button("Tocar", () => { TouchObject(id); menu.Close(); }, "lv-btn-primary"));
             menu.Body.Add(UiKit.Button("Sentar aqui", () => { SitOnObject(top); menu.Close(); }));
             menu.Body.Add(UiKit.Button("Scripts do objeto", () => { new LuaEditorWindow(Context, _island, id).Open(); menu.Close(); }));
+            if (state != null)
+            {
+                var (saleType, price) = BuildEditor.SaleOf(state); var payPrice = BuildEditor.PayPriceOf(state);
+                if (saleType != "none" && price >= 0) menu.Body.Add(Controls.Confirm("Comprar por VC$ " + price.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")), () => "Confirmar a compra", () => { Builder.Buy(id, price); Notices.Show("Pedido de compra enviado.", NoticeKind.Info); menu.Close(); }, "lv-btn-primary"));
+                if (payPrice > 0) menu.Body.Add(Controls.Confirm("Pagar VC$ " + payPrice.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")), () => "Confirmar o pagamento", () => { PayObject(state, payPrice); menu.Close(); }, "lv-btn-primary"));
+                var carried = BuildCarried(state); if (carried.Count > 0) menu.Body.Add(UiKit.Button("Abrir (" + carried.Count + " itens)", () => { OpenObjectContents(state, carried); menu.Close(); }));
+            }
             menu.Open(); return true;
+        }
+
+        /// <summary>The names of what an object carries (sounds, textures, objects…).</summary>
+        public static List<string> BuildCarried(WorldObjectState state)
+        {
+            var names = new List<string>();
+            try { foreach (var item in (System.Text.Json.Nodes.JsonNode.Parse(string.IsNullOrWhiteSpace(state.ContentJson) ? "[]" : state.ContentJson) as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray()).OfType<System.Text.Json.Nodes.JsonObject>()) names.Add(item["name"]?.GetValue<string>() ?? "Item"); }
+            catch (Exception exception) when (exception is System.Text.Json.JsonException || exception is InvalidOperationException) { }
+            return names;
+        }
+
+        private void OpenObjectContents(WorldObjectState state, List<string> names)
+        {
+            var window = new FloatingWindow(Ui, "object-contents", state.Name, 320f, 300f, new Vector2(420, 140)); foreach (var name in names) window.Body.Add(UiKit.Text("• " + name, "lv-body")); window.Open();
+        }
+
+        /// <summary>Pays an object that takes payments: a transfer to its owner, which the platform checks (balance, wallet).</summary>
+        public void PayObject(WorldObjectState state, long amount)
+        {
+            Api.ApiAsync("POST", "/api/v1/economy/transfer", System.Text.Json.JsonSerializer.Serialize(new { recipientUserId = state.OwnerUserId, amountCoins = amount, idempotencyKey = Guid.NewGuid().ToString("N"), message = "Pagamento a " + state.Name })).ContinueWith(task => { });
+            Notices.Show("Pagamento enviado.", NoticeKind.Info);
         }
 
         /// <summary>Touches an object: its scripts get the on_touch event (the island decides what the touch does).</summary>
@@ -280,7 +334,7 @@ namespace LifeVerse.Unity.UI
         {
             new RadialItem("Acenar", () => Player?.StartGesture("wave")), new RadialItem("Dançar", () => Player?.StartGesture("dance")), new RadialItem("Aplaudir", () => Player?.StartGesture("applaud")), new RadialItem("Apontar", () => Player?.StartGesture("point")),
             new RadialItem("Cumprimentar", () => Player?.StartGesture("greet")), new RadialItem("Rir", () => Player?.StartGesture("laugh")), new RadialItem("Sentar no chão", () => Player?.StartGesture("sitfloor")), new RadialItem("Carro", () => Player?.ToggleVehicle()),
-            new RadialItem("Primeira pessoa", () => Follow?.Toggle()), new RadialItem("Voar", () => Player?.RequestFlight()),
+            new RadialItem("Primeira pessoa", () => Follow?.Toggle()), new RadialItem("Voar", () => Player?.RequestFlight()), new RadialItem("Construir", ToggleBuild), new RadialItem("Terreno", ToggleTerrain),
         };
 
         public void OpenRadial(Vector2 at) => Hud.Radial.Open(Ui, RadialItems(), at);

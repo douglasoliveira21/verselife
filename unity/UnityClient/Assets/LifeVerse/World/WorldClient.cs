@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
@@ -50,6 +50,12 @@ namespace LifeVerse.Unity.World
         public event Action<string> DisconnectedBy;
         public bool SendChat(string text) => Send(new SendChatMessage(text));
         public event Action<HeadLookChangedMessage> HeadLookChanged;
+        /// <summary>Every operation the island announces (an object created, changed, deleted; a lock; a live drag), as JSON, before the world applies it.</summary>
+        public event Action<string> BuildOperation;
+        /// <summary>The island refused a build command (the code is the reason).</summary>
+        public event Action<string> BuildRejected;
+        /// <summary>Sends a build command (JSON) for the island to check and forward to the API.</summary>
+        public bool SendBuild(string json) => json != null && json.Length <= 100000 && Send(new SubmitBuildOperationMessage(json));
         /// <summary>A dialog or panel a script of an object asks the person to see (JSON "script_dialog" / "script_hud").</summary>
         public event Action<string> ScriptOperation;
         /// <summary>The answer to a script dialog or the click on a script panel (JSON); the island checks it was asked.</summary>
@@ -119,9 +125,9 @@ namespace LifeVerse.Unity.World
                     break;
                 case BuildOperationAppliedMessage applied:
                     // what a script asks of the person (a dialog, a panel) is for the interface, not for the objects of the world
-                    if (applied.OperationJson.Contains("\"script_dialog\"") || applied.OperationJson.Contains("\"script_hud\"")) ScriptOperation?.Invoke(applied.OperationJson); else Objects?.ApplyOperation(applied.OperationJson);
+                    if (applied.OperationJson.Contains("\"script_dialog\"") || applied.OperationJson.Contains("\"script_hud\"")) ScriptOperation?.Invoke(applied.OperationJson); else { Objects?.ApplyOperation(applied.OperationJson); BuildOperation?.Invoke(applied.OperationJson); }   // the world has the object by the time the editor hears of it
                     break;
-                case BuildOperationRejectedMessage refused: LastBuildRejection = refused.Code; break;
+                case BuildOperationRejectedMessage refused: LastBuildRejection = refused.Code; BuildRejected?.Invoke(refused.Code); break;
                 case TerrainEditRejectedMessage rejection: LastTerrainRejection = rejection.Code; break;
             }
         }

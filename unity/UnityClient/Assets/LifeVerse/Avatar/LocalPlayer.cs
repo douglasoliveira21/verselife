@@ -79,7 +79,7 @@ namespace LifeVerse.Unity.Avatar
         private void Update()
         {
             var keyboard = Keyboard.current;
-            if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; if (keyboard.eKey.wasPressedThisFrame) ToggleVehicle(); if (ObjectSeat.HasValue && State.Seated && (keyboard.wKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)) StandUp(); }
+            if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; if (keyboard.eKey.wasPressedThisFrame) ToggleVehicle(); if (ObjectSeat.HasValue && (ServerSeated || State.Seated) && (keyboard.wKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)) StandUp(); }
             GestureKeys();
             Advance(Time.deltaTime);
         }
@@ -95,8 +95,8 @@ namespace LifeVerse.Unity.Avatar
             while (_accumulator >= Step) { _accumulator -= Step; if (Driving != null) DriveOnce(); else StepOnce(); }
             if (Driving != null) { State.X = Driving.GamePosition.x; State.Y = Driving.GamePosition.y + LifeVerse.Shared.Vehicles.VehicleFleet.DriverHeight; State.Z = Driving.GamePosition.z; State.Seated = true; Motion = NetworkMotionState.Sit; HeadingDegrees = -Driving.Yaw * Mathf.Rad2Deg; }
             SendHeadLook();
-            if (ObjectSeat.HasValue) { if (State.Seated) _seatSeen = true; else if (_seatSeen) ObjectSeat = null; }   // stood up (X, or the server said so): back to the ground where the person was
-            var shown = ObjectSeat.HasValue && State.Seated ? ObjectSeat.Value : GamePosition; var shownHeading = ObjectSeat.HasValue && State.Seated ? ObjectSeatHeading : HeadingDegrees;
+            if (ObjectSeat.HasValue) { if (State.Seated || ServerSeated) { _seatSeen = true; _standing = 0f; } else if (_seatSeen) { _standing += delta; if (_standing > .6f) ObjectSeat = null; } }   // a reconcile can flicker the seat for a moment: only a lasting stand counts   // stood up (X, or the server said so): back to the ground where the person was
+            var onSeat = ObjectSeat.HasValue && (State.Seated || ServerSeated && _seatSeen); var shown = onSeat ? ObjectSeat.Value : GamePosition; var shownHeading = onSeat ? ObjectSeatHeading : HeadingDegrees;
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
             if (view != null)
             {
@@ -111,7 +111,9 @@ namespace LifeVerse.Unity.Avatar
         }
 
         // ---- sitting on an object of the world: the seat belongs to the object and is known only on this computer (the island just learns that the person sits, as on the ground) ----
-        private bool _seatSeen;
+        private bool _seatSeen; private float _standing;
+        /// <summary>What the island last said about sitting (the prediction can flicker between a toggle and its confirmation; this does not).</summary>
+        public bool ServerSeated { get; private set; }
         /// <summary>Where the person is drawn while sitting on an object (game space), or null.</summary>
         public Vector3? ObjectSeat { get; private set; }
         public float ObjectSeatHeading { get; private set; }
@@ -120,11 +122,11 @@ namespace LifeVerse.Unity.Avatar
         public bool SitOnObject(Vector3 topGamePosition, float headingDegrees)
         {
             if (!Spawned || Client == null || State.Seated || State.Flying || State.Swimming || Driving != null) return false;
-            ObjectSeat = topGamePosition; ObjectSeatHeading = headingDegrees; _seatSeen = false; _sitEdge = true; return true;
+            ObjectSeat = topGamePosition; ObjectSeatHeading = headingDegrees; _seatSeen = false; _standing = 0f; _sitEdge = true; return true;
         }
 
         /// <summary>Gets up from the seat (the same toggle as X).</summary>
-        public void StandUp() { if (State.Seated) _sitEdge = true; }
+        public void StandUp() { if (ServerSeated || State.Seated) _sitEdge = true; }
 
         /// <summary>Asks to start or stop flying (the F key, the radial menu).</summary>
         public void RequestFlight() => _flyEdge = true;
@@ -233,7 +235,7 @@ namespace LifeVerse.Unity.Avatar
             var serverFlying = server.Motion == NetworkMotionState.Fly;
             if (_flightAsked > 0f) { if (serverFlying == _flightWanted || Time.realtimeSinceStartup - _flightAsked > 1.5f) { _flightAsked = 0f; State.Flying = serverFlying; } }
             else State.Flying = serverFlying;
-            State.Seated = server.Motion == NetworkMotionState.Sit;
+            State.Seated = server.Motion == NetworkMotionState.Sit; ServerSeated = State.Seated;
             if (LastError > 3f) { State.X += error.x; State.Y += error.y; State.Z += error.z; State.VelocityX = server.VelocityX; State.VelocityY = server.VelocityY; State.VelocityZ = server.VelocityZ; Corrections++; }
             else if (LastError > .08f) { State.X += error.x * .3f; State.Y += error.y * .3f; State.Z += error.z * .3f; Corrections++; }
         }
