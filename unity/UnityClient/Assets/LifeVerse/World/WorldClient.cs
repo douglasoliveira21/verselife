@@ -50,6 +50,10 @@ namespace LifeVerse.Unity.World
         public event Action<string> DisconnectedBy;
         public bool SendChat(string text) => Send(new SendChatMessage(text));
         public event Action<HeadLookChangedMessage> HeadLookChanged;
+        /// <summary>A packet of somebody's voice (Opus, 20 ms) the island passed on because they are within hearing range.</summary>
+        public event Action<ReceiveVoiceMessage> VoiceReceived;
+        /// <summary>Sends one packet of this person's voice; the island passes it to those within range.</summary>
+        public bool SendVoice(uint sequence, byte[] packet) => packet != null && packet.Length > 0 && packet.Length <= LifeVerse.Shared.Voice.VoiceSettings.MaxPacketBytes && Send(new SubmitVoiceMessage(sequence, packet));
         /// <summary>Every operation the island announces (an object created, changed, deleted; a lock; a live drag), as JSON, before the world applies it.</summary>
         public event Action<string> BuildOperation;
         /// <summary>The island refused a build command (the code is the reason).</summary>
@@ -104,6 +108,7 @@ namespace LifeVerse.Unity.World
                 case AppearanceChangedMessage changed: AppearanceChanged?.Invoke(changed); break;
                 case GestureChangedMessage gesture: GestureChanged?.Invoke(gesture); break;
                 case ReceiveChatMessage chat: ChatReceived?.Invoke(chat); break;
+                case ReceiveVoiceMessage voice: VoiceReceived?.Invoke(voice); break;
                 case HeadLookChangedMessage look: HeadLookChanged?.Invoke(look); break;
                 case VehicleSpawnedMessage car: VehicleSpawned?.Invoke(car); break;
                 case VehicleRejectedMessage refused: LastVehicleRejection = refused.Code; break;

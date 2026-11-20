@@ -51,7 +51,7 @@ namespace LifeVerse.Unity.World
         private sealed class Entry
         {
             public GameObject Object; public WorldObjectState State; public string ShapeKey = "", MaterialKey = ""; public int Generation;
-            public Renderer[] Renderers = Array.Empty<Renderer>(); public float Range = MaxRange; public bool Culled; public GameObject Proxy, Model;
+            public Renderer[] Renderers = Array.Empty<Renderer>(); public float Range = MaxRange; public bool Culled; public GameObject Proxy, Model; public UnityEngine.Video.VideoPlayer Video; public RenderTexture VideoTarget; public Material[] MediaMaterials;
         }
 
         private readonly Dictionary<Guid, Entry> _objects = new Dictionary<Guid, Entry>();
@@ -139,7 +139,28 @@ namespace LifeVerse.Unity.World
             catch (Exception exception) when (exception is JsonException || exception is KeyNotFoundException || exception is InvalidOperationException || exception is FormatException) { return false; }
         }
 
-        public void Remove(Guid id) { if (_objects.TryGetValue(id, out var entry)) { Destroy(entry.Object); _objects.Remove(id); } }
+        public void Remove(Guid id) { if (_objects.TryGetValue(id, out var entry)) { DropMedia(entry); Destroy(entry.Object); _objects.Remove(id); } }
+
+        /// <summary>The ids of the faces of an object that has them (a box has 6, a round one fewer); empty for a model or a plant.</summary>
+        public int[] FacesOf(Guid id) => _objects.TryGetValue(id, out var entry) && entry.State != null && entry.Object.GetComponent<MeshFilter>()?.sharedMesh is { } mesh && mesh.subMeshCount > 1 ? FaceIdsOf(entry.State) : Array.Empty<int>();
+
+        /// <summary>The face of an object a ray (the cursor) hits first, by the triangles of its mesh. False when it hits none or the object has no faces.</summary>
+        public bool PickFace(Guid id, Ray ray, out int faceId)
+        {
+            faceId = -1; if (!_objects.TryGetValue(id, out var entry) || entry.State == null) return false; var mesh = entry.Object.GetComponent<MeshFilter>()?.sharedMesh; if (mesh == null || mesh.subMeshCount < 2) return false;
+            var ids = FaceIdsOf(entry.State); var toLocal = entry.Object.transform.worldToLocalMatrix; var origin = toLocal.MultiplyPoint3x4(ray.origin); var direction = toLocal.MultiplyVector(ray.direction); var vertices = mesh.vertices; var best = float.MaxValue;
+            for (var sub = 0; sub < mesh.subMeshCount && sub < ids.Length; sub++)
+            {
+                var triangles = mesh.GetTriangles(sub);
+                for (var i = 0; i + 2 < triangles.Length; i += 3)
+                {
+                    var a = vertices[triangles[i]]; var e1 = vertices[triangles[i + 1]] - a; var e2 = vertices[triangles[i + 2]] - a; var p = Vector3.Cross(direction, e2); var det = Vector3.Dot(e1, p); if (Mathf.Abs(det) < 1e-9f) continue;
+                    var inv = 1f / det; var s = origin - a; var u = Vector3.Dot(s, p) * inv; if (u < 0f || u > 1f) continue; var q = Vector3.Cross(s, e1); var v = Vector3.Dot(direction, q) * inv; if (v < 0f || u + v > 1f) continue; var t = Vector3.Dot(e2, q) * inv;
+                    if (t > 0f && t < best) { best = t; faceId = ids[sub]; }
+                }
+            }
+            return faceId >= 0;
+        }
 
         /// <summary>Draws an object again from the state the island last confirmed (a preview was refused).</summary>
         public void Refresh(Guid id) { if (_objects.TryGetValue(id, out var entry) && entry.State != null) Upsert(entry.State); }
@@ -188,6 +209,80 @@ namespace LifeVerse.Unity.World
             else if (type == "tree" || type == "grass") { filter.sharedMesh = NatureMesh(type); renderer.sharedMaterials = NatureMaterials(type, state); }
             else { filter.sharedMesh = MeshFor(state, type); renderer.sharedMaterials = MaterialsFor(state, filter.sharedMesh); }
             entry.Renderers = go.GetComponentsInChildren<Renderer>(true);
+            ApplyMedia(entry, state);
+        }
+
+        // ---- what plays on the surface: a picture from the internet, or a video, as the object's material says ("media": type, url, playing, loop, glow) ----
+
+        /// <summary>Gets the bytes of a picture by its address (https). Replaced in tests; by default it is a web request with a time limit.</summary>
+        public Func<string, Task<byte[]>> MediaLoader;
+        /// <summary>Makes the audio source a video plays its sound through (in 3D at the object, under the Mídia volume). Set by the sound system; without it a video is silent.</summary>
+        public Func<GameObject, AudioSource> MediaAudio { get; set; }
+        public AudioSource VideoAudioOf(Guid id) => _objects.TryGetValue(id, out var entry) && entry.Video != null ? entry.Video.GetTargetAudioSource(0) : null;
+        public int MediaImages { get; private set; }
+        public int MediaVideos { get; private set; }
+
+        public static bool MediaOf(string materialJson, out string type, out string url, out bool playing, out bool loop, out bool glow)
+        {
+            type = url = ""; playing = loop = glow = false;
+            try
+            {
+                using var document = JsonDocument.Parse(string.IsNullOrWhiteSpace(materialJson) ? "{}" : materialJson);
+                if (document.RootElement.ValueKind != JsonValueKind.Object || !document.RootElement.TryGetProperty("media", out var media) || media.ValueKind != JsonValueKind.Object) return false;
+                string Str(string name) => media.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+                bool Flag(string name, bool fallback) => media.TryGetProperty(name, out var v) ? v.ValueKind == JsonValueKind.True || (fallback && v.ValueKind != JsonValueKind.False) : fallback;
+                type = Str("type"); url = Str("url"); playing = Flag("playing", true); loop = Flag("loop", true); glow = Flag("glow", false);
+                return (type == "image" || type == "video") && Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == "file" && MediaFilesAllowed);
+            }
+            catch (JsonException) { return false; }
+        }
+
+        /// <summary>Only tests let a media address be a local file; people's objects are https only (the island checks the same).</summary>
+        public static bool MediaFilesAllowed;
+
+        private void DropMedia(Entry entry)
+        {
+            if (entry.Video != null) { entry.Video.Stop(); Destroy(entry.Video); entry.Video = null; }
+            if (entry.VideoTarget != null) { entry.VideoTarget.Release(); Destroy(entry.VideoTarget); entry.VideoTarget = null; }
+            if (entry.MediaMaterials != null) { foreach (var m in entry.MediaMaterials) if (m != null) Destroy(m); entry.MediaMaterials = null; }
+        }
+
+        private void ApplyMedia(Entry entry, WorldObjectState state)
+        {
+            DropMedia(entry); if (!MediaOf(state.MaterialJson, out var type, out var url, out var playing, out var loop, out var glow)) return;
+            var renderer = entry.Object.GetComponent<MeshRenderer>(); if (renderer == null || !renderer.enabled || renderer.sharedMaterials.Length == 0) return;
+            var instances = renderer.materials; entry.MediaMaterials = instances;   // this object's own copies, so a picture on one wall is not on every wall
+            if (type == "image") { _ = ShowImage(entry, url, glow, entry.Generation); return; }
+            var target = new RenderTexture(1280, 720, 0, RenderTextureFormat.ARGB32); entry.VideoTarget = target;
+            foreach (var m in instances) { m.SetTexture("_BaseColorMap", target); m.SetColor("_BaseColor", Color.white); if (glow) { m.SetTexture("_EmissiveColorMap", target); m.SetColor("_EmissiveColor", Color.white * 2f); } }
+            var player = entry.Object.AddComponent<UnityEngine.Video.VideoPlayer>(); entry.Video = player; player.playOnAwake = false; player.source = UnityEngine.Video.VideoSource.Url; player.url = url; player.isLooping = loop; player.renderMode = UnityEngine.Video.VideoRenderMode.RenderTexture; player.targetTexture = target;
+            var sound = MediaAudio != null ? MediaAudio(entry.Object) : null; if (sound != null) { player.audioOutputMode = UnityEngine.Video.VideoAudioOutputMode.AudioSource; player.controlledAudioTrackCount = 1; player.SetTargetAudioSource(0, sound); } else player.audioOutputMode = UnityEngine.Video.VideoAudioOutputMode.None;
+            player.errorReceived += (p, message) => Debug.LogWarning("[LifeVerse] vídeo " + url + ": " + message);
+            player.Prepare(); player.prepareCompleted += p => { if (entry.Video == p && playing) p.Play(); }; MediaVideos++;
+        }
+
+        /// <summary>Plays or pauses the video of an object (what the owner's "playing" switch says).</summary>
+        public bool VideoPlaying(Guid id) => _objects.TryGetValue(id, out var entry) && entry.Video != null && entry.Video.isPlaying;
+        public bool HasVideo(Guid id) => _objects.TryGetValue(id, out var entry) && entry.Video != null;
+
+        private async Task ShowImage(Entry entry, string url, bool glow, int generation)
+        {
+            try
+            {
+                var bytes = await (MediaLoader != null ? MediaLoader(url) : DownloadAsync(url)); if (bytes == null || bytes.Length < 12 || entry.Object == null || entry.Generation != generation || entry.MediaMaterials == null) return;
+                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
+                if (!texture.LoadImage(bytes, false)) { Destroy(texture); return; } if (Mathf.Max(texture.width, texture.height) > MaxTextureSize) texture = Shrink(texture, MaxTextureSize); texture.Apply(true);
+                foreach (var m in entry.MediaMaterials) { if (m == null) continue; m.SetTexture("_BaseColorMap", texture); m.SetColor("_BaseColor", Color.white); if (glow) { m.SetTexture("_EmissiveColorMap", texture); m.SetColor("_EmissiveColor", Color.white * 2f); } }
+                MediaImages++;
+            }
+            catch (Exception exception) { Debug.LogWarning("[LifeVerse] mídia " + url + ": " + exception.Message); }
+        }
+
+        private static Task<byte[]> DownloadAsync(string url)
+        {
+            var source = new TaskCompletionSource<byte[]>(); var request = UnityEngine.Networking.UnityWebRequest.Get(url); request.timeout = 20; request.downloadHandler = new UnityEngine.Networking.DownloadHandlerBuffer();
+            request.SendWebRequest().completed += _ => { source.TrySetResult(request.result == UnityEngine.Networking.UnityWebRequest.Result.Success && request.downloadedBytes <= 16 * 1024 * 1024 ? request.downloadHandler.data : null); request.Dispose(); };
+            return source.Task;
         }
 
         // ---- shapes ----

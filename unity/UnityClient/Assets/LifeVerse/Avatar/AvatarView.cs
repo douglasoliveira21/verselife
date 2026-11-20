@@ -1,4 +1,4 @@
-using LifeVerse.Shared.Avatar;
+﻿using LifeVerse.Shared.Avatar;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Unity.World;
 using UnityEngine;
@@ -38,6 +38,9 @@ namespace LifeVerse.Unity.Avatar
         private TextMesh _tag;
         public bool Visible { get; private set; } = true;
         public Transform NameTag => _tag != null ? _tag.transform : null;
+        public bool Speaking { get; private set; }
+        /// <summary>Somebody is talking: their name is lit green while their voice is heard (or sent, for oneself).</summary>
+        public void SetSpeaking(bool speaking) { if (Speaking == speaking) return; Speaking = speaking; if (_tag != null) _tag.color = speaking ? new Color(.2f, 1f, .6f) : Color.white; }
 
         /// <summary>Plays one of the extra gestures for a few seconds (the island told everybody who can see this person).</summary>
         public void PlayGesture(int id, float seconds = 2.5f)
@@ -70,7 +73,7 @@ namespace LifeVerse.Unity.Avatar
 
         public static AvatarView Create(int peerId, string name, Color color)
         {
-            var root = new GameObject("Avatar " + name); var view = root.AddComponent<AvatarView>(); view.PeerId = peerId; view.DisplayName = name; view.Build(color); return view;
+            var root = new GameObject("Avatar " + name); var view = root.AddComponent<AvatarView>(); view.PeerId = peerId; view.DisplayName = name; view.Build(color); root.AddComponent<AvatarSounds>(); return view;
         }
 
         private static Material Surface(Color color, float smoothness = .3f)

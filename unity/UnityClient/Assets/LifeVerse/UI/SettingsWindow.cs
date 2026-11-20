@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -57,11 +58,34 @@ namespace LifeVerse.Unity.UI
 
         private static int FpsIndex(int fps) => fps == 30 ? 1 : fps == 60 ? 2 : fps == 120 ? 3 : fps == 144 ? 4 : fps == 240 ? 5 : 0;
 
+        /// <summary>The microphone test the game provides (null outside the game).</summary>
+        public LifeVerse.Unity.Audio.MicTest Mic { get; set; }
+        private DropdownField _inputPicker; public DropdownField InputPicker => _inputPicker;
+        private ProgressBar _micBar; private Label _micStatus; private Button _micButton; private IVisualElementScheduledItem _micTick;
+        public ProgressBar MicBar => _micBar;
+        public string MicStatus => _micStatus.text;
+
+        public void ToggleMicTest()
+        {
+            if (Mic == null) { _micStatus.text = "O teste do microfone só funciona dentro do jogo."; return; }
+            if (Mic.Active) { Mic.End(); _micTick?.Pause(); _micButton.text = "Testar microfone"; _micBar.value = 0f; _micStatus.text = ""; return; }
+            if (!Mic.Begin()) { _micStatus.text = Mic.Problem; return; }
+            _micButton.text = "Parar o teste"; _micStatus.text = "Fale: a barra mostra o quanto o microfone ouve (nada é gravado)."; _micTick = _micBar.schedule.Execute(() => { _micBar.value = Mic.Level; _micBar.EnableInClassList("lv-bad", Mic.Peak >= .92f); }).Every(50);
+        }
+
         private void BuildAudio(VisualElement tab)
         {
             Section(tab, "Volumes");
             tab.Add(UiKit.Slide("Geral", 0f, 1f, _s.MasterVolume, v => { _s.MasterVolume = v; Touch(); })); tab.Add(UiKit.Slide("Música", 0f, 1f, _s.MusicVolume, v => { _s.MusicVolume = v; Touch(); }));
             tab.Add(UiKit.Slide("Efeitos", 0f, 1f, _s.EffectsVolume, v => { _s.EffectsVolume = v; Touch(); })); tab.Add(UiKit.Slide("Voz", 0f, 1f, _s.VoiceVolume, v => { _s.VoiceVolume = v; Touch(); }));
+            tab.Add(UiKit.Slide("Ambiente", 0f, 1f, _s.AmbientVolume, v => { _s.AmbientVolume = v; Touch(); })); tab.Add(UiKit.Slide("Mídia", 0f, 1f, _s.MediaVolume, v => { _s.MediaVolume = v; Touch(); }));
+            Section(tab, "Dispositivos"); var inputs = LifeVerse.Unity.Audio.MicDevices.Choices(); if (!inputs.Contains(_s.InputDevice)) inputs.Add(_s.InputDevice);
+            _inputPicker = new DropdownField("Microfone", inputs.Select(LifeVerse.Unity.Audio.MicDevices.Label).ToList(), Mathf.Max(0, inputs.IndexOf(_s.InputDevice))); _inputPicker.RegisterValueChangedCallback(e => { var at = _inputPicker.index; if (at >= 0 && at < inputs.Count) { _s.InputDevice = inputs[at]; LifeVerse.Unity.Audio.MicDevices.Preferred = _s.InputDevice; Touch(); } }); tab.Add(_inputPicker);
+            tab.Add(UiKit.Text("A saída de som segue o dispositivo padrão do sistema (o jogo não consegue escolher outro): mude no Windows e o jogo acompanha.", "lv-muted", "lv-small"));
+            Section(tab, "Voz e música"); tab.Add(UiKit.Slide("Sensibilidade do microfone", .02f, .6f, _s.VoiceSensitivity, v => { _s.VoiceSensitivity = v; Touch(); }));
+            tab.Add(UiKit.Check("Cancelar eco (não enviar enquanto você ouve os outros)", _s.EchoGuard, v => { _s.EchoGuard = v; Touch(); })); tab.Add(UiKit.Check("Tocar a música dos terrenos", _s.ParcelMusic, v => { _s.ParcelMusic = v; Touch(); })); tab.Add(UiKit.Check("Sons da interface (cliques, janelas, avisos)", _s.UiSounds, v => { _s.UiSounds = v; LifeVerse.Unity.Audio.UiSounds.Enabled = v; Touch(); }));
+            tab.Add(UiKit.Text("Fale segurando G; o botão Voz da barra de baixo mantém o microfone aberto.", "lv-muted", "lv-small"));
+            _micBar = new ProgressBar { lowValue = 0f, highValue = 1f, title = "Nível do microfone" }; _micStatus = UiKit.Text("", "lv-small", "lv-muted"); _micButton = UiKit.Button("Testar microfone", ToggleMicTest); tab.Add(_micButton); tab.Add(_micBar); tab.Add(_micStatus);
         }
 
         private void BuildControls(VisualElement tab)

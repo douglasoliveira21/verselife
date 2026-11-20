@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -43,9 +43,9 @@ namespace LifeVerse.Unity.UI
             Ui.Settings.Windows[Id] = new[] { resolvedStyle.left, resolvedStyle.top };
         }
 
-        public void Open() { if (parent == null) Ui.WindowLayer.Add(this); BringToFront(); }
+        public void Open() { var opening = parent == null; if (opening) { Ui.WindowLayer.Add(this); LifeVerse.Unity.Audio.UiSounds.Play(LifeVerse.Unity.Audio.UiSound.Open); } BringToFront(); }
 
-        public void Close() { RemoveFromHierarchy(); Remember(); Closed?.Invoke(); }
+        public void Close() { var was = parent != null; RemoveFromHierarchy(); Remember(); if (was) LifeVerse.Unity.Audio.UiSounds.Play(LifeVerse.Unity.Audio.UiSound.Close); Closed?.Invoke(); }
 
         public bool IsOpen => parent != null;
     }

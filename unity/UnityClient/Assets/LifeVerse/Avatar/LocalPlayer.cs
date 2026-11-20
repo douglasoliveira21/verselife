@@ -95,6 +95,7 @@ namespace LifeVerse.Unity.Avatar
             while (_accumulator >= Step) { _accumulator -= Step; if (Driving != null) DriveOnce(); else StepOnce(); }
             if (Driving != null) { State.X = Driving.GamePosition.x; State.Y = Driving.GamePosition.y + LifeVerse.Shared.Vehicles.VehicleFleet.DriverHeight; State.Z = Driving.GamePosition.z; State.Seated = true; Motion = NetworkMotionState.Sit; HeadingDegrees = -Driving.Yaw * Mathf.Rad2Deg; }
             SendHeadLook();
+            KeepAskingForSeat();
             if (ObjectSeat.HasValue) { if (State.Seated || ServerSeated) { _seatSeen = true; _standing = 0f; } else if (_seatSeen) { _standing += delta; if (_standing > .6f) ObjectSeat = null; } }   // a reconcile can flicker the seat for a moment: only a lasting stand counts   // stood up (X, or the server said so): back to the ground where the person was
             var onSeat = ObjectSeat.HasValue && (State.Seated || ServerSeated && _seatSeen); var shown = onSeat ? ObjectSeat.Value : GamePosition; var shownHeading = onSeat ? ObjectSeatHeading : HeadingDegrees;
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
@@ -114,6 +115,16 @@ namespace LifeVerse.Unity.Avatar
         private bool _seatSeen; private float _standing;
         /// <summary>What the island last said about sitting (the prediction can flicker between a toggle and its confirmation; this does not).</summary>
         public bool ServerSeated { get; private set; }
+        public int SeatRetries => _retries; public bool WantSeat => _wantSeat.HasValue;
+        private bool? _wantSeat; private float _retryAt; private int _retries; private uint _askSeq, _lastProcessed; private bool _asking;
+        /// <summary>A sit toggle can still be lost on the way (the island keeps one input per tick): while the island has not confirmed what was asked, ask again, a few times.</summary>
+        private void KeepAskingForSeat()
+        {
+            if (!_wantSeat.HasValue) return; if (ServerSeated == _wantSeat.Value) { _wantSeat = null; return; }
+            if (Time.realtimeSinceStartup < _retryAt || _askSeq == 0 || _lastProcessed < _askSeq) return;   // only when the island has used the input that carried the toggle and still disagrees
+            if (_retries >= 4) { _wantSeat = null; return; }
+            _retries++; _retryAt = Time.realtimeSinceStartup + 1.2f; _sitEdge = true; _askSeq = 0;
+        }
         /// <summary>Where the person is drawn while sitting on an object (game space), or null.</summary>
         public Vector3? ObjectSeat { get; private set; }
         public float ObjectSeatHeading { get; private set; }
@@ -122,11 +133,11 @@ namespace LifeVerse.Unity.Avatar
         public bool SitOnObject(Vector3 topGamePosition, float headingDegrees)
         {
             if (!Spawned || Client == null || State.Seated || State.Flying || State.Swimming || Driving != null) return false;
-            ObjectSeat = topGamePosition; ObjectSeatHeading = headingDegrees; _seatSeen = false; _standing = 0f; _sitEdge = true; return true;
+            ObjectSeat = topGamePosition; ObjectSeatHeading = headingDegrees; _seatSeen = false; _standing = 0f; _sitEdge = true; _wantSeat = true; _retries = 0; _retryAt = Time.realtimeSinceStartup + 1.2f; return true;
         }
 
         /// <summary>Gets up from the seat (the same toggle as X).</summary>
-        public void StandUp() { if (ServerSeated || State.Seated) _sitEdge = true; }
+        public void StandUp() { if (ServerSeated || State.Seated) { _sitEdge = true; _wantSeat = false; _retries = 0; _retryAt = Time.realtimeSinceStartup + 1.2f; } }
 
         /// <summary>Asks to start or stop flying (the F key, the radial menu).</summary>
         public void RequestFlight() => _flyEdge = true;
@@ -189,7 +200,7 @@ namespace LifeVerse.Unity.Avatar
             var sample = Scripted != null ? Scripted() : ReadKeyboard();
             sample.Typing |= Typing;
             if (_flyEdge) { sample.Fly = true; _flyEdge = false; }
-            if (_sitEdge) { sample.Sit = true; _sitEdge = false; }
+            if (_sitEdge) { sample.Sit = true; _sitEdge = false; _asking = true; }
             // flying is a state the server is asked for (reliable, idempotent), not a per-step input: ask, and take it at once locally as the server will
             if (sample.Fly && !State.Seated)
             {
@@ -207,7 +218,7 @@ namespace LifeVerse.Unity.Avatar
             if (_waveLeft > 0f) { flags |= InputFlags.Wave; _waveLeft -= Step; } else if (_danceLeft > 0f) { flags |= InputFlags.Dance; _danceLeft -= Step; }
             if (sample.Run) flags |= InputFlags.Run; if (sample.Jump) flags |= InputFlags.Jump; if (sample.Descend) flags |= InputFlags.Descend;
             if (sample.Fly) flags |= InputFlags.Fly; if (sample.Sit) flags |= InputFlags.Sit; if (sample.Typing) flags |= InputFlags.Typing;
-            Sequence++; Client.SendInput(Sequence, x, z, flags);
+            Sequence++; if (_asking) { _askSeq = Sequence; _asking = false; } Client.SendInput(Sequence, x, z, flags);
             var map = Terrain != null ? Terrain.Map : null;
             Motion = AuthoritativeMovement.Step(State, new MovementInput(Sequence, x, z, flags), Step, map != null ? map.SampleHeight : (Func<float, float, float>)null,
                 map != null ? map.SeaLevel : float.NegativeInfinity, map != null ? map.HalfExtent + TerrainMap.OceanMargin : float.PositiveInfinity);
@@ -235,7 +246,7 @@ namespace LifeVerse.Unity.Avatar
             var serverFlying = server.Motion == NetworkMotionState.Fly;
             if (_flightAsked > 0f) { if (serverFlying == _flightWanted || Time.realtimeSinceStartup - _flightAsked > 1.5f) { _flightAsked = 0f; State.Flying = serverFlying; } }
             else State.Flying = serverFlying;
-            State.Seated = server.Motion == NetworkMotionState.Sit; ServerSeated = State.Seated;
+            State.Seated = server.Motion == NetworkMotionState.Sit; ServerSeated = State.Seated; _lastProcessed = server.LastProcessedInput;
             if (LastError > 3f) { State.X += error.x; State.Y += error.y; State.Z += error.z; State.VelocityX = server.VelocityX; State.VelocityY = server.VelocityY; State.VelocityZ = server.VelocityZ; Corrections++; }
             else if (LastError > .08f) { State.X += error.x * .3f; State.Y += error.y * .3f; State.Z += error.z * .3f; Corrections++; }
         }

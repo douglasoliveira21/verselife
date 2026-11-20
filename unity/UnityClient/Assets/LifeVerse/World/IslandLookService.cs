@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Text.Json;
 using System.Threading.Tasks;
 using LifeVerse.Shared.Land;
@@ -19,6 +19,9 @@ namespace LifeVerse.Unity.World
         public Guid Island;
         public ParcelEnvironment Look { get; private set; }
         public int Refreshes { get; private set; }
+        /// <summary>The music of the whole island (what plays where no parcel sets its own): the address, the volume, whether it starts by itself and its name. Empty when none is set or the address is not allowed.</summary>
+        public string MusicUrl { get; private set; } = ""; public float MusicVolume { get; private set; } = 1f; public bool MusicAutoplay { get; private set; } = true; public string MusicName { get; private set; } = "";
+        public event Action MusicChanged;
         private float _since = RefreshSeconds; private bool _busy;
 
         private void Update()
@@ -26,6 +29,18 @@ namespace LifeVerse.Unity.World
             if (Api == null || Island == Guid.Empty || _busy) return;
             _since += Time.deltaTime;
             if (_since >= RefreshSeconds) { _since = 0f; _ = RefreshAsync(); }
+        }
+
+        /// <summary>Reads the "media" part of the answer (musicUrl, volume, autoplay, name). An address the rules refuse (not https, a machine inside a network, not mp3 or ogg) counts as no music.</summary>
+        public void ReadMusic(JsonElement root)
+        {
+            string url = ""; var volume = 1f; var autoplay = true; var name = "";
+            if (root.TryGetProperty("media", out var media) && media.ValueKind == JsonValueKind.Object && media.TryGetProperty("musicUrl", out var u) && u.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(u.GetString()) && LandMediaUrl.Check(u.GetString()) == null)
+            {
+                url = u.GetString(); if (media.TryGetProperty("volume", out var v) && v.TryGetSingle(out var vol)) volume = Mathf.Clamp01(vol); autoplay = !(media.TryGetProperty("autoplay", out var a) && a.ValueKind == JsonValueKind.False); if (media.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String) name = n.GetString() ?? "";
+            }
+            if (url == MusicUrl && Mathf.Approximately(volume, MusicVolume) && autoplay == MusicAutoplay && name == MusicName) return;
+            MusicUrl = url; MusicVolume = volume; MusicAutoplay = autoplay; MusicName = name; MusicChanged?.Invoke();
         }
 
         /// <summary>Asks the API for the look now. A failure keeps what was there.</summary>
@@ -39,7 +54,7 @@ namespace LifeVerse.Unity.World
                 if (body == null) return;
                 using var document = JsonDocument.Parse(body);
                 var look = document.RootElement.TryGetProperty("look", out var element) && element.ValueKind == JsonValueKind.Object ? ParcelEnvironment.Parse(element.GetRawText()) : new ParcelEnvironment();
-                Look = look.IsEmpty ? null : look; Refreshes++;
+                Look = look.IsEmpty ? null : look; Refreshes++; ReadMusic(document.RootElement);
                 if (Environment != null) Environment.SetLook(Look);
             }
             catch (JsonException) { }

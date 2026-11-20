@@ -19,7 +19,7 @@ namespace LifeVerse.Unity.UI
     {
         private readonly ApiContext _c; private readonly BuildEditor _b; private readonly Dictionary<string, VisualElement> _tabs = new Dictionary<string, VisualElement>(); private readonly Label _status, _selection;
         private readonly TextField[] _numbers = new TextField[9]; private readonly TextField _name, _about, _gridField, _packageName, _textureId; private readonly Label _limits; private bool _filling;
-        private Toggle _protect, _double, _fullBright; private Slider _opacity, _rough, _metal, _glow; private VisualElement _colour, _emission;
+        private Label _tutorial; private VisualElement _tutorialBox; private Toggle _protect, _double, _fullBright; private Slider _opacity, _rough, _metal, _glow; private VisualElement _colour, _emission;
         public string CurrentTab { get; private set; }
         public TextField NumberField(int index) => _numbers[index];
         public TextField NameField => _name;
@@ -33,7 +33,9 @@ namespace LifeVerse.Unity.UI
         {
             _c = context; _b = editor; var bar = UiKit.Row(); bar.style.flexWrap = Wrap.Wrap; bar.style.flexShrink = 0; _selection = UiKit.Text("Nada selecionado.", "lv-small", "lv-muted"); _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
             foreach (var tab in new[] { "Criar", "Objeto", "Forma", "Aparência", "Física", "Dados", "Conteúdo", "Alinhar", "Geral", "Auditoria", "Limites" }) { var captured = tab; bar.Add(UiKit.Button(tab, () => Show(captured))); var panel = new ScrollView(); panel.style.flexGrow = 1; panel.style.flexShrink = 1; panel.style.minHeight = 0; panel.style.display = DisplayStyle.None; _tabs[tab] = panel; }
-            Body.style.flexGrow = 1; Body.style.minHeight = 0; style.overflow = Overflow.Hidden; _selection.style.flexShrink = 0; _status.style.flexShrink = 0; Body.Add(bar); Body.Add(_selection);
+            Body.style.flexGrow = 1; Body.style.minHeight = 0; style.overflow = Overflow.Hidden; _selection.style.flexShrink = 0; _status.style.flexShrink = 0;
+            _tutorial = UiKit.Text("", "lv-small", "lv-accent"); _tutorial.style.whiteSpace = WhiteSpace.Normal; _tutorial.style.flexShrink = 1; _tutorialBox = UiKit.Row(_tutorial); _tutorialBox.style.flexShrink = 0; _tutorialBox.style.flexWrap = Wrap.Wrap;
+            Body.Add(_tutorialBox); Body.Add(bar); Body.Add(_selection);
             foreach (var panel in _tabs.Values) Body.Add(panel); Body.Add(_status);
 
             // Criar
@@ -68,7 +70,7 @@ namespace LifeVerse.Unity.UI
             _tabs["Geral"].Add(UiKit.Row(UiKit.Button("Copiar", () => _b.Duplicate()), UiKit.Button("Desfazer", () => { if (!_b.Undo()) Say("Nada para desfazer.", false); }), UiKit.Button("Refazer", () => { if (!_b.Redo()) Say("Nada para refazer.", false); }), Controls.Confirm("Apagar", () => "Confirmar", () => _b.Delete(_b.Selection.ToList()), "lv-btn-secondary")));
             _tabs["Geral"].Add(UiKit.Divider()); _tabs["Geral"].Add(UiKit.Text("Guardar como construção", "lv-bold")); _packageName = UiKit.Field("Nome da construção", false, 160);
             _tabs["Geral"].Add(_packageName); _tabs["Geral"].Add(UiKit.Row(UiKit.Button("Guardar no inventário", () => _b.SavePackage(_packageName.value, false, m => Say(m, false)), "lv-btn-primary"), Controls.Confirm("Guardar e retirar", () => "Confirmar", () => _b.SavePackage(_packageName.value, true, m => Say(m, false)), "lv-btn-secondary")));
-            _tabs["Geral"].Add(UiKit.Button("Colocar uma construção do inventário…", PickPackage));
+            _tabs["Geral"].Add(UiKit.Button("Colocar uma construção do inventário…", PickPackage)); _tabs["Geral"].Add(UiKit.Button("Objetos apagados…", () => new LostObjectsWindow(_c).Open()));
 
             // Limites
             _limits = UiKit.Text("", "lv-body"); _limits.style.whiteSpace = WhiteSpace.Normal; _tabs["Limites"].Add(_limits); _tabs["Limites"].Add(UiKit.Button("Atualizar", LoadLimits));
@@ -90,6 +92,7 @@ namespace LifeVerse.Unity.UI
         public void Refresh()
         {
             var first = First(); var count = _b.Selection.Count;
+            RefreshTutorial();
             _selection.text = count == 0 ? "Nada selecionado. Clique num objeto." : count == 1 ? first.Name + " (" + BuildCommands.LabelOf(first.PrimitiveType) + ")" + (_b.HeldByOther(first.Id, out var who) ? "  ·  em edição por " + who : first.EditLocked ? "  ·  protegido" : "") : count + " objetos selecionados";
             _filling = true;
             try

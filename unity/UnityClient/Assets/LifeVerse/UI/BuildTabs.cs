@@ -21,9 +21,35 @@ namespace LifeVerse.Unity.UI
         private TextField _price, _contentAsset; private Toggle _anyoneMove, _anyoneCopy, _nextCopy, _nextModify, _nextTransfer; private Label _audit, _contentList;
 
         private Slider _repeatX, _repeatY; private DropdownField _face, _mediaType; private TextField _mediaUrl; private TextField _group;
+        private int[] _faceIds = new int[0];
+        public string TutorialText => _tutorial.text;
+        public DropdownField FaceList => _face;
+
+        public static string TutorialStepText(LifeVerse.Shared.Building.TutorialStep step)
+        {
+            switch (step)
+            {
+                case LifeVerse.Shared.Building.TutorialStep.Create: return "1/8 · Crie uma caixa: na aba Criar clique em Caixa.";
+                case LifeVerse.Shared.Building.TutorialStep.Move: return "2/8 · Mova a caixa: arraste a seta colorida (Mover) ou use as setas do teclado.";
+                case LifeVerse.Shared.Building.TutorialStep.Resize: return "3/8 · Mude o tamanho: em Criar escolha Esticar e arraste uma seta, ou digite o tamanho na aba Objeto.";
+                case LifeVerse.Shared.Building.TutorialStep.Rotate: return "4/8 · Gire a caixa: em Criar escolha Girar e arraste uma seta, ou use Girar +15° na aba Objeto.";
+                case LifeVerse.Shared.Building.TutorialStep.Texture: return "5/8 · Dê cor ou textura: na aba Aparência escolha uma cor.";
+                case LifeVerse.Shared.Building.TutorialStep.Duplicate: return "6/8 · Copie a caixa: com ela selecionada, aperte Ctrl+D (ou Copiar na aba Geral).";
+                case LifeVerse.Shared.Building.TutorialStep.Link: return "7/8 · Vincule duas peças: selecione as duas (Shift soma) e use Vincular na aba Geral.";
+                case LifeVerse.Shared.Building.TutorialStep.Save: return "8/8 · Guarde no inventário: na aba Geral dê um nome e use Guardar no inventário.";
+                default: return "Tutorial concluído! Agora é com você. Dá para repetir pelo botão Tutorial.";
+            }
+        }
+
+        private void RefreshTutorial()
+        {
+            var tut = _b.Tutorial; _tutorialBox.style.display = DisplayStyle.Flex; _tutorial.text = tut.Skipped ? "Tutorial pulado." : TutorialStepText(tut.Current);
+            _tutorialBox.Clear(); _tutorialBox.Add(_tutorial); if (tut.Active) _tutorialBox.Add(UiKit.Button("Pular", () => { tut.Skip(); RefreshTutorial(); })); else _tutorialBox.Add(UiKit.Button("Tutorial", () => { tut.Restart(); RefreshTutorial(); }));
+        }
+
         public Slider ShapeSlider(string key) => _shape[key];
         public TextField MediaUrl => _mediaUrl;
-        private int FaceIndex() => Mathf.Max(0, _face.index);
+        private int FaceIndex() => _faceIds.Length > 0 && _face.index >= 0 && _face.index < _faceIds.Length ? _faceIds[_face.index] : Mathf.Max(0, _face.index);
 
         /// <summary>Changes the entry of one face inside the material (the faces keep their own colour, picture or glow; the rest of the object is untouched).</summary>
         public void EditFace(Action<JsonObject> change) => EditMaterial(m =>
@@ -31,6 +57,8 @@ namespace LifeVerse.Unity.UI
             var faces = m["faces"] as JsonArray ?? new JsonArray(); m["faces"] = faces; var index = FaceIndex();
             var entry = faces.OfType<JsonObject>().FirstOrDefault(x => x["index"]?.GetValue<int>() == index); if (entry == null) { entry = new JsonObject { ["index"] = index }; faces.Add(entry); } change(entry);
         });
+
+        public static string FaceName(int id) => id == 0 ? "Topo (0)" : id == 1 ? "Base (1)" : "Lado " + (id - 1) + " (" + id + ")";
 
         /// <summary>The same rules the island applies to media: https, a public host name, no user name or port tricks.</summary>
         public static string MediaProblem(string type, string url)
@@ -95,7 +123,7 @@ namespace LifeVerse.Unity.UI
 
             // Aparência (more): the picture's repeat, one face of the solid, and what plays on it
             var look = _tabs["Aparência"]; look.Add(UiKit.Divider()); look.Add(UiKit.Text("Repetição da imagem", "lv-bold")); _repeatX = UiKit.Slide("Repetir X", .1f, 16f, 1f, v => EditMaterial(m => m["uvRepeatX"] = Math.Round(v, 2))); _repeatY = UiKit.Slide("Repetir Y", .1f, 16f, 1f, v => EditMaterial(m => m["uvRepeatY"] = Math.Round(v, 2))); look.Add(_repeatX); look.Add(_repeatY);
-            look.Add(UiKit.Divider()); look.Add(UiKit.Text("Uma face só", "lv-bold")); _face = new DropdownField("Face", Enumerable.Range(0, 6).Select(i => "Face " + i).ToList(), 0); look.Add(_face);
+            look.Add(UiKit.Divider()); look.Add(UiKit.Text("Uma face só", "lv-bold")); _face = new DropdownField("Face", Enumerable.Range(0, 6).Select(i => "Face " + i).ToList(), 0); look.Add(_face); look.Add(UiKit.Check("Escolher a face clicando no objeto", false, v => _b.FacePick = v));
             look.Add(Controls.ColourField("Cor da face", "#FFFFFF", value => EditFace(f => f["color"] = value), "#FFFFFF", "#C0392B", "#27AE60", "#2980B9", "#F4A340", "#222222")); look.Add(UiKit.Button("Tirar o que é só desta face", () => EditMaterial(m => { if (m["faces"] is JsonArray faces) { var index = FaceIndex(); var entry = faces.OfType<JsonObject>().FirstOrDefault(x => x["index"]?.GetValue<int>() == index); if (entry != null) faces.Remove(entry); if (faces.Count == 0) m.Remove("faces"); } })));
             look.Add(UiKit.Divider()); look.Add(UiKit.Text("Mídia na superfície", "lv-bold")); _mediaType = new DropdownField("Tipo", new List<string> { "image", "video" }, 0); _mediaUrl = UiKit.Field("Endereço (https://…)", false, 500); look.Add(_mediaType); look.Add(_mediaUrl);
             look.Add(UiKit.Row(UiKit.Button("Aplicar mídia", ApplyMedia, "lv-btn-primary"), UiKit.Button("Reproduzir / pausar", () => EditMaterial(m => { if (m["media"] is JsonObject media) media["playing"] = !(media["playing"]?.GetValue<bool>() ?? false); })), UiKit.Button("Tirar mídia", () => EditMaterial(m => m.Remove("media")))));
@@ -109,6 +137,8 @@ namespace LifeVerse.Unity.UI
         private void RefreshExtra(WorldObjectState first)
         {
             if (first == null) { if (_contentList != null) _contentList.text = ""; return; }
+            var ids = _b.FacesOfSelection(); if (!ids.SequenceEqual(_faceIds)) { _faceIds = ids; if (ids.Length > 0) _face.choices = ids.Select(i => FaceName(i)).ToList(); }
+            if (_b.PickedFace >= 0) { var at = Array.IndexOf(_faceIds, _b.PickedFace); if (at >= 0 && _face.index != at) _face.SetValueWithoutNotify(_face.choices.ElementAt(at)); }
             var g = PrimParams.Parse(first.GeometryJson); var values = new Dictionary<string, float> { ["hollow"] = g.Hollow, ["taperX"] = g.TaperX, ["taperY"] = g.TaperY, ["twist"] = g.Twist, ["cutStart"] = g.CutStart, ["cutEnd"] = g.CutEnd, ["pathBegin"] = g.PathBegin, ["pathEnd"] = g.PathEnd, ["shearX"] = g.ShearX, ["shearZ"] = g.ShearZ, ["skew"] = g.Skew, ["revolutions"] = g.Revolutions };
             foreach (var pair in values) _shape[pair.Key].SetValueWithoutNotify(pair.Value);
             var p = PhysicsRules.Read(first.PhysicsJson); _collision.SetValueWithoutNotify(p.Collision); _physical.SetValueWithoutNotify(p.Physical); _trigger.SetValueWithoutNotify(p.Trigger); _temporary.SetValueWithoutNotify(p.Temporary); _shapeKind.SetValueWithoutNotify(p.CollisionShape == "none" ? "box" : p.CollisionShape);

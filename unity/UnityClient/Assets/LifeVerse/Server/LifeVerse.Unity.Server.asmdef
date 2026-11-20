@@ -4,6 +4,7 @@
     "references": [
         "LifeVerse.Unity.Core",
         "LifeVerse.Unity.World",
+        "LifeVerse.Unity.Audio",
         "LifeVerse.Unity.Avatar",
         "LifeVerse.Unity.UI",
         "glTFast",

@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
@@ -423,8 +423,8 @@ public sealed partial class IslandServer : IDisposable
     private static void OnInput(Player player, SubmitInputMessage input)
     {
         if (input.Sequence <= player.LatestInput.Sequence || !float.IsFinite(input.X) || !float.IsFinite(input.Z)) return;
-        // the client steps 60 times a second and the island uses only the latest input at each of its ticks: a sit toggle sent in a step that the next input replaced before the tick would be lost, so it is carried over
-        var carried = player.LatestInput.Flags & InputFlags.Sit;
+        // the client steps 60 times a second and the island uses only the latest input at each of its ticks: a sit toggle or a jump sent in a step that the next input replaced before the tick would be lost, so they are carried over
+        var carried = player.LatestInput.Flags & (InputFlags.Sit | InputFlags.Jump);
         player.LatestInput = new MovementInput(input.Sequence, Math.Clamp(input.X, -1f, 1f), Math.Clamp(input.Z, -1f, 1f), ((InputFlags)input.Flags & AllowedFlags) | carried);
     }
 

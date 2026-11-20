@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -11,7 +11,7 @@ namespace LifeVerse.Unity.UI
 
         public static Button Button(string text, Action onClick, string kind = "lv-btn")
         {
-            var button = new Button(onClick) { text = text }; button.AddToClassList("lv-btn"); if (kind != "lv-btn") button.AddToClassList(kind); return button;
+            var button = new Button(() => { LifeVerse.Unity.Audio.UiSounds.Click(); onClick?.Invoke(); }) { text = text }; button.AddToClassList("lv-btn"); if (kind != "lv-btn") button.AddToClassList(kind); return button;
         }
 
         public static TextField Field(string label, bool password = false, int maxLength = 128, string value = "")
@@ -22,7 +22,7 @@ namespace LifeVerse.Unity.UI
 
         public static Toggle Check(string label, bool value, Action<bool> onChange)
         {
-            var toggle = new Toggle(label) { value = value }; toggle.AddToClassList("lv-toggle"); toggle.RegisterValueChangedCallback(e => onChange(e.newValue)); return toggle;
+            var toggle = new Toggle(label) { value = value }; toggle.AddToClassList("lv-toggle"); toggle.RegisterValueChangedCallback(e => { LifeVerse.Unity.Audio.UiSounds.Play(LifeVerse.Unity.Audio.UiSound.Toggle); onChange(e.newValue); }); return toggle;
         }
 
         public static Slider Slide(string label, float min, float max, float value, Action<float> onChange, bool percent = false)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -26,6 +26,7 @@ namespace LifeVerse.Unity.UI
 
         public Notice Show(string text, NoticeKind kind = NoticeKind.Info, float seconds = 5f)
         {
+            LifeVerse.Unity.Audio.UiSounds.Play(kind == NoticeKind.Good ? LifeVerse.Unity.Audio.UiSound.Good : kind == NoticeKind.Warn ? LifeVerse.Unity.Audio.UiSound.Warn : kind == NoticeKind.Bad ? LifeVerse.Unity.Audio.UiSound.Bad : LifeVerse.Unity.Audio.UiSound.Notice);
             var now = DateTimeOffset.Now; var notice = new Notice(text, kind, now);
             if (text == _lastText && (now - _lastTime).TotalSeconds < 2) return notice;
             _lastText = text; _lastTime = now; _history.Add(notice); if (_history.Count > MaxHistory) _history.RemoveAt(0); Unread++;

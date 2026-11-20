@@ -1,4 +1,4 @@
-using LifeVerse.Shared.Camera;
+﻿using LifeVerse.Shared.Camera;
 using LifeVerse.Unity.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -24,6 +24,8 @@ namespace LifeVerse.Unity.Avatar
         public bool FirstPerson { get; private set; }
         public FirstPersonOptions Options = new FirstPersonOptions();
         public Vector3 Focus { get; private set; }
+        /// <summary>Looking at a point of the world (an object) instead of the person, from this far; cleared by moving or Esc.</summary>
+        public Vector3? ZoomTarget; public float ZoomDistance = 3f;
         public float Roll { get; private set; }
         private Vector3 _position; private float _lastYaw;
         private readonly HeadBob _bob = new HeadBob(); private readonly CameraSway _sway = new CameraSway(); private readonly EyeStabilizer _eyes = new EyeStabilizer();
@@ -65,8 +67,8 @@ namespace LifeVerse.Unity.Avatar
                 eye += rotation * Vector3.right * _bob.Offset.X + Vector3.up * _bob.Offset.Y; Focus = head;
                 _position = eye; camera.transform.position = eye; camera.transform.rotation = rotation * Quaternion.Euler(0f, 0f, Mathf.Rad2Deg * Roll); return;
             }
-            Focus = GameSpace.ToUnity(gamePosition) + Vector3.up * HeadHeight; Roll = 0f;
-            var back = -(Quaternion.Euler(Pitch, Yaw, 0f) * Vector3.forward); var distance = Distance;
+            Focus = ZoomTarget ?? GameSpace.ToUnity(gamePosition) + Vector3.up * HeadHeight; Roll = 0f;
+            var back = -(Quaternion.Euler(Pitch, Yaw, 0f) * Vector3.forward); var distance = ZoomTarget.HasValue ? ZoomDistance : Distance;
             if (Terrain != null && Terrain.Map != null && Terrain.Raycast(new Ray(Focus, back), Distance) is { } hit) distance = Mathf.Max(MinDistance * .5f, Vector3.Distance(Focus, hit) - .25f);
             var wanted = Focus + back * distance;
             if (Terrain != null && Terrain.Map != null) { var game = GameSpace.ToGame(wanted); var ground = Terrain.Map.SampleHeight(game.x, game.z) + ClearGround; if (wanted.y < ground && Terrain.Map.SeaLevel < ground) wanted.y = ground; }

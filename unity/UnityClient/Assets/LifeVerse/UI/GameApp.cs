@@ -5,6 +5,7 @@ using System.Linq;
 using LifeVerse.Shared.Terrain;
 using LifeVerse.Unity.Avatar;
 using LifeVerse.Unity.World;
+using LifeVerse.Unity.Audio;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering.HighDefinition;
@@ -60,7 +61,7 @@ namespace LifeVerse.Unity.UI
             RegisterWindows(); Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             Hud.Chat.TypingChanged += typing => { if (Player != null) Player.Typing = typing; };
             Hud.Perf.Extra = () => Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots;
-            StartCoroutine(LoadIslands());
+            ApplyAudio(); StartCoroutine(StartSounds()); StartCoroutine(LoadIslands());
         }
 
         private void RegisterWindows()
@@ -72,8 +73,9 @@ namespace LifeVerse.Unity.UI
             Hud.Register("Carteira", "wallet", () => new WalletWindow(Context));
             Hud.Register("Buscar", "search", () => new SearchWindow(Context));
             Hud.Register("Construir", "build", () => { ToggleBuild(); return null; });
+            Hud.Register("Voz", "voice", () => { if (Voice == null) return null; Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure G para falar.", NoticeKind.Info); return null; });
             Hud.Register("Mais", "more", MoreWindow);
-            Hud.Register("Configurações", "settings", () => { var window = new SettingsWindow(Ui, SettingsPath); window.Changed += ApplySettingsToWorld; return window; });
+            Hud.Register("Configurações", "settings", () => { var window = new SettingsWindow(Ui, SettingsPath) { Mic = _micTest ??= gameObject.AddComponent<MicTest>() }; window.Changed += ApplySettingsToWorld; window.Closed += () => _micTest?.End(); return window; });
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui));
             Hud.Presence.RegisterValueChangedCallback(e => { if (Current == Phase.Playing) Api.ApiAsync("PUT", "/api/v1/social/presence", System.Text.Json.JsonSerializer.Serialize(new { status = e.newValue, privacyJson = (string)null })); });
         }
@@ -209,11 +211,48 @@ namespace LifeVerse.Unity.UI
             ScriptDialogs = new ScriptDialogs(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } }; ScriptPanels = new ScriptHud(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } };
             Client.ScriptOperation += json => { ScriptDialogs.OnOperation(json); ScriptPanels.OnOperation(json); };
             Builder = new BuildEditor(Context, () => Client, () => Follow != null ? Follow.Camera : null, () => Player != null ? Player.GamePosition : Vector3.zero, () => Client != null ? Client.Terrain : null);
+            Builder.Attach();
+            // sound: the soundscape, what scripts play, the music of the parcel, and proximity voice
+            Ambient = new GameObject("Ambient").AddComponent<AmbientSound>(); Ambient.transform.SetParent(_world.transform);
+            Sounds = new GameObject("WorldSounds").AddComponent<WorldSounds>(); Sounds.transform.SetParent(_world.transform); Sounds.Attach(Client); Sounds.AssetLoader = asset => Client != null && Client.AssetLoader != null ? Client.AssetLoader(asset) : System.Threading.Tasks.Task.FromResult<byte[]>(null);
+            objects.MediaAudio = host => BusSource.Make(host, Bus.Media, .8f, true, 25f, true).Source;
+            ParcelMusic = new GameObject("ParcelMusic").AddComponent<LandMusic>(); ParcelMusic.transform.SetParent(_world.transform); ParcelMusic.Setup(_api, () => _island, () => Player != null ? Player.GamePosition : (Vector3?)null); ParcelMusic.IslandFinder = () => Client != null && Client.Environment != null ? Client.Environment.GetComponent<IslandLookService>() : null; ParcelMusic.Load();
+            Voice = new GameObject("Voice").AddComponent<VoiceChat>(); Voice.transform.SetParent(_world.transform); Voice.Attach(Client); Hearing = new GameObject("Hearing").AddComponent<VoiceListener>(); Hearing.transform.SetParent(_world.transform); Hearing.Attach(Client);
+            Hearing.PositionOf = peer => PeopleViews != null && PeopleViews.ViewOf(peer) != null ? PeopleViews.ViewOf(peer).GamePosition : (Vector3?)null; Voice.HearingOthers = () => Hearing.AnySpeaking(); ApplyAudio();
             TerrainTools = new TerrainEditor(Context, () => Client, () => Follow != null ? Follow.Camera : null, () => Client != null ? Client.Terrain : null);
         }
 
         public ScriptDialogs ScriptDialogs { get; private set; }
         public ScriptHud ScriptPanels { get; private set; }
+        public AmbientSound Ambient { get; private set; }
+        public WorldSounds Sounds { get; private set; }
+        public LandMusic ParcelMusic { get; private set; }
+        public VoiceChat Voice { get; private set; }
+        public VoiceListener Hearing { get; private set; }
+        public BusSource LoginTheme { get; private set; }
+        private MicTest _micTest;
+        private float _nextSplash;
+
+        /// <summary>Puts the volumes and the voice settings on the sound system (called at the start and whenever the settings change).</summary>
+        public void ApplyAudio()
+        {
+            MicDevices.Preferred = Settings.InputDevice; UiSounds.Enabled = Settings.UiSounds; Buses.SetAll(Settings.MasterVolume, Settings.AmbientVolume, Settings.EffectsVolume, Settings.MusicVolume, Settings.MediaVolume, Settings.VoiceVolume);
+            if (Voice != null) { Voice.Gate = Settings.VoiceSensitivity; Voice.EchoGuard = Settings.EchoGuard; }
+            if (ParcelMusic != null) ParcelMusic.Enabled = Settings.ParcelMusic;
+        }
+
+        /// <summary>Reads the recordings that come with the game and starts the login theme if the person is still at the login screen.</summary>
+        private IEnumerator StartSounds()
+        {
+            yield return SoundLibrary.LoadAll(); EnsureLoginTheme();
+        }
+
+        private void EnsureLoginTheme()
+        {
+            if (LoginTheme != null || !SoundLibrary.Has(SoundLibrary.Login)) return;
+            var host = new GameObject("LoginMusic"); host.transform.SetParent(transform, false); LoginTheme = BusSource.Make(host, Bus.Music, .6f, false, 30f, true); LoginTheme.Source.clip = SoundLibrary.Get(SoundLibrary.Login); LoginTheme.FadeSeconds = 1.5f; LoginTheme.Fade = 0f;
+            LoginTheme.FadeTarget = Current == Phase.Login ? 1f : 0f; LoginTheme.Source.Play();
+        }
         public BuildEditor Builder { get; private set; }
         public TerrainEditor TerrainTools { get; private set; }
         public BuildWindow BuildPanel { get; private set; }
@@ -235,7 +274,7 @@ namespace LifeVerse.Unity.UI
             Builder.SetActive(false); BuildPanel?.Close(); BuildPanel = null; TerrainTools.SetActive(true); TerrainPanel = new TerrainWindow(Context, TerrainTools); TerrainPanel.Open();
         }
 
-        private void TearDownWorld() { BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
+        private void TearDownWorld() { Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
 
         // ---- while playing ----
 
@@ -260,10 +299,19 @@ namespace LifeVerse.Unity.UI
                 Hud.Map.Place(Player.GamePosition, others);
             }
             Builder?.Tick(Time.unscaledDeltaTime); TerrainTools?.Tick(Time.unscaledDeltaTime);
+            if (Ambient != null && Client.Terrain != null && Client.Terrain.Map != null && Player != null)
+            {
+                var spot = Player.GamePosition; var edge = Client.Terrain.Map.HalfExtent - Mathf.Max(Mathf.Abs(spot.x), Mathf.Abs(spot.z)); var weather = Client.Environment != null ? Client.Environment.WeatherShown : "clear";
+                Ambient.SetTargets(AmbientLevels.Compute(edge, Player.State.Swimming, spot.y, weather));
+                if (Player.State.Swimming && new Vector2(Player.State.VelocityX, Player.State.VelocityZ).magnitude > .5f && Time.unscaledTime > _nextSplash) { _nextSplash = Time.unscaledTime + 1.05f; Ambient.Splash(); }
+            }
+            if (Voice != null) Voice.TalkHeld = Keyboard.current != null && Keyboard.current.gKey.isPressed && !Hud.Chat.Typing;
+            if (Hearing != null && PeopleViews != null) foreach (var peer in PeopleViews.Peers) { var view = PeopleViews.ViewOf(peer); if (view != null) view.SetSpeaking(peer == Client.SelfPeerId ? Voice != null && Voice.Talking : Hearing.IsSpeaking(peer)); }
             if (Keyboard.current is { } keyboard && !Hud.Chat.Typing)
             {
                 if (keyboard.enterKey.wasPressedThisFrame) Hud.Chat.Focus();
                 if (keyboard.f3Key.wasPressedThisFrame) Hud.TogglePerformance();
+                if (Follow != null && Follow.ZoomTarget.HasValue && (keyboard.escapeKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)) Follow.ZoomTarget = null;
                 if (keyboard.bKey.wasPressedThisFrame) ToggleBuild();
                 if (keyboard.tKey.wasPressedThisFrame) ToggleTerrain();
                 if ((Builder == null || !Builder.Active) && (TerrainTools == null || !TerrainTools.Active) && Mouse.current is { } mouse && mouse.leftButton.wasPressedThisFrame && UnityEngine.Cursor.lockState != CursorLockMode.Locked && !UiKit.IsOver(Ui.Root, mouse.position.ReadValue())) ClickWorld(mouse.position.ReadValue());
@@ -287,12 +335,13 @@ namespace LifeVerse.Unity.UI
             var menu = new FloatingWindow(Ui, "object-menu", state != null && state.Name.Length > 0 ? state.Name : "Objeto", 220f, -1f, at); menu.MoveTo(at); ObjectMenu = menu;
             menu.Body.Add(UiKit.Button("Tocar", () => { TouchObject(id); menu.Close(); }, "lv-btn-primary"));
             menu.Body.Add(UiKit.Button("Sentar aqui", () => { SitOnObject(top); menu.Close(); }));
+            menu.Body.Add(UiKit.Button("Dar zoom", () => { ZoomTo(box); menu.Close(); }));
             menu.Body.Add(UiKit.Button("Scripts do objeto", () => { new LuaEditorWindow(Context, _island, id).Open(); menu.Close(); }));
             if (state != null)
             {
                 var (saleType, price) = BuildEditor.SaleOf(state); var payPrice = BuildEditor.PayPriceOf(state);
-                if (saleType != "none" && price >= 0) menu.Body.Add(Controls.Confirm("Comprar por VC$ " + price.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")), () => "Confirmar a compra", () => { Builder.Buy(id, price); Notices.Show("Pedido de compra enviado.", NoticeKind.Info); menu.Close(); }, "lv-btn-primary"));
-                if (payPrice > 0) menu.Body.Add(Controls.Confirm("Pagar VC$ " + payPrice.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")), () => "Confirmar o pagamento", () => { PayObject(state, payPrice); menu.Close(); }, "lv-btn-primary"));
+                if (saleType != "none" && price >= 0) menu.Body.Add(UiKit.Button("Comprar por VC$ " + price.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")) + "…", () => { new PurchaseWindow(Context, Builder, state).Open(); menu.Close(); }, "lv-btn-primary"));
+                if (payPrice > 0) menu.Body.Add(UiKit.Button("Pagar VC$ " + payPrice.ToString("N0", System.Globalization.CultureInfo.GetCultureInfo("pt-BR")) + "…", () => { new PaymentWindow(Context, state).Open(); menu.Close(); }, "lv-btn-primary"));
                 var carried = BuildCarried(state); if (carried.Count > 0) menu.Body.Add(UiKit.Button("Abrir (" + carried.Count + " itens)", () => { OpenObjectContents(state, carried); menu.Close(); }));
             }
             menu.Open(); return true;
@@ -319,6 +368,9 @@ namespace LifeVerse.Unity.UI
             Notices.Show("Pagamento enviado.", NoticeKind.Info);
         }
 
+        /// <summary>The camera looks at the object from a distance that fits it; walking or Esc brings it back to the person.</summary>
+        public void ZoomTo(UnityEngine.Bounds box) { if (Follow == null) return; Follow.ZoomTarget = box.center; Follow.ZoomDistance = Mathf.Clamp(box.size.magnitude * 1.4f, 2f, FollowCamera.MaxDistance); }
+
         /// <summary>Touches an object: its scripts get the on_touch event (the island decides what the touch does).</summary>
         public bool TouchObject(Guid id) => Client != null && Client.Send(new LifeVerse.Wire.TouchObjectMessage(id.ToString()));
 
@@ -344,7 +396,7 @@ namespace LifeVerse.Unity.UI
         {
             if (Follow != null) { Follow.Sensitivity = Settings.MouseSensitivity; Follow.InvertY = Settings.InvertY; Follow.Options = Follow.Options with { HeadBob = !Settings.ReduceMotion, Sway = !Settings.ReduceMotion }; }
             if (Player != null) Player.AlwaysRun = Settings.AlwaysRun;
-            Hud.Chat.ApplySettings();
+            Hud.Chat.ApplySettings(); ApplyAudio();
             var environment = _world != null ? _world.GetComponentInChildren<IslandEnvironment>() : null;
             if (environment != null) { var preset = GraphicsQuality.Current; environment.RainQuality = preset.RainAmount; environment.SetShadows(preset.Shadows, preset.ShadowDistance); }
         }
@@ -353,7 +405,7 @@ namespace LifeVerse.Unity.UI
 
         public void Show(Phase phase)
         {
-            Current = phase; Ui.ScreenLayer.Clear();
+            Current = phase; Ui.ScreenLayer.Clear(); if (LoginTheme != null) LoginTheme.FadeTarget = phase == Phase.Login ? 1f : 0f;
             if (phase == Phase.Login) { Ui.ScreenLayer.Add(Login); Hud.Hide(); }
             else if (phase == Phase.Loading) { Ui.ScreenLayer.Add(Loading); Hud.Hide(); }
             else Hud.Show();

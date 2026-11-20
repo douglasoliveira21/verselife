@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using LifeVerse.Shared.Terrain;
 using LifeVerse.Unity.World;
 using LifeVerse.Wire;
@@ -42,11 +43,39 @@ namespace LifeVerse.Unity.UI
         public void SetActive(bool active)
         {
             if (active == Active) return; Active = active; _hover = null;
-            if (active) { if (parent == null) _c.Ui.HudLayer.Add(this); Refresh(); } else RemoveFromHierarchy();
+            if (active) { if (parent == null) _c.Ui.HudLayer.Add(this); LoadLand(); Refresh(); } else RemoveFromHierarchy();
             Changed?.Invoke();
         }
 
-        public bool CanSculpt => _client() != null && _client().CanEditTerrain;
+        /// <summary>The island lets this person sculpt anywhere (set by the island when they are an editor of it); a test can stand in for it.</summary>
+        public Func<bool> IslandEditorOverride { get; set; }
+        public bool IslandEditor => IslandEditorOverride != null ? IslandEditorOverride() : _client() != null && _client().CanEditTerrain;
+        private LifeVerse.Shared.Land.LandTerrainRights _rights = LifeVerse.Shared.Land.LandTerrainRights.Empty;
+        /// <summary>Ground of the parcels this person owns, rents or builds on (when the island lets them sculpt there).</summary>
+        public bool HasParcelRights => _rights.Cells > 0;
+        public bool CanSculpt => IslandEditor || HasParcelRights;
+        /// <summary>Which ground vertices may change: null for island editors (anywhere), otherwise only inside their parcels (and never across a boundary).</summary>
+        public Func<int, int, bool> Mask => IslandEditor || _terrain()?.Map == null ? null : _rights.MaskFor(_c.Api.UserId, _terrain().Map);
+
+        /// <summary>Reads the parcels of the island: the ones this person may sculpt give the rights (the island checks them again on every edit).</summary>
+        public void LoadLand() => this.Then(_c.Api.ApiAsync("GET", "/api/v1/worlds/islands/" + _c.CurrentIsland() + "/land", null), r => { if (r.Status == 200) ReadLand(r.Body); Refresh(); });
+
+        public void ReadLand(string json)
+        {
+            var cells = new List<IEnumerable<long>>();
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(json);
+                if (document.RootElement.TryGetProperty("parcels", out var list) && list.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    foreach (var item in list.EnumerateArray())
+                    {
+                        if (!item.TryGetProperty("canEditTerrain", out var can) || can.ValueKind != System.Text.Json.JsonValueKind.True || !item.TryGetProperty("runs", out var runs)) continue;
+                        cells.Add(LifeVerse.Shared.Land.LandMath.FromRuns(runs.EnumerateArray().Select(run => run.EnumerateArray().Select(n => n.GetInt32()).ToArray())));
+                    }
+            }
+            catch (Exception exception) when (exception is System.Text.Json.JsonException || exception is KeyNotFoundException || exception is InvalidOperationException || exception is FormatException) { cells.Clear(); }
+            _rights = LifeVerse.Shared.Land.LandTerrainRights.FromCells(cells, _c.Api.UserId);
+        }
         public float StrengthValue() { var percent = StrengthPercent / 100f; return Tool == TerrainTool.Raise || Tool == TerrainTool.Lower || Tool == TerrainTool.Noise ? percent * .4f : percent; }
         public BrushOptions Brush => new BrushOptions(Square, 1f - SoftPercent / 100f, Tool == TerrainTool.Level ? Level : (float?)null);
 
@@ -56,7 +85,8 @@ namespace LifeVerse.Unity.UI
         public bool SubmitAt(float x, float z)
         {
             var client = _client(); if (client == null || !client.Connected) { Say("Entre numa ilha para editar o terreno."); return false; }
-            if (!CanSculpt) { Say("Você não pode editar o terreno aqui: só os editores da ilha (a edição por terreno ainda depende da ilha liberar)."); return false; }
+            if (!CanSculpt) { Say("Você não pode editar o terreno aqui: é preciso ser o dono, o locatário ou construtor de um terreno (ou editor da ilha)."); return false; }
+            var mask = Mask; var terrain = _terrain(); if (mask != null && terrain?.Map != null) { var half = terrain.Map.Cells / 2f; var cx = Mathf.RoundToInt(x / terrain.Map.CellSize + half); var cz = Mathf.RoundToInt(z / terrain.Map.CellSize + half); if (!mask(cx, cz)) { Say("Aí não é o seu terreno: o ponto sob o pincel precisa estar dentro de um terreno seu."); return false; } }
             if (client.Send(RequestAt(x, z))) { Dabs++; return true; } return false;
         }
 
@@ -65,7 +95,7 @@ namespace LifeVerse.Unity.UI
 
         public bool ApplySeaLevel(float level)
         {
-            if (!CanSculpt) { Say("Só os editores da ilha mudam o mar."); return false; }
+            if (!IslandEditor) { Say("Só os editores da ilha mudam o mar."); return false; }
             if (level < TerrainMap.MinSeaLevel || level > TerrainMap.MaxSeaLevel) { Say("O mar fica entre " + TerrainMap.MinSeaLevel.ToString("0.#", CultureInfo.InvariantCulture) + " e " + TerrainMap.MaxSeaLevel.ToString("0.#", CultureInfo.InvariantCulture) + " m."); return false; }
             return _client().Send(new SubmitSeaLevelMessage(level));
         }
@@ -83,7 +113,7 @@ namespace LifeVerse.Unity.UI
         /// <summary>Replaces the heights with a RAW 16-bit file: it must have exactly the island's number of samples.</summary>
         public bool Import(string path)
         {
-            if (!CanSculpt) { Say("Só os editores da ilha importam mapas."); return false; }
+            if (!IslandEditor) { Say("Só os editores da ilha importam mapas."); return false; }
             byte[] bytes; try { bytes = File.ReadAllBytes(path); } catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException) { Say("Não foi possível ler o arquivo: " + exception.Message); return false; }
             var count = _terrain().Map.VertexCount; if (bytes.Length != count * count * 2) { Say("Arquivo inválido: esperado " + count + "×" + count + " amostras de 16 bits (" + count * count * 2 + " bytes), mas tem " + bytes.Length + "."); return false; }
             Say("Mapa enviado à ilha. As bordas (fundo do mar) não mudam."); return _client().Send(new SubmitTerrainImportMessage(bytes));
@@ -91,7 +121,7 @@ namespace LifeVerse.Unity.UI
 
         public void Say(string text) { Status = text; Changed?.Invoke(); }
 
-        public void Refresh() { Say(_client() == null || !_client().Connected ? "Entre numa ilha para editar o terreno." : !CanSculpt ? "Você não pode editar o terreno aqui (só os editores da ilha)." : Tool == TerrainTool.Paint ? "Segure o botão esquerdo para pintar o material escolhido." : Tool == TerrainTool.Level ? "Escolha a altura do nível e segure o botão esquerdo para levar o solo até ela." : Tool == TerrainTool.Restore ? "Segure o botão esquerdo para devolver o terreno original." : "Segure o botão esquerdo sobre o terreno."); }
+        public void Refresh() { Say(_client() == null || !_client().Connected ? "Entre numa ilha para editar o terreno." : !CanSculpt ? "Você não pode editar o terreno aqui: é preciso ser o dono, o locatário ou construtor de um terreno (ou editor da ilha)." : !IslandEditor ? "Você mexe só no chão dos seus terrenos: a prévia em vermelho mostra o que não pode mudar." : Tool == TerrainTool.Paint ? "Segure o botão esquerdo para pintar o material escolhido." : Tool == TerrainTool.Level ? "Escolha a altura do nível e segure o botão esquerdo para levar o solo até ela." : Tool == TerrainTool.Restore ? "Segure o botão esquerdo para devolver o terreno original." : "Segure o botão esquerdo sobre o terreno."); }
 
         public static string RejectionText(string code)
         {
@@ -101,6 +131,36 @@ namespace LifeVerse.Unity.UI
         /// <summary>Uses the ground height under the cursor as the level.</summary>
         public bool UseHoverHeight() { if (_hover == null) { Say("Passe o cursor sobre o terreno e aperte de novo."); return false; } Level = Mathf.Clamp(_terrain().Map.SampleHeight(_hover.Value.x, _hover.Value.z), TerrainMap.MinHeight + 1f, TerrainMap.MaxHeight); Changed?.Invoke(); return true; }
 
+        // ---- the preview: the ground the brush would leave, shown as three rings lifted to the new height (tried on the local map and put back) ----
+        private sealed class PreviewRing { public List<Vector3> World = new List<Vector3>(); public List<Vector2> Panel = new List<Vector2>(); public bool Allowed; }
+        private readonly List<PreviewRing> _preview = new List<PreviewRing>(); private float _previewAt;
+        /// <summary>The biggest change (metres) the preview shows now; 0 when the brush would change nothing (or paints).</summary>
+        public float PreviewDelta { get; private set; }
+        public int PreviewRings => _preview.Count;
+
+        /// <summary>Tries one dab at this game point on the local ground, reads the new heights along the rings and puts everything back exactly as it was.</summary>
+        public void PreviewAt(Vector3 game)
+        {
+            _preview.Clear(); PreviewDelta = 0f; var terrain = _terrain(); if (terrain?.Map == null || Tool == TerrainTool.Paint) return;
+            var map = terrain.Map; var mask = Mask; var reach = Radius + map.CellSize * 3f; var revision = map.Revision; var half = map.Cells / 2f;
+            var rings = new[] { .34f, .67f, 1f }; var original = new List<float>(); var spots = new List<Vector2>();
+            foreach (var factor in rings) for (var i = 0; i < 48; i++) { var t = i / 48f; Vector2 offset; if (Square) { var side = t * 4f; var s = side % 1f; var corner = (int)side % 4; offset = corner == 0 ? new Vector2(-1f + 2f * s, -1f) : corner == 1 ? new Vector2(1f, -1f + 2f * s) : corner == 2 ? new Vector2(1f - 2f * s, 1f) : new Vector2(-1f, 1f - 2f * s); } else offset = new Vector2(Mathf.Cos(t * Mathf.PI * 2f), Mathf.Sin(t * Mathf.PI * 2f)); var spot = new Vector2(game.x + offset.x * Radius * factor, game.z + offset.y * Radius * factor); spots.Add(spot); original.Add(map.SampleHeight(spot.x, spot.y)); }
+            var before = map.Capture(game.x, game.z, reach, true, null);
+            map.Apply(Tool, game.x, game.z, Radius, StrengthValue(), Layer, Brush, mask); var after = spots.Select(s => map.SampleHeight(s.x, s.y)).ToList();
+            map.Restore(before); map.Revision = revision;   // the real ground is back exactly as it was
+            for (var r = 0; r < rings.Length; r++)
+            {
+                var ring = new PreviewRing { Allowed = true };
+                for (var i = 0; i < 48; i++) { var k = r * 48 + i; var spot = spots[k]; ring.World.Add(GameSpace.ToUnity(spot.x, after[k] + .12f, spot.y)); PreviewDelta = Mathf.Max(PreviewDelta, Mathf.Abs(after[k] - original[k])); if (mask != null && !mask(Mathf.RoundToInt(spot.x / map.CellSize + half), Mathf.RoundToInt(spot.y / map.CellSize + half))) ring.Allowed = false; }
+                _preview.Add(ring);
+            }
+        }
+
+        private void ProjectPreview()
+        {
+            var camera = _camera(); if (camera == null) return; var scale = Mathf.Max(.01f, _c.Ui.Panel.scale);
+            foreach (var ring in _preview) { ring.Panel.Clear(); foreach (var w in ring.World) { var s = camera.WorldToScreenPoint(w); ring.Panel.Add(s.z <= 0f ? new Vector2(float.NaN, 0) : new Vector2(s.x / scale, (Screen.height - s.y) / scale)); } }
+        }
         // ---- every frame ----
 
         public void Tick(float dt)
@@ -115,7 +175,8 @@ namespace LifeVerse.Unity.UI
                 if (!UiKit.IsOver(_c.Ui.Root, screen) && terrain.Raycast(camera.ScreenPointToRay(screen)) is Vector3 hit) _hover = GameSpace.ToGame(hit);
                 _sinceDab += dt; if (_hover != null && mouse.leftButton.isPressed && _sinceDab >= DabInterval) { _sinceDab = 0f; SubmitAt(_hover.Value.x, _hover.Value.z); }
             }
-            RebuildRing(); MarkDirtyRepaint();
+            if (_hover != null && Time.realtimeSinceStartup - _previewAt > .1f) { _previewAt = Time.realtimeSinceStartup; PreviewAt(_hover.Value); } else if (_hover == null) _preview.Clear();
+            ProjectPreview(); RebuildRing(); MarkDirtyRepaint();
         }
 
         private void RebuildRing()
@@ -175,7 +236,7 @@ namespace LifeVerse.Unity.UI
         private void Refresh()
         {
             foreach (var pair in _tools) pair.Value.EnableInClassList("lv-btn-selected", pair.Key == _t.Tool); for (var i = 0; i < _layers.Count; i++) { var chosen = i == _t.Layer; _layers[i].style.borderTopWidth = _layers[i].style.borderBottomWidth = _layers[i].style.borderLeftWidth = _layers[i].style.borderRightWidth = chosen ? 4 : 1; _layers[i].style.borderTopColor = _layers[i].style.borderBottomColor = _layers[i].style.borderLeftColor = _layers[i].style.borderRightColor = chosen ? new Color(.07f, .95f, .88f) : new Color(1, 1, 1, .25f); }
-            _levelBox.style.display = _t.Tool == TerrainTool.Level ? DisplayStyle.Flex : DisplayStyle.None; _paintBox.style.display = _t.Tool == TerrainTool.Paint ? DisplayStyle.Flex : DisplayStyle.None; _islandBox.style.display = _t.CanSculpt ? DisplayStyle.Flex : DisplayStyle.None; _status.text = _t.Status;
+            _levelBox.style.display = _t.Tool == TerrainTool.Level ? DisplayStyle.Flex : DisplayStyle.None; _paintBox.style.display = _t.Tool == TerrainTool.Paint ? DisplayStyle.Flex : DisplayStyle.None; _islandBox.style.display = _t.IslandEditor ? DisplayStyle.Flex : DisplayStyle.None; _status.text = _t.Status;
         }
     }
 }

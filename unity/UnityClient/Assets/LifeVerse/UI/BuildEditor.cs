@@ -94,8 +94,15 @@ namespace LifeVerse.Unity.UI
         private float _renew; private int _dragAxis = -1; private Vector2 _dragFrom; private readonly Dictionary<Guid, Vector3> _dragStart = new Dictionary<Guid, Vector3>(); private float _dragAmount; private bool _hooked; private WorldClient _hookedTo;
 
         public bool Active { get; private set; }
+        /// <summary>While on, a click on an object picks the face under the cursor (for a colour or picture on that face only).</summary>
+        public bool FacePick { get; set; }
+        public int PickedFace { get; private set; } = -1;
+        /// <summary>The first-use tutorial: eight small tasks that finish by themselves when the person does them.</summary>
+        public LifeVerse.Shared.Building.BuildTutorial Tutorial { get; } = new LifeVerse.Shared.Building.BuildTutorial();
+        public void Did(LifeVerse.Shared.Building.TutorialStep step) { if (Tutorial.Notify(step)) Changed?.Invoke(); }
         public float Grid { get; set; } = .25f;
         public IReadOnlyList<Guid> Selection => _selected;
+        public int[] FacesOfSelection() => _selected.Count > 0 && Objects != null ? Objects.FacesOf(_selected[0]) : new int[0];
         public int UndoCount => _undo.Count;
         public int RedoCount => _redo.Count;
         public string LastMessage { get; private set; } = "";
@@ -103,6 +110,8 @@ namespace LifeVerse.Unity.UI
         public int Created { get; private set; }
         public bool Dragging => _dragAxis >= 0;
         public event Action Changed;
+        /// <summary>The island sold something to this person: what it cost, what kind of sale, and what they received.</summary>
+        public event Action<long, string, IReadOnlyList<string>> Purchased;
         public event Action<string> Said;
 
         public BuildEditor(ApiContext context, Func<WorldClient> client, Func<Camera> camera, Func<Vector3> where, Func<TerrainView> terrain)
@@ -159,13 +168,16 @@ namespace LifeVerse.Unity.UI
             try
             {
                 using var document = JsonDocument.Parse(json); var root = document.RootElement; var operation = root.TryGetProperty("operation", out var op) ? op.GetString() : null;
+                if (operation == "live") { ShowLive(root); return; }
                 if (operation == "lock" || operation == "unlock")
                 {
                     var user = root.TryGetProperty("userId", out var u) && Guid.TryParse(u.GetString(), out var g) ? g : Guid.Empty; var userName = root.TryGetProperty("userName", out var n) ? n.GetString() ?? "outra pessoa" : "outra pessoa";
                     if (root.TryGetProperty("objectIds", out var ids) && ids.ValueKind == JsonValueKind.Array)
-                        foreach (var item in ids.EnumerateArray()) if (Guid.TryParse(item.GetString(), out var id)) { if (operation == "unlock" || user == Me) _heldBy.Remove(id); else _heldBy[id] = userName; }
+                        foreach (var item in ids.EnumerateArray()) if (Guid.TryParse(item.GetString(), out var id)) { if (operation == "unlock" || user == Me) _heldBy.Remove(id); else _heldBy[id] = userName; if (operation == "unlock" && user != Me) Objects?.Refresh(id); }   // a drag that ended without a save: the object goes back to what the island has
                     Changed?.Invoke(); return;
                 }
+                if (operation == "bought" && root.TryGetProperty("buyerUserId", out var buyer) && Guid.TryParse(buyer.GetString(), out var buyerId) && buyerId == Me && !(root.TryGetProperty("replay", out var replay) && replay.ValueKind == JsonValueKind.True))
+                    Purchased?.Invoke(root.TryGetProperty("price", out var priced) && priced.TryGetInt64(out var cost) ? cost : 0, root.TryGetProperty("saleType", out var kind) ? kind.GetString() ?? "original" : "original", root.TryGetProperty("delivered", out var delivered) && delivered.ValueKind == JsonValueKind.Array ? delivered.EnumerateArray().Select(x => x.GetString() ?? "").ToList() : new List<string>());
                 if (operation == "create" && root.TryGetProperty("objectState", out var state) && state.ValueKind == JsonValueKind.Object)
                 {
                     var made = WorldObjectState.Parse(state);
@@ -211,7 +223,7 @@ namespace LifeVerse.Unity.UI
         {
             if (_client() == null) return false; template.Revision = 0;
             LastSent = BuildCommands.Command("create", null, 0, BuildCommands.Payload(template)); if (!Submit(LastSent)) return false;
-            _created.Enqueue(made => { if (select) Select(new[] { made.Id }); if (record) { var madeId = made.Id; var copy = template.Copy(); Push("criar " + made.Name, () => Delete(new[] { madeId }, false), () => CreateState(copy.Copy(), null, true, false), false); } created?.Invoke(made); });
+            _created.Enqueue(made => { Did(LifeVerse.Shared.Building.TutorialStep.Create); if (select) Select(new[] { made.Id }); if (record) { var madeId = made.Id; var copy = template.Copy(); Push("criar " + made.Name, () => Delete(new[] { madeId }, false), () => CreateState(copy.Copy(), null, true, false), false); } created?.Invoke(made); });
             return true;
         }
         /// <summary>Changes objects with <paramref name="change"/> (a copy of each is sent) and remembers how to take it back.</summary>
@@ -224,6 +236,7 @@ namespace LifeVerse.Unity.UI
                 var before = current.Copy(); var after = current.Copy(); change(after); if (!Send("update", after)) return false; steps.Add(new KeyValuePair<WorldObjectState, WorldObjectState>(before, after));
             }
             if (steps.Count == 0) return false;
+            { var b = steps[0].Key; var a = steps[0].Value; if (b.PositionX != a.PositionX || b.PositionY != a.PositionY || b.PositionZ != a.PositionZ) Did(LifeVerse.Shared.Building.TutorialStep.Move); if (b.ScaleX != a.ScaleX || b.ScaleY != a.ScaleY || b.ScaleZ != a.ScaleZ) Did(LifeVerse.Shared.Building.TutorialStep.Resize); if (b.RotationX != a.RotationX || b.RotationY != a.RotationY || b.RotationZ != a.RotationZ) Did(LifeVerse.Shared.Building.TutorialStep.Rotate); if (b.MaterialJson != a.MaterialJson) Did(LifeVerse.Shared.Building.TutorialStep.Texture); }
             if (record) Push(label, () => { foreach (var s in steps) Restore(s.Key); }, () => { foreach (var s in steps) Restore(s.Value); }, true);
             return true;
         }
@@ -254,7 +267,7 @@ namespace LifeVerse.Unity.UI
         {
             var made = new List<Guid>(); var sources = _selected.Select(StateOf).Where(s => s != null).ToList(); var step = Mathf.Max(1f, Grid * 4f);
             foreach (var s in sources) { var copy = s.Copy(); copy.PositionX += step; copy.GroupId = null; copy.ParentObjectId = null; CreateState(copy, m => { made.Add(m.Id); if (made.Count == sources.Count) Select(made); }, false, true); }
-            return sources.Count;
+            if (sources.Count > 0) Did(LifeVerse.Shared.Building.TutorialStep.Duplicate); return sources.Count;
         }
         /// <summary>Changes who may do what with objects (rights of the next owner, sale, click action, group). Only what is in <paramref name="properties"/> changes; the island and the API decide who may.</summary>
         public bool SendProperties(IReadOnlyList<Guid> ids, System.Text.Json.Nodes.JsonObject properties) => ids.Count > 0 && properties.Count > 0 && _client() != null && Submit(JsonSerializer.Serialize(new { operation = "properties", objectIds = ids, expectedRevision = 0, properties = System.Text.Json.Nodes.JsonNode.Parse(properties.ToJsonString()) }, BuildCommands.Web));
@@ -287,7 +300,7 @@ namespace LifeVerse.Unity.UI
         {
             if (_selected.Count == 0 || (join && _selected.Count < 2)) return false; var group = join ? Guid.NewGuid() : (Guid?)null; var parentId = join ? _selected[0] : (Guid?)null;
             var links = _selected.Select(StateOf).Where(s => s != null).Select(s => new { objectId = s.Id, groupId = join ? group : null, parentId = join && s.Id != parentId ? parentId : null, expectedRevision = s.Revision }).ToList();
-            return _client() != null && Submit(JsonSerializer.Serialize(new { operation = "structure", links, expectedRevision = 0 }, BuildCommands.Web));
+            if (join) Did(LifeVerse.Shared.Building.TutorialStep.Link); return _client() != null && Submit(JsonSerializer.Serialize(new { operation = "structure", links, expectedRevision = 0 }, BuildCommands.Web));
         }
 
         // ---- constructions kept in the inventory ----
@@ -305,7 +318,7 @@ namespace LifeVerse.Unity.UI
             this.Then(_c.Api.ApiAsync("POST", "/api/v1/inventory/build-packages", json), r =>
             {
                 if (r.Status < 200 || r.Status >= 300) { done("O servidor recusou a construção (" + UiTasks.Explain(r.Status, r.Body) + ")."); return; }
-                LastSavedItem = Json.One(r.Body).Id("itemId", "id"); if (take) Delete(ids, false);
+                LastSavedItem = Json.One(r.Body).Id("itemId", "id"); Did(LifeVerse.Shared.Building.TutorialStep.Save); Did(LifeVerse.Shared.Building.TutorialStep.Save); if (take) Delete(ids, false);
                 done("\"" + name + "\" guardada no inventário (" + states.Count + " objeto(s))" + (take ? " e retirada do mundo." : "."));
             });
         }
@@ -404,7 +417,12 @@ namespace LifeVerse.Unity.UI
         {
             foreach (var h in _handles) if (DistanceToSegment(panel, h.From, h.To) < 12f && (panel - h.From).magnitude > 8f) { StartDrag(h, panel); return; }
             var camera = _camera(); if (camera == null || Objects == null) return;
-            if (Objects.Pick(camera.ScreenPointToRay(screen), 300f, out var id, out _)) { Select(new[] { id }, add); } else if (!add) Clear();
+            if (Objects.Pick(camera.ScreenPointToRay(screen), 300f, out var id, out _))
+            {
+                if (FacePick && _selected.Contains(id) && Objects.PickFace(id, camera.ScreenPointToRay(screen), out var face)) { PickedFace = face; Say("Face " + face + " escolhida."); Changed?.Invoke(); return; }
+                Select(new[] { id }, add);
+            }
+            else if (!add) Clear();
         }
 
         public static float DistanceToSegment(Vector2 p, Vector2 a, Vector2 b)
@@ -434,7 +452,8 @@ namespace LifeVerse.Unity.UI
         private void DragTo(Vector2 panel, bool free)
         {
             var handle = _handles.FirstOrDefault(h => h.Axis == _dragAxis); if (handle == null) return; var screenAxis = handle.To - handle.From; var length = screenAxis.magnitude; if (length < 1f) return;
-            var pixels = Vector2.Dot(panel - _dragFrom, screenAxis / length); var metres = pixels / (length / Mathf.Max(.1f, GizmoLength())); _dragAmount = AmountFor(metres, pixels, free);
+            var pixels = Vector2.Dot(panel - _dragFrom, screenAxis / length); var metres = pixels / (length / Mathf.Max(.1f, GizmoLength())); _snapTarget = null; _dragAmount = AmountFor(metres, pixels, free);
+            if (Mode == GizmoMode.Move && !free && SnapMagnet) { var near = SnapAmount(_dragAxis, metres); if (near.HasValue) _dragAmount = near.Value; }
             foreach (var pair in _dragStart)
             {
                 var go = Objects.ViewOf(pair.Key); if (go == null) continue;
@@ -442,13 +461,14 @@ namespace LifeVerse.Unity.UI
                 else if (Mode == GizmoMode.Rotate) { var r = _dragRotation[pair.Key]; r[_dragAxis] += _dragAmount; go.transform.rotation = GameSpace.RotationToUnity(r.x, r.y, r.z); }
                 else { var sc = _dragScale[pair.Key]; sc[_dragAxis] = Mathf.Clamp(sc[_dragAxis] + _dragAmount, .01f, 64f); go.transform.localScale = new Vector3(sc.x, sc.y, sc.z); }
             }
+            SendLiveIfDue();
         }
 
         private float GizmoLength() { var camera = _camera(); return Mathf.Clamp(Vector3.Distance(camera.transform.position, SelectionBounds().center) * .18f, .8f, 12f); }
 
         private void EndDrag()
         {
-            var axis = _dragAxis; var amount = _dragAmount; _dragAxis = -1; var mode = Mode;
+            var axis = _dragAxis; var amount = _dragAmount; _dragAxis = -1; var mode = Mode; _snapTarget = null;
             foreach (var pair in _dragStart) { var go = Objects.ViewOf(pair.Key); var s = StateOf(pair.Key); if (go != null && s != null) { go.transform.position = pair.Value; go.transform.rotation = GameSpace.RotationToUnity(s.RotationX, s.RotationY, s.RotationZ); go.transform.localScale = new Vector3(Mathf.Max(s.ScaleX, .001f), Mathf.Max(s.ScaleY, .001f), Mathf.Max(s.ScaleZ, .001f)); } }   // back to what the island last confirmed; the answer moves it
             _dragStart.Clear();
             if (Mathf.Abs(amount) < .0005f) return;
@@ -460,6 +480,60 @@ namespace LifeVerse.Unity.UI
         private static float Wrap(float degrees) => Mathf.Repeat(degrees + 180f, 360f) - 180f;
 
         public void EndDragForTesting(int axis, float amount) { _dragAxis = axis; _dragAmount = amount; EndDrag(); }
+        // ---- magnetic snap: while moving, the selection is pulled to the corners, edge middles and face centres of its neighbours, or made to touch a face ----
+        public bool SnapMagnet { get; set; } = true;
+        public float SnapRadius { get; set; } = .3f;
+        private Vector3? _snapTarget;
+        public Vector3? SnapPoint => _snapTarget;
+
+        /// <summary>An object's box in game space (z is mirrored), as the shared align and snap rules take it.</summary>
+        public static LifeVerse.Shared.Building.Bounds ToGameBounds(UnityEngine.Bounds b) => new LifeVerse.Shared.Building.Bounds(new System.Numerics.Vector3(b.min.x, b.min.y, -b.max.z), new System.Numerics.Vector3(b.max.x, b.max.y, -b.min.z));
+
+        /// <summary>The amount (metres along the game axis) a drag of <paramref name="amount"/> would snap to, or null when nothing is close. Targets are the objects near the selection that are not part of it.</summary>
+        public float? SnapAmount(int axis, float amount)
+        {
+            if (_selected.Count == 0 || Objects == null) return null; var all = SelectionBounds(); var game = ToGameBounds(all); var centre = all.center; var targets = new List<LifeVerse.Shared.Building.Bounds>();
+            foreach (var id in Objects.Ids) { if (_selected.Contains(id) || targets.Count >= 120 || !BoundsOf(id, out var b)) continue; if ((b.center - centre).sqrMagnitude < 40f * 40f) targets.Add(ToGameBounds(b)); }
+            if (targets.Count == 0) return null;
+            var settings = new LifeVerse.Shared.Building.SnapSettings(true, true, true, true, SnapRadius); var half = (game.Max - game.Min) / 2f; var axisVector = axis == 0 ? System.Numerics.Vector3.UnitX : axis == 1 ? System.Numerics.Vector3.UnitY : System.Numerics.Vector3.UnitZ;
+            var dragged = LifeVerse.Shared.Building.SnapMath.Features(game.Center, System.Numerics.Quaternion.Identity, half, settings); var points = new List<LifeVerse.Shared.Building.SnapPoint>();
+            foreach (var t in targets) points.AddRange(LifeVerse.Shared.Building.SnapMath.Features(t.Center, System.Numerics.Quaternion.Identity, (t.Max - t.Min) / 2f, settings));
+            var along = LifeVerse.Shared.Building.SnapMath.AlongAxis(dragged, points, axisVector, amount, SnapRadius); var contact = LifeVerse.Shared.Building.SnapMath.Contact(game, targets, axis, amount, SnapRadius);
+            LifeVerse.Shared.Building.SnapResult? best = along; if (contact is { } c && (best == null || Mathf.Abs(c.Amount - amount) < Mathf.Abs(best.Value.Amount - amount))) best = contact; if (best == null) return null;
+            _snapTarget = new Vector3(best.Value.Target.X, best.Value.Target.Y, best.Value.Target.Z); return best.Value.Amount;
+        }
+
+        // ---- showing a drag to the others as it happens (nothing is saved until the drag is let go) ----
+        private float _liveAt; public int LiveSent { get; private set; } public int LiveSeen { get; private set; }
+
+        private void SendLiveIfDue()
+        {
+            if (Time.realtimeSinceStartup - _liveAt < .1f || _client() == null) return; _liveAt = Time.realtimeSinceStartup; var poses = new List<LifeVerse.Shared.Building.LivePose>();
+            foreach (var id in _selected) { var go = Objects?.ViewOf(id); var s = StateOf(id); if (go == null || s == null) continue; var game = GameSpace.ToGame(go.transform.position); var turn = GameSpace.QuaternionToGame(go.transform.rotation).eulerAngles; var scale = go.transform.localScale; var rot = _dragRotation.TryGetValue(id, out var r0) && Mode == GizmoMode.Rotate ? Preview(r0) : new Vector3(s.RotationX, s.RotationY, s.RotationZ); poses.Add(new LifeVerse.Shared.Building.LivePose(id, game.x, game.y, game.z, rot.x, rot.y, rot.z, scale.x, scale.y, scale.z)); }
+            if (poses.Count == 0) return; LiveSent++; _client().SendBuild(JsonSerializer.Serialize(new { operation = "live", poses = poses.Take(LifeVerse.Shared.Building.LivePoses.MaxObjects) }, BuildCommands.Web));
+        }
+
+        private Vector3 Preview(Vector3 start) { start[_dragAxis] += _dragAmount; return start; }
+
+        private static bool TryCase(JsonElement element, string name, out JsonElement value)
+        {
+            foreach (var property in element.EnumerateObject()) if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) { value = property.Value; return true; }
+            value = default; return false;
+        }
+
+        private void ShowLive(JsonElement root)
+        {
+            if (!root.TryGetProperty("userId", out var u) || !Guid.TryParse(u.GetString(), out var user) || user == Me || !root.TryGetProperty("poses", out var poses) || poses.ValueKind != JsonValueKind.Array) return;
+            foreach (var p in poses.EnumerateArray())
+            {
+                if (!TryCase(p, "id", out var idElement) || !Guid.TryParse(idElement.GetString(), out var id)) continue; var go = Objects?.ViewOf(id); if (go == null) continue;   // the island writes these with its own capitals: either spelling is read
+                float N(string name, float d = 0) => TryCase(p, name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetSingle(out var n) && !float.IsNaN(n) && !float.IsInfinity(n) ? n : d;
+                go.transform.position = GameSpace.ToUnity(N("positionX"), N("positionY"), N("positionZ")); go.transform.rotation = GameSpace.RotationToUnity(N("rotationX"), N("rotationY"), N("rotationZ")); go.transform.localScale = new Vector3(Mathf.Max(N("scaleX", 1), .001f), Mathf.Max(N("scaleY", 1), .001f), Mathf.Max(N("scaleZ", 1), .001f)); LiveSeen++;
+            }
+        }
+
+        /// <summary>Starts listening to the island even outside the build mode, so other people's drags are seen.</summary>
+        public void Attach() => Hook();
         // ---- the picture ----
 
         private void Draw(MeshGenerationContext mgc)
@@ -474,6 +548,7 @@ namespace LifeVerse.Unity.UI
                 foreach (var e in new[] { 0, 1, 0, 2, 0, 4, 3, 1, 3, 2, 3, 7, 5, 1, 5, 4, 5, 7, 6, 2, 6, 4, 6, 7 }.Select((v, k) => new { v, k }).Where(x => x.k % 2 == 0)) { painter.MoveTo(corners[e.v]); painter.LineTo(corners[new[] { 0, 1, 0, 2, 0, 4, 3, 1, 3, 2, 3, 7, 5, 1, 5, 4, 5, 7, 6, 2, 6, 4, 6, 7 }[e.k + 1]]); }
                 painter.Stroke();
             }
+            if (_snapTarget is Vector3 snap && Vector3.Dot(camera.transform.forward, GameSpace.ToUnity(snap) - camera.transform.position) > 0f) { painter.lineWidth = 2.4f; painter.strokeColor = new Color(1f, .85f, .2f); painter.BeginPath(); painter.Arc(ToPanel(GameSpace.ToUnity(snap)), 9f, 0f, 360f); painter.Stroke(); }
             painter.lineWidth = 3.2f;
             foreach (var h in _handles) { painter.strokeColor = h.Colour; painter.BeginPath(); painter.MoveTo(h.From); painter.LineTo(h.To); painter.Stroke(); painter.fillColor = h.Colour; painter.BeginPath(); if (Mode == GizmoMode.Scale) { painter.MoveTo(h.To + new Vector2(-6, -6)); painter.LineTo(h.To + new Vector2(6, -6)); painter.LineTo(h.To + new Vector2(6, 6)); painter.LineTo(h.To + new Vector2(-6, 6)); painter.ClosePath(); } else if (Mode == GizmoMode.Rotate) { painter.MoveTo(h.To + new Vector2(0, -8)); painter.LineTo(h.To + new Vector2(8, 0)); painter.LineTo(h.To + new Vector2(0, 8)); painter.LineTo(h.To + new Vector2(-8, 0)); painter.ClosePath(); } else painter.Arc(h.To, 6f, 0f, 360f); painter.Fill(); }
         }

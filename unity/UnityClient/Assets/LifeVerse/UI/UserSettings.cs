@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -26,6 +26,17 @@ namespace LifeVerse.Unity.UI
         public float MusicVolume { get; set; } = .8f;
         public float EffectsVolume { get; set; } = 1f;
         public float VoiceVolume { get; set; } = 1f;
+        public float AmbientVolume { get; set; } = .8f;
+        public float MediaVolume { get; set; } = 1f;
+        /// <summary>How loud the voice must be for an open microphone to send (lower is more sensitive).</summary>
+        public float VoiceSensitivity { get; set; } = .12f;
+        public bool EchoGuard { get; set; }
+        /// <summary>The microphone chosen ("auto" is the system default).</summary>
+        public string InputDevice { get; set; } = "auto";
+        /// <summary>Whether the music of parcels may play at all.</summary>
+        public bool ParcelMusic { get; set; } = true;
+        /// <summary>The small sounds of the interface (clicks, windows, notices).</summary>
+        public bool UiSounds { get; set; } = true;
         // controles
         public float MouseSensitivity { get; set; } = .15f;
         public bool InvertY { get; set; }
@@ -51,7 +62,7 @@ namespace LifeVerse.Unity.UI
         {
             static float F(float v, float min, float max, float fallback) => float.IsFinite(v) ? Mathf.Clamp(v, min, max) : fallback;
             GraphicsPreset = Mathf.Clamp(GraphicsPreset, 0, PresetCount - 1); FpsLimit = FpsLimit <= 0 ? 0 : Mathf.Clamp(FpsLimit, 30, 360);
-            MasterVolume = F(MasterVolume, 0f, 1f, 1f); MusicVolume = F(MusicVolume, 0f, 1f, .8f); EffectsVolume = F(EffectsVolume, 0f, 1f, 1f); VoiceVolume = F(VoiceVolume, 0f, 1f, 1f);
+            MasterVolume = F(MasterVolume, 0f, 1f, 1f); MusicVolume = F(MusicVolume, 0f, 1f, .8f); EffectsVolume = F(EffectsVolume, 0f, 1f, 1f); VoiceVolume = F(VoiceVolume, 0f, 1f, 1f); AmbientVolume = F(AmbientVolume, 0f, 1f, .8f); MediaVolume = F(MediaVolume, 0f, 1f, 1f); VoiceSensitivity = F(VoiceSensitivity, .02f, .6f, .12f); InputDevice = string.IsNullOrWhiteSpace(InputDevice) ? "auto" : InputDevice.Length > 120 ? InputDevice.Substring(0, 120) : InputDevice;
             MouseSensitivity = F(MouseSensitivity, .02f, .6f, .15f); InterfaceScale = F(InterfaceScale, MinScale, MaxScale, 1f); ChatOpacity = F(ChatOpacity, .3f, 1f, .8f); ChatFontSize = Mathf.Clamp(ChatFontSize, 10, 28);
             LastLogin = (LastLogin ?? "").Length > 64 ? LastLogin.Substring(0, 64) : LastLogin ?? ""; LastIsland = (LastIsland ?? "").Length > 64 ? LastIsland.Substring(0, 64) : LastIsland ?? "";
             Windows ??= new Dictionary<string, float[]>();

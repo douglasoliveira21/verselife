@@ -1,4 +1,7 @@
-﻿
+
 # the body that comes with the game is copied from client/Assets/avatars at build time
 /Assets/StreamingAssets/avatars/
 /Assets/StreamingAssets/avatars.meta
+# the sounds that come with the game are copied from client/Assets/audio at build time
+/Assets/StreamingAssets/audio/
+/Assets/StreamingAssets/audio.meta
