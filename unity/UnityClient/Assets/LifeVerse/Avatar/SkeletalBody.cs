@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using LifeVerse.Shared.Avatar;
@@ -23,6 +23,11 @@ namespace LifeVerse.Unity.Avatar
         private readonly List<Bone> _bones = new List<Bone>(); private readonly Dictionary<string, Bone> _byName = new Dictionary<string, Bone>();
         private Transform _content; private Renderer[] _renderers = Array.Empty<Renderer>(); private float _unit = 1f;
         private SkeletonClip _current, _previous; private float _time, _previousTime, _blend = 1f;
+        private readonly HandFingers _fingers = new HandFingers();
+        /// <summary>The fingers of the body, when its hands have finger bones.</summary>
+        public HandFingers Fingers => _fingers;
+        /// <summary>Whether the hand of a side holds something (an object worn at its point), so the fingers close on it. Set by the avatar.</summary>
+        public Func<char, bool> HoldsHand;
         public int BoneCount => _bones.Count;
         public bool HasBone(string standard) => _byName.ContainsKey(standard);
         public Transform BoneOf(string standard) => _byName.TryGetValue(standard, out var bone) ? bone.T : null;
@@ -81,6 +86,7 @@ namespace LifeVerse.Unity.Avatar
             bounds = _renderers[0].bounds; foreach (var renderer in _renderers) bounds.Encapsulate(renderer.bounds);
             _content.position += transform.position - new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);   // feet on the origin, centred
             foreach (var bone in _bones) bone.RestLocal = bone.T.localPosition;
+            _fingers.Prepare(content.GetComponentsInChildren<Transform>(true), side => _byName.TryGetValue("hand_" + side, out var hand) ? hand.T : null);
             bounds = _renderers[0].bounds; foreach (var renderer in _renderers) bounds.Encapsulate(renderer.bounds); RenderBounds = bounds;
             foreach (var renderer in _renderers) { if (renderer is SkinnedMeshRenderer skinned) { skinned.updateWhenOffscreen = true; if (skinned.sharedMesh != null) for (var sub = 0; sub < skinned.sharedMesh.subMeshCount; sub++) Triangles += (int)(skinned.sharedMesh.GetIndexCount(sub) / 3); } else if (renderer.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null) for (var sub = 0; sub < filter.sharedMesh.subMeshCount; sub++) Triangles += (int)(filter.sharedMesh.GetIndexCount(sub) / 3); }
             return true;
@@ -138,8 +144,10 @@ namespace LifeVerse.Unity.Avatar
                 var offset = _current.SampleHipsOffset(_time); hipsOffset = new Vector3(0f, offset.Y, 0f);
             }
             else { deltas = Procedural(pose, headPitch); hipsOffset = new Vector3(0f, -pose.Drop / Mathf.Max(_unit, 1e-4f), 0f); }
-            Apply(deltas, hipsOffset);
+            Apply(deltas, hipsOffset); _gesture = gesture; _motion = motion; _fingers.Apply(side => HandShape.For(_motion, _gesture, side, HoldsHand != null && HoldsHand(side)), delta);
         }
+
+        private AvatarView.Gesture _gesture; private NetworkMotionState _motion;
 
         /// <summary>The pose of the simple body as rotations in the space of the content: the arms are brought down from the T-pose first.</summary>
         private Dictionary<string, Quaternion> Procedural(PoseValues p, float headPitch)

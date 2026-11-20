@@ -139,7 +139,16 @@ namespace LifeVerse.Unity.World
             catch (Exception exception) when (exception is JsonException || exception is KeyNotFoundException || exception is InvalidOperationException || exception is FormatException) { return false; }
         }
 
-        public void Remove(Guid id) { if (_objects.TryGetValue(id, out var entry)) { DropMedia(entry); Destroy(entry.Object); _objects.Remove(id); } }
+        /// <summary>The solid shapes of the objects, built the way the island server builds them, so walking and jumping are predicted the same here (standing on a built object, bumping into one).</summary>
+        public readonly LifeVerse.Shared.Networking.ObstacleField Obstacles = new LifeVerse.Shared.Networking.ObstacleField();
+
+        private void UpdateObstacle(WorldObjectState s)
+        {
+            Obstacles.Set(s.Id, LifeVerse.Shared.Networking.ObstacleField.Blocks(s.PhysicsJson, s.PrimitiveType)
+                ? LifeVerse.Shared.Networking.ObstacleField.For(s.PrimitiveType, new System.Numerics.Vector3(s.PositionX, s.PositionY, s.PositionZ), new System.Numerics.Vector3(s.RotationX, s.RotationY, s.RotationZ), new System.Numerics.Vector3(s.ScaleX, s.ScaleY, s.ScaleZ)) : null);
+        }
+
+        public void Remove(Guid id) { Obstacles.Remove(id); if (_objects.TryGetValue(id, out var entry)) { DropMedia(entry); Destroy(entry.Object); _objects.Remove(id); } }
 
         /// <summary>The ids of the faces of an object that has them (a box has 6, a round one fewer); empty for a model or a plant.</summary>
         public int[] FacesOf(Guid id) => _objects.TryGetValue(id, out var entry) && entry.State != null && entry.Object.GetComponent<MeshFilter>()?.sharedMesh is { } mesh && mesh.subMeshCount > 1 ? FaceIdsOf(entry.State) : Array.Empty<int>();
@@ -188,7 +197,7 @@ namespace LifeVerse.Unity.World
                 view.AddComponent<MeshFilter>(); view.AddComponent<MeshRenderer>();
                 entry = new Entry { Object = view }; _objects[state.Id] = entry;
             }
-            entry.State = state; var go = entry.Object; go.name = state.Name;
+            entry.State = state; UpdateObstacle(state); var go = entry.Object; go.name = state.Name;
             go.transform.position = GameSpace.ToUnity(state.PositionX, state.PositionY, state.PositionZ);
             go.transform.rotation = GameSpace.RotationToUnity(state.RotationX, state.RotationY, state.RotationZ);
             go.transform.localScale = new Vector3(Mathf.Max(state.ScaleX, .001f), Mathf.Max(state.ScaleY, .001f), Mathf.Max(state.ScaleZ, .001f));

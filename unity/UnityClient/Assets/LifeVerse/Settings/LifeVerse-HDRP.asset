@@ -213,9 +213,9 @@ MonoBehaviour:
     supportShadowMask: 1
     supportSSR: 0
     supportSSRTransparent: 0
-    supportSSAO: 1
+    supportSSAO: 0
     supportSSGI: 0
-    supportSubsurfaceScattering: 1
+    supportSubsurfaceScattering: 0
     subsurfaceScatteringAttenuation: 1
     sssSampleBudget:
       m_Values: 140000002800000050000000i
@@ -225,7 +225,7 @@ MonoBehaviour:
       m_Values: 000000000000000000000000i
       m_SchemaId:
         m_Id: With3Levels
-    supportVolumetrics: 1
+    supportVolumetrics: 0
     supportVolumetricClouds: 0
     supportLightLayers: 0
     renderingLayerMaskBuffer: 0
@@ -244,7 +244,7 @@ MonoBehaviour:
     computeThicknessLayerMask:
       serializedVersion: 2
       m_Bits: 0
-    supportDistortion: 1
+    supportDistortion: 0
     supportTransparentBackface: 1
     supportTransparentDepthPrepass: 1
     supportTransparentDepthPostpass: 1
@@ -262,15 +262,15 @@ MonoBehaviour:
       m_Values: 800000000001000000020000i
       m_SchemaId:
         m_Id: With3Levels
-    supportDecals: 1
+    supportDecals: 0
     supportDecalLayers: 0
     supportSurfaceGradient: 1
     decalNormalBufferHP: 0
     supportHighQualityLineRendering: 0
     highQualityLineRenderingMemoryBudget: 128
     msaaSampleCount: 1
-    supportMotionVectors: 1
-    supportScreenSpaceLensFlare: 1
+    supportMotionVectors: 0
+    supportScreenSpaceLensFlare: 0
     supportDataDrivenLensFlare: 1
     supportDitheringCrossFade: 0
     supportRuntimeAOVAPI: 0

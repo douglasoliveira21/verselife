@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -15,6 +15,8 @@ namespace LifeVerse.Unity.Server
         private readonly HttpListener _listener = new HttpListener();
         public readonly string Url;
         public readonly List<string> Requests = new List<string>();
+        /// <summary>Binary answers by path (pictures of the map).</summary>
+        public readonly Dictionary<string, byte[]> Binary = new Dictionary<string, byte[]>();
         public int StartingAnswers = 1;           // the first entry requests answer 503 "starting", like an island whose server is booting
         public string EntryToken = "", Host = "127.0.0.1", TerrainJson = "{}", EnvironmentJson = "{}", ObjectsJson = "[]";
         public string LookJson = "{\"look\":{}}";
@@ -77,6 +79,7 @@ namespace LifeVerse.Unity.Server
                 else status = 401;
             }
             else if (request.HttpMethod == "GET" && path == "/api/v1/worlds/islands" && Routes.TryGetValue("GET /api/v1/worlds/islands", out var publicIslands)) json = publicIslands;   // public: no sign-in needed
+            else if (request.HttpMethod == "GET" && path == "/api/v1/client/release" && Routes.TryGetValue("GET /api/v1/client/release", out var releaseInfo)) json = releaseInfo;   // public too
             else if (!authorized) status = 401;
             else if (request.HttpMethod == "PUT" && path == "/api/v1/users/me/avatar") { AvatarSaved = true; lock (Bodies) Bodies.Add(("PUT " + path, body)); json = "{}"; }
             else if (Routes.TryGetValue(request.HttpMethod + " " + path, out var canned)) { json = canned; if (body.Length > 0) lock (Bodies) Bodies.Add((request.HttpMethod + " " + path, body)); }
@@ -89,6 +92,7 @@ namespace LifeVerse.Unity.Server
             else if (path.EndsWith("/snapshot")) json = JsonSerializer.Serialize(new { terrainJson = TerrainJson, environmentJson = EnvironmentJson });
             else if (path.EndsWith("/objects")) json = ObjectsJson;
             else if (path.EndsWith("/environment")) json = LookJson;
+            else if (Binary.TryGetValue(path, out var binary)) { context.Response.StatusCode = 200; context.Response.ContentType = "image/png"; context.Response.ContentLength64 = binary.Length; context.Response.OutputStream.Write(binary, 0, binary.Length); context.Response.Close(); return; }
             else if (path.Contains("/assets/") && path.EndsWith("/file") && Assets.TryGetValue(path.Split('/')[path.Split('/').Length - 2], out var asset))
             {
                 context.Response.StatusCode = 200; context.Response.ContentType = "application/octet-stream"; context.Response.ContentLength64 = asset.Length;

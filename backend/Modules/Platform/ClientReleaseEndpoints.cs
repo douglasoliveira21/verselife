@@ -10,9 +10,11 @@ public sealed class ClientReleaseOptions
     public string DownloadUrlWindows { get; init; } = string.Empty;
     public string DownloadUrlLinux { get; init; } = string.Empty;
     public string Notes { get; init; } = string.Empty;
+    /// The SHA-256 (64 hex digits) of the Windows installer, when the build is published with one: the desktop client checks what it downloads against it. Empty: nothing to check against.
+    public string Sha256Windows { get; init; } = string.Empty;
 }
 
-public sealed record ClientReleaseInfo(string Latest, string Minimum, string DownloadUrl, string Notes);
+public sealed record ClientReleaseInfo(string Latest, string Minimum, string DownloadUrl, string Notes, string Sha256 = "");
 
 public static class ClientReleaseEndpoints
 {
@@ -29,8 +31,11 @@ public static class ClientReleaseEndpoints
     {
         var specific = (platform ?? string.Empty).Trim().ToLowerInvariant() switch { "windows" => options.DownloadUrlWindows, "linux" => options.DownloadUrlLinux, _ => string.Empty };
         var url = IsWebLink(specific) ? specific : options.DownloadUrl;
-        return new ClientReleaseInfo(options.Latest.Trim(), options.Minimum.Trim(), IsWebLink(url) ? url : string.Empty, options.Notes.Length > 1000 ? options.Notes[..1000] : options.Notes);
+        var sha = (platform ?? string.Empty).Trim().ToLowerInvariant() == "windows" && IsSha256(options.Sha256Windows) ? options.Sha256Windows.Trim().ToLowerInvariant() : string.Empty;   // only for the file it belongs to
+        return new ClientReleaseInfo(options.Latest.Trim(), options.Minimum.Trim(), IsWebLink(url) ? url : string.Empty, options.Notes.Length > 1000 ? options.Notes[..1000] : options.Notes, sha);
     }
+
+    private static bool IsSha256(string text) => text.Trim().Length == 64 && text.Trim().All(Uri.IsHexDigit);
 
     private static bool IsWebLink(string url) => Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https";
 }

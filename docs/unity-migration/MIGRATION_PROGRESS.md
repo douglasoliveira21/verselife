@@ -56,7 +56,9 @@
 | 10 Construção e terreno | Concluído (com lacunas) | Ver "Fase 10" |
 | 11 Áudio e voz | Concluído | Ver "Fase 11" |
 | 12 Sobras de 7 a 12 | Concluída, com lacunas | Teclas, mapas, importação de modelos, anexos. Ver "Fase 12" |
-| 13 a 15 | Não iniciado | Otimização, validação (IL2CPP, regressão completa), distribuição |
+| 13 Otimização | Concluída, com lacunas | Medição por preset e cortes de recursos do HDRP. Ver "Fase 13" |
+| 14 Validação | Concluída, com bloqueio | Regressão completa e mapa dos 101 smokes. IL2CPP bloqueado pelo ambiente. Ver "Fase 14" |
+| 15 Distribuição | Concluída, com lacunas | Aviso de atualização, pacote, instalador e CI. Ver "Fase 15" |
 
 ## Módulos
 
@@ -371,3 +373,111 @@ Verificado: EditMode 80/80, auto-teste do mundo 201 checks (também com GPU real
 | Pivô | | Fica como está: o Godot também só guarda o dado |
 
 Lacunas: a troca de malha por LOD tem teste de unidade, mas não foi vista num objeto pesado do mundo (o GLB de teste é pequeno); o agrupamento mistura UVs de costuras, aceitável só à distância; malhas com esqueleto não entram no LOD. O balanço só aparece depois de "Aplicar" (não há prévia ao vivo).
+
+## Fase 13 (otimização)
+
+Ferramenta: `Server/PerformanceBenchmark.cs`, chamada pelo auto-teste do mundo com GPU real:
+
+```
+LifeVerse.exe -screen-width 1920 -screen-height 1080 -screen-fullscreen 1 -lifeverse-world-selfcheck -lifeverse-benchmark RELATORIO.txt
+```
+
+Opções: `-lifeverse-benchmark-objects N` (600), `-lifeverse-benchmark-avatars N` (24), `-lifeverse-benchmark-presets 1` (só o Alto) e `-lifeverse-benchmark-hide ocean,foam,waves,terrain,ui,rain,shadows` para ver o que cada parte custa. A cena é uma ilha cheia (600 objetos de vários tipos e 24 avatares andando) vista de uma câmera fixa, só com o cliente do próprio app desenhado; o relatório traz quadros por segundo, tempo médio, o 1 % pior, chamadas de desenho, triângulos e tempo de CPU e de GPU. Medido numa RTX 2060 SUPER, 1920x1080 em tela cheia (em janela o Windows prende a 60 quadros/s), vsync desligado. Resultado salvo em `benchmark-2026-11-20.txt`.
+
+| Preset | Antes (ms) | Depois (ms) | Antes (quadros/s) | Depois (quadros/s) |
+|---|---|---|---|---|
+| Baixo | 14,5 | 11,2 | 69 | 90 |
+| Médio | 15,2 | 11,6 | 66 | 86 |
+| Alto | 16,3 | 11,8 | 61 | 85 |
+| Ultra | 16,7 | 12,3 | 60 | 81 |
+
+O que custava:
+- Ilha vazia (terreno, mar, céu, interface): cerca de 10,8 ms de um quadro de 11,7 ms. Os 600 objetos e 24 avatares juntos somam menos de 1 ms.
+- O mar custa 3,5 ms (a superfície transparente em tela cheia); o terreno 1 ms; as ondas na CPU 0,5 ms; a espuma, a chuva, as sombras e a interface quase nada.
+- Recursos do HDRP ligados sem uso: reflexo de subsuperfície, decalques, distorção, brilho de lente, volumétricos, oclusão ambiente e vetores de movimento. Desligados no asset `LifeVerse-HDRP.asset` (nada no código usa; o auto-teste de 201 checks e as fotos de prévia seguem iguais): Alto de 16,3 para 11,7 ms.
+- O mar não precisa de sondas de luz nem de vetores de movimento: desligados em `OceanView` (cerca de 0,7 ms).
+
+Tentado e revertido: resolução dinâmica por preset (Baixo 70 %, Médio 85 %). Ligar piorou todos os presets (Alto de 11,7 para 12,8 ms, e o Baixo a 70 % ficou mais lento que antes), então não entrou.
+
+Lacunas: os presets Baixo e Médio ainda quase não aliviam o mar (um material de mar mais barato para eles é o próximo ganho); as alocações por quadro não foram medidas (a contagem de bytes não funciona neste ambiente, só as coleções de lixo: 1 a 2 em 4 segundos); o 1 % pior de alguns presets passa de 13 ms; só uma placa de vídeo foi medida e não houve comparação lado a lado com o cliente Godot.
+
+## Fase 14 (validação)
+
+Regressão completa em 2026-11-20, sobre o commit da Fase 12 mais o trabalho não commitado da Fase 13:
+
+| Verificação | Resultado |
+|---|---|
+| xUnit do servidor de ilha (`LifeVerse.IslandServer.Tests`) | 51/51 |
+| xUnit do protocolo (`LifeVerse.Wire.Tests`) | 25/25 |
+| xUnit da API (`LifeVerse.Api.Tests`) | 2557 passaram, 39 ignorados, **4 falharam** (abaixo) |
+| EditMode do Unity | 81/81 |
+| Auto-teste do mundo (`-lifeverse-world-selfcheck`) | 201 checks |
+| Auto-teste dos plugins / da física | 6 checks / 15 checks |
+| API real (`-lifeverse-live-api`, banco em memória) | 16/16 passos |
+
+As 4 falhas da API não vêm da migração: nada em `backend/`, `shared/`, `scripting/` ou `tests/` foi alterado por ela, e os testes falhariam igual no estado anterior. Não corrigi, porque `shared/` roda em produção no Godot:
+- `HighJumpTests.JumpingFromTheTopOfATallObjectLiftsTheAvatar(hemisphere)`: pular do alto de um hemisfério levanta 0,00 m (cubo, cilindro e cone passam). É código compartilhado (`AuthoritativeMovement`), usado também pelo cliente Unity.
+- `LuaDocsTests.TheManualMatchesTheCatalog`: `docs/LUA_API.md` está desatualizado (rodar os testes uma vez com `LIFEVERSE_UPDATE_DOCS=1`).
+- `GlobalSearchTests.AThousandsStrongIndexIsBuiltAndSearchedQuickly`: 6,5 s em vez do limite; sensível à carga da máquina.
+- `SystemProcessLauncherTests.TheArgumentsOfTheEngineAreForwardedAsGiven`: filtro não encontrado; depende do ambiente (Windows).
+
+**IL2CPP: não foi possível construir.** O `BuildClient.BuildWindowsIl2cpp` (novo) confere os pré-requisitos e diz o que falta: aqui faltam o módulo "Windows Build Support (IL2CPP)" da Unity e o compilador C++ (Visual Studio ou Build Tools com "Desenvolvimento para desktop com C++" e o Windows SDK). Instalá-los muda o computador, então fica para a pessoa. Depois de instalar:
+
+```
+Unity.exe -batchmode -nographics -quit -projectPath unity\UnityClient -executeMethod LifeVerse.Unity.EditorTools.BuildClient.BuildWindowsIl2cpp
+```
+
+Preparo feito sem poder validar: o código do cliente não usa reflexão perigosa (nada de `Reflection.Emit`, `dynamic` nem `Activator`); a única reflexão é a do MoonSharp (`scripting/MoonSharpStacks.cs`, campos internos de `Coroutine`) e o System.Text.Json sobre tipos anônimos, por isso o novo `Assets/LifeVerse/link.xml` preserva por inteiro essas bibliotecas e os assemblies do jogo. A versão atual da build (Mono) continua passando com o `link.xml`.
+
+**Mapa dos 101 testes de fumaça do Godot:** `MIGRATION_SMOKE_MAP.md`. Cobertos 66, parciais 23, não migrados 10, substituído 1, não verificado 1. Não migrados: **Teleporte** e **mapa-múndi** (`Teleport`, `WorldMap`, `WorldMapPlaces`, `MapBase`: viajar entre ilhas durante a sessão, hoje só se escolhe a ilha ao entrar), efeitos de objeto, mercado imobiliário, propriedades do jogador, sincronia de configurações com a conta, atualização automática (Fase 15) e dedos. Esse é o maior buraco funcional que a migração ainda tem.
+
+Ainda pendente da Fase 14: IL2CPP; comparação visual lado a lado com o Godot (T6); o cliente Unity numa ilha real com supervisor e banco Postgres; microfone real; ver as presets em outras placas.
+
+## Fase 15 (distribuição)
+
+Verificado em 2026-11-20: EditMode 85/85, auto-teste do mundo 202 checks, instalador compilado de verdade, zip executado.
+
+| Item | Onde | Estado |
+|---|---|---|
+| Versão do cliente | `ProjectSettings` (`bundleVersion` 0.7.0; o Godot está na 0.6.0) | Feito. É a que aparece na tela de entrada |
+| Aviso de atualização | `UI/UpdateCheck.cs`, `LoginView.ShowUpdate`, `GameApp` | Feito: lê `GET /api/v1/client/release?platform=windows` (a mesma resposta do Godot, configurada em `ClientRelease:*`), compara com `UpdateRules` compartilhado, mostra o aviso com botão de baixar (só endereços http/https) e **recusa entrar** quando a versão está abaixo do mínimo. Sem resposta, nada muda. 4 testes de EditMode e 1 check no auto-teste |
+| Pacote | `scripts/build-unity-client.ps1` | Feito e executado: compila (ou usa o que já existe com `-SkipBuild`), tira as pastas de depuração da Unity, gera `LifeVerse-unity-windows-0.7.0.zip` (108 MB), `SHA256SUMS.txt` e `release.json`. O zip foi extraído e o executável de dentro passou no auto-teste de plugins |
+| Instalador | `installer/LifeVerse.iss` (ganhou `/DEdition`) | Compilado: `LifeVerse-Setup-0.7.0-unity.exe` (89 MB). **Não foi instalado** aqui: ele pede administrador e cria regra no Firewall do Windows |
+| CI | `.github/workflows/unity.yml` | Escrito, **não visto rodando**: testes do protocolo e do servidor (qualquer corredor), testes e build da Unity pelo GameCI (precisam de `UNITY_LICENSE`, `UNITY_EMAIL`, `UNITY_PASSWORD` e de uma imagem do editor 6000.6.9f1) e pacote com instalador num corredor Windows. Sem os segredos, os passos da Unity são pulados |
+
+Cuidados:
+- O instalador usa o mesmo `AppId` do cliente Godot: instalar o Unity por cima de um Godot o substitui.
+- O cliente Unity (protocolo 12) não fala com ilhas Godot (protocolo 11). Enquanto os dois clientes coexistirem, `ClientRelease:Minimum` não pode passar de 0.7.0 sem que se queira bloquear o Unity.
+- Atualização é só aviso e link, como no Godot; não há atualização automática no lugar.
+- Os executáveis não são assinados (sem certificado), então o Windows SmartScreen vai avisar.
+- IL2CPP continua bloqueado pelo ambiente (Fase 14).
+
+## Depois da Fase 15: as lacunas funcionais (2026-11-20)
+
+Verificado: EditMode 110/110, auto-teste do mundo 207 checks, API real 16/16 passos, build limpa. Nada commitado.
+
+| Lacuna | Onde | Estado |
+|---|---|---|
+| Teleporte | `UI/TeleportTrip.cs`, `GameApp.Teleport`, `WorldJoin.Join(ticket)` | Feito: prepara a viagem (a API checa destino, acesso e vaga), pega o bilhete (espera a ilha iniciar), só então sai da ilha e conecta com o bilhete, e confirma a chegada com a API. Falha antes do bilhete: a pessoa fica onde está. Falha depois: cancela a reserva e entra de novo na ilha de origem. Também leva a um ponto (x, z) da ilha |
+| Mapa-múndi | `UI/MapModels.cs`, `UI/WorldMapWindow.cs` (botão "Mapa" na barra) | Feito: atlas das ilhas arrastável e com zoom, busca, cartão da ilha, escolher um ponto e viajar, favoritos, marcos (salvar, apagar, ir), visitas recentes e ilhas de amigos. Faltam as pastas de marcos, compartilhar marcos e as imagens aéreas das ilhas |
+| Efeitos de objeto | `World/ObjectEffects.cs`, materiais `EffectMaterial*` | Feito: fumaça, fogo, faíscas, chuva, neve, explosão, rastro, teleporte e poeira, e luzes (com tremor), com os mesmos limites do Godot (48 emissores, 16 luzes) e a quantidade de partículas seguindo o preset |
+| Mercado imobiliário e propriedades | `UI/RealEstateWindows.cs` ("Mais") | Feito: mercado com abas, busca, páginas, comprar (com o preço visto), alugar e visitar; minhas propriedades com resumo, ilhas, terrenos, aluguéis, anúncios, pagamentos, doações recebidas e retirar anúncios. Falta criar anúncios de venda e aluguel por ali |
+| Sincronizar com a conta | `UI/AccountSync.cs`, aba "Conta" das configurações | Feito para 5 preferências que têm o mesmo sentido nos dois clientes. Teclas, volumes e gráficos ficam locais |
+| Dedos | `Avatar/HandFingers.cs` | Feito e testado com um esqueleto montado à mão; nenhum corpo do repositório tem dedos, então não foi visto num corpo real |
+| Atualização | `UI/UpdateDownloader.cs`, botão "Baixar e instalar" | Feito: baixa só por https (ou http local), só instalador, com limite de 500 MB, confere o SHA-256 se a API o publicar (campo opcional `sha256` da mesma resposta, que o servidor ainda não manda) e apaga o que não confere. Abrir o instalador é um clique. Não há troca sem a pessoa, de propósito |
+| Pulo e paredes | `WorldObjects.Obstacles`, `LocalPlayer` | Feito: a previsão do cliente usa as mesmas formas sólidas que o servidor, então esbarrar e pular de cima de objetos bate nos dois lados |
+
+Fora do que foi pedido, mas achado no caminho: o teste do servidor `HighJumpTests` (hemisfério) continua falhando por causa do mapeamento do hemisfério em `shared/Networking/ObstacleField.cs`, que não foi alterado.
+
+### Acabamento das lacunas (2026-11-20)
+
+Verificado: EditMode 115/115, auto-teste do mundo 209 checks, API real 16/16, testes de atualização da API passando. Fotos feitas com GPU real em `img/`: `ui-map.png`, `ui-real-estate.png`, `ui-my-properties.png` e `effects.png`.
+
+- **Mapa:** `MapMarksWindow` (botão "Gerenciar"): criar, renomear e excluir pastas; para cada marco, nome, pasta e compartilhar com todos. As ilhas com imagem aérea (`GET /api/v1/map/islands/{id}/tile`) mostram a imagem sobre o quadrado, pedida até 3 por vez, guardada até 96 e sem repetir o pedido de quem não tem (5 minutos). Os terrenos também já são desenhados (ver abaixo).
+- **Propriedades:** `ListingOfferWindow` cria anúncios de venda e de aluguel de terrenos e de ilhas, conferindo preço, dias (1 a 90), mínimo e máximo de períodos e caução antes de enviar.
+- **Sincronia:** além das 5 preferências, a primeira tecla de 14 ações (andar, pular, correr, voar, descer, gestos, primeira pessoa, construir, terreno, voz) vai e vem pela conta, convertendo os nomes de tecla; a segunda tecla da conta não é tocada e tecla que o jogo não sabe nomear não é enviada. Gráficos e som continuam só no computador (a lista da plataforma nem os tem).
+- **Atualização:** a API agora entrega `sha256` na resposta de versão para o Windows (`ClientRelease:Sha256Windows`, 64 dígitos hexadecimais; vazio por padrão, e só vale para a plataforma do arquivo). É uma mudança pequena e compatível em `backend/Modules/Platform/ClientReleaseEndpoints.cs` e em `appsettings.json`, com teste. O `SHA256SUMS.txt` que `scripts/build-unity-client.ps1` gera tem o valor para colocar ali ao publicar.
+- **Dedos:** verificado em um corpo humanoide com 30 ossos de dedos lido como glTF (o modelo padrão do jogo com os ossos acrescentados no teste). O que falta é um corpo de pessoa de verdade, que o repositório não tem.
+- **Terrenos no mapa:** a caixa "Mostrar terrenos" desenha os terrenos de cada ilha que está grande na tela (120 px ou mais), coloridos pelo que são para a pessoa (seu, do grupo, à venda, para alugar, aberto, restrito, área comum), pedidos uma vez por ilha (`GET /api/v1/map/islands/{id}/parcels`). O cartão diz qual terreno fica sob o ponto escolhido, com preço, dono e se aceita teletransporte. Verificado com GPU (`img/ui-map.png`) e sem: EditMode 118/118, auto-teste 210 checks.
+
+Sobram, de propósito ou fora do alcance daqui: revisar e implantar a pequena mudança do backend (`Sha256Windows`), ver os dedos num corpo de pessoa de verdade (o repositório não tem um) e manter gráficos e volumes só no computador (a lista de preferências da plataforma não os tem).

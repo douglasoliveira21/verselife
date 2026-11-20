@@ -220,7 +220,7 @@ namespace LifeVerse.Unity.Avatar
             Sequence++; if (_asking) { _askSeq = Sequence; _asking = false; } Client.SendInput(Sequence, x, z, flags);
             var map = Terrain != null ? Terrain.Map : null;
             Motion = AuthoritativeMovement.Step(State, new MovementInput(Sequence, x, z, flags), Step, map != null ? map.SampleHeight : (Func<float, float, float>)null,
-                map != null ? map.SeaLevel : float.NegativeInfinity, map != null ? map.HalfExtent + TerrainMap.OceanMargin : float.PositiveInfinity);
+                map != null ? map.SeaLevel : float.NegativeInfinity, map != null ? map.HalfExtent + TerrainMap.OceanMargin : float.PositiveInfinity, Client != null && Client.Objects != null ? Client.Objects.Obstacles : null);
             _history[Sequence] = GamePosition; if (Sequence > 240) _history.Remove(Sequence - 240);
             if (State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ > .09f) HeadingDegrees = Mathf.Atan2(State.VelocityX, -State.VelocityZ) * Mathf.Rad2Deg;
         }

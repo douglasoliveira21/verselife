@@ -155,6 +155,9 @@ namespace LifeVerse.Unity.Avatar
             }
         }
 
+        /// <summary>Whether something is worn at the hand of a side (the fingers close on it).</summary>
+        public bool HoldsHand(char side) => _worn.Values.Any(w => w.Holder != null && AttachmentPoints.Find(w.Data.Point)?.Bone == "hand_" + side);
+
         public void Clear() { foreach (var w in _worn.Values) if (w.Holder != null) Destroy(w.Holder); _worn.Clear(); }
     }
 }

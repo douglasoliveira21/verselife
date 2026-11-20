@@ -48,3 +48,7 @@ Os `.dll` ficam fora do git: são reconstruídos pelo script. O `csc.rsp` do pro
 ## Assemblies (asmdef)
 
 Criadas junto com o primeiro código real de cada módulo, para não existir assembly vazia: `LifeVerse.Unity.Core`, `LifeVerse.Unity.Platform`, `LifeVerse.Unity.Editor`, `LifeVerse.Unity.Tests.EditMode`. As demais (`Networking`, `World`, `Terrain`, `Player`, `Camera`, `Avatar`, `Animation`, `Building`, `Inventory`, `Economy`, `Social`, `Chat`, `Scripting`, `Audio`, `UI`, `Assets`) nascem nas fases 5 a 12.
+
+## Pacote para distribuir
+
+`powershell -ExecutionPolicy Bypass -File scripts\build-unity-client.ps1 -Installer` compila o cliente, monta `artifacts\unity-<versão>\` com o zip, o instalador (Inno Setup, o mesmo `installer\LifeVerse.iss` do cliente Godot, com `/DEdition=-unity`), `SHA256SUMS.txt` e `release.json`. A versão é a do projeto Unity (`bundleVersion`). A configuração do aviso de atualização é a mesma da API (`ClientRelease:*`): o cliente lê `/api/v1/client/release?platform=windows`.

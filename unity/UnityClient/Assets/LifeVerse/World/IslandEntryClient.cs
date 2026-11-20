@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -241,6 +241,17 @@ namespace LifeVerse.Unity.World
                 catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { }
             }
             return null;
+        }
+
+        /// <summary>A binary answer of the API (a picture): the status and the bytes (empty when the server did not answer).</summary>
+        public async Task<(int Status, byte[] Bytes)> GetBytesAsync(string path, CancellationToken ct = default)
+        {
+            try
+            {
+                using var response = await SendAsync(HttpMethod.Get, _baseUrl + path, null, ct).ConfigureAwait(false);
+                return ((int)response.StatusCode, response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false) : new byte[0]);
+            }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return (0, new byte[0]); }
         }
 
         public void Dispose() => _http.Dispose();

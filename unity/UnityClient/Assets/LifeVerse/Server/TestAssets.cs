@@ -17,6 +17,30 @@ namespace LifeVerse.Unity.Server
         }
 
         /// <summary>A binary glTF of a box 4 long (x), 2 high and 2 deep with no material, centred on its origin: the loader must shrink it to one metre on the long side.</summary>
+        /// <summary>The standard humanoid body of the game (Mixamo names) with the three bones of every finger added under each hand, so the fingers can be tried on a model read the real way.</summary>
+        public static byte[] HumanoidWithFingers()
+        {
+            var glb = LifeVerse.Shared.Avatar.HumanoidTemplate.Build(new LifeVerse.Shared.Avatar.TemplateOptions { Naming = LifeVerse.Shared.Avatar.BoneNaming.Mixamo });
+            var jsonLength = (int)BitConverter.ToUInt32(glb, 12); var json = System.Text.Encoding.UTF8.GetString(glb, 20, jsonLength).TrimEnd(); var root = System.Text.Json.Nodes.JsonNode.Parse(json); var nodes = (System.Text.Json.Nodes.JsonArray)root["nodes"];
+            var names = new[] { "Thumb", "Index", "Middle", "Ring", "Pinky" }; var spread = new[] { -.03f, .03f, .01f, -.01f, -.03f };
+            foreach (var side in new[] { "Left", "Right" })
+            {
+                var handIndex = -1; for (var i = 0; i < nodes.Count; i++) if ((nodes[i]["name"]?.GetValue<string>() ?? "").EndsWith(side + "Hand")) handIndex = i; if (handIndex < 0) throw new InvalidOperationException("no " + side + "Hand in the template");
+                for (var f = 0; f < 5; f++)
+                {
+                    var parent = handIndex;
+                    for (var s = 1; s <= 3; s++)
+                    {
+                        var node = new System.Text.Json.Nodes.JsonObject { ["name"] = "mixamorig:" + side + "Hand" + names[f] + s, ["translation"] = new System.Text.Json.Nodes.JsonArray(s == 1 ? spread[f] : 0f, .04f, 0f) }; nodes.Add(node); var index = nodes.Count - 1;
+                        var holder = nodes[parent]; var children = holder["children"] as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray(); if (holder["children"] == null) holder["children"] = children; children.Add(index); parent = index;
+                    }
+                }
+            }
+            var newJson = System.Text.Encoding.UTF8.GetBytes(root.ToJsonString()); var padded = (newJson.Length + 3) / 4 * 4; Array.Resize(ref newJson, padded); for (var i = System.Text.Encoding.UTF8.GetByteCount(root.ToJsonString()); i < padded; i++) newJson[i] = 0x20;
+            var rest = new byte[glb.Length - (20 + jsonLength)]; Array.Copy(glb, 20 + jsonLength, rest, 0, rest.Length);
+            using var file = new MemoryStream(); using var output = new BinaryWriter(file); output.Write(0x46546C67u); output.Write(2u); output.Write((uint)(12 + 8 + newJson.Length + rest.Length)); output.Write((uint)newJson.Length); output.Write(0x4E4F534Au); output.Write(newJson); output.Write(rest); return file.ToArray();
+        }
+
         /// <summary>The same box with one clip, "Spin": two seconds turning a quarter about the vertical.</summary>
         public static byte[] AnimatedGlb() => Glb(true);
 

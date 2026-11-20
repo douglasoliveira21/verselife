@@ -52,6 +52,10 @@ namespace LifeVerse.Unity.UI
         public bool ReduceMotion { get; set; }
         public bool LargeText { get; set; }
         public bool HighContrast { get; set; }
+        // sincronia com a conta (ver AccountSync): ligada para quem entrou, e a revisão que este computador viu
+        public bool SyncAccount { get; set; }
+        public int SyncRevision { get; set; }
+        public string SyncUser { get; set; } = "";
         // conta e janelas
         public string LastLogin { get; set; } = "";
         public string LastIsland { get; set; } = "";
@@ -68,6 +72,7 @@ namespace LifeVerse.Unity.UI
             MouseSensitivity = F(MouseSensitivity, .02f, .6f, .15f); InterfaceScale = F(InterfaceScale, MinScale, MaxScale, 1f); ChatOpacity = F(ChatOpacity, .3f, 1f, .8f); ChatFontSize = Mathf.Clamp(ChatFontSize, 10, 28);
             LastLogin = (LastLogin ?? "").Length > 64 ? LastLogin.Substring(0, 64) : LastLogin ?? ""; LastIsland = (LastIsland ?? "").Length > 64 ? LastIsland.Substring(0, 64) : LastIsland ?? "";
             Keys ??= new Dictionary<string, string>(); foreach (var key in new List<string>(Keys.Keys)) if (string.IsNullOrEmpty(Keys[key]) || key.Length > 40 || Keys[key].Length > 40) Keys.Remove(key); while (Keys.Count > 40) Keys.Remove(new List<string>(Keys.Keys)[0]);
+            SyncRevision = Mathf.Max(0, SyncRevision); SyncUser = (SyncUser ?? "").Length > 40 ? SyncUser.Substring(0, 40) : SyncUser ?? "";
             Windows ??= new Dictionary<string, float[]>();
             foreach (var key in new List<string>(Windows.Keys)) if (Windows[key] == null || Windows[key].Length != 2 || !float.IsFinite(Windows[key][0]) || !float.IsFinite(Windows[key][1])) Windows.Remove(key);
             while (Windows.Count > MaxSavedWindows) { var first = new List<string>(Windows.Keys)[0]; Windows.Remove(first); }

@@ -57,12 +57,38 @@ namespace LifeVerse.Unity.UI
             Login = new LoginView(Settings, "Versão " + Application.version + "  •  Unity"); Login.SignIn += OnSignIn; Login.Register += OnRegister; Ui.ScreenLayer.Add(Login);
             Loading = new LoadingView(); Loading.Back.clicked += BackToLogin;
             _api = new IslandEntryClient(apiBase); _api.SessionExpired += OnSessionExpired;
-            Context = new ApiContext { Ui = Ui, Api = _api, Notices = Notices, CurrentIsland = () => _island, EnterIsland = SwitchIsland };
+            Context = new ApiContext { Ui = Ui, Api = _api, Notices = Notices, CurrentIsland = () => _island, EnterIsland = id => Teleport(id), TravelTo = (id, x, z) => Teleport(id, x, z) };
             RegisterWindows(); Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             Hud.Chat.TypingChanged += typing => { if (Player != null) Player.Typing = typing; };
             Hud.Perf.Extra = () => Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots;
             ApplyAudio(); StartCoroutine(StartSounds()); StartCoroutine(LoadIslands());
+            Sync = new AccountSync(Settings, (m, p, b) => _api.ApiAsync(m, p, b), () => _api.UserId, () => Settings.Save(SettingsPath)); UpdateInfo = new UpdateCheck(Application.version); Ui.Root.Then(_api.ApiAsync("GET", UpdateCheck.Route), r => { UpdateInfo.Apply(r.Status, r.Body); ShowUpdate(); });
         }
+
+        /// <summary>The settings that follow the account.</summary>
+        public AccountSync Sync { get; private set; }
+
+        /// <summary>What the platform said about a newer client (unknown until it answers).</summary>
+        public UpdateCheck UpdateInfo { get; private set; }
+
+        private void ShowUpdate()
+        {
+            if (Login == null || UpdateInfo == null) return; Login.ShowUpdate(UpdateInfo.Describe(), UpdateInfo.Required, UpdateInfo.Release != null && UpdateInfo.Release.HasSafeDownloadLink, () => UpdateInfo.OpenDownload());
+            if (UpdateInfo.CanDownload && UpdateInfo.Status != LifeVerse.Shared.Updates.UpdateStatus.UpToDate) { Login.InstallRequested = () => StartCoroutine(DownloadUpdate()); Login.ShowInstall(null, true); }
+        }
+
+        /// <summary>Downloads the installer, checks it and, when the person confirms by pressing the button again, opens it.</summary>
+        public System.Collections.IEnumerator DownloadUpdate(string folder = null)
+        {
+            Login.ShowInstall("Baixando a atualização…", false); var last = 0f; var task = UpdateDownloader.DownloadAsync(UpdateInfo.Release.DownloadUrl, UpdateInfo.Sha256, folder ?? UpdateDownloader.DefaultFolder, p => last = p);
+            while (!task.IsCompleted) { Login.ShowInstall("Baixando a atualização… " + Mathf.RoundToInt(last * 100f) + "%", false); yield return new WaitForSeconds(.3f); }
+            var result = task.Result; UpdateDownloaded = result;
+            if (!result.Ok) { Login.ShowInstall(result.Message, true); yield break; }
+            Login.InstallRequested = () => { if (!UpdateDownloader.Open(result.Path)) Login.ShowInstall("Não foi possível abrir o arquivo: " + result.Path, true); }; Login.ShowInstall(result.Message + " Pressione de novo para abrir o instalador.", true);
+        }
+
+        /// <summary>What the last download of an update gave (for the tests).</summary>
+        public DownloadResult UpdateDownloaded { get; private set; }
 
         private void RegisterWindows()
         {
@@ -74,8 +100,9 @@ namespace LifeVerse.Unity.UI
             Hud.Register("Buscar", "search", () => new SearchWindow(Context));
             Hud.Register("Construir", "build", () => { ToggleBuild(); return null; });
             Hud.Register("Voz", "voice", () => { if (Voice == null) return null; Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure " + KeyBindings.KeyName(KeyBindings.Of(GameAction.Talk)) + " para falar.", NoticeKind.Info); return null; });
+            Hud.Register("Mapa", "map", () => new WorldMapWindow(Context, () => Player != null ? Player.GamePosition : (Vector3?)null));
             Hud.Register("Mais", "more", MoreWindow);
-            Hud.Register("Configurações", "settings", () => { var window = new SettingsWindow(Ui, SettingsPath) { Mic = _micTest ??= gameObject.AddComponent<MicTest>() }; window.Changed += ApplySettingsToWorld; window.Closed += () => _micTest?.End(); return window; });
+            Hud.Register("Configurações", "settings", () => { var window = new SettingsWindow(Ui, SettingsPath) { Mic = _micTest ??= gameObject.AddComponent<MicTest>(), Sync = Sync }; window.Changed += ApplySettingsToWorld; window.Closed += () => _micTest?.End(); return window; });
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui));
             Hud.Presence.RegisterValueChangedCallback(e => { if (Current == Phase.Playing) Api.ApiAsync("PUT", "/api/v1/social/presence", System.Text.Json.JsonSerializer.Serialize(new { status = e.newValue, privacyJson = (string)null })); });
         }
@@ -85,7 +112,7 @@ namespace LifeVerse.Unity.UI
         {
             var window = new FloatingWindow(Ui, "more", "Mais", 300f, -1f, new Vector2(520, 380));
             void Add(string label, Func<FloatingWindow> create) { var button = UiKit.Button(label, () => { window.Close(); create()?.Open(); }); button.style.marginBottom = 3; window.Body.Add(button); }
-            Add("Perfil", () => new ProfileWindow(Context)); Add("Grupos", () => new GroupsWindow(Context)); Add("Mercado", () => new MarketWindow(Context));
+            Add("Perfil", () => new ProfileWindow(Context)); Add("Grupos", () => new GroupsWindow(Context)); Add("Mercado", () => new MarketWindow(Context)); Add("Mercado imobiliário", () => new RealEstateMarketWindow(Context)); Add("Minhas propriedades", () => new MyPropertiesWindow(Context));
             Add("Eventos, marcos e fotos", () => new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f));
             Add("Ofertas de itens", () => new OffersWindow(Context)); Add("Sobre a ilha", () => new IslandInfoWindow(Context, _island)); Add("Gestão da ilha", () => new IslandManageWindow(Context, _island));
             Add("Script de um objeto", ScriptOpener); Add("Meu personagem", OpenCharacter); Add("Anexos do corpo", () => new AttachmentsWindow(Context, RefreshOwnAttachments));
@@ -142,8 +169,11 @@ namespace LifeVerse.Unity.UI
 
         // ---- signing in ----
 
-        private void OnSignIn(string user, string password, Guid island) => StartCoroutine(SignInFlow(user, password, null, island));
-        private void OnRegister(string user, string email, string password, Guid island) => StartCoroutine(SignInFlow(user, password, email, island));
+        private void OnSignIn(string user, string password, Guid island) { if (UpdateBlocks()) return; StartCoroutine(SignInFlow(user, password, null, island)); }
+        private void OnRegister(string user, string email, string password, Guid island) { if (UpdateBlocks()) return; StartCoroutine(SignInFlow(user, password, email, island)); }
+
+        /// <summary>A version below the minimum of the platform cannot sign in: the person is told to update.</summary>
+        private bool UpdateBlocks() { if (UpdateInfo == null || !UpdateInfo.Required) return false; Login.Fail(UpdateInfo.Describe()); return true; }
 
         private IEnumerator SignInFlow(string user, string password, string email, Guid island)
         {
@@ -160,12 +190,12 @@ namespace LifeVerse.Unity.UI
 
         // ---- opening the island ----
 
-        private IEnumerator EnterWorld()
+        private IEnumerator EnterWorld(EntryResult ticket = null)
         {
             Show(Phase.Loading); Loading.SetStatus("requesting_ticket");
             BuildWorld();
             var join = Client.gameObject.AddComponent<WorldJoin>(); join.Client = Client;
-            var running = join.Join(_api, _island, true);
+            var running = join.Join(_api, _island, true, ticket);
             while (running.MoveNext()) { Loading.SetStatus(join.Status, join.Failure); yield return running.Current; }
             Loading.SetStatus(join.Status, join.Failure);
             if (join.Status != "in_island")
@@ -178,6 +208,7 @@ namespace LifeVerse.Unity.UI
             Player.Attach(Client, Client.Terrain, PeopleViews, Follow); Player.Vehicles = _world.GetComponentInChildren<VehicleViews>(); ApplySettingsToWorld();
             Client.DisconnectedBy += OnDisconnected; Client.ChatReceived += OnChat; Client.PlayerSpawned += OnSpawned; Client.PlayerDespawned += OnDespawned;
             Hud.SetIsland("Ilha " + _island.ToString().Substring(0, 8)); Show(Phase.Playing); Notices.Show("Você entrou na ilha.", NoticeKind.Good);
+            if (Sync != null && Sync.Enabled) { var pull = Sync.PullIfEnabledAsync(); while (!pull.IsCompleted) yield return null; if (pull.Result.Result == SyncResult.Ok && pull.Result.Values.Count > 0) { ApplySettingsToWorld(); Settings.Save(SettingsPath); } }
         }
 
         /// <summary>The API asked for an avatar before entering (409): the character creator opens over the loading screen, and once saved the island is entered again.</summary>
@@ -190,7 +221,43 @@ namespace LifeVerse.Unity.UI
             _entering = StartCoroutine(EnterWorld());
         }
 
-        /// <summary>Goes from the island the person is in to another one (a search result, a friend's invitation).</summary>
+        /// <summary>The trip in progress (null when there is none).</summary>
+        public TeleportTrip Trip { get; private set; }
+        public bool Travelling => _trip != null;
+        private Coroutine _trip;
+
+        /// <summary>Travels to another island as a controlled transfer (see <see cref="TeleportTrip"/>): the person stays where they are until the ticket is in hand, and if the destination cannot be reached the island they left is entered again.</summary>
+        public bool Teleport(Guid island, float? x = null, float? z = null)
+        {
+            if (island == Guid.Empty || Current != Phase.Playing || _trip != null) return false;
+            if (island == _island && x == null) { Notices.Show("Você já está nessa ilha.", NoticeKind.Info); return false; }
+            Trip = new TeleportTrip { Destination = island, Source = _island, X = x, Z = z }; _trip = StartCoroutine(TeleportFlow(Trip)); return true;
+        }
+
+        public void CancelTrip() { if (Trip != null && Trip.Step is "preparing" or "connecting") { var trip = Trip; StopCoroutine(_trip); _trip = null; StartCoroutine(trip.Cancel(_api)); Notices.Show("Viagem cancelada.", NoticeKind.Info); } }
+
+        private IEnumerator TeleportFlow(TeleportTrip trip)
+        {
+            Notices.Show("Preparando a viagem…", NoticeKind.Info);
+            yield return trip.Prepare(_api);
+            if (trip.Failed) { Notices.Show(trip.Message, NoticeKind.Bad); _trip = null; yield break; }
+            var source = _island;
+            if (Client != null) { Client.DisconnectedBy -= OnDisconnected; Client.ChatReceived -= OnChat; Client.PlayerSpawned -= OnSpawned; Client.PlayerDespawned -= OnDespawned; }
+            TearDownWorld(); _island = trip.Destination; Settings.LastIsland = _island.ToString(); Settings.Save(SettingsPath);
+            yield return EnterWorld(trip.Ticket);
+            if (Current != Phase.Playing)
+            {
+                // the destination did not take the person: the reservation is released and the island they left is entered again
+                yield return trip.Cancel(_api); Notices.Show("Não foi possível chegar à ilha de destino. Voltando para a ilha anterior.", NoticeKind.Bad); _trip = null; Teleport_Return(source); yield break;
+            }
+            yield return trip.ConfirmArrival(_api);
+            if (trip.Failed) Notices.Show(trip.Message, NoticeKind.Bad); else Notices.Show("Você chegou.", NoticeKind.Good);
+            _trip = null;
+        }
+
+        private void Teleport_Return(Guid source) { if (source == Guid.Empty) return; _island = source; Settings.LastIsland = source.ToString(); Settings.Save(SettingsPath); _entering = StartCoroutine(EnterWorld()); }
+
+        /// <summary>Goes from the island the person is in to another one by a plain entry (no reservation): used to return after a trip failed.</summary>
         public void SwitchIsland(Guid island)
         {
             if (island == Guid.Empty || Current == Phase.Loading) return;
@@ -227,8 +294,12 @@ namespace LifeVerse.Unity.UI
             Voice = new GameObject("Voice").AddComponent<VoiceChat>(); Voice.transform.SetParent(_world.transform); Voice.Attach(Client); Hearing = new GameObject("Hearing").AddComponent<VoiceListener>(); Hearing.transform.SetParent(_world.transform); Hearing.Attach(Client);
             Hearing.PositionOf = peer => PeopleViews != null && PeopleViews.ViewOf(peer) != null ? PeopleViews.ViewOf(peer).GamePosition : (Vector3?)null; Voice.HearingOthers = () => Hearing.AnySpeaking(); ApplyAudio();
             TerrainTools = new TerrainEditor(Context, () => Client, () => Follow != null ? Follow.Camera : null, () => Client != null ? Client.Terrain : null);
+            Effects = new GameObject("Effects").AddComponent<ObjectEffects>(); Effects.transform.SetParent(_world.transform); Effects.Attach(Client);
             HudWorn = new HudAttachments(Ui, () => Follow != null ? Follow.Camera : null); RefreshOwnAttachments();
         }
+
+        /// <summary>The particles and lights that scripts put on objects.</summary>
+        public ObjectEffects Effects { get; private set; }
 
         /// <summary>What is worn at points of the screen.</summary>
         public HudAttachments HudWorn { get; private set; }
@@ -286,7 +357,7 @@ namespace LifeVerse.Unity.UI
             Builder.SetActive(false); BuildPanel?.Close(); BuildPanel = null; TerrainTools.SetActive(true); TerrainPanel = new TerrainWindow(Context, TerrainTools); TerrainPanel.Open();
         }
 
-        private void TearDownWorld() { HudWorn?.Clear(); HudWorn = null; Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
+        private void TearDownWorld() { Effects = null; HudWorn?.Clear(); HudWorn = null; Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
 
         // ---- while playing ----
 
@@ -410,6 +481,7 @@ namespace LifeVerse.Unity.UI
             if (Player != null) Player.AlwaysRun = Settings.AlwaysRun;
             Hud.Chat.ApplySettings(); ApplyAudio();
             var environment = _world != null ? _world.GetComponentInChildren<IslandEnvironment>() : null;
+            if (Effects != null) Effects.Quality = Mathf.Min(1f, GraphicsQuality.Current.RainAmount);
             if (environment != null) { var preset = GraphicsQuality.Current; environment.RainQuality = preset.RainAmount; environment.SetShadows(preset.Shadows, preset.ShadowDistance); }
         }
 

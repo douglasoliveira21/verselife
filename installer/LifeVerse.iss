@@ -3,6 +3,9 @@
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
+#ifndef Edition
+  #define Edition ""
+#endif
 #ifndef SourceDir
   #define SourceDir "..\build\windows"
 #endif
@@ -17,7 +20,7 @@ DefaultGroupName=LifeVerse
 UninstallDisplayIcon={app}\LifeVerse.exe
 SetupIconFile=..\client\Assets\brand\icon.ico
 OutputDir=..\build\installer
-OutputBaseFilename=LifeVerse-Setup-{#AppVersion}
+OutputBaseFilename=LifeVerse-Setup-{#AppVersion}{#Edition}
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible

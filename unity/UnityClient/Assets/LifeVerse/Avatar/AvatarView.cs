@@ -188,7 +188,7 @@ namespace LifeVerse.Unity.Avatar
         /// <summary>Takes the person's own skeleton in place of the procedural body (null goes back to the procedural one).</summary>
         public void UseSkeleton(SkeletalBody skeleton)
         {
-            Skeleton = skeleton; ApplyDetail();
+            Skeleton = skeleton; if (skeleton != null) skeleton.HoldsHand = side => { var worn = GetComponent<AvatarAttachments>(); return worn != null && worn.HoldsHand(side); }; ApplyDetail();
         }
 
         /// <summary>How much is drawn and moved: hidden, the simple body, or the custom body (Reduced and Full draw it; Full adds the custom clips and items).</summary>

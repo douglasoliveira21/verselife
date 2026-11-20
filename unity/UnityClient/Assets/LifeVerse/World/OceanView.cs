@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 namespace LifeVerse.Unity.World
 {
@@ -39,6 +39,7 @@ namespace LifeVerse.Unity.World
             plane.AddComponent<MeshFilter>().sharedMesh = BuildMesh();
             var renderer = plane.AddComponent<MeshRenderer>(); renderer.sharedMaterial = _material;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; renderer.receiveShadows = false;
+            renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off; renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;   // a plane of water needs neither: they only cost every pixel of it
             Foam = gameObject.AddComponent<ShoreFoam>(); Foam.Ocean = this;   // the surf on the shore, per pixel
         }
 

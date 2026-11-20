@@ -1,0 +1,25 @@
+<linker>
+  <!--
+    IL2CPP removes code it believes nobody calls. Everything here is reached by reflection (System.Text.Json reads and writes the shape of
+    each type, including the anonymous ones built for requests; MoonSharp reflects over what a script may touch; the wire and the island
+    server core look at their own message types), so these assemblies are kept whole.
+  -->
+  <assembly fullname="System.Text.Json" preserve="all" />
+  <assembly fullname="System.Text.Encodings.Web" preserve="all" />
+  <assembly fullname="System.Net.Http.Json" preserve="all" />
+  <assembly fullname="MoonSharp.Interpreter" preserve="all" />
+  <assembly fullname="LifeVerse.Shared" preserve="all" />
+  <assembly fullname="LifeVerse.Scripting" preserve="all" />
+  <assembly fullname="LifeVerse.Wire" preserve="all" />
+  <assembly fullname="LifeVerse.IslandServer.Core" preserve="all" />
+  <assembly fullname="LiteNetLib" preserve="all" />
+  <assembly fullname="Concentus" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.Core" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.World" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.Avatar" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.UI" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.Audio" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.Models" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.Server" preserve="all" />
+  <assembly fullname="LifeVerse.Unity.Platform" preserve="all" />
+</linker>

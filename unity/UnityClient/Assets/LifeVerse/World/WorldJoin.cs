@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Shared.Terrain;
@@ -28,11 +28,12 @@ namespace LifeVerse.Unity.World
         /// <summary>The HTTP status behind a failure to enter (409: the person has no avatar yet), or 0.</summary>
         public int FailureStatus { get; private set; }
 
-        public IEnumerator Join(IslandEntryClient api, Guid islandId, bool connect = true)
+        /// <summary>Enters the island. With a <paramref name="ticket"/> (a trip between islands got it from the API already) the request for one is skipped.</summary>
+        public IEnumerator Join(IslandEntryClient api, Guid islandId, bool connect = true, EntryResult ticket = null)
         {
             Done = false; Failure = null; StartAttempts = 0; FailureStatus = 0;
-            EntryResult entry = null;
-            while (true)
+            EntryResult entry = ticket;
+            while (ticket == null)
             {
                 Status = StartAttempts == 0 ? "requesting_ticket" : $"waiting_island {StartAttempts}/{MaxStartAttempts}";
                 var request = api.RequestEntryAsync(islandId); while (!request.IsCompleted) yield return null;

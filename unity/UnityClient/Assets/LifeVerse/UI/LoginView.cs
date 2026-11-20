@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -17,7 +17,25 @@ namespace LifeVerse.Unity.UI
         public bool Busy { get; private set; }
         public event Action<string, string, Guid> SignIn;
         public event Action<string, string, string, Guid> Register;
-        private readonly VisualElement _card, _emailRow; private readonly Label _title;
+        private readonly VisualElement _card, _emailRow; private readonly Label _title; private VisualElement _updateBanner; private Label _updateText; private Button _updateButton;
+        public string UpdateNotice => _updateText?.text ?? "";
+        public bool UpdateDownloadShown => _updateButton != null && _updateButton.style.display != DisplayStyle.None;
+        private Button _installButton; public bool InstallShown => _installButton != null && _installButton.style.display != DisplayStyle.None;
+        public System.Action InstallRequested;
+        /// <summary>The progress or the result of downloading the installer, under the notice.</summary>
+        public void ShowInstall(string text, bool canInstall) { if (_updateText == null) return; _installButton.style.display = canInstall ? DisplayStyle.Flex : DisplayStyle.None; if (!string.IsNullOrEmpty(text)) _updateText.text = text; }
+
+        /// <summary>A notice above the form: a newer version exists (a link to get it) or this one can no longer sign in (<paramref name="required"/>). An empty text takes it away.</summary>
+        public void ShowUpdate(string text, bool required, bool canDownload, System.Action download)
+        {
+            if (string.IsNullOrEmpty(text)) { if (_updateBanner != null) _updateBanner.style.display = DisplayStyle.None; return; }
+            if (_updateBanner == null)
+            {
+                _updateBanner = UiKit.Glass(); _updateBanner.name = "update"; _updateBanner.style.width = 400; _updateBanner.style.marginBottom = 10; _updateText = UiKit.Text("", "lv-small"); _updateText.style.whiteSpace = WhiteSpace.Normal; _updateBanner.Add(_updateText);
+                _updateButton = UiKit.Button("Baixar a nova versão", () => download?.Invoke(), "lv-btn-primary"); _updateBanner.Add(_updateButton); _installButton = UiKit.Button("Baixar e instalar", () => InstallRequested?.Invoke()); _installButton.style.display = DisplayStyle.None; _updateBanner.Add(_installButton); Insert(2, _updateBanner);
+            }
+            _updateBanner.style.display = DisplayStyle.Flex; _updateText.text = text; _updateText.EnableInClassList("lv-bad", required); _updateButton.style.display = canDownload ? DisplayStyle.Flex : DisplayStyle.None; _updateButton.clickable = new Clickable(() => download?.Invoke());
+        }
 
         public LoginView(UserSettings settings, string versionText = "")
         {

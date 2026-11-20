@@ -23,12 +23,12 @@ namespace LifeVerse.Unity.UI
         {
             _s = ui.Settings; _path = path;
             var tabBar = UiKit.Row(); tabBar.style.flexWrap = Wrap.Wrap; tabBar.style.marginBottom = 8; Body.Add(tabBar);
-            foreach (var name in new[] { "Gráficos", "Áudio", "Controles", "Interface", "Acessibilidade" })
+            foreach (var name in new[] { "Gráficos", "Áudio", "Controles", "Interface", "Acessibilidade", "Conta" })
             {
                 var tab = new VisualElement(); tab.style.display = DisplayStyle.None; Body.Add(tab); _tabs[name] = tab; var captured = name;
                 var button = UiKit.Button(name, () => Show(captured)); _buttons[name] = button; tabBar.Add(button);
             }
-            BuildGraphics(_tabs["Gráficos"]); BuildAudio(_tabs["Áudio"]); BuildControls(_tabs["Controles"]); BuildInterface(_tabs["Interface"]); BuildAccessibility(_tabs["Acessibilidade"]);
+            BuildGraphics(_tabs["Gráficos"]); BuildAudio(_tabs["Áudio"]); BuildControls(_tabs["Controles"]); BuildInterface(_tabs["Interface"]); BuildAccessibility(_tabs["Acessibilidade"]); BuildAccount(_tabs["Conta"]);
             Show("Gráficos");
         }
 
@@ -42,7 +42,38 @@ namespace LifeVerse.Unity.UI
         /// <summary>A setting was changed by the person: apply, save, tell.</summary>
         private void Touch()
         {
-            _s.Clamped(); GraphicsQuality.Apply(_s); Ui.ApplySettings(); _s.Save(_path); Changed?.Invoke();
+            _s.Clamped(); GraphicsQuality.Apply(_s); Ui.ApplySettings(); _s.Save(_path); Changed?.Invoke(); SchedulePush();
+        }
+
+        /// <summary>The sync of the account, when the game has one (set by the game).</summary>
+        public AccountSync Sync { get; set; }
+        private Label _syncStatus; private IVisualElementScheduledItem _push;
+        public string SyncStatusText => _syncStatus?.text ?? "";
+
+        /// <summary>A moment after the last change (sliders send many), the shared settings go to the account.</summary>
+        private void SchedulePush() { if (Sync == null || !Sync.Enabled) return; _push?.Pause(); _push = schedule.Execute(() => { _ = Sync.PushAppliedAsync(); }); _push.ExecuteLater(1500); }
+
+        private void BuildAccount(VisualElement tab)
+        {
+            Section(tab, "Sincronizar com a conta"); var info = UiKit.Text("Valem para todos os seus computadores: inverter o mouse, correr sempre, a opacidade e o tamanho do texto do chat, reduzir movimento e a primeira tecla de cada ação (andar, pular, correr, voar, gestos, construir, voz). Gráficos e som ficam só neste computador.", "lv-small", "lv-muted"); info.style.whiteSpace = WhiteSpace.Normal; tab.Add(info);
+            _syncStatus = UiKit.Text("", "lv-small"); _syncStatus.name = "sync-status"; _syncStatus.style.whiteSpace = WhiteSpace.Normal; _syncStatus.style.marginTop = 6; tab.Add(_syncStatus);
+            tab.Add(UiKit.Button("Ligar e usar as da conta", () => TurnOnFromAccount(), "lv-btn-primary")); tab.Add(UiKit.Button("Ligar e enviar as deste computador", () => TurnOnFromHere())); tab.Add(UiKit.Button("Desligar", () => { Sync?.TurnOff(); ShowSyncStatus(); }));
+            ShowSyncStatus();
+        }
+
+        private void ShowSyncStatus() { if (_syncStatus != null) _syncStatus.text = Sync == null ? "Entre na conta para sincronizar." : Sync.Status.Length > 0 ? Sync.Status : Sync.Enabled ? "Conta: ligada (revisão " + Sync.Revision + ")." : "Local: as configurações valem só neste computador."; }
+
+        public async void TurnOnFromAccount()
+        {
+            if (Sync == null) { ShowSyncStatus(); return; } _syncStatus.text = "Falando com a conta…"; var snapshot = await Sync.FetchAsync();
+            if (snapshot.Result != SyncResult.Ok) { _syncStatus.text = "Conta: " + snapshot.Message; return; } Sync.UseAccount(snapshot); _s.Save(_path); Ui.ApplySettings(); GraphicsQuality.Apply(_s); Changed?.Invoke(); ShowSyncStatus();
+        }
+
+        public async void TurnOnFromHere()
+        {
+            if (Sync == null) { ShowSyncStatus(); return; } _syncStatus.text = "Falando com a conta…"; var snapshot = await Sync.FetchAsync();
+            if (snapshot.Result != SyncResult.Ok) { _syncStatus.text = "Conta: " + snapshot.Message; return; }
+            var answer = await Sync.PushAllAsync(snapshot.Revision); if (answer.Result != SyncResult.Ok) _syncStatus.text = "Conta: " + (answer.Message.Length > 0 ? answer.Message : "não foi possível enviar."); else _s.Save(_path); ShowSyncStatus();
         }
 
         private static VisualElement Section(VisualElement tab, string title) { var label = UiKit.Text(title, "lv-bold", "lv-accent"); label.style.marginTop = 6; tab.Add(label); return tab; }

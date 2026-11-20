@@ -85,6 +85,13 @@ public sealed class ClientReleaseEndpointTests
     }
 
     [Fact]
+    public void TheInstallerChecksumIsHandedOutOnlyWhenItIsValidAndForWindows()
+    {
+        var hash = new string('A', 64); var options = new ClientReleaseOptions { Latest = "1.0.0", Sha256Windows = hash };
+        Assert.Equal(new string('a', 64), ClientReleaseEndpoints.Describe(options, "windows").Sha256); Assert.Equal(string.Empty, ClientReleaseEndpoints.Describe(options, "linux").Sha256); Assert.Equal(string.Empty, ClientReleaseEndpoints.Describe(options, null).Sha256);
+        Assert.Equal(string.Empty, ClientReleaseEndpoints.Describe(new ClientReleaseOptions { Latest = "1.0.0", Sha256Windows = "curto" }, "windows").Sha256); Assert.Equal(string.Empty, ClientReleaseEndpoints.Describe(new ClientReleaseOptions { Latest = "1.0.0", Sha256Windows = new string('z', 64) }, "windows").Sha256); Assert.Equal(string.Empty, ClientReleaseEndpoints.Describe(new ClientReleaseOptions { Latest = "1.0.0" }, "windows").Sha256);
+    }
+    [Fact]
     public void LongNotesAreCut() => Assert.Equal(1000, ClientReleaseEndpoints.Describe(new ClientReleaseOptions { Latest = "1.0.0", Notes = new string('x', 5000) }, null).Notes.Length);
 
     [Fact]

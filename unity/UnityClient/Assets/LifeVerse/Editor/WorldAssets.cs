@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using LifeVerse.Unity.World;
 using UnityEditor;
@@ -21,7 +21,7 @@ namespace LifeVerse.Unity.EditorTools
         {
             Directory.CreateDirectory(Folder);
             var shader = Shader.Find("HDRP/Lit") ?? throw new InvalidOperationException("O shader HDRP/Lit não foi encontrado: o HDRP está instalado e ativo?");
-            BuildTerrain(shader); BuildOcean(shader); BuildRain(); BuildObjects(shader); BuildSun(); BuildFoam();
+            BuildTerrain(shader); BuildOcean(shader); BuildRain(); BuildEffects(); BuildObjects(shader); BuildSun(); BuildFoam();
             AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
             Debug.Log("[LifeVerse] Materiais do mundo criados em " + Folder);
         }
@@ -95,6 +95,17 @@ namespace LifeVerse.Unity.EditorTools
             var material = Fresh("SunMaterial", shader);
             material.SetColor("_UnlitColor", Color.black); material.SetColor("_EmissiveColor", new Color(1f, .96f, .82f) * 80000f); material.SetFloat("_UseEmissiveIntensity", 0f);
             HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
+        }
+
+        /// <summary>The two materials of the particles scripts put on objects: soft puffs that blend (smoke, dust, rain) and that add light (fire, sparks, explosions).</summary>
+        private static void BuildEffects()
+        {
+            var shader = Shader.Find("HDRP/Unlit") ?? throw new InvalidOperationException("O shader HDRP/Unlit não foi encontrado.");
+            foreach (var (name, blend) in new[] { ("EffectMaterial", 0f), ("EffectMaterialAdd", 1f) })
+            {
+                var material = Fresh(name, shader); material.SetColor("_UnlitColor", Color.white); material.SetFloat("_SurfaceType", 1f); material.SetFloat("_BlendMode", blend); material.SetFloat("_ZWrite", 0f); material.SetFloat("_DoubleSidedEnable", 1f);
+                HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
+            }
         }
 
         private static void BuildRain()

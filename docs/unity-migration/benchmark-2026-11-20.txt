@@ -1,0 +1,4 @@
+event=benchmark preset=Baixo frames=359 fps=89.7 avg_ms=11.15 worst1pct_ms=12.40 max_ms=12.48 alloc_kb_per_frame=0.00 gc0=2 draw_calls=7941 setpass=157 triangles=1392082 cpu_ms=11.14 gpu_ms=11.09
+event=benchmark preset=Médio frames=346 fps=86.4 avg_ms=11.58 worst1pct_ms=13.00 max_ms=13.01 alloc_kb_per_frame=0.00 gc0=1 draw_calls=5429 setpass=181 triangles=1047846 cpu_ms=11.57 gpu_ms=11.13
+event=benchmark preset=Alto frames=339 fps=84.7 avg_ms=11.80 worst1pct_ms=13.32 max_ms=13.40 alloc_kb_per_frame=0.00 gc0=2 draw_calls=10260 setpass=192 triangles=1709697 cpu_ms=11.80 gpu_ms=11.34
+event=benchmark preset=Ultra frames=325 fps=81.0 avg_ms=12.34 worst1pct_ms=13.98 max_ms=14.01 alloc_kb_per_frame=0.00 gc0=1 draw_calls=15656 setpass=201 triangles=2294528 cpu_ms=12.35 gpu_ms=12.13

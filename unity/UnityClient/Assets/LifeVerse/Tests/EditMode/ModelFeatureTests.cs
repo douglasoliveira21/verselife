@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Text.Json.Nodes;
 using LifeVerse.Unity.Avatar;
@@ -18,6 +18,13 @@ namespace LifeVerse.Unity.Tests.EditMode
                 { var a = Mathf.PI * r / rings; var b = 2f * Mathf.PI * s / segments; var n = new Vector3(Mathf.Sin(a) * Mathf.Cos(b), Mathf.Cos(a), Mathf.Sin(a) * Mathf.Sin(b)); var i = r * (segments + 1) + s; vertices[i] = n; normals[i] = n; uvs[i] = new Vector2((float)s / segments, (float)r / rings); }
             for (var r = 0; r < rings; r++) for (var s = 0; s < segments; s++) { var i = r * (segments + 1) + s; tris.AddRange(new[] { i, i + 1, i + segments + 1, i + 1, i + segments + 2, i + segments + 1 }); }
             var mesh = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 }; mesh.vertices = vertices; mesh.normals = normals; mesh.uv = uvs; mesh.triangles = tris.ToArray(); mesh.RecalculateBounds(); return mesh;
+        }
+
+        [Test]
+        public void FrameStatsAverageTheSlowestOnePercent()
+        {
+            var frames = System.Linq.Enumerable.Repeat(10.0, 199).Concat(new[] { 50.0 }).ToList(); Assert.AreEqual(30.0, FrameStats.WorstOnePercent(frames), 1e-9);   // 200 frames: the slowest 2 average (50 + 10) / 2
+            Assert.AreEqual(0, FrameStats.WorstOnePercent(new double[0])); Assert.AreEqual(10.0, FrameStats.WorstOnePercent(new[] { 10.0 })); Assert.AreEqual(0, FrameStats.WorstOnePercent(null));
         }
 
         [Test]
