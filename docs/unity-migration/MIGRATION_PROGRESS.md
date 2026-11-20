@@ -357,3 +357,17 @@ Verificado em 2026-11-20 (nada commitado): EditMode 72/72, auto-teste do mundo 1
 Lacunas dos anexos: pontos de tela (HUD) não são desenhados no corpo (o cliente ainda não tem uma camada para eles); mover de ponto (`/move`) e o balanço (`sway`) não têm interface; o corpo simples usa a parte mais próxima do corpo quando o osso não existe.
 
 Provas: `AttachmentTests` (6), passo "avatar: attachments" da API real (vestir, ler, ajustar, tirar), e no auto-teste um chapéu carregado de um GLB preso à cabeça, movido e retirado, mais a janela contra o stub.
+
+### Fase 12, sobras fechadas (2026-11-20)
+
+Verificado: EditMode 80/80, auto-teste do mundo 201 checks (também com GPU real), API real 16/16 passos.
+
+| Item | Onde | Estado |
+|---|---|---|
+| Anexos de tela (HUD) | `UI/HudAttachments.cs`, ligado em `GameApp.BuildWorld` | Feito: o modelo fica à frente da câmera, no canto do seu ponto, dimensionado em pixels (200 px por metro de posição), sem pegar o mouse. Foto: `img/ui-hud-attachment.png`. Não usei uma imagem transparente porque o HDRP devolve o fundo opaco (tentei limpar com alfa zero, sem pós-processo e com outro formato de buffer; o alfa saía sempre 1) |
+| Mover de ponto e balanço | `AttachmentsWindow` (campo de balanço, "Levar para" com opção de trocar), `AvatarAttachments.SwayTarget` | Feito: o balanço inclina o objeto contra o movimento do corpo; a API real guarda balanço e mudança de ponto, inclusive para um ponto de tela |
+| Animações do modelo | `World/ModelAnimations.cs`, `WorldObjects.ApplyAnimation` | Feito: objetos do mundo tocam o clipe do ajuste `animation` (clip, loop, playing, speed, offset, since) no relógio do servidor, com pausa sem recarregar o modelo; anexos tocam o primeiro clipe em laço, como o Godot |
+| LOD de malha | `World/MeshSimplifier.cs`, `WorldObjects.SetLod` | Feito: agrupamento de vértices numa grade, mantém sub-malhas, normais e UVs; a cópia leve (cerca de 25 % dos triângulos) vale de 30 % do alcance em diante. Só malhas com mais de 3000 triângulos |
+| Pivô | | Fica como está: o Godot também só guarda o dado |
+
+Lacunas: a troca de malha por LOD tem teste de unidade, mas não foi vista num objeto pesado do mundo (o GLB de teste é pequeno); o agrupamento mistura UVs de costuras, aceitável só à distância; malhas com esqueleto não entram no LOD. O balanço só aparece depois de "Aplicar" (não há prévia ao vivo).

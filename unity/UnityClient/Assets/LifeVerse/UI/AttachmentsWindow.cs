@@ -34,7 +34,7 @@ namespace LifeVerse.Unity.UI
             Reload(); LoadItems();
         }
 
-        public static List<string> PointNames(IEnumerable<string> profiles) => AttachmentPoints.All.Where(p => !p.IsHud && (p.Profile == AttachmentPoints.Humanoid || (profiles ?? Array.Empty<string>()).Contains(p.Profile, StringComparer.OrdinalIgnoreCase))).Select(p => p.Name).ToList();
+        public static List<string> PointNames(IEnumerable<string> profiles) => AttachmentPoints.All.Where(p => (p.Profile == AttachmentPoints.Humanoid || (profiles ?? Array.Empty<string>()).Contains(p.Profile, StringComparer.OrdinalIgnoreCase))).Select(p => p.Name).ToList();
 
         public static string KeyOfName(string name) => AttachmentPoints.All.FirstOrDefault(p => p.Name == name)?.Key;
 
@@ -65,20 +65,33 @@ namespace LifeVerse.Unity.UI
         {
             var box = new VisualElement(); box.AddToClassList("lv-row"); box.style.flexDirection = FlexDirection.Column; box.style.marginBottom = 6;
             var text = UiKit.Text(a.Describe() + (a.Equipped ? "" : " · guardado"), "lv-small"); text.style.whiteSpace = WhiteSpace.Normal; box.Add(text);
-            var position = UiKit.Field("Posição (m)", false, 40, Triple(a.Position)); var rotation = UiKit.Field("Rotação (°)", false, 40, Triple(a.Rotation)); var scale = UiKit.Field("Escala", false, 40, Triple(a.Scale));
+            var position = UiKit.Field("Posição (m)", false, 40, Triple(a.Position)); var rotation = UiKit.Field("Rotação (°)", false, 40, Triple(a.Rotation)); var scale = UiKit.Field("Escala", false, 40, Triple(a.Scale)); var sway = UiKit.Field("Balanço (0 a 1)", false, 8, a.Sway.ToString("0.##", CultureInfo.InvariantCulture));
             var buttons = UiKit.Row(UiKit.Button(a.Equipped ? "Tirar" : "Vestir", () => (a.Equipped ? (Action)(() => Send("DELETE", Route + "/" + a.Id, null)) : () => Send("POST", Route, WearJson(a.InventoryItemId, a.Point, null)))()),
-                UiKit.Button("Aplicar", () => Apply(a, position.value, rotation.value, scale.value), "lv-btn-primary"), UiKit.Button("Voltar ao padrão", () => Send("POST", Route + "/" + a.Id + "/reset", null)));
-            if (a.CanModify) { box.Add(position); box.Add(rotation); box.Add(scale); }
-            box.Add(buttons); return box;
+                UiKit.Button("Aplicar", () => Apply(a, position.value, rotation.value, scale.value, sway.value), "lv-btn-primary"), UiKit.Button("Voltar ao padrão", () => Send("POST", Route + "/" + a.Id + "/reset", null)));
+            if (a.CanModify) { box.Add(position); box.Add(rotation); box.Add(scale); box.Add(sway); }
+            box.Add(buttons);
+            var target = new DropdownField("Levar para", PointNames(_profiles), Math.Max(0, PointNames(_profiles).IndexOf(a.PointName))); var replace = new Toggle("Trocar o que já está nesse ponto");
+            box.Add(target); box.Add(replace); box.Add(UiKit.Button("Mover", () => Move(a, target.value, replace.value))); return box;
         }
 
         private static string WearJson(Guid item, string point, float[] position) => JsonSerializer.Serialize(new { inventoryItemId = item, point, mode = (string)null, position });
 
-        public void Apply(AttachmentData a, string position, string rotation, string scale)
+        /// <summary>The sway typed as a number from 0 to 1 (comma or dot); null when it is not one.</summary>
+        public static float? ParseSway(string text) => float.TryParse((text ?? "").Trim().Replace(',','.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) && v >= 0f && v <= 1f ? v : (float?)null;
+
+        public void Apply(AttachmentData a, string position, string rotation, string scale, string sway = null)
         {
-            var p = ParseTriple(position); var r = ParseTriple(rotation); var s = ParseTriple(scale);
+            var p = ParseTriple(position); var r = ParseTriple(rotation); var s = ParseTriple(scale); var w = sway == null ? a.Sway : ParseSway(sway);
             if (p == null || r == null || s == null) { Fail("Digite três números em cada campo (por exemplo: 0 0.1 0)."); return; }
-            Send("PATCH", Route + "/" + a.Id, JsonSerializer.Serialize(new { position = p, rotation = r, scale = s }));
+            if (w == null) { Fail("O balanço precisa ficar entre 0 e 1."); return; }
+            Send("PATCH", Route + "/" + a.Id, JsonSerializer.Serialize(new { position = p, rotation = r, scale = s, sway = w }));
+        }
+
+        /// <summary>Takes a worn object to another point of the body (or of the screen); "replace" takes off what is already there. The placement starts over from the new point.</summary>
+        public void Move(AttachmentData a, string pointName, bool replace)
+        {
+            var key = KeyOfName(pointName); if (key == null) { Fail("Escolha o ponto."); return; }
+            Send("POST", Route + "/" + a.Id + "/move", JsonSerializer.Serialize(new { point = key, mode = replace ? "replace" : "add" }));
         }
 
         public void Wear()
@@ -93,7 +106,7 @@ namespace LifeVerse.Unity.UI
         public static string Explain(string body)
         {
             try { using var d = JsonDocument.Parse(body); var error = d.RootElement.TryGetProperty("error", out var e) ? e.GetString() : null;
-                return error switch { "already_attached" => "Esse objeto já está vestido.", "too_many_attachments" => "Você já veste o máximo de objetos.", "too_many_at_point" => "Esse ponto já está cheio.", "too_many_huds" => "Você já usa o máximo de objetos de tela.", "item_unavailable" => "O item não está mais com você.", "asset_unavailable" => "O arquivo do item não está mais disponível.", "not_attachable" => "Esse tipo de item não pode ser vestido.", "not_attached" => "O objeto não está vestido.", _ => null }; }
+                return error switch { "already_attached" => "Esse objeto já está vestido.", "too_many_attachments" => "Você já veste o máximo de objetos.", "too_many_at_point" => "Esse ponto já está cheio.", "too_many_huds" => "Você já usa o máximo de objetos de tela.", "item_unavailable" => "O item não está mais com você.", "asset_unavailable" => "O arquivo do item não está mais disponível.", "not_attachable" => "Esse tipo de item não pode ser vestido.", "not_attached" => "O objeto não está vestido.", "bad_sway" => "O balanço precisa ficar entre 0 e 1.", "no_modify_right" => "Você não tem o direito de modificar esse objeto.", "point_unavailable" => "O seu corpo não tem esse ponto.", "unknown_point" => "Esse ponto não existe.", _ => null }; }
             catch (Exception ex) when (ex is JsonException || ex is InvalidOperationException) { return null; }
         }
 

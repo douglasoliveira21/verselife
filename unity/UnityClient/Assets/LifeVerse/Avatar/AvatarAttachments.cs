@@ -61,7 +61,7 @@ namespace LifeVerse.Unity.Avatar
     /// </summary>
     public sealed class AvatarAttachments : MonoBehaviour
     {
-        private sealed class Worn { public AttachmentData Data; public GameObject Holder; public bool Loading; public long Revision; }
+        private sealed class Worn { public AttachmentData Data; public GameObject Holder, Content; public bool Loading; public long Revision; public Vector3 LastPosition; public Vector3 Tilt; public bool Started; }
         private AvatarView _view; private readonly Dictionary<Guid, Worn> _worn = new Dictionary<Guid, Worn>(); private int _generation;
         /// <summary>Gets the bytes of a model by its identifier. Set by the game (the platform's asset route).</summary>
         public static Func<Guid, Task<byte[]>> Loader { get; set; }
@@ -109,7 +109,7 @@ namespace LifeVerse.Unity.Avatar
                 var holder = new GameObject("Worn " + worn.Data.Name); var content = new GameObject("Content"); content.transform.SetParent(holder.transform, false); content.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);   // the same half turn as the world's models
                 if (!await import.InstantiateMainSceneAsync(content.transform)) { Destroy(holder); worn.Loading = false; return; }
                 foreach (var collider in holder.GetComponentsInChildren<Collider>()) Destroy(collider);
-                worn.Holder = holder; worn.Loading = false; Loaded++; Place(worn);
+                worn.Holder = holder; worn.Content = content; worn.Loading = false; Loaded++; Place(worn); LifeVerse.Unity.World.ModelAnimations.StartFirst(content);
             }
             catch (Exception exception) when (!(exception is OutOfMemoryException)) { worn.Loading = false; Debug.LogWarning("[LifeVerse] anexo " + worn.Data.Name + ": " + exception.Message); }
         }
@@ -127,6 +127,32 @@ namespace LifeVerse.Unity.Avatar
             var t = worn.Holder.transform; t.SetParent(anchor, false); var sum = offset + position; t.localPosition = new Vector3(sum.x, sum.y, -sum.z);
             var rotation = Quaternion.Euler(worn.Data.Rotation[0], worn.Data.Rotation[1], worn.Data.Rotation[2]); t.localRotation = new Quaternion(-rotation.x, -rotation.y, rotation.z, rotation.w); t.localScale = new Vector3(Mathf.Max(.001f, worn.Data.Scale[0]), Mathf.Max(.001f, worn.Data.Scale[1]), Mathf.Max(.001f, worn.Data.Scale[2]));
             worn.Revision = worn.Data.Revision;
+        }
+
+        /// <summary>Sway edited on screen (0 to 1) while the person is still choosing; null puts back what is saved.</summary>
+        public void SetSwayOverride(Guid id, float? sway) { if (sway is { } s) _swayOverride[id] = s; else _swayOverride.Remove(id); }
+        private readonly Dictionary<Guid, float> _swayOverride = new Dictionary<Guid, float>();
+        /// <summary>How far an object leans at the moment because of sway, in degrees (for the tests).</summary>
+        public float TiltOf(Guid id) => _worn.TryGetValue(id, out var w) ? w.Tilt.magnitude * Mathf.Rad2Deg : 0f;
+
+        /// <summary>The lean of an object that follows a moving body, given the velocity of its holder in the holder's own space: backwards when it moves ahead, sideways when it goes sideways.</summary>
+        public static Vector3 SwayTarget(Vector3 localVelocity, float amount)
+        {
+            if (amount <= .001f) return Vector3.zero; var v = localVelocity; if (v.magnitude > 12f) v = v.normalized * 12f;
+            return new Vector3(Mathf.Clamp(-v.z * .12f * amount, -.5f, .5f), 0f, Mathf.Clamp(v.x * .12f * amount - v.y * .05f * amount, -.5f, .5f));   // the top trails behind: forward turns it back, a step to the right turns it to the left
+        }
+
+        private void LateUpdate()
+        {
+            var dt = Time.deltaTime; if (dt <= 0f) return;
+            foreach (var worn in _worn.Values)
+            {
+                if (worn.Holder == null || worn.Content == null) continue;
+                var amount = _swayOverride.TryGetValue(worn.Data.Id, out var edited) ? edited : worn.Data.Sway; var position = worn.Holder.transform.position; var velocity = (position - worn.LastPosition) / dt; worn.LastPosition = position;
+                if (amount <= .001f) { if (worn.Tilt != Vector3.zero) { worn.Tilt = Vector3.zero; worn.Content.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); } continue; }
+                var local = Quaternion.Inverse(worn.Holder.transform.rotation) * velocity; var target = SwayTarget(local, amount);
+                worn.Tilt = Vector3.Lerp(worn.Tilt, target, 1f - Mathf.Exp(-9f * dt)); worn.Content.transform.localRotation = Quaternion.Euler(worn.Tilt * Mathf.Rad2Deg) * Quaternion.Euler(0f, 180f, 0f);
+            }
         }
 
         public void Clear() { foreach (var w in _worn.Values) if (w.Holder != null) Destroy(w.Holder); _worn.Clear(); }

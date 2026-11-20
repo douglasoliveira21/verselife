@@ -51,7 +51,7 @@ namespace LifeVerse.Unity.World
         private sealed class Entry
         {
             public GameObject Object; public WorldObjectState State; public string ShapeKey = "", MaterialKey = ""; public int Generation;
-            public Renderer[] Renderers = Array.Empty<Renderer>(); public float Range = MaxRange; public bool Culled; public GameObject Proxy, Model; public UnityEngine.Video.VideoPlayer Video; public RenderTexture VideoTarget; public Material[] MediaMaterials;
+            public Renderer[] Renderers = Array.Empty<Renderer>(); public float Range = MaxRange; public bool Culled; public GameObject Proxy, Model; public string ClipPlaying = ""; public List<(MeshFilter Filter, Mesh Full, Mesh Low)> Lods; public bool LowShown; public UnityEngine.Video.VideoPlayer Video; public RenderTexture VideoTarget; public Material[] MediaMaterials;
         }
 
         private readonly Dictionary<Guid, Entry> _objects = new Dictionary<Guid, Entry>();
@@ -194,8 +194,8 @@ namespace LifeVerse.Unity.World
             go.transform.localScale = new Vector3(Mathf.Max(state.ScaleX, .001f), Mathf.Max(state.ScaleY, .001f), Mathf.Max(state.ScaleZ, .001f));
             entry.Range = Mathf.Clamp(Mathf.Max(state.ScaleX, Mathf.Max(state.ScaleY, state.ScaleZ)) * RangePerMetre, MinRange, MaxRange);
             var type = state.PrimitiveType.ToLowerInvariant();
-            var shapeKey = type + "|" + state.GeometryJson + "|" + state.MaterialJson;
-            if (entry.ShapeKey == shapeKey) { return; }
+            var shapeKey = type + "|" + state.GeometryJson + "|" + ModelAnimations.WithoutAnimation(state.MaterialJson);
+            if (entry.ShapeKey == shapeKey) { ApplyAnimation(entry); return; }
             entry.ShapeKey = shapeKey; entry.Generation++;
             Build(entry, state, type);
         }
@@ -553,6 +553,18 @@ namespace LifeVerse.Unity.World
             _ = LoadModelAsync(entry, asset, entry.Generation, filter, renderer);
         }
 
+        /// <summary>Plays what the object's animation setting says on its model (nothing while the model has not arrived).</summary>
+        private void ApplyAnimation(Entry entry)
+        {
+            if (entry.Model == null || entry.State == null) return;
+            entry.ClipPlaying = ModelAnimations.Apply(entry.Model, ModelAnimations.Settings(entry.State.MaterialJson), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0);
+        }
+
+        /// <summary>The clips of an object's model, and the one that plays now (for the editor and the tests).</summary>
+        public IReadOnlyList<string> ClipsOf(Guid id) => _objects.TryGetValue(id, out var entry) && entry.Model != null ? ModelAnimations.Clips(entry.Model) : Array.Empty<string>();
+        public string ClipPlayingOf(Guid id) => _objects.TryGetValue(id, out var entry) ? entry.ClipPlaying ?? "" : "";
+        public float ClipTimeOf(Guid id) { if (!_objects.TryGetValue(id, out var entry) || entry.Model == null || string.IsNullOrEmpty(entry.ClipPlaying)) return 0f; var player = ModelAnimations.PlayerOf(entry.Model); return player != null ? player[entry.ClipPlaying].time : 0f; }
+
         private static Guid? ModelAssetOf(string geometryJson)
         {
             try { using var document = JsonDocument.Parse(geometryJson); return document.RootElement.TryGetProperty("assetId", out var value) && Guid.TryParse(value.GetString(), out var id) ? id : (Guid?)null; }
@@ -582,8 +594,8 @@ namespace LifeVerse.Unity.World
                 var centre = holder.transform.InverseTransformPoint(bounds.center);
                 holder.transform.SetParent(entry.Object.transform, false); holder.transform.localRotation = Quaternion.identity;
                 holder.transform.localScale = Vector3.one * factor; holder.transform.localPosition = -centre * factor;
-                renderer.enabled = false; entry.Model = holder; ModelsLoaded++;
-                entry.Renderers = entry.Object.GetComponentsInChildren<Renderer>(true);
+                renderer.enabled = false; entry.Model = holder; ModelsLoaded++; ApplyAnimation(entry);
+                entry.Renderers = entry.Object.GetComponentsInChildren<Renderer>(true); entry.Lods = null; entry.LowShown = false;
             }
             catch (Exception exception) { Debug.LogWarning("[LifeVerse] modelo " + asset + ": " + exception.Message); }
         }
@@ -596,6 +608,25 @@ namespace LifeVerse.Unity.World
             Cull(Camera != null ? Camera : UnityEngine.Camera.main);
         }
 
+        /// <summary>From this share of its range on, a model is drawn with a lighter copy of its meshes.</summary>
+        public const float LodFraction = .3f;
+        public int LodObjects { get; private set; }
+        public bool IsLow(Guid id) => _objects.TryGetValue(id, out var entry) && entry.LowShown;
+
+        /// <summary>Swaps the meshes of an imported model for their lighter copies (made the first time they are needed) when it is far, and back when it is near.</summary>
+        private void SetLod(Entry entry, bool far)
+        {
+            if (entry.Model == null || far == entry.LowShown) return;
+            if (far && entry.Lods == null)
+            {
+                entry.Lods = new List<(MeshFilter, Mesh, Mesh)>(); foreach (var filter in entry.Model.GetComponentsInChildren<MeshFilter>(true)) { var low = MeshSimplifier.Simplify(filter.sharedMesh, .25f); if (low != null) entry.Lods.Add((filter, filter.sharedMesh, low)); }
+                if (entry.Lods.Count > 0) LodObjects++;
+            }
+            if (entry.Lods == null) return;
+            foreach (var (filter, full, low) in entry.Lods) if (filter != null) filter.sharedMesh = far ? low : full;
+            entry.LowShown = far;
+        }
+
         /// <summary>Hides what is beyond its range of the camera (a 1 m object vanishes past 120 m, a 10 m one past 600 m) and shows it again inside 90 % of the range, so it does not flicker at the edge.</summary>
         public void Cull(Camera camera)
         {
@@ -603,6 +634,7 @@ namespace LifeVerse.Unity.World
             foreach (var entry in _objects.Values)
             {
                 var distance = Vector3.Distance(origin, entry.Object.transform.position);
+                SetLod(entry, entry.LowShown ? distance > entry.Range * LodFraction * .9f : distance > entry.Range * LodFraction);
                 var hide = entry.Culled ? distance > entry.Range * .9f : distance > entry.Range;
                 if (hide != entry.Culled) { entry.Culled = hide; foreach (var r in entry.Renderers) if (r != null) r.enabled = !hide && !(entry.Model != null && r == entry.Object.GetComponent<MeshRenderer>()); }
                 if (entry.Culled) culled++;

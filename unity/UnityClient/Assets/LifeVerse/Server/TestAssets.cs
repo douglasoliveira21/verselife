@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using UnityEngine;
@@ -17,7 +17,10 @@ namespace LifeVerse.Unity.Server
         }
 
         /// <summary>A binary glTF of a box 4 long (x), 2 high and 2 deep with no material, centred on its origin: the loader must shrink it to one metre on the long side.</summary>
-        public static byte[] Glb()
+        /// <summary>The same box with one clip, "Spin": two seconds turning a quarter about the vertical.</summary>
+        public static byte[] AnimatedGlb() => Glb(true);
+
+        public static byte[] Glb(bool animated = false)
         {
             var positions = new float[]
             {
@@ -28,10 +31,14 @@ namespace LifeVerse.Unity.Server
             using var bin = new MemoryStream(); using var writer = new BinaryWriter(bin);
             foreach (var value in positions) writer.Write(value);
             foreach (var value in indices) writer.Write(value);
+            if (animated) { writer.Write(0f); writer.Write(2f); foreach (var q in new float[] { 0, 0, 0, 1, 0, .70710678f, 0, .70710678f }) writer.Write(q); }
             var binary = bin.ToArray();
             var json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],"
-                + "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":8,\"type\":\"VEC3\",\"min\":[-2,-1,-1],\"max\":[2,1,1]},{\"bufferView\":1,\"componentType\":5123,\"count\":36,\"type\":\"SCALAR\"}],"
-                + "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":96,\"target\":34962},{\"buffer\":0,\"byteOffset\":96,\"byteLength\":72,\"target\":34963}],\"buffers\":[{\"byteLength\":" + binary.Length + "}]}";
+                + "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":8,\"type\":\"VEC3\",\"min\":[-2,-1,-1],\"max\":[2,1,1]},{\"bufferView\":1,\"componentType\":5123,\"count\":36,\"type\":\"SCALAR\"}"
+                + (animated ? ",{\"bufferView\":2,\"componentType\":5126,\"count\":2,\"type\":\"SCALAR\",\"min\":[0],\"max\":[2]},{\"bufferView\":3,\"componentType\":5126,\"count\":2,\"type\":\"VEC4\"}" : "") + "],"
+                + "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":96,\"target\":34962},{\"buffer\":0,\"byteOffset\":96,\"byteLength\":72,\"target\":34963}"
+                + (animated ? ",{\"buffer\":0,\"byteOffset\":168,\"byteLength\":8},{\"buffer\":0,\"byteOffset\":176,\"byteLength\":32}" : "") + "],\"buffers\":[{\"byteLength\":" + binary.Length + "}]"
+                + (animated ? ",\"animations\":[{\"name\":\"Spin\",\"samplers\":[{\"input\":2,\"output\":3,\"interpolation\":\"LINEAR\"}],\"channels\":[{\"sampler\":0,\"target\":{\"node\":0,\"path\":\"rotation\"}}]}]" : "") + "}";
             var jsonBytes = Encoding.UTF8.GetBytes(json); var padded = (jsonBytes.Length + 3) / 4 * 4; Array.Resize(ref jsonBytes, padded); for (var i = Encoding.UTF8.GetByteCount(json); i < padded; i++) jsonBytes[i] = 0x20;
             using var file = new MemoryStream(); using var output = new BinaryWriter(file);
             output.Write(0x46546C67u); output.Write(2u); output.Write((uint)(12 + 8 + jsonBytes.Length + 8 + binary.Length));

@@ -95,7 +95,7 @@ namespace LifeVerse.Unity.UI
         /// <summary>After a change of what is worn: asks the platform for the avatar again and shows it on the own body.</summary>
         public void RefreshOwnAttachments() => Ui.Root.Then(Api.ApiAsync("GET", AttachmentsWindow.Route), r =>
         {
-            if (r.Status != 200) return; var worn = PeopleViews?.ViewOf(Client != null ? Client.SelfPeerId : 0)?.GetComponent<AvatarAttachments>(); if (worn != null) worn.Apply(AttachmentData.ParseList(r.Body, out _));
+            if (r.Status != 200) return; var list = AttachmentData.ParseList(r.Body, out _); var worn = PeopleViews?.ViewOf(Client != null ? Client.SelfPeerId : 0)?.GetComponent<AvatarAttachments>(); if (worn != null) worn.Apply(list); HudWorn?.Apply(list);
         });
 
         /// <summary>The editor of the character: the saved one is read from the API (the starter one when there is none) and a saved change shows on the avatar at once.</summary>
@@ -227,7 +227,11 @@ namespace LifeVerse.Unity.UI
             Voice = new GameObject("Voice").AddComponent<VoiceChat>(); Voice.transform.SetParent(_world.transform); Voice.Attach(Client); Hearing = new GameObject("Hearing").AddComponent<VoiceListener>(); Hearing.transform.SetParent(_world.transform); Hearing.Attach(Client);
             Hearing.PositionOf = peer => PeopleViews != null && PeopleViews.ViewOf(peer) != null ? PeopleViews.ViewOf(peer).GamePosition : (Vector3?)null; Voice.HearingOthers = () => Hearing.AnySpeaking(); ApplyAudio();
             TerrainTools = new TerrainEditor(Context, () => Client, () => Follow != null ? Follow.Camera : null, () => Client != null ? Client.Terrain : null);
+            HudWorn = new HudAttachments(Ui, () => Follow != null ? Follow.Camera : null); RefreshOwnAttachments();
         }
+
+        /// <summary>What is worn at points of the screen.</summary>
+        public HudAttachments HudWorn { get; private set; }
 
         public ScriptDialogs ScriptDialogs { get; private set; }
         public ScriptHud ScriptPanels { get; private set; }
@@ -282,7 +286,7 @@ namespace LifeVerse.Unity.UI
             Builder.SetActive(false); BuildPanel?.Close(); BuildPanel = null; TerrainTools.SetActive(true); TerrainPanel = new TerrainWindow(Context, TerrainTools); TerrainPanel.Open();
         }
 
-        private void TearDownWorld() { Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
+        private void TearDownWorld() { HudWorn?.Clear(); HudWorn = null; Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
 
         // ---- while playing ----
 
