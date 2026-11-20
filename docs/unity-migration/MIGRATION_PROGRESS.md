@@ -44,16 +44,19 @@
 
 | Fase | Estado | Observação |
 |---|---|---|
-| 1 Auditoria | Concluído (revisão pendente) | `MIGRATION_AUDIT.md`. Limite: classificação por arquivo, não por classe |
-| 2 Arquitetura | Em análise | `MIGRATION_ARCHITECTURE.md`. Faltam a Fase 2b e as decisões D3 e D4 |
-| 3 Fundação Unity | Em validação | Gate cumprido, exceto IL2CPP e render visual (acima). D1, D2 e D7 foram executadas |
-| 4 Código compartilhado | Não iniciado | Rodar o conjunto completo de testes de `shared` dentro da Unity; planilha dos 117 smokes |
-| 5 Multiplayer | Em migração | Protocolo e transporte feitos e testados (`WIRE_PROTOCOL.md`). Faltam: interpolação e reconciliação no cliente, interesse e tick no servidor, 64 clientes simultâneos e latência alta; dependem das Fases 6 e 7 |
-| 6 Servidores | **Em migração (parcial)** | Núcleo sem engine (`unity/UnityIslandServer/Core`) com admissão, simulação, snapshots por interesse, chat, voo, gestos, persistência, heartbeat/comandos do admin, saúde, métricas e encerramento; roda como processo .NET (`Host`) e como Unity Dedicated Server. 45 testes xUnit; 64 clientes UDP contra o servidor dentro do player Unity. Terreno editável (por editores da ilha) portado. Veículos, construção, terras (land-sync, acesso, teletransporte), terreno por donos de parcela voz, aparência e anexos portados. Também portados: terreno editável, veículos, construção com locks e terras (land-sync, acesso, teletransporte). **Faltam** scripts de objetos (`IslandScripting`), física de objetos (S4) e a execução no Linux. Ver `MIGRATION_ISLAND_SERVER.md` |
-| 7 Mundo | **Iniciada (C1 a C3 em migração)** | `unity/UnityClient/Assets/LifeVerse/World`: terreno, oceano, céu e clima renderizados no HDRP e fotografados na GPU real; 17 testes de modo Edit. Ver a seção "Fase 7" abaixo |
-| 8 Avatar, movimento e câmera | **Em migração (quase toda)** | `unity/UnityClient/Assets/LifeVerse/Avatar`: movimento com previsão, corpos procedurais de todos os jogadores, câmera de terceira pessoa. Ver "Fase 8" |
-| 9 Interface | **Em migração (as telas da lista estão feitas; faltam detalhes)** | `unity/UnityClient/Assets/LifeVerse/UI` (UI Toolkit, decisão D6): tema "vidro escuro", login e cadastro, carregamento, HUD, chat, notificações, janelas, configurações. Ver "Fase 9" |
-| 10 a 15 | Não iniciado | — |
+| 1 Auditoria | Concluído | `MIGRATION_AUDIT.md` (classificação por arquivo, não por classe) |
+| 2 Arquitetura | Concluído | `MIGRATION_ARCHITECTURE.md`; decisões D1 a D7 tomadas e executadas |
+| 3 Fundação Unity | Concluído (menos IL2CPP) | Projeto, HDRP, pacotes, DLLs de `shared`/`scripting`, build Windows reproduzível. IL2CPP não verificado (sem Visual Studio C++) |
+| 4 Código compartilhado | Parcial | Codecs, terreno, grupos, Opus e NPC passam no editor e no player; falta a suíte completa de `shared` no Test Runner |
+| 5 Multiplayer | Concluído (menos latência alta) | Protocolo 12 e transporte; 64 clientes contra o servidor; falta o teste com latência alta |
+| 6 Servidores | Concluído no que se verifica aqui | Núcleo sem engine, Host .NET e Unity Dedicated Server (Linux rodou no WSL); terreno, veículos, construção, terras, voz, aparência, anexos, scripts e física portados; 51 testes xUnit. Faltam a imagem do supervisor (sem Docker) e o campo `engine`/`wireVersion` na API (migração de banco não autorizada) |
+| 7 Mundo | Concluído (com lacunas) | Terreno, oceano, céu, clima, objetos, modelos, plantas, ambiente, colisão. Lacunas: LOD de malhas, WebP, mapeamento planar, pivô, animações de modelos |
+| 8 Avatar, movimento e câmera | Concluído (com lacunas) | Ver "Fase 8". Faltam roupas do homem (arquivos ausentes), dedos e anexos personalizados |
+| 9 Interface | Concluído | Ver "Fase 9". Exercício contra a API real: 15 de 15; falta renovar o token e entrar numa ilha real (precisam de Postgres e supervisor) |
+| 10 Construção e terreno | Concluído (com lacunas) | Ver "Fase 10" |
+| 11 Áudio e voz | Concluído | Ver "Fase 11" |
+| 12 Sobras de 7 a 12 | Concluída, com lacunas | Teclas, mapas, importação de modelos, anexos. Ver "Fase 12" |
+| 13 a 15 | Não iniciado | Otimização, validação (IL2CPP, regressão completa), distribuição |
 
 ## Módulos
 
@@ -65,7 +68,8 @@
 | Pipeline de build | — | `build-plugins.ps1`, `ProjectSetup`, `BuildClient` | Implementado, validado | OK | Build Windows reproduzível | Build do servidor (D4) | — |
 | Rede (protocolo e transporte) | `NetworkBridge` (44 RPCs) | `unity/UnityWire` (`LifeVerse.Wire`) | Implementado, em validação | OK (`netstandard2.1` e `net8.0`, 0 avisos; solução inteira 0 avisos) | 25 xUnit + 2 na Unity + autoverificação do player: passam | Servidor de ilha e cliente de jogo; 64 clientes; latência alta | Fase 6 |
 | Servidor de ilha | `island-server/` | `unity/UnityIslandServer` (`Core`, `Host`, `LoadTest`) + `Assets/LifeVerse/Server` | Parcial: ver paridade em `MIGRATION_ISLAND_SERVER.md` | `Core` net8.0 e netstandard2.1 OK (0 avisos); Build Linux OK (162 MB) e executado no Ubuntu/WSL 2 | 51 xUnit; 64 clientes contra o player Unity (Windows/Mono); executado no Ubuntu (WSL 2): 64 clientes, SIGTERM; Alpine não suporta o player Unity (só o `backend/` é Alpine; as ilhas já são Debian) | Terreno por donos de parcela, scripts (`IslandScripting`), física (S4), voz, `engine`/`wireVersion` na API, Supervisor | Fase 6 (continuação) |
-| Mundo 3D, Jogador, Avatar, Construção, UI, Social, Áudio, Distribuição | ver checklist | `LifeVerse.Unity.*` | Não iniciado | — | — | — | Fases 7 a 15 |
+| Mundo 3D, Jogador, Avatar, Construção, UI, Social, Áudio | ver checklist | `LifeVerse.Unity.*` (World, Avatar, UI, Audio, Server) | Implementado | OK | 193 verificações do player, 64 testes Edit, 15 etapas na API real | Ver "Fase 12" e "Fases 13 a 15" | Fase 12 |
+| Distribuição | `launcher/`, `installer/` | a adaptar | Não iniciado | — | — | — | Fase 15 |
 
 ## Registro de decisões e incompatibilidades
 
@@ -335,3 +339,21 @@ Novo assembly `LifeVerse.Unity.Audio` (abaixo do Avatar e da interface, acima do
 - **Sons da interface** (`UiSounds`): clique, interruptor, abrir e fechar janela, e um aviso para cada tipo (comum, bom, alerta, ruim); feitos na hora (um tom curto com subida e descida suaves, sem arquivo), planos, no volume dos Efeitos à metade, sem repetir o mesmo em 40 ms, com opção de desligar na configuração.
 
 **Verificação agora.** Auto-teste **193 verificações**; testes Edit **64 de 64**; exercício na API real 15 de 15. Continua sem poder ser conferido daqui o que depende de ouvido e de microfone de verdade.
+
+## Fase 12 (sobras das fases 7 a 12)
+
+Verificado em 2026-11-20 (nada commitado): EditMode 72/72, auto-teste do mundo 198 checks, API real 16/16 passos, xUnit 51.
+
+| Item | Onde | Estado |
+|---|---|---|
+| Teclas redefiníveis | `Avatar/KeyBindings.cs`, aba Controles da `SettingsWindow` | Feito: 23 ações, troca de tecla em conflito, salvo em `settings.json`, ignorado ao digitar |
+| Mapas de textura no painel | `BuildTabs.cs` (campos de mapa, `ApplyMap`), edição otimista com revisão | Feito |
+| Importar modelo (GLB, glTF, DAE) | pasta `Models/`, `UI/ModelImportWindow.cs` | Feito: prévia, tamanho, colisão, conversão de DAE, empacotamento para envio |
+| Anexos ao corpo | `Avatar/AvatarAttachments.cs`, `UI/AttachmentsWindow.cs`, "Mais > Anexos do corpo" | Feito: lê `bodyAttachmentsJson`, prende o modelo ao osso/parte do corpo com o desvio do ponto, posição, rotação e escala (z invertido); janela para vestir, tirar, ajustar e voltar ao padrão |
+| Pivô | | Não feito de propósito: o cliente Godot também só guarda o dado |
+| Animações dentro do modelo | | Não iniciado |
+| LOD de malha | | Adiado: exige um simplificador próprio |
+
+Lacunas dos anexos: pontos de tela (HUD) não são desenhados no corpo (o cliente ainda não tem uma camada para eles); mover de ponto (`/move`) e o balanço (`sway`) não têm interface; o corpo simples usa a parte mais próxima do corpo quando o osso não existe.
+
+Provas: `AttachmentTests` (6), passo "avatar: attachments" da API real (vestir, ler, ajustar, tirar), e no auto-teste um chapéu carregado de um GLB preso à cabeça, movido e retirado, mais a janela contra o stub.

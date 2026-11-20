@@ -9,6 +9,8 @@
         "LifeVerse.Unity.World",
         "LifeVerse.Unity.Avatar",
         "LifeVerse.Unity.Audio",
+        "LifeVerse.Unity.Models",
+        "Unity.InputSystem",
         "LifeVerse.Unity.UI",
         "Unity.RenderPipelines.HighDefinition.Runtime",
         "Unity.RenderPipelines.Core.Runtime"

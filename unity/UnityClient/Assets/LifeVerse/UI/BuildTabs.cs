@@ -20,6 +20,29 @@ namespace LifeVerse.Unity.UI
         private readonly Dictionary<string, Slider> _shape = new Dictionary<string, Slider>(); private Toggle _collision, _physical, _trigger, _temporary; private Slider _mass, _friction, _bounce; private DropdownField _shapeKind, _material, _click, _sale;
         private TextField _price, _contentAsset; private Toggle _anyoneMove, _anyoneCopy, _nextCopy, _nextModify, _nextTransfer; private Label _audit, _contentList;
 
+        private readonly Dictionary<string, TextField> _mapFields = new Dictionary<string, TextField>(); private Slider _normalStrength, _aoStrength, _offsetX, _offsetY;
+        public TextField MapField(string key) => _mapFields[key];
+        public Slider NormalStrengthSlider => _normalStrength;
+        public Slider OffsetXSlider => _offsetX;
+
+        /// <summary>Puts a picture of the inventory on the surface as one of its maps (normal, ORM or emissive). The identifier must be a file the person has.</summary>
+        public void ApplyMap(string key)
+        {
+            if (!Guid.TryParse(_mapFields[key].value.Trim(), out var id)) { Say("Digite o identificador do arquivo (ou escolha do inventário).", true); return; }
+            EditMaterial(m => m[key] = id.ToString());
+        }
+
+        private void PickAsset(string key)
+        {
+            var window = new FloatingWindow(_c.Ui, "build-map", "Escolha uma imagem", 360f, 420f, new Vector2(440, 120)); var list = new ScrollView(); list.style.flexGrow = 1; window.Body.Add(list); window.Open();
+            this.Then(_c.Api.ApiAsync("GET", "/api/v1/inventory/items?category=textures&page=1&pageSize=100", null), r =>
+            {
+                if (r.Status != 200) { list.Add(UiKit.Text(UiTasks.Explain(r.Status, r.Body), "lv-bad")); return; }
+                var rows = Json.Rows(r.Body); if (rows.Count == 0) list.Add(UiKit.Text("Você não tem imagens no inventário.", "lv-muted"));
+                foreach (var row in rows) { var asset = row.Id("assetId"); var label = row.First("name", "displayName"); list.Add(UiKit.Button(label.Length > 0 ? label : asset.ToString().Substring(0, 8), () => { _mapFields[key].value = asset.ToString(); ApplyMap(key); window.Close(); })); }
+            });
+        }
+
         private Slider _repeatX, _repeatY; private DropdownField _face, _mediaType; private TextField _mediaUrl; private TextField _group;
         private int[] _faceIds = new int[0];
         public string TutorialText => _tutorial.text;
@@ -123,6 +146,10 @@ namespace LifeVerse.Unity.UI
 
             // Aparência (more): the picture's repeat, one face of the solid, and what plays on it
             var look = _tabs["Aparência"]; look.Add(UiKit.Divider()); look.Add(UiKit.Text("Repetição da imagem", "lv-bold")); _repeatX = UiKit.Slide("Repetir X", .1f, 16f, 1f, v => EditMaterial(m => m["uvRepeatX"] = Math.Round(v, 2))); _repeatY = UiKit.Slide("Repetir Y", .1f, 16f, 1f, v => EditMaterial(m => m["uvRepeatY"] = Math.Round(v, 2))); look.Add(_repeatX); look.Add(_repeatY);
+            look.Add(UiKit.Divider()); look.Add(UiKit.Text("Outros mapas da superfície", "lv-bold")); look.Add(UiKit.Text("Cada um é um arquivo de imagem do inventário (o mundo já os desenha).", "lv-muted", "lv-small"));
+            foreach (var slot in new[] { ("normalMap", "Relevo (normal)"), ("ormMap", "Oclusão, aspereza e metal (ORM)"), ("emissiveMap", "Brilho (emissivo)") }) { var key = slot.Item1; var field = UiKit.Field(slot.Item2 + " (identificador)", false, 40); _mapFields[key] = field; look.Add(field); look.Add(UiKit.Row(UiKit.Button("Usar", () => ApplyMap(key), "lv-btn-primary"), UiKit.Button("Escolher do inventário…", () => PickAsset(key)), UiKit.Button("Tirar", () => EditMaterial(m => m.Remove(key))))); }
+            _normalStrength = UiKit.Slide("Força do relevo", 0f, 2f, 1f, v => EditMaterial(m => m["normalStrength"] = Math.Round(v, 2))); _aoStrength = UiKit.Slide("Força da oclusão", 0f, 1f, 1f, v => EditMaterial(m => m["aoStrength"] = Math.Round(v, 2))); _offsetX = UiKit.Slide("Deslocar X", -1f, 1f, 0f, v => EditMaterial(m => m["uvOffsetX"] = Math.Round(v, 3))); _offsetY = UiKit.Slide("Deslocar Y", -1f, 1f, 0f, v => EditMaterial(m => m["uvOffsetY"] = Math.Round(v, 3)));
+            look.Add(_normalStrength); look.Add(_aoStrength); look.Add(_offsetX); look.Add(_offsetY);
             look.Add(UiKit.Divider()); look.Add(UiKit.Text("Uma face só", "lv-bold")); _face = new DropdownField("Face", Enumerable.Range(0, 6).Select(i => "Face " + i).ToList(), 0); look.Add(_face); look.Add(UiKit.Check("Escolher a face clicando no objeto", false, v => _b.FacePick = v));
             look.Add(Controls.ColourField("Cor da face", "#FFFFFF", value => EditFace(f => f["color"] = value), "#FFFFFF", "#C0392B", "#27AE60", "#2980B9", "#F4A340", "#222222")); look.Add(UiKit.Button("Tirar o que é só desta face", () => EditMaterial(m => { if (m["faces"] is JsonArray faces) { var index = FaceIndex(); var entry = faces.OfType<JsonObject>().FirstOrDefault(x => x["index"]?.GetValue<int>() == index); if (entry != null) faces.Remove(entry); if (faces.Count == 0) m.Remove("faces"); } })));
             look.Add(UiKit.Divider()); look.Add(UiKit.Text("Mídia na superfície", "lv-bold")); _mediaType = new DropdownField("Tipo", new List<string> { "image", "video" }, 0); _mediaUrl = UiKit.Field("Endereço (https://…)", false, 500); look.Add(_mediaType); look.Add(_mediaUrl);
@@ -145,6 +172,9 @@ namespace LifeVerse.Unity.UI
             _material.SetValueWithoutNotify(PhysicsRules.Materials.TryGetValue(p.Material ?? "", out var mat) ? mat.Label : "(nenhuma)"); _mass.SetValueWithoutNotify(p.Mass); _friction.SetValueWithoutNotify(p.Friction); _bounce.SetValueWithoutNotify(p.Bounce);
             _nextCopy.SetValueWithoutNotify((first.NextOwnerRights & LifeVerse.Shared.Items.ItemRights.Copy) != 0); _nextModify.SetValueWithoutNotify((first.NextOwnerRights & LifeVerse.Shared.Items.ItemRights.Modify) != 0); _nextTransfer.SetValueWithoutNotify((first.NextOwnerRights & LifeVerse.Shared.Items.ItemRights.Transfer) != 0);
             _repeatX.SetValueWithoutNotify(first.MaterialJson.Contains("uvRepeatX") ? (float)(JsonNode.Parse(first.MaterialJson)?["uvRepeatX"]?.GetValue<double>() ?? 1) : 1f); _repeatY.SetValueWithoutNotify(first.MaterialJson.Contains("uvRepeatY") ? (float)(JsonNode.Parse(first.MaterialJson)?["uvRepeatY"]?.GetValue<double>() ?? 1) : 1f);
+            { JsonObject mm = null; try { mm = JsonNode.Parse(string.IsNullOrWhiteSpace(first.MaterialJson) ? "{}" : first.MaterialJson) as JsonObject; } catch (JsonException) { }
+              foreach (var pair in _mapFields) if (pair.Value.focusController?.focusedElement != pair.Value) pair.Value.SetValueWithoutNotify(mm?[pair.Key]?.ToString() ?? "");
+              float Num(string k, float d) => mm != null && mm[k] is JsonValue v && v.TryGetValue<double>(out var n) ? (float)n : d; _normalStrength.SetValueWithoutNotify(Num("normalStrength", 1f)); _aoStrength.SetValueWithoutNotify(Num("aoStrength", 1f)); _offsetX.SetValueWithoutNotify(Num("uvOffsetX", 0f)); _offsetY.SetValueWithoutNotify(Num("uvOffsetY", 0f)); }
             var entries = ContentOf(first); _contentList.text = entries.Count == 0 ? "O objeto não leva nada." : string.Join("\n", entries.Select(e => "• " + e.Name + "  (" + e.Category + ")"));
         }
 

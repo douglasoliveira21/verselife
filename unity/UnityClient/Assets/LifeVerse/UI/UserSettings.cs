@@ -47,6 +47,8 @@ namespace LifeVerse.Unity.UI
         public float ChatOpacity { get; set; } = .8f;
         public int ChatFontSize { get; set; } = 14;
         // acessibilidade
+        /// <summary>The keys the person changed (action name to key name); what is not here keeps its default.</summary>
+        public Dictionary<string, string> Keys { get; set; } = new Dictionary<string, string>();
         public bool ReduceMotion { get; set; }
         public bool LargeText { get; set; }
         public bool HighContrast { get; set; }
@@ -65,6 +67,7 @@ namespace LifeVerse.Unity.UI
             MasterVolume = F(MasterVolume, 0f, 1f, 1f); MusicVolume = F(MusicVolume, 0f, 1f, .8f); EffectsVolume = F(EffectsVolume, 0f, 1f, 1f); VoiceVolume = F(VoiceVolume, 0f, 1f, 1f); AmbientVolume = F(AmbientVolume, 0f, 1f, .8f); MediaVolume = F(MediaVolume, 0f, 1f, 1f); VoiceSensitivity = F(VoiceSensitivity, .02f, .6f, .12f); InputDevice = string.IsNullOrWhiteSpace(InputDevice) ? "auto" : InputDevice.Length > 120 ? InputDevice.Substring(0, 120) : InputDevice;
             MouseSensitivity = F(MouseSensitivity, .02f, .6f, .15f); InterfaceScale = F(InterfaceScale, MinScale, MaxScale, 1f); ChatOpacity = F(ChatOpacity, .3f, 1f, .8f); ChatFontSize = Mathf.Clamp(ChatFontSize, 10, 28);
             LastLogin = (LastLogin ?? "").Length > 64 ? LastLogin.Substring(0, 64) : LastLogin ?? ""; LastIsland = (LastIsland ?? "").Length > 64 ? LastIsland.Substring(0, 64) : LastIsland ?? "";
+            Keys ??= new Dictionary<string, string>(); foreach (var key in new List<string>(Keys.Keys)) if (string.IsNullOrEmpty(Keys[key]) || key.Length > 40 || Keys[key].Length > 40) Keys.Remove(key); while (Keys.Count > 40) Keys.Remove(new List<string>(Keys.Keys)[0]);
             Windows ??= new Dictionary<string, float[]>();
             foreach (var key in new List<string>(Windows.Keys)) if (Windows[key] == null || Windows[key].Length != 2 || !float.IsFinite(Windows[key][0]) || !float.IsFinite(Windows[key][1])) Windows.Remove(key);
             while (Windows.Count > MaxSavedWindows) { var first = new List<string>(Windows.Keys)[0]; Windows.Remove(first); }

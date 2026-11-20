@@ -123,6 +123,13 @@ namespace LifeVerse.Unity.UI
         private WorldObjects Objects => _client()?.Objects;
         private Guid Me => _c.Api.UserId;
         public WorldObjectState StateOf(Guid id) => Objects?.StateOf(id);
+        // edits made before the island has answered the last one (a slider being dragged) build on what was just sent, with the next revision, or the island would refuse each of them for being based on an old one
+        private readonly Dictionary<Guid, WorldObjectState> _optimistic = new Dictionary<Guid, WorldObjectState>();
+        public WorldObjectState Latest(Guid id)
+        {
+            var server = StateOf(id); if (_optimistic.TryGetValue(id, out var guess)) { if (server == null || guess.Revision > server.Revision) return guess; _optimistic.Remove(id); } return server;
+        }
+        public int InFlight => _optimistic.Count(p => { var s = StateOf(p.Key); return s != null && p.Value.Revision > s.Revision; });
         public float? GroundAt(float x, float z) => _terrain()?.GroundHeight(x, z);
         public bool HeldByOther(Guid id, out string who) => _heldBy.TryGetValue(id, out who);
 
@@ -188,7 +195,7 @@ namespace LifeVerse.Unity.UI
             catch (Exception exception) when (exception is JsonException || exception is KeyNotFoundException || exception is InvalidOperationException) { }
         }
 
-        private void OnRejected(string code) { LastRejection = code; _created.Clear(); Say(BuildCommands.RejectionText(code)); foreach (var id in _selected) Objects?.Refresh(id); }
+        private void OnRejected(string code) { LastRejection = code; _created.Clear(); _optimistic.Clear(); Say(BuildCommands.RejectionText(code)); foreach (var id in _selected) Objects?.Refresh(id); }
 
         // ---- selection ----
 
@@ -232,8 +239,8 @@ namespace LifeVerse.Unity.UI
             var steps = new List<KeyValuePair<WorldObjectState, WorldObjectState>>();
             foreach (var id in ids.ToList())
             {
-                var current = StateOf(id); if (current == null) continue; if (_heldBy.TryGetValue(id, out var who)) { Say(BuildCommands.RejectionText("locked:" + who)); return false; }
-                var before = current.Copy(); var after = current.Copy(); change(after); if (!Send("update", after)) return false; steps.Add(new KeyValuePair<WorldObjectState, WorldObjectState>(before, after));
+                var current = Latest(id); if (current == null) continue; if (_heldBy.TryGetValue(id, out var who)) { Say(BuildCommands.RejectionText("locked:" + who)); return false; }
+                var before = current.Copy(); var after = current.Copy(); change(after); if (!Send("update", after)) return false; var guess = after.Copy(); guess.Revision = after.Revision + 1; _optimistic[id] = guess; steps.Add(new KeyValuePair<WorldObjectState, WorldObjectState>(before, after));
             }
             if (steps.Count == 0) return false;
             { var b = steps[0].Key; var a = steps[0].Value; if (b.PositionX != a.PositionX || b.PositionY != a.PositionY || b.PositionZ != a.PositionZ) Did(LifeVerse.Shared.Building.TutorialStep.Move); if (b.ScaleX != a.ScaleX || b.ScaleY != a.ScaleY || b.ScaleZ != a.ScaleZ) Did(LifeVerse.Shared.Building.TutorialStep.Resize); if (b.RotationX != a.RotationX || b.RotationY != a.RotationY || b.RotationZ != a.RotationZ) Did(LifeVerse.Shared.Building.TutorialStep.Rotate); if (b.MaterialJson != a.MaterialJson) Did(LifeVerse.Shared.Building.TutorialStep.Texture); }
@@ -243,10 +250,10 @@ namespace LifeVerse.Unity.UI
 
         private void Restore(WorldObjectState target)
         {
-            var current = StateOf(target.Id); if (current == null) return; var next = current.Copy();
+            var current = Latest(target.Id); if (current == null) return; var next = current.Copy();
             next.PositionX = target.PositionX; next.PositionY = target.PositionY; next.PositionZ = target.PositionZ; next.RotationX = target.RotationX; next.RotationY = target.RotationY; next.RotationZ = target.RotationZ;
             next.ScaleX = target.ScaleX; next.ScaleY = target.ScaleY; next.ScaleZ = target.ScaleZ; next.MaterialJson = target.MaterialJson; next.GeometryJson = target.GeometryJson; next.PhysicsJson = target.PhysicsJson;
-            next.ContentJson = target.ContentJson; next.Name = target.Name; next.Description = target.Description; Send("update", next);
+            next.ContentJson = target.ContentJson; next.Name = target.Name; next.Description = target.Description; Send("update", next); var guessed = next.Copy(); guessed.Revision = next.Revision + 1; _optimistic[next.Id] = guessed;
         }
 
         public bool Delete(IEnumerable<Guid> ids, bool record = true)

@@ -5,6 +5,8 @@
         "LifeVerse.Unity.Core",
         "LifeVerse.Unity.World",
         "LifeVerse.Unity.Audio",
+        "LifeVerse.Unity.Models",
+        "Unity.InputSystem",
         "LifeVerse.Unity.Avatar",
         "LifeVerse.Unity.UI",
         "glTFast",

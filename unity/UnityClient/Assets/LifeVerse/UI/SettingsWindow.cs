@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Collections.Generic;
+using LifeVerse.Unity.Avatar;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -84,7 +85,7 @@ namespace LifeVerse.Unity.UI
             tab.Add(UiKit.Text("A saída de som segue o dispositivo padrão do sistema (o jogo não consegue escolher outro): mude no Windows e o jogo acompanha.", "lv-muted", "lv-small"));
             Section(tab, "Voz e música"); tab.Add(UiKit.Slide("Sensibilidade do microfone", .02f, .6f, _s.VoiceSensitivity, v => { _s.VoiceSensitivity = v; Touch(); }));
             tab.Add(UiKit.Check("Cancelar eco (não enviar enquanto você ouve os outros)", _s.EchoGuard, v => { _s.EchoGuard = v; Touch(); })); tab.Add(UiKit.Check("Tocar a música dos terrenos", _s.ParcelMusic, v => { _s.ParcelMusic = v; Touch(); })); tab.Add(UiKit.Check("Sons da interface (cliques, janelas, avisos)", _s.UiSounds, v => { _s.UiSounds = v; LifeVerse.Unity.Audio.UiSounds.Enabled = v; Touch(); }));
-            tab.Add(UiKit.Text("Fale segurando G; o botão Voz da barra de baixo mantém o microfone aberto.", "lv-muted", "lv-small"));
+            tab.Add(UiKit.Text("Fale segurando a tecla de falar (em Controles); o botão Voz da barra de baixo mantém o microfone aberto.", "lv-muted", "lv-small"));
             _micBar = new ProgressBar { lowValue = 0f, highValue = 1f, title = "Nível do microfone" }; _micStatus = UiKit.Text("", "lv-small", "lv-muted"); _micButton = UiKit.Button("Testar microfone", ToggleMicTest); tab.Add(_micButton); tab.Add(_micBar); tab.Add(_micStatus);
         }
 
@@ -93,8 +94,39 @@ namespace LifeVerse.Unity.UI
             Section(tab, "Mouse e movimento");
             tab.Add(UiKit.Slide("Sensibilidade da câmera", .02f, .6f, _s.MouseSensitivity, v => { _s.MouseSensitivity = v; Touch(); }));
             tab.Add(UiKit.Check("Inverter o eixo vertical", _s.InvertY, v => { _s.InvertY = v; Touch(); })); tab.Add(UiKit.Check("Correr sempre (Shift anda)", _s.AlwaysRun, v => { _s.AlwaysRun = v; Touch(); }));
-            tab.Add(UiKit.Text("W A S D andam · Shift corre · Espaço pula · F voa · C desce · X senta · E carro · V primeira pessoa · G H J K L N gestos · Enter abre o chat.", "lv-muted", "lv-small"));
+            Section(tab, "Teclas"); tab.Add(UiKit.Text("Clique numa tecla e aperte a nova. Se ela já era de outra ação, as duas trocam. Esc cancela. As setas também andam.", "lv-muted", "lv-small"));
+            foreach (var action in KeyBindings.All) { var captured = action; var button = UiKit.Button(KeyBindings.KeyName(KeyBindings.Of(action)), () => BeginRebind(captured)); button.style.minWidth = 130; _keyButtons[action] = button; var label = UiKit.Text(KeyBindings.Label(action), "lv-body"); label.style.flexGrow = 1; tab.Add(UiKit.Row(label, button)); }
+            _keyStatus = UiKit.Text("", "lv-small", "lv-muted"); tab.Add(_keyStatus); tab.Add(UiKit.Button("Restaurar as teclas padrão", () => { KeyBindings.Reset(); SaveKeys(); RefreshKeys(); _keyStatus.text = "Teclas padrão restauradas."; }));
         }
+
+        private readonly Dictionary<LifeVerse.Unity.Avatar.GameAction, Button> _keyButtons = new Dictionary<LifeVerse.Unity.Avatar.GameAction, Button>(); private Label _keyStatus; private IVisualElementScheduledItem _rebinding; private LifeVerse.Unity.Avatar.GameAction? _rebindingAction;
+        public bool Rebinding => _rebindingAction.HasValue;
+        public string KeyStatus => _keyStatus.text;
+        public string KeyButtonText(LifeVerse.Unity.Avatar.GameAction action) => _keyButtons[action].text;
+
+        public void BeginRebind(LifeVerse.Unity.Avatar.GameAction action)
+        {
+            CancelRebind(); _rebindingAction = action; _keyButtons[action].text = "Aperte uma tecla…"; _keyStatus.text = KeyBindings.Label(action) + ": aperte a nova tecla (Esc cancela).";
+            _rebinding = _keyButtons[action].schedule.Execute(() =>
+            {
+                var board = UnityEngine.InputSystem.Keyboard.current; if (board == null || !_rebindingAction.HasValue) return;
+                if (board.escapeKey.wasPressedThisFrame) { CancelRebind(); return; }
+                foreach (var key in board.allKeys) if (key.wasPressedThisFrame) { ChooseKey(key.keyCode); return; }
+            }).Every(20);
+        }
+
+        /// <summary>Gives the key to the action being changed (public so tests can press a key without a keyboard).</summary>
+        public void ChooseKey(UnityEngine.InputSystem.Key key)
+        {
+            if (!_rebindingAction.HasValue) return; var action = _rebindingAction.Value;
+            if (!KeyBindings.Set(action, key, out var swapped)) { _keyStatus.text = "Essa tecla não pode ser usada."; return; }
+            _keyStatus.text = swapped.HasValue ? KeyBindings.Label(action) + " agora é " + KeyBindings.KeyName(key) + "; " + KeyBindings.Label(swapped.Value) + " ficou com " + KeyBindings.KeyName(KeyBindings.Of(swapped.Value)) + "." : KeyBindings.Label(action) + " agora é " + KeyBindings.KeyName(key) + ".";
+            _rebinding?.Pause(); _rebindingAction = null; SaveKeys(); RefreshKeys();
+        }
+
+        public void CancelRebind() { _rebinding?.Pause(); _rebindingAction = null; RefreshKeys(); }
+        private void RefreshKeys() { foreach (var pair in _keyButtons) pair.Value.text = KeyBindings.KeyName(KeyBindings.Of(pair.Key)); }
+        private void SaveKeys() { _s.Keys = KeyBindings.Save(); Touch(); }
 
         private void BuildInterface(VisualElement tab)
         {

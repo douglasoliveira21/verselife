@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using LifeVerse.Shared.Avatar;
@@ -17,6 +17,8 @@ namespace LifeVerse.Unity.Avatar
         public Color Skin = Hex("#C98F65", Color.white), Hair = Hex("#2B1B14", Color.black), Eyes = Hex("#4A3326", Color.black);
         public Dictionary<string, float> Body = AvatarRules.ReadSettings("{}", AvatarRules.BodyRanges), Face = AvatarRules.ReadSettings("{}", AvatarRules.FaceRanges);
         public Dictionary<string, (string Item, Color Tint)> Worn = new Dictionary<string, (string, Color)>();
+        /// <summary>What is worn on the body, as the platform sent it (a JSON list).</summary>
+        public string AttachmentsJson = "[]";
         public Guid? CustomModelId; public float CustomModelScale = 1f; public string CustomModelBonesJson = "{}";
         public int CustomModelTriangles;
 
@@ -49,7 +51,7 @@ namespace LifeVerse.Unity.Avatar
                     }
                 if (root.TryGetProperty("customModelId", out var model) && model.ValueKind == JsonValueKind.String && Guid.TryParse(model.GetString(), out var id)) result.CustomModelId = id;
                 if (root.TryGetProperty("customModelScale", out var scale) && scale.ValueKind == JsonValueKind.Number && scale.TryGetSingle(out var factor) && factor > 0f && float.IsFinite(factor)) result.CustomModelScale = factor;
-                result.CustomModelBonesJson = Text("customModelBonesJson", "{}");
+                result.CustomModelBonesJson = Text("customModelBonesJson", "{}"); result.AttachmentsJson = Text("bodyAttachmentsJson", "[]");
                 if (root.TryGetProperty("customModelTriangles", out var triangles) && triangles.TryGetInt32(out var count)) result.CustomModelTriangles = count;
             }
             catch (JsonException) { }

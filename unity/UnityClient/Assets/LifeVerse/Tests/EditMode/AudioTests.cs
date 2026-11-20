@@ -1,5 +1,7 @@
 ﻿using System.Linq;
 using LifeVerse.Unity.Audio;
+using LifeVerse.Unity.Avatar;
+using UnityEngine.InputSystem;
 using LifeVerse.Unity.UI;
 using NUnit.Framework;
 using UnityEngine;
@@ -83,6 +85,39 @@ namespace LifeVerse.Unity.Tests.EditMode
                 Assert.Less(Mathf.Abs(samples[samples.Length - 1]), .01f, sound + " termina sem estalo"); Assert.IsTrue(samples.All(s => Mathf.Abs(s) <= .5f + 1e-4f), sound + " não passa do volume");
             }
             Assert.Less(UiSounds.Render(UiSound.Click).Length, UiSounds.Render(UiSound.Good).Length, "o clique é mais curto que o aviso bom");
+        }
+    
+        [Test]
+        public void KeysSwapInsteadOfSharingAndNeverLoseAnAction()
+        {
+            KeyBindings.Reset();
+            try
+            {
+                Assert.AreEqual(Key.W, KeyBindings.Of(GameAction.Forward)); Assert.IsTrue(KeyBindings.IsDefault);
+                Assert.IsTrue(KeyBindings.Set(GameAction.Wave, Key.Y, out var swapped)); Assert.AreEqual(GameAction.Talk, swapped, "a tecla era de falar: as duas trocam"); Assert.AreEqual(Key.G, KeyBindings.Of(GameAction.Talk)); Assert.AreEqual(Key.Y, KeyBindings.Of(GameAction.Wave));
+                Assert.IsFalse(KeyBindings.Set(GameAction.Wave, Key.Escape, out _), "Esc é do jogo"); Assert.IsFalse(KeyBindings.Set(GameAction.Wave, Key.None, out _)); Assert.AreEqual(Key.Y, KeyBindings.Of(GameAction.Wave));
+                Assert.IsTrue(KeyBindings.Set(GameAction.Wave, Key.F9, out swapped)); Assert.IsNull(swapped); Assert.AreEqual(KeyBindings.All.Count(), KeyBindings.All.Select(KeyBindings.Of).Distinct().Count(), "nenhuma tecla faz duas coisas");
+                var saved = KeyBindings.Save(); Assert.AreEqual(Key.F9.ToString(), saved["Wave"]); Assert.IsFalse(saved.ContainsKey("Jump"), "só o que mudou é salvo");
+                KeyBindings.Reset(); Assert.AreEqual(Key.G, KeyBindings.Of(GameAction.Wave)); KeyBindings.Load(saved); Assert.AreEqual(Key.F9, KeyBindings.Of(GameAction.Wave)); Assert.AreEqual(Key.G, KeyBindings.Of(GameAction.Talk));
+                foreach (var a in KeyBindings.All) Assert.IsNotEmpty(KeyBindings.Label(a), a + " tem nome");
+                Assert.AreEqual("Espaço", KeyBindings.KeyName(Key.Space));
+            }
+            finally { KeyBindings.Reset(); }
+        }
+
+        [Test]
+        public void ASavedFileThatClashesOrIsDamagedStillGivesEveryActionItsOwnKey()
+        {
+            try
+            {
+                KeyBindings.Load(new System.Collections.Generic.Dictionary<string, string> { ["Jump"] = "W", ["Nada"] = "Q", ["Fly"] = "Escape", ["Sit"] = "NaoExiste", ["Dance"] = "W" });
+                Assert.AreEqual(Key.W, KeyBindings.Of(GameAction.Jump)); Assert.AreNotEqual(Key.W, KeyBindings.Of(GameAction.Forward), "quem ficou no padrão e chocou com uma escolha foi para uma tecla livre");
+                Assert.AreEqual(Key.F, KeyBindings.Of(GameAction.Fly), "uma tecla que não pode ser usada é ignorada"); Assert.AreEqual(Key.X, KeyBindings.Of(GameAction.Sit)); Assert.AreEqual(Key.H, KeyBindings.Of(GameAction.Dance), "a mesma tecla pedida duas vezes vale para uma só");
+                Assert.AreEqual(KeyBindings.All.Count(), KeyBindings.All.Select(KeyBindings.Of).Distinct().Count());
+                KeyBindings.Load(null); Assert.IsTrue(KeyBindings.IsDefault);
+            }
+            finally { KeyBindings.Reset(); }
+            var settings = new UserSettings { Keys = new System.Collections.Generic.Dictionary<string, string> { ["Jump"] = "", [new string('x', 99)] = "W" } }.Clamped(); Assert.AreEqual(0, settings.Keys.Count, "chaves vazias ou longas demais saem do arquivo");
         }
     }
 }

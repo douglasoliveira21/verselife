@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using LifeVerse.Unity.Avatar;
 using LifeVerse.Unity.UI;
 using LifeVerse.Unity.World;
 using UnityEngine;
@@ -103,6 +104,7 @@ namespace LifeVerse.Unity.Server
             yield return Step("land: parcels, cells, split, expand, merge, media", Land());
             yield return Step("scripts: list, save, syntax", Scripts());
             yield return Step("build: limits, objects, audit, saved constructions", Build());
+        yield return Step("avatar: attachments (wear, move, change, take off)", Attachments());
         }
 
         // ---- the steps ----
@@ -262,6 +264,18 @@ namespace LifeVerse.Unity.Server
             var audit = _a.ApiAsync("GET", "/api/v1/worlds/islands/" + _island + "/land/parcels/" + id + "/audit", null); yield return Wait(audit); Check(audit.Result.Status == 200, "auditoria: " + audit.Result.Status); manage.Close();
         }
 
+
+        private IEnumerator Attachments()
+        {
+            const string route = "/api/v1/users/me/avatar/attachments";
+            var own = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lv-wear-" + Guid.NewGuid().ToString("N") + ".png"); System.IO.File.WriteAllBytes(own, TestAssets.Png(Unique(200, 90, 30), 32)); UploadResult wearFile = null; Uploads.Send(_ca, own, "accessories", r => wearFile = r); yield return Until(() => wearFile != null, "o envio do objeto", 30f); System.IO.File.Delete(own); Check(wearFile.Ok, "enviar o objeto: " + wearFile.Message);
+            string inv = null; yield return Call(_a, "GET", "/api/v1/inventory/items?view=all&page=1&pageSize=50", null, b => inv = b); var wearItem = Json.Rows(inv).First(r => r.Id("assetId") == wearFile.AssetId).Id("id", "itemId");
+            yield return Call(_a, "POST", route, JsonSerializer.Serialize(new { inventoryItemId = wearItem, point = "head_top" }), null);
+            string listed = null; yield return Call(_a, "GET", route, null, b => listed = b); var worn = AttachmentData.ParseList(listed, out var profiles); Check(worn.Count == 1 && worn[0].Equipped && worn[0].Point == "head_top" && worn[0].InventoryItemId == wearItem, "o item vestido aparece na lista: " + Snip(listed)); Check(profiles.Contains("humanoid"), "o perfil humanoide vale");
+            var id = worn[0].Id; yield return Call(_a, "PATCH", route + "/" + id, JsonSerializer.Serialize(new { position = new[] { 0f, .12f, 0f }, rotation = new[] { 0f, 30f, 0f }, scale = new[] { 1.5f, 1.5f, 1.5f } }), null);
+            string again = null; yield return Call(_a, "GET", route, null, b => again = b); var changed = AttachmentData.ParseList(again, out _).First(); Check(Math.Abs(changed.Position[1] - .12f) < .001f && Math.Abs(changed.Rotation[1] - 30f) < .001f && Math.Abs(changed.Scale[0] - 1.5f) < .001f, "a posição, a rotação e a escala foram guardadas");
+            yield return Call(_a, "DELETE", route + "/" + id, null, null); string after = null; yield return Call(_a, "GET", route, null, b => after = b); Check(AttachmentData.ParseList(after, out _).All(a => !a.Equipped), "tirado, o objeto fica guardado e não vestido");
+        }
 
         private IEnumerator Build()
         {

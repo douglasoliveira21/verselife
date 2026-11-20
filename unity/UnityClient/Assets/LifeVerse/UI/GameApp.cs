@@ -73,7 +73,7 @@ namespace LifeVerse.Unity.UI
             Hud.Register("Carteira", "wallet", () => new WalletWindow(Context));
             Hud.Register("Buscar", "search", () => new SearchWindow(Context));
             Hud.Register("Construir", "build", () => { ToggleBuild(); return null; });
-            Hud.Register("Voz", "voice", () => { if (Voice == null) return null; Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure G para falar.", NoticeKind.Info); return null; });
+            Hud.Register("Voz", "voice", () => { if (Voice == null) return null; Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure " + KeyBindings.KeyName(KeyBindings.Of(GameAction.Talk)) + " para falar.", NoticeKind.Info); return null; });
             Hud.Register("Mais", "more", MoreWindow);
             Hud.Register("Configurações", "settings", () => { var window = new SettingsWindow(Ui, SettingsPath) { Mic = _micTest ??= gameObject.AddComponent<MicTest>() }; window.Changed += ApplySettingsToWorld; window.Closed += () => _micTest?.End(); return window; });
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui));
@@ -88,9 +88,15 @@ namespace LifeVerse.Unity.UI
             Add("Perfil", () => new ProfileWindow(Context)); Add("Grupos", () => new GroupsWindow(Context)); Add("Mercado", () => new MarketWindow(Context));
             Add("Eventos, marcos e fotos", () => new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f));
             Add("Ofertas de itens", () => new OffersWindow(Context)); Add("Sobre a ilha", () => new IslandInfoWindow(Context, _island)); Add("Gestão da ilha", () => new IslandManageWindow(Context, _island));
-            Add("Script de um objeto", ScriptOpener); Add("Meu personagem", OpenCharacter);
+            Add("Script de um objeto", ScriptOpener); Add("Meu personagem", OpenCharacter); Add("Anexos do corpo", () => new AttachmentsWindow(Context, RefreshOwnAttachments));
             return window;
         }
+
+        /// <summary>After a change of what is worn: asks the platform for the avatar again and shows it on the own body.</summary>
+        public void RefreshOwnAttachments() => Ui.Root.Then(Api.ApiAsync("GET", AttachmentsWindow.Route), r =>
+        {
+            if (r.Status != 200) return; var worn = PeopleViews?.ViewOf(Client != null ? Client.SelfPeerId : 0)?.GetComponent<AvatarAttachments>(); if (worn != null) worn.Apply(AttachmentData.ParseList(r.Body, out _));
+        });
 
         /// <summary>The editor of the character: the saved one is read from the API (the starter one when there is none) and a saved change shows on the avatar at once.</summary>
         private FloatingWindow OpenCharacter()
@@ -215,6 +221,7 @@ namespace LifeVerse.Unity.UI
             // sound: the soundscape, what scripts play, the music of the parcel, and proximity voice
             Ambient = new GameObject("Ambient").AddComponent<AmbientSound>(); Ambient.transform.SetParent(_world.transform);
             Sounds = new GameObject("WorldSounds").AddComponent<WorldSounds>(); Sounds.transform.SetParent(_world.transform); Sounds.Attach(Client); Sounds.AssetLoader = asset => Client != null && Client.AssetLoader != null ? Client.AssetLoader(asset) : System.Threading.Tasks.Task.FromResult<byte[]>(null);
+            AvatarAttachments.Loader = asset => Client != null && Client.AssetLoader != null ? Client.AssetLoader(asset) : System.Threading.Tasks.Task.FromResult<byte[]>(null);
             objects.MediaAudio = host => BusSource.Make(host, Bus.Media, .8f, true, 25f, true).Source;
             ParcelMusic = new GameObject("ParcelMusic").AddComponent<LandMusic>(); ParcelMusic.transform.SetParent(_world.transform); ParcelMusic.Setup(_api, () => _island, () => Player != null ? Player.GamePosition : (Vector3?)null); ParcelMusic.IslandFinder = () => Client != null && Client.Environment != null ? Client.Environment.GetComponent<IslandLookService>() : null; ParcelMusic.Load();
             Voice = new GameObject("Voice").AddComponent<VoiceChat>(); Voice.transform.SetParent(_world.transform); Voice.Attach(Client); Hearing = new GameObject("Hearing").AddComponent<VoiceListener>(); Hearing.transform.SetParent(_world.transform); Hearing.Attach(Client);
@@ -236,6 +243,7 @@ namespace LifeVerse.Unity.UI
         /// <summary>Puts the volumes and the voice settings on the sound system (called at the start and whenever the settings change).</summary>
         public void ApplyAudio()
         {
+            KeyBindings.Load(Settings.Keys); KeyBindings.Blocked = () => Hud != null && Hud.Chat != null && Hud.Chat.Typing || Ui != null && Ui.Root != null && Ui.Root.panel != null && Ui.Root.panel.focusController != null && Ui.Root.panel.focusController.focusedElement is TextField;
             MicDevices.Preferred = Settings.InputDevice; UiSounds.Enabled = Settings.UiSounds; Buses.SetAll(Settings.MasterVolume, Settings.AmbientVolume, Settings.EffectsVolume, Settings.MusicVolume, Settings.MediaVolume, Settings.VoiceVolume);
             if (Voice != null) { Voice.Gate = Settings.VoiceSensitivity; Voice.EchoGuard = Settings.EchoGuard; }
             if (ParcelMusic != null) ParcelMusic.Enabled = Settings.ParcelMusic;
@@ -305,17 +313,17 @@ namespace LifeVerse.Unity.UI
                 Ambient.SetTargets(AmbientLevels.Compute(edge, Player.State.Swimming, spot.y, weather));
                 if (Player.State.Swimming && new Vector2(Player.State.VelocityX, Player.State.VelocityZ).magnitude > .5f && Time.unscaledTime > _nextSplash) { _nextSplash = Time.unscaledTime + 1.05f; Ambient.Splash(); }
             }
-            if (Voice != null) Voice.TalkHeld = Keyboard.current != null && Keyboard.current.gKey.isPressed && !Hud.Chat.Typing;
+            if (Voice != null) Voice.TalkHeld = KeyBindings.Held(GameAction.Talk);
             if (Hearing != null && PeopleViews != null) foreach (var peer in PeopleViews.Peers) { var view = PeopleViews.ViewOf(peer); if (view != null) view.SetSpeaking(peer == Client.SelfPeerId ? Voice != null && Voice.Talking : Hearing.IsSpeaking(peer)); }
             if (Keyboard.current is { } keyboard && !Hud.Chat.Typing)
             {
-                if (keyboard.enterKey.wasPressedThisFrame) Hud.Chat.Focus();
-                if (keyboard.f3Key.wasPressedThisFrame) Hud.TogglePerformance();
-                if (Follow != null && Follow.ZoomTarget.HasValue && (keyboard.escapeKey.wasPressedThisFrame || keyboard.wKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)) Follow.ZoomTarget = null;
-                if (keyboard.bKey.wasPressedThisFrame) ToggleBuild();
-                if (keyboard.tKey.wasPressedThisFrame) ToggleTerrain();
+                if (KeyBindings.Pressed(GameAction.Chat)) Hud.Chat.Focus();
+                if (KeyBindings.Pressed(GameAction.Performance)) Hud.TogglePerformance();
+                if (Follow != null && Follow.ZoomTarget.HasValue && (keyboard.escapeKey.wasPressedThisFrame || KeyBindings.Pressed(GameAction.Forward) || KeyBindings.Pressed(GameAction.Back) || KeyBindings.Pressed(GameAction.Left) || KeyBindings.Pressed(GameAction.Right) || KeyBindings.Pressed(GameAction.Jump))) Follow.ZoomTarget = null;
+                if (KeyBindings.Pressed(GameAction.Build)) ToggleBuild();
+                if (KeyBindings.Pressed(GameAction.Terrain)) ToggleTerrain();
                 if ((Builder == null || !Builder.Active) && (TerrainTools == null || !TerrainTools.Active) && Mouse.current is { } mouse && mouse.leftButton.wasPressedThisFrame && UnityEngine.Cursor.lockState != CursorLockMode.Locked && !UiKit.IsOver(Ui.Root, mouse.position.ReadValue())) ClickWorld(mouse.position.ReadValue());
-                if (keyboard.qKey.wasPressedThisFrame && !Hud.Radial.IsOpen) OpenRadial(Mouse.current != null ? new Vector2(Mouse.current.position.ReadValue().x, Screen.height - Mouse.current.position.ReadValue().y) / Ui.Panel.scale : new Vector2(Screen.width / 2f, Screen.height / 2f));
+                if (KeyBindings.Pressed(GameAction.Radial) && !Hud.Radial.IsOpen) OpenRadial(Mouse.current != null ? new Vector2(Mouse.current.position.ReadValue().x, Screen.height - Mouse.current.position.ReadValue().y) / Ui.Panel.scale : new Vector2(Screen.width / 2f, Screen.height / 2f));
             }
         }
 

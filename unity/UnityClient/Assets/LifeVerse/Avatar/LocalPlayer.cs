@@ -70,16 +70,15 @@ namespace LifeVerse.Unity.Avatar
         private PlayerInputSample ReadKeyboard()
         {
             var sample = new PlayerInputSample(); var keyboard = Keyboard.current; if (keyboard == null) return sample;
-            sample.Forward = (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed ? 1f : 0f) - (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed ? 1f : 0f);
-            sample.Right = (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed ? 1f : 0f) - (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed ? 1f : 0f);
-            sample.Run = keyboard.leftShiftKey.isPressed ^ AlwaysRun; sample.Jump = keyboard.spaceKey.isPressed; sample.Descend = keyboard.cKey.isPressed || keyboard.leftCtrlKey.isPressed;
+            sample.Forward = (KeyBindings.Held(GameAction.Forward) ? 1f : 0f) - (KeyBindings.Held(GameAction.Back) ? 1f : 0f);
+            sample.Right = (KeyBindings.Held(GameAction.Right) ? 1f : 0f) - (KeyBindings.Held(GameAction.Left) ? 1f : 0f);
+            sample.Run = KeyBindings.Held(GameAction.Run) ^ AlwaysRun; sample.Jump = KeyBindings.Held(GameAction.Jump); sample.Descend = KeyBindings.Held(GameAction.Descend);
             return sample;
         }
 
         private void Update()
         {
-            var keyboard = Keyboard.current;
-            if (keyboard != null) { if (keyboard.fKey.wasPressedThisFrame) _flyEdge = true; if (keyboard.xKey.wasPressedThisFrame) _sitEdge = true; if (keyboard.eKey.wasPressedThisFrame) ToggleVehicle(); if (ObjectSeat.HasValue && (ServerSeated || State.Seated) && (keyboard.wKey.wasPressedThisFrame || keyboard.aKey.wasPressedThisFrame || keyboard.sKey.wasPressedThisFrame || keyboard.dKey.wasPressedThisFrame || keyboard.spaceKey.wasPressedThisFrame)) StandUp(); }
+            if (!Typing) { if (KeyBindings.Pressed(GameAction.Fly)) _flyEdge = true; if (KeyBindings.Pressed(GameAction.Sit)) _sitEdge = true; if (KeyBindings.Pressed(GameAction.Vehicle)) ToggleVehicle(); if (ObjectSeat.HasValue && (ServerSeated || State.Seated) && (KeyBindings.Pressed(GameAction.Forward) || KeyBindings.Pressed(GameAction.Back) || KeyBindings.Pressed(GameAction.Left) || KeyBindings.Pressed(GameAction.Right) || KeyBindings.Pressed(GameAction.Jump))) StandUp(); }
             GestureKeys();
             Advance(Time.deltaTime);
         }
@@ -189,10 +188,10 @@ namespace LifeVerse.Unity.Avatar
 
         private void GestureKeys()
         {
-            var keyboard = Keyboard.current; if (keyboard == null) return;
-            if (keyboard.gKey.wasPressedThisFrame) StartGesture("wave"); if (keyboard.hKey.wasPressedThisFrame) StartGesture("dance");
-            if (keyboard.jKey.wasPressedThisFrame) StartGesture("applaud"); if (keyboard.kKey.wasPressedThisFrame) StartGesture("point");
-            if (keyboard.lKey.wasPressedThisFrame) StartGesture("greet"); if (keyboard.nKey.wasPressedThisFrame) StartGesture("laugh");
+            if (Typing) return;   // letters typed in the chat are not gestures
+            if (KeyBindings.Pressed(GameAction.Wave)) StartGesture("wave"); if (KeyBindings.Pressed(GameAction.Dance)) StartGesture("dance");
+            if (KeyBindings.Pressed(GameAction.Applaud)) StartGesture("applaud"); if (KeyBindings.Pressed(GameAction.Point)) StartGesture("point");
+            if (KeyBindings.Pressed(GameAction.Greet)) StartGesture("greet"); if (KeyBindings.Pressed(GameAction.Laugh)) StartGesture("laugh");
         }
 
         private void StepOnce()

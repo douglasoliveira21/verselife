@@ -65,6 +65,9 @@ namespace LifeVerse.Unity.Avatar
         private readonly System.Collections.Generic.List<GameObject> _dressing = new System.Collections.Generic.List<GameObject>();
 
         public Transform LeftLeg => _leftLeg;
+        public Transform LeftLegPart => _leftLeg;
+        public Transform RightLegPart => _rightLeg;
+        public Transform LeftArmPart => _leftArm;
         public Transform RightArm => _rightArm;
         public Transform Torso => _body;
         public Transform Head => _head;
@@ -73,7 +76,7 @@ namespace LifeVerse.Unity.Avatar
 
         public static AvatarView Create(int peerId, string name, Color color)
         {
-            var root = new GameObject("Avatar " + name); var view = root.AddComponent<AvatarView>(); view.PeerId = peerId; view.DisplayName = name; view.Build(color); root.AddComponent<AvatarSounds>(); return view;
+            var root = new GameObject("Avatar " + name); var view = root.AddComponent<AvatarView>(); view.PeerId = peerId; view.DisplayName = name; view.Build(color); root.AddComponent<AvatarSounds>(); root.AddComponent<AvatarAttachments>(); return view;
         }
 
         private static Material Surface(Color color, float smoothness = .3f)
@@ -116,7 +119,7 @@ namespace LifeVerse.Unity.Avatar
         /// <summary>Dresses the body as the server describes the person (skin, hair, beard, eyes, clothes' tints, hat, glasses, backpack, sliders) and, with a custom body, remembers which one.</summary>
         public void ApplyAppearance(AvatarAppearance appearance)
         {
-            Appearance = appearance ?? new AvatarAppearance(); var a = Appearance;
+            Appearance = appearance ?? new AvatarAppearance(); var a = Appearance; var worn = GetComponent<AvatarAttachments>(); if (worn != null) worn.Apply(AttachmentData.ParseArray(a.AttachmentsJson));
             if (!string.IsNullOrEmpty(a.DisplayName) && a.DisplayName != "Resident") { DisplayName = a.DisplayName; if (_tag != null) _tag.text = DisplayName; }
             _skin.SetColor("_BaseColor", a.Skin); _shirt.SetColor("_BaseColor", a.Tint("top", new Color(.23f, .68f, .76f))); _trousers.SetColor("_BaseColor", a.Tint("bottom", new Color(.15f, .23f, .34f))); _shoes.SetColor("_BaseColor", a.Tint("shoes", new Color(.9f, .91f, .93f)));
             _hairMaterial.SetColor("_BaseColor", a.Hair);

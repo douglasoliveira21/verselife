@@ -5,8 +5,10 @@
         "LifeVerse.Unity.Core",
         "LifeVerse.Unity.World",
         "LifeVerse.Unity.Audio",
+        "LifeVerse.Unity.Models",
         "LifeVerse.Unity.Avatar",
         "Unity.InputSystem",
+        "glTFast",
         "Unity.RenderPipelines.HighDefinition.Runtime"
     ],
     "includePlatforms": [],

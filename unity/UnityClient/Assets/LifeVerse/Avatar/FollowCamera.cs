@@ -51,7 +51,7 @@ namespace LifeVerse.Unity.Avatar
             var looking = FirstPerson ? Cursor.lockState == CursorLockMode.Locked : mouse.rightButton.isPressed;
             if (looking) { var delta = mouse.delta.ReadValue(); Yaw += delta.x * Sensitivity; Pitch = Mathf.Clamp(Pitch - delta.y * Sensitivity * (InvertY ? -1f : 1f), FirstPerson ? -85f : -60f, FirstPerson ? 85f : 80f); }
             if (!FirstPerson) { var wheel = mouse.scroll.ReadValue().y; if (Mathf.Abs(wheel) > .01f) Distance = Mathf.Clamp(Distance - Mathf.Sign(wheel) * .6f, MinDistance, MaxDistance); }
-            var keyboard = Keyboard.current; if (keyboard != null && keyboard.vKey.wasPressedThisFrame) Toggle();
+            if (KeyBindings.Pressed(GameAction.FirstPerson)) Toggle();
         }
 
         private void Place(Vector3 gamePosition, float speed, bool grounded, bool snap, float strafe = 0f)
