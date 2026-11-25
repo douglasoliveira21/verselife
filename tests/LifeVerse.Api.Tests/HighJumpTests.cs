@@ -26,7 +26,11 @@ public sealed class HighJumpTests
     public void JumpingFromTheTopOfATallObjectLiftsTheAvatar(string type)
     {
         var field = new ObstacleField(); field.Set(Guid.NewGuid(), ObstacleField.For(type, new Vector3(0, 5, 0), Vector3.Zero, new Vector3(4, 10, 4)));
-        var lift = PeakAfterJump(field, null, 10f);
+        // The hemisphere occupies only half of the normalized height (-.25 to +.25).
+        // Starting at 10 leaves it airborne after the 30 settling ticks, so Jump is
+        // correctly ignored. Begin on the actual surface, as for the other shapes.
+        var top = type == "hemisphere" ? 7.5f : 10f;
+        var lift = PeakAfterJump(field, null, top);
         Assert.True(lift > 1.0f, $"{type}: jumped only {lift:0.00} m from the top");
     }
 

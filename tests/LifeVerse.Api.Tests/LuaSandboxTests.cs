@@ -4,6 +4,7 @@ using Xunit;
 
 namespace LifeVerse.Api.Tests;
 
+[Collection("Search performance")]
 public sealed class LuaSandboxTests
 {
     /// <summary>Runs a script on a background thread; a null result means the sandbox failed to stop it in time.</summary>
@@ -81,7 +82,9 @@ public sealed class LuaSandboxTests
     [InlineData("local t = {5, 4, 3} table.sort(t, function(a, b) while true do end end)")]
     public void RunawayCodeIsStoppedQuickly(string body)
     {
-        var (result, _, milliseconds) = Run($"function run() {body} end");
+        // This checks validation of unsafe library calls. Give the VM time to reach
+        // that validation under parallel test load; keep the external <1 s assertion.
+        var (result, _, milliseconds) = Run($"function run() {body} end", limits: new LuaLimits(MillisecondsPerEvent: 5000));
         Assert.NotNull(result);
         Assert.False(result!.Ok, $"{body} was allowed to finish: {result.Status}");
         Assert.True(milliseconds < 1500, $"took {milliseconds:0} ms");

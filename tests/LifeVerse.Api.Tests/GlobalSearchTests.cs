@@ -67,6 +67,7 @@ public sealed class SearchTextTests
 }
 
 /// <summary>The index of what can be found, kept from the real data, and the search over it.</summary>
+[Collection("Search performance")]
 public sealed class GlobalSearchTests : IDisposable
 {
     private readonly LifeVerseDbContext _db = new(new DbContextOptionsBuilder<LifeVerseDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

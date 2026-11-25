@@ -10,6 +10,7 @@ using Xunit.Abstractions;
 namespace LifeVerse.Api.Tests;
 
 /// <summary>Final checks of the global search: relevance on a set of judged queries, permissions on every surface, speed and many people at once.</summary>
+[Collection("Search performance")]
 public sealed class SearchFinalTests(ITestOutputHelper output) : IDisposable
 {
     private readonly string _store = Guid.NewGuid().ToString();

@@ -9,6 +9,7 @@ using Xunit;
 namespace LifeVerse.Api.Tests;
 
 /// <summary>The catalog of attachment points (stable ids, Second Life names, profiles) and the server rules for wearing objects: ownership, limits, add/replace, placement, rights and what happens when the item is gone.</summary>
+[Collection("Attachment limits")]
 public sealed class AvatarAttachmentsTests : IDisposable
 {
     private readonly LifeVerseDbContext _db = new(new DbContextOptionsBuilder<LifeVerseDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -261,6 +262,7 @@ public sealed class AvatarAttachmentsTests : IDisposable
 }
 
 /// <summary>What other players and the island servers get: the attachments inside the appearance, who may fetch their files, and the rules for the live preview of an edit.</summary>
+[Collection("Attachment limits")]
 public sealed class AttachmentsReplicationTests : IDisposable
 {
     private readonly LifeVerseDbContext _db = new(new DbContextOptionsBuilder<LifeVerseDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -332,6 +334,7 @@ public sealed class AttachmentsReplicationTests : IDisposable
 }
 
 /// <summary>Outfits that remember the objects worn, bodies with a tail or wings, and a change of body that moves objects without losing the placement.</summary>
+[Collection("Attachment limits")]
 public sealed class AttachmentOutfitsTests : IDisposable
 {
     private readonly LifeVerseDbContext _db = new(new DbContextOptionsBuilder<LifeVerseDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);

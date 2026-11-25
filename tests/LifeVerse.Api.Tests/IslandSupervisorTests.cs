@@ -165,7 +165,9 @@ public sealed class SystemProcessLauncherTests
         // `dotnet --headless --path x` is not a valid command, so it prints an error and exits with a failure code:
         // enough to prove the launcher starts a real process, forwards its output with the island tag and reports the exit.
         var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        var launcher = new SystemProcessLauncher(Environment.ProcessPath ?? "dotnet", "x", lines.Enqueue);
+        // Environment.ProcessPath may be testhost, which starts another test runner
+        // rather than a predictable short-lived child. Use the actual dotnet host.
+        var launcher = new SystemProcessLauncher(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet", "x", lines.Enqueue);
         var island = Guid.NewGuid();
         var child = launcher.Start(new IslandLaunch(island, "Teste", 7777, 7070, Guid.NewGuid(), new Dictionary<string, string> { ["LIFEVERSE_ISLAND_ID"] = island.ToString() }));
         var deadline = DateTime.UtcNow.AddSeconds(30);
@@ -187,8 +189,9 @@ public sealed class SystemProcessLauncherTests
         var deadline = DateTime.UtcNow.AddSeconds(30);
         while (!child.HasExited && DateTime.UtcNow < deadline) Thread.Sleep(50);
         Assert.Equal(0, child.ExitCode);
-        Thread.Sleep(200);
-        Assert.Contains(lines, line => line.StartsWith($"[{island.ToString("N")[..8]}] ") && char.IsDigit(line[^1]));
+        // Async stdout callbacks may arrive after HasExited, especially in the full
+        // suite. Wait for the actual evidence instead of assuming a 200 ms delay.
+        Assert.True(SpinWait.SpinUntil(() => lines.Any(line => line.StartsWith($"[{island.ToString("N")[..8]}] ") && char.IsDigit(line[^1])), TimeSpan.FromSeconds(5)), "tagged version output was not received");
     }
 
     [Fact]
