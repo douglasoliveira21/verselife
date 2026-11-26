@@ -10,6 +10,7 @@
         "LifeVerse.Unity.Avatar",
         "LifeVerse.Unity.Audio",
         "LifeVerse.Unity.Models",
+        "glTFast",
         "Unity.InputSystem",
         "LifeVerse.Unity.UI",
         "Unity.RenderPipelines.HighDefinition.Runtime",

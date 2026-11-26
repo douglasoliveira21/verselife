@@ -21,9 +21,16 @@ namespace LifeVerse.Unity.EditorTools
         {
             Directory.CreateDirectory(Folder);
             var shader = Shader.Find("HDRP/Lit") ?? throw new InvalidOperationException("O shader HDRP/Lit não foi encontrado: o HDRP está instalado e ativo?");
-            BuildTerrain(shader); BuildOcean(shader); BuildRain(); BuildEffects(); BuildObjects(shader); BuildSun(); BuildFoam();
+            BuildTerrain(shader); BuildOcean(); BuildRain(); BuildEffects(); BuildObjects(shader); BuildSun();
             AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
             Debug.Log("[LifeVerse] Materiais do mundo criados em " + Folder);
+        }
+
+        /// <summary>Only the materials of the ground and of the sea (building them all again reorders the other files for nothing).</summary>
+        public static void BuildSurfacesBatch()
+        {
+            try { BuildTerrain(Shader.Find("HDRP/Lit")); BuildOcean(); AssetDatabase.SaveAssets(); AssetDatabase.Refresh(); EditorApplication.Exit(0); }
+            catch (Exception exception) { Debug.LogException(exception); EditorApplication.Exit(1); }
         }
 
         public static void BuildBatch()
@@ -47,6 +54,8 @@ namespace LifeVerse.Unity.EditorTools
         {
             var material = Fresh("TerrainMaterial", shader);
             material.SetColor("_BaseColor", Color.white); material.SetFloat("_Metallic", 0f); material.SetFloat("_Smoothness", .06f);
+            // the ground barely shines, as in Godot (SPECULAR 0.15, a base reflection of 0.0036): HDRP's usual 0.04 washes it with the blue of the sky
+            material.SetFloat("_MaterialID", 4f); material.SetColor("_SpecularColor", new Color(.0036f, .0036f, .0036f, 1f).gamma);
             material.SetTexture("_DetailMap", Attach(material, ProceduralTextures.DetailGrain(256, 41), "GroundDetail"));
             material.SetFloat("_DetailAlbedoScale", 1.1f); material.SetFloat("_DetailNormalScale", 0f); material.SetFloat("_DetailSmoothnessScale", 0f);
             HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
@@ -83,12 +92,6 @@ namespace LifeVerse.Unity.EditorTools
             var pixels = new Color32[16]; for (var i = 0; i < pixels.Length; i++) pixels[i] = colour; texture.SetPixels32(pixels); texture.Apply(); return texture;
         }
 
-        private static void BuildFoam()
-        {
-            var shader = Shader.Find("LifeVerse/ShoreFoam") ?? throw new InvalidOperationException("O shader LifeVerse/ShoreFoam não foi encontrado (erro de compilação do shader?).");
-            var material = Fresh("FoamMaterial", shader); EditorUtility.SetDirty(material);
-        }
-
         private static void BuildSun()
         {
             var shader = Shader.Find("HDRP/Unlit") ?? throw new InvalidOperationException("O shader HDRP/Unlit não foi encontrado.");
@@ -116,16 +119,10 @@ namespace LifeVerse.Unity.EditorTools
             HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
         }
 
-        private static void BuildOcean(Shader shader)
+        private static void BuildOcean()
         {
-            var material = Fresh("OceanMaterial", shader);
-            material.SetFloat("_SurfaceType", 1f); material.SetFloat("_BlendMode", 0f); material.SetFloat("_ZWrite", 0f); material.SetFloat("_TransparentZWrite", 0f);
-            material.SetFloat("_DoubleSidedEnable", 1f); material.SetFloat("_DoubleSidedNormalMode", 1f);
-            material.SetColor("_BaseColor", new Color(.03f, .30f, .42f, .82f)); material.SetFloat("_Metallic", 0f); material.SetFloat("_Smoothness", .96f);
-            material.SetTexture("_NormalMap", Attach(material, ProceduralTextures.NormalMap(256, 4, 4, 3, 7f), "SwellNormal")); material.SetFloat("_NormalScale", 1.1f);
-            material.SetTexture("_DetailMap", Attach(material, ProceduralTextures.DetailNormal(256, 8, 3, 9, 5f), "RippleDetail"));
-            material.SetFloat("_DetailAlbedoScale", 0f); material.SetFloat("_DetailNormalScale", 1f); material.SetFloat("_DetailSmoothnessScale", 0f);
-            HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
+            var shader = Shader.Find("LifeVerse/Ocean") ?? throw new InvalidOperationException("O shader LifeVerse/Ocean não foi encontrado (erro de compilação do shader?).");
+            var material = Fresh("OceanMaterial", shader); EditorUtility.SetDirty(material);   // the textures are made by OceanView when the game runs
         }
     }
 }

@@ -50,7 +50,7 @@ namespace LifeVerse.Unity.World
             while (!snapshot.IsCompleted || !objects.IsCompleted) yield return null;
             if (snapshot.Result.Ok && Client.Terrain != null) { Client.Terrain.Apply(TerrainMap.FromJson(snapshot.Result.TerrainJson)); if (Client.Ocean != null) Client.Ocean.SeaLevel = Client.Terrain.Map.SeaLevel; SnapshotApplied = true; }
             // the files near the arrival point come first (kept on disk by hash); the far ones keep coming after the entry
-            Status = "loading_assets"; if (!_pruned) { _pruned = true; AssetPreloader.Prune(CacheFolder); }
+            Status = "loading_assets"; if (!_pruned) { _pruned = true; AssetPreloader.Prune(CacheFolder, AssetPreloader.LimitBytes); }
             Preload = new AssetPreloader(CacheFolder, asset => api.GetAssetAsync(islandId, asset));
             var manifest = api.ApiAsync("GET", AssetPreloader.ManifestPath(islandId, arrival?.x, arrival?.y)); while (!manifest.IsCompleted) yield return null;
             var essentials = Preload.Essentials(manifest.Result.Status, manifest.Result.Body);

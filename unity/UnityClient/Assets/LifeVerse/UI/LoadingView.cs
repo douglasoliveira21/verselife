@@ -4,7 +4,7 @@ using UnityEngine.UIElements;
 namespace LifeVerse.Unity.UI
 {
     /// <summary>
-    /// The loading screen while the island opens: what is happening in Portuguese (asking for the entry, waiting for the island to start, loading the world, connecting), a bar that
+    /// The loading screen while the island opens (as the teleport screen of the viewer, over the picture of the world): what is happening in Portuguese (asking for the entry, waiting for the island to start, loading the world, connecting), a bar that
     /// fills as the steps pass and a hint. The words come from the status of <c>WorldJoin</c>; a failure shows its message and a button to go back.
     /// </summary>
     public sealed class LoadingView : VisualElement
@@ -21,12 +21,15 @@ namespace LifeVerse.Unity.UI
 
         public LoadingView()
         {
-            name = "loading"; style.flexGrow = 1; style.alignItems = Align.Center; style.justifyContent = Justify.Center; style.backgroundColor = new Color(.03f, .06f, .08f, .98f); pickingMode = PickingMode.Position;
-            var logo = UiKit.Text("LifeVerse", "lv-title-text", "lv-accent"); logo.style.fontSize = 44; logo.style.marginBottom = 18; Add(logo);
-            _status = UiKit.Text("", "lv-muted"); _status.style.marginBottom = 10; Add(_status);
-            var bar = new VisualElement(); bar.AddToClassList("lv-progress"); bar.style.width = 360; _fill = new VisualElement(); _fill.AddToClassList("lv-progress-fill"); bar.Add(_fill); Add(bar);
-            _hint = UiKit.Text(Hints[Random.Range(0, Hints.Length)], "lv-dim", "lv-small"); _hint.style.marginTop = 18; Add(_hint);
-            Back = UiKit.Button("Voltar", () => { }, "lv-btn-secondary"); Back.name = "back"; Back.style.marginTop = 16; Back.style.display = DisplayStyle.None; Add(Back);
+            name = "loading"; style.flexGrow = 1; style.alignItems = Align.Center; style.justifyContent = Justify.FlexEnd; style.backgroundColor = new Color(.03f, .06f, .08f, .98f); pickingMode = PickingMode.Position;
+            var picture = Resources.Load<Texture2D>("LifeVerse/Login/background");
+            if (picture != null) { style.backgroundImage = picture; style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover); style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center); style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center); style.unityBackgroundImageTintColor = new Color(.45f, .48f, .55f, 1f); }
+            var logo = UiKit.Text("LifeVerse", "lv-brand"); logo.style.marginBottom = StyleKeyword.Auto; logo.style.marginTop = StyleKeyword.Auto; Add(logo);
+            var panel = UiKit.Glass(); panel.AddToClassList("lv-card"); panel.style.width = 560; panel.style.alignItems = Align.Center; panel.style.marginBottom = 42; Add(panel);
+            _status = UiKit.Text("", "lv-bold"); _status.style.marginBottom = 10; _status.style.whiteSpace = WhiteSpace.Normal; _status.style.unityTextAlign = TextAnchor.MiddleCenter; panel.Add(_status);
+            var bar = new VisualElement(); bar.AddToClassList("lv-progress"); bar.style.width = 500; _fill = new VisualElement(); _fill.AddToClassList("lv-progress-fill"); bar.Add(_fill); panel.Add(bar);
+            _hint = UiKit.Text(Hints[Random.Range(0, Hints.Length)], "lv-muted", "lv-small"); _hint.style.marginTop = 12; panel.Add(_hint);
+            Back = UiKit.Button("Voltar", () => { }, "lv-btn-secondary"); Back.name = "back"; Back.style.marginTop = 12; Back.style.minWidth = 160; Back.style.display = DisplayStyle.None; panel.Add(Back);
         }
 
         /// <summary>The Portuguese words and how far along the opening is, from the status of the join: requesting_ticket, waiting_island n/m, loading_world, connecting, in_island, failed.</summary>

@@ -44,6 +44,9 @@ namespace LifeVerse.Unity.World
             var map = SampleIsland();
             var cameraObject = new GameObject("Camera") { tag = "MainCamera" }; var camera = cameraObject.AddComponent<Camera>(); camera.nearClipPlane = .2f; camera.farClipPlane = 6000f; camera.fieldOfView = 62f;
             cameraObject.AddComponent<HDAdditionalCameraData>();
+            // in the editor the picture is drawn into a texture of the size of the comparison photos: it needs no Game view, whatever size that has
+            RenderTexture target = null;
+            if (Application.isEditor) { target = new RenderTexture(Width, Height, 24, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB) { name = "preview" }; camera.targetTexture = target; }
             var terrain = new GameObject("Terrain").AddComponent<TerrainView>(); terrain.Apply(map);
             var ocean = new GameObject("Ocean").AddComponent<OceanView>(); ocean.Camera = camera; ocean.SeaLevel = map.SeaLevel;
             var environment = new GameObject("Environment").AddComponent<IslandEnvironment>(); environment.Initialize(camera, map.SeaLevel); environment.DayNightCycle = false;
@@ -67,12 +70,21 @@ namespace LifeVerse.Unity.World
                 for (var i = 0; i < 40; i++) { environment.Apply(.1f); yield return null; }
                 var path = $"{Prefix}-{view.Name}.png"; Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
                 if (File.Exists(path)) File.Delete(path);
-                ScreenCapture.CaptureScreenshot(path);
+                if (target != null) Save(target, path); else ScreenCapture.CaptureScreenshot(path);
                 var waited = 0; while (!File.Exists(path) && waited++ < 120) yield return null;
                 Console.WriteLine($"event=world_preview day={environment.DayFactor:F3} sunLux={environment.Sun.GetComponent<HDAdditionalLightData>().intensity:F2} sunPitch={environment.Sun.transform.eulerAngles.x:F0} view={view.Name} file={path} saved={File.Exists(path)}");
                 for (var i = 0; i < 5; i++) yield return null;
             }
-            Console.WriteLine("event=world_preview result=done"); Application.Quit(0);
+            Console.WriteLine("event=world_preview result=done"); CheckRun.Quit(0);
+        }
+
+        public const int Width = 1280, Height = 720;
+
+        private static void Save(RenderTexture source, string path)
+        {
+            var before = RenderTexture.active; RenderTexture.active = source;
+            var picture = new Texture2D(source.width, source.height, TextureFormat.RGB24, false); picture.ReadPixels(new Rect(0, 0, source.width, source.height), 0, 0); picture.Apply();
+            RenderTexture.active = before; File.WriteAllBytes(path, picture.EncodeToPNG()); Destroy(picture);
         }
     }
 }

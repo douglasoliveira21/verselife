@@ -31,7 +31,7 @@ namespace LifeVerse.Unity.UI
 
         public BuildWindow(ApiContext context, BuildEditor editor) : base(context.Ui, "build", "Construir", 440f, 590f, new Vector2(20, 80))
         {
-            _c = context; _b = editor; var bar = UiKit.Row(); bar.style.flexWrap = Wrap.Wrap; bar.style.flexShrink = 0; _selection = UiKit.Text("Nada selecionado.", "lv-small", "lv-muted"); _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
+            _c = context; _b = editor; var bar = UiKit.Row(); bar.AddToClassList("lv-tabs"); bar.style.flexShrink = 0; _tabBar = bar; _selection = UiKit.Text("Nada selecionado.", "lv-small", "lv-muted"); _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
             foreach (var tab in new[] { "Criar", "Objeto", "Forma", "Aparência", "Recursos", "Física", "Dados", "Conteúdo", "Alinhar", "Geral", "Auditoria", "Limites" }) { var captured = tab; bar.Add(UiKit.Button(tab, () => Show(captured))); var panel = new ScrollView(); panel.style.flexGrow = 1; panel.style.flexShrink = 1; panel.style.minHeight = 0; panel.style.display = DisplayStyle.None; _tabs[tab] = panel; }
             Body.style.flexGrow = 1; Body.style.minHeight = 0; style.overflow = Overflow.Hidden; _selection.style.flexShrink = 0; _status.style.flexShrink = 0;
             _tutorial = UiKit.Text("", "lv-small", "lv-accent"); _tutorial.style.whiteSpace = WhiteSpace.Normal; _tutorial.style.flexShrink = 1; _tutorialBox = UiKit.Row(_tutorial); _tutorialBox.style.flexShrink = 0; _tutorialBox.style.flexWrap = Wrap.Wrap;
@@ -84,7 +84,8 @@ namespace LifeVerse.Unity.UI
 
         private float Step() => _b.Grid > 0f ? _b.Grid : .25f;
 
-        public void Show(string tab) { CurrentTab = tab; foreach (var pair in _tabs) pair.Value.style.display = pair.Key == tab ? DisplayStyle.Flex : DisplayStyle.None; if (tab == "Limites") LoadLimits(); else if (tab == "Auditoria") LoadAudit(); Refresh(); }
+        private readonly VisualElement _tabBar;
+        public void Show(string tab) { CurrentTab = tab; foreach (var child in _tabBar.Children()) child.EnableInClassList("lv-btn-selected", ((Button)child).text == tab); foreach (var pair in _tabs) pair.Value.style.display = pair.Key == tab ? DisplayStyle.Flex : DisplayStyle.None; if (tab == "Limites") LoadLimits(); else if (tab == "Auditoria") LoadAudit(); Refresh(); }
         private void Say(string text, bool error) { _status.text = text; _status.EnableInClassList("lv-bad", error); }
 
         // ---- reading what the island confirmed ----

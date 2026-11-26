@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using LifeVerse.Shared.Settings;
 using LifeVerse.Unity.Avatar;
 using UnityEngine;
 
@@ -15,13 +17,14 @@ namespace LifeVerse.Unity.UI
 
     /// <summary>
     /// Settings that follow the account to every device (the same list of ids and the same rules the platform checks, see <c>AccountPreferenceRules</c> in the shared code): fetch, send what changed, and tell the person when another device
-    /// got there first. Only the ids of the shared list leave this computer; graphics, devices and performance limits never do. Of that list this client has the ones that mean the same thing here: inverting the mouse, always running,
-    /// the chat's opacity and text size, and reducing motion. Sync is on per account: another person on this computer starts with it off.
+    /// got there first. Only the ids of the shared list leave this computer; graphics, devices and performance limits never do. Of that list this client sends every setting that acts here (a setting it only shows disabled is left as the
+    /// account has it), and the first key of each action. Sync is on per account: another person on this computer starts with it off.
     /// </summary>
     public sealed class AccountSync
     {
         public const string Route = "/api/v1/users/me/preferences";
-        public static readonly string[] SettingIds = { "controls.invert_y", "controls.always_run", "chat.opacity", "chat.font_size", "accessibility.reduce_motion" };
+        /// <summary>The settings of the catalog that follow the account: on the platform's list, kept by this client, and not of one computer only.</summary>
+        public static readonly string[] SettingIds = SettingsCatalog.All.Where(d => d.IsValue && !d.Device && d.IsAvailable && SettingsCatalog.InUnity.Contains(d.Id) && AccountPreferenceRules.IsSynced(d.Id)).Select(d => d.Id).ToArray();
 
         /// <summary>The actions of the game that have a key on the account under the names of the platform ("controls.jump.1" is the first key of "jump"). The second key of an action stays as the account has it.</summary>
         public static readonly (string Name, GameAction Action)[] KeyActions =
@@ -60,11 +63,11 @@ namespace LifeVerse.Unity.UI
             return UnityEngine.InputSystem.Key.None;
         }
 
-        private readonly UserSettings _s; private readonly Func<string, string, string, Task<(int Status, string Body)>> _transport; private readonly Func<Guid> _user; private readonly Action _save;
+        private readonly UserSettings _s; private readonly SettingsStore _store; private readonly Func<string, string, string, Task<(int Status, string Body)>> _transport; private readonly Func<Guid> _user; private readonly Action _save;
         public string Status { get; private set; } = "";
         public event Action Changed;
 
-        public AccountSync(UserSettings settings, Func<string, string, string, Task<(int Status, string Body)>> transport, Func<Guid> user, Action save = null) { _s = settings; _transport = transport; _user = user; _save = save; }
+        public AccountSync(UserSettings settings, Func<string, string, string, Task<(int Status, string Body)>> transport, Func<Guid> user, Action save = null, SettingsStore store = null) { _s = settings; _store = store ?? new SettingsStore(settings); _transport = transport; _user = user; _save = save; }
 
         public bool SignedIn => _user() != Guid.Empty;
         public int Revision => _s.SyncRevision;
@@ -75,36 +78,38 @@ namespace LifeVerse.Unity.UI
         public object Value(string id)
         {
             foreach (var (name, action) in KeyActions) if (id == KeyId(name)) return PlatformName(KeyBindings.Of(action));
-            return SettingValue(id);
+            return SettingIds.Contains(id) ? Typed(AccountPreferenceRules.Find(id), _store.Get(id)) : null;
         }
 
-        private object SettingValue(string id) => id switch
+        /// <summary>The text the catalog keeps, as the kind of value the platform checks (null when it is outside what the platform accepts: it is then not sent).</summary>
+        private static object Typed(PreferenceRule rule, string text)
         {
-            "controls.invert_y" => _s.InvertY, "controls.always_run" => _s.AlwaysRun, "chat.opacity" => (long)Mathf.RoundToInt(Mathf.Clamp(_s.ChatOpacity * 100f, 30f, 100f)), "chat.font_size" => (long)Mathf.Clamp(_s.ChatFontSize, 12, 28), "accessibility.reduce_motion" => _s.ReduceMotion, _ => null,
-        };
+            switch (rule.Kind)
+            {
+                case PreferenceKind.Bool: return text == "true" ? true : text == "false" ? false : (object)null;
+                case PreferenceKind.Int: case PreferenceKind.Float:
+                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var n)) return null;
+                    n = Math.Round(n, 4); if (n < rule.Min || n > rule.Max) return null;
+                    return rule.Kind == PreferenceKind.Int ? (long)Math.Round(n) : (object)n;
+                case PreferenceKind.Choice: return rule.Choices.Contains(text) ? text : null;
+                default: return text;
+            }
+        }
 
         public void Apply(string id, object value)
         {
             foreach (var (name, action) in KeyActions) if (id == KeyId(name)) { var key = KeyOf(value as string); if (key != UnityEngine.InputSystem.Key.None && KeyBindings.Allowed(key)) { KeyBindings.Set(action, key, out _); _s.Keys = KeyBindings.Save(); } return; }
-            switch (id)
-            {
-                case "controls.invert_y": _s.InvertY = (bool)value; break; case "controls.always_run": _s.AlwaysRun = (bool)value; break; case "chat.opacity": _s.ChatOpacity = Convert.ToInt64(value) / 100f; break;
-                case "chat.font_size": _s.ChatFontSize = (int)Convert.ToInt64(value); break; case "accessibility.reduce_motion": _s.ReduceMotion = (bool)value; break;
-            }
+            if (!SettingIds.Contains(id) || value == null) return;
+            _store.Set(id, value switch { bool b => b ? "true" : "false", string t => t, _ => Convert.ToDouble(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture) }, false);
             _s.Clamped();
         }
 
         /// <summary>Checks one value from the account against the rule of its id (the same ranges the platform enforces).</summary>
         public static object Check(string id, JsonElement e)
         {
-            switch (id)
-            {
-                case "controls.invert_y": case "controls.always_run": case "accessibility.reduce_motion": return e.ValueKind == JsonValueKind.True ? true : e.ValueKind == JsonValueKind.False ? false : (object)null;
-                case "chat.opacity": return e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out var o) && o >= 30 && o <= 100 ? o : (object)null;
-                case "chat.font_size": return e.ValueKind == JsonValueKind.Number && e.TryGetInt64(out var f) && f >= 12 && f <= 28 ? f : (object)null;
-                case var key when key.StartsWith("controls.") && key.EndsWith(".1"): return e.ValueKind == JsonValueKind.String && ValidKeyName(e.GetString() ?? "") ? e.GetString() : (object)null;
-                default: return null;
-            }
+            if (id.StartsWith("controls.", StringComparison.Ordinal) && id.EndsWith(".1", StringComparison.Ordinal)) return e.ValueKind == JsonValueKind.String && ValidKeyName(e.GetString() ?? "") ? e.GetString() : null;
+            if (!SettingIds.Contains(id)) return null;
+            var (value, error) = AccountPreferenceRules.CheckValue(AccountPreferenceRules.Find(id), e); return error == null ? value : null;
         }
 
         /// <summary>The platform's rule for a key name: letters, digits, spaces and a few signs, up to 24 characters; some keys are reserved.</summary>

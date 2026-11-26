@@ -1,147 +1,348 @@
-/* O tema "vidro escuro" do LifeVerse: as mesmas cores e raios do UiStyle do cliente Godot (medidas nas referências de design), a fonte Inter. */
+/*
+ * O visual do LifeVerse, inspirado no visualizador do Second Life: barras escuras com relevo, janelas flutuantes com barra de título, botões com volume e um verde-água de destaque
+ * (dourado para dinheiro e inventário). As texturas (Skin/*.png) são desenhadas por unity/tools/ui-skin/generate.py em dobro do tamanho: por isso "-unity-slice-scale: 0.5px".
+ * O tema padrão do runtime está vazio: todo o visual (inclusive o dos controles do UI Toolkit) vem daqui.
+ *
+ * Cores: texto #E8EDF5 · apagado #A6B1C4 · fraco #77829A · destaque #3FE3D3 · ouro #FFC45C · bom #4ADE80 · aviso #FBBF24 · erro #FF7B7B
+ */
 
 .lv-root {
     flex-grow: 1;
     -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular");
-    font-size: 14px;
-    color: #FFFFFF;
+    font-size: 13px;
+    color: #E8EDF5;
 }
 
 .lv-root Label, .lv-root Button, .lv-root TextField, .lv-root Toggle { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular"); }
 
-.lv-muted { color: #A9B3BD; }
-.lv-dim { color: #7B858C; }
+.lv-muted { color: #A6B1C4; }
+.lv-dim { color: #77829A; }
 .lv-small { font-size: 12px; }
-.lv-title-text { font-size: 18px; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
-.lv-bold { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
-.lv-accent { color: #2EE6D0; }
-.lv-good { color: #22C55E; }
-.lv-warn { color: #F59E0B; }
-.lv-bad { color: #FF6B6B; }
+.lv-body { font-size: 13px; }
+.lv-root .lv-title-text { font-size: 17px; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); color: #FFFFFF; }
+.lv-root .lv-bold { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
+.lv-accent { color: #3FE3D3; }
+.lv-gold { color: #FFC45C; }
+.lv-good { color: #4ADE80; }
+.lv-warn { color: #FBBF24; }
+.lv-bad { color: #FF7B7B; }
+.lv-root .lv-mono { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Medium"); }
 
-/* painéis de vidro */
+/* ------------------------------------------------ painéis ------------------------------------------------ */
 .lv-glass {
-    background-color: rgba(27, 38, 46, 0.88);
-    border-width: 1px; border-color: #6D818D;
-    border-radius: 14px;
+    background-image: resource("LifeVerse/UI/Skin/panel");
+    -unity-slice-left: 16; -unity-slice-top: 16; -unity-slice-right: 16; -unity-slice-bottom: 16; -unity-slice-scale: 0.5px;
     padding: 10px;
 }
+.lv-inset {
+    background-image: resource("LifeVerse/UI/Skin/inset");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+    padding: 6px;
+}
 
+/* ------------------------------------------------ janelas ------------------------------------------------ */
 .lv-window {
     position: absolute;
-    background-color: rgba(27, 38, 46, 0.94);
-    border-width: 1px; border-color: #6D818D;
-    border-radius: 14px;
-    min-width: 220px; min-height: 90px;
+    background-image: resource("LifeVerse/UI/Skin/window");
+    -unity-slice-left: 18; -unity-slice-top: 18; -unity-slice-right: 18; -unity-slice-bottom: 18; -unity-slice-scale: 0.5px;
+    min-width: 220px; min-height: 34px;
+    padding: 1px;
+}
+.lv-window-shadow {
+    position: absolute; left: -14px; top: -9px; right: -14px; bottom: -19px;
+    background-image: resource("LifeVerse/UI/Skin/shadow");
+    -unity-slice-left: 46; -unity-slice-top: 46; -unity-slice-right: 46; -unity-slice-bottom: 46; -unity-slice-scale: 0.5px;
 }
 .lv-window-title {
-    flex-direction: row; align-items: center; justify-content: space-between;
-    background-color: rgba(30, 42, 55, 0.92);
-    border-top-left-radius: 14px; border-top-right-radius: 14px;
-    border-bottom-width: 1px; border-bottom-color: rgba(109, 129, 141, 0.8);
-    padding: 8px 14px;
+    flex-direction: row; align-items: center; flex-shrink: 0;
+    height: 34px; padding: 0 5px 0 11px;
+    background-image: resource("LifeVerse/UI/Skin/titlebar");
+    -unity-slice-left: 18; -unity-slice-top: 18; -unity-slice-right: 18; -unity-slice-bottom: 8; -unity-slice-scale: 0.5px;
 }
-.lv-window-body { padding: 12px; flex-grow: 1; }
-.lv-btn.lv-close { width: 26px; height: 26px; padding: 0; margin: 0; border-radius: 8px; background-color: rgba(0, 0, 0, 0); border-width: 0; font-size: 16px; color: #A9B3BD; }
-.lv-btn.lv-close:hover { background-color: rgba(239, 68, 68, 0.35); color: #FFFFFF; }
+.lv-window-front > .lv-window-title { background-image: resource("LifeVerse/UI/Skin/titlebar-front"); }
+.lv-window-title > .lv-title-text.lv-title-text { font-size: 14px; flex-grow: 1; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; -unity-text-align: middle-left; }
+.lv-window-body { padding: 10px 12px 12px 12px; flex-grow: 1; }
+.lv-window-grip {
+    position: absolute; right: 2px; bottom: 2px; width: 14px; height: 14px;
+    background-image: resource("LifeVerse/UI/Skin/grip"); opacity: 0.7;
+}
+.lv-window-grip:hover { opacity: 1; }
+.lv-btn.lv-close, .lv-btn.lv-window-button {
+    width: 24px; height: 22px; min-height: 22px; padding: 0; margin: 0 0 0 2px; align-items: center; justify-content: center; flex-shrink: 0;
+    background-image: none; border-radius: 5px; background-color: rgba(0, 0, 0, 0.18);
+}
+.lv-btn.lv-window-button:hover { background-color: rgba(255, 255, 255, 0.18); }
+.lv-btn.lv-close:hover { background-color: #C0392B; }
 
-/* botões */
+/* ------------------------------------------------ botões ------------------------------------------------ */
 .lv-btn {
-    background-color: #252D33; color: #FFFFFF;
-    border-width: 1px; border-color: #91979B; border-radius: 10px;
-    padding: 7px 14px; margin: 2px;
+    background-image: resource("LifeVerse/UI/Skin/btn");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+    background-color: rgba(0, 0, 0, 0); color: #F2F5FA;
+    border-width: 0; border-radius: 0;
+    padding: 5px 14px; margin: 2px; min-height: 28px;
     -unity-text-align: middle-center;
 }
-.lv-btn:hover { background-color: #34414A; color: #FFFFFF; }
-.lv-btn:active { background-color: #1A2126; }
-.lv-btn:disabled { background-color: #2B3035; color: #7B858C; border-color: #4E5D67; }
-.lv-btn-primary { background-color: #0A3A3C; border-color: #12F2E0; }
-.lv-btn-primary:hover { background-color: #12706F; }
-.lv-btn-primary:active { background-color: #07292B; }
-.lv-btn-secondary { background-color: #4B3D30; border-color: #F4A340; }
-.lv-btn-secondary:hover { background-color: #6B4E2E; }
-.lv-btn-selected { background-color: #0A3A3C; border-color: #12F2E0; }
-.lv-btn-flat { background-color: rgba(0, 0, 0, 0); border-width: 0; }
+.lv-btn:hover { background-image: resource("LifeVerse/UI/Skin/btn-hover"); color: #FFFFFF; }
+.lv-btn:active { background-image: resource("LifeVerse/UI/Skin/btn-down"); }
+.lv-btn:disabled { background-image: resource("LifeVerse/UI/Skin/btn-disabled"); color: #6F7A8F; }
+.lv-btn-primary { background-image: resource("LifeVerse/UI/Skin/btn-primary"); }
+.lv-btn-primary:hover { background-image: resource("LifeVerse/UI/Skin/btn-primary-hover"); color: #FFFFFF; }
+.lv-btn-primary:active { background-image: resource("LifeVerse/UI/Skin/btn-primary-down"); }
+.lv-btn-secondary { background-image: resource("LifeVerse/UI/Skin/btn-gold"); }
+.lv-btn-secondary:hover { background-image: resource("LifeVerse/UI/Skin/btn-gold-hover"); }
+.lv-btn-selected, .lv-btn-selected:hover { background-image: resource("LifeVerse/UI/Skin/btn-selected"); color: #FFFFFF; }
+.lv-btn-flat { background-image: none; }
+.lv-btn-flat:hover { background-image: resource("LifeVerse/UI/Skin/btn-flat-hover"); }
+.lv-btn-flat:active { background-image: resource("LifeVerse/UI/Skin/btn-flat-hover"); }
+.lv-btn-flat:disabled { background-image: none; opacity: 0.45; }
+.lv-btn-flat.lv-btn-selected { background-image: resource("LifeVerse/UI/Skin/btn-selected"); }
+.lv-btn-flat.lv-btn-primary { background-image: resource("LifeVerse/UI/Skin/btn-primary"); }
+.lv-btn-flat.lv-btn-primary:hover { background-image: resource("LifeVerse/UI/Skin/btn-primary-hover"); }
+/* abas no alto de uma janela */
+.lv-tabs { flex-direction: row; flex-wrap: wrap; flex-shrink: 0; padding-bottom: 3px; margin-bottom: 6px; border-bottom-width: 1px; border-bottom-color: rgba(63, 227, 211, 0.35); }
+.lv-tabs .lv-btn { background-image: resource("LifeVerse/UI/Skin/tab"); margin: 1px 3px 1px 0; padding: 3px 12px; min-height: 26px; color: #C3CCDC; }
+.lv-tabs .lv-btn:hover { background-image: resource("LifeVerse/UI/Skin/btn-hover"); color: #FFFFFF; }
+.lv-tabs .lv-btn.lv-btn-selected, .lv-tabs .lv-btn.lv-btn-primary { background-image: resource("LifeVerse/UI/Skin/btn-selected"); color: #FFFFFF; }
+/* listas de nomes que se clicam */
+.lv-list .lv-btn.lv-btn-flat { -unity-text-align: middle-left; margin: 0; min-height: 24px; padding-top: 2px; padding-bottom: 2px; }
 
-/* campos de texto */
-.lv-field TextField, TextField.lv-field { margin: 3px 0; }
-.lv-field .unity-base-text-field__input, TextField.lv-field .unity-base-text-field__input {
-    background-color: #2A3239; color: #FFFFFF;
-    border-width: 1px; border-color: #91979B; border-radius: 10px;
-    padding: 7px 12px;
+/* ------------------------------------------------ campos ------------------------------------------------ */
+.unity-base-field { flex-direction: row; align-items: center; margin: 3px 2px; }
+.unity-base-field__label { color: #A6B1C4; min-width: 128px; flex-shrink: 0; margin: 0 8px 0 0; -unity-text-align: middle-left; font-size: 12px; }
+.unity-base-field__input { flex-grow: 1; flex-shrink: 1; }
+
+/* campos de texto: o nome em cima */
+.unity-base-text-field { flex-direction: column; align-items: stretch; }
+.unity-base-text-field > .unity-base-field__label { min-width: 0; margin: 0 0 2px 1px; }
+.unity-base-text-field__input {
+    background-image: resource("LifeVerse/UI/Skin/field");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+    color: #F2F5FA; padding: 5px 10px; min-height: 29px; -unity-text-align: middle-left;
+    --unity-cursor-color: #3FE3D3; --unity-selection-color: rgba(63, 227, 211, 0.35);
+    white-space: nowrap; overflow: hidden; justify-content: center;
 }
-TextField.lv-field:focus .unity-base-text-field__input { border-color: #12F2E0; border-width: 2px; }
+.unity-base-text-field__input > .unity-text-element { margin: 0; padding: 0; -unity-text-align: middle-left; }
+.unity-base-text-field__input--placeholder, .unity-base-text-field__input--placeholder > .unity-text-element, .unity-text-element--placeholder { color: #77829A; }
+TextField:focus .unity-base-text-field__input, .unity-base-text-field:focus > .unity-base-text-field__input { background-image: resource("LifeVerse/UI/Skin/field-focus"); }
+.unity-base-text-field:disabled { opacity: 0.55; }
+.unity-base-text-field__input--multiline, .unity-text-field__input--multiline { -unity-text-align: upper-left; white-space: normal; justify-content: flex-start; }
+.unity-base-text-field__input--multiline > .unity-text-element { -unity-text-align: upper-left; }
+.unity-text-element--inner-input-field-component { color: #F2F5FA; }
 
-/* linhas e listas */
-.lv-row { background-color: rgba(35, 45, 54, 0.7); border-radius: 8px; padding: 6px 10px; margin: 2px 0; }
-.lv-divider { height: 1px; background-color: #4E5D67; margin: 8px 0; }
-
-/* barras */
-.lv-bar {
-    background-color: rgba(27, 38, 46, 0.86);
-    border-width: 1px; border-color: #A9BCC3; border-radius: 12px;
-    padding: 6px 12px; flex-direction: row; align-items: center;
-}
-
-/* barra de progresso */
-.lv-progress { height: 6px; background-color: #2A3239; border-radius: 3px; }
-.lv-progress-fill { height: 6px; background-color: #12F2E0; border-radius: 3px; width: 0; }
-
-/* notificações */
-.lv-toast {
-    background-color: rgba(27, 38, 46, 0.95); border-width: 1px; border-color: #6D818D; border-left-width: 4px; border-radius: 10px;
-    padding: 8px 12px; margin: 3px 0; max-width: 360px;
-}
-.lv-toast-info { border-left-color: #12F2E0; }
-.lv-toast-good { border-left-color: #22C55E; }
-.lv-toast-warn { border-left-color: #F59E0B; }
-.lv-toast-bad { border-left-color: #EF4444; }
-
-/* chat */
-.lv-chat-line { margin: 1px 0; white-space: normal; }
-
-/* alternadores */
-.lv-toggle { margin: 4px 0; }
-.lv-toggle .unity-toggle__input { margin-right: 8px; }
-Slider.lv-slider { margin: 4px 0; }
-
-/* controles do UI Toolkit (o tema padrão do runtime está vazio: todo o visual vem daqui) */
-.unity-base-field__label { color: #A9B3BD; min-width: 130px; }
+/* listas de escolha: o nome em cima, o valor numa caixa com a seta à direita */
+.unity-popup-field, .unity-base-popup-field { flex-direction: column; align-items: stretch; }
+.unity-popup-field > .unity-base-field__label, .unity-base-popup-field > .unity-base-field__label { min-width: 0; margin: 0 0 2px 1px; }
 .unity-base-popup-field__input, .unity-popup-field__input {
-    background-color: #2A3239; color: #FFFFFF; border-width: 1px; border-color: #91979B; border-radius: 10px; padding: 6px 12px; margin: 3px 0; flex-grow: 1;
+    flex-direction: row; align-items: center;
+    background-image: resource("LifeVerse/UI/Skin/btn");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+    color: #F2F5FA; padding: 4px 8px 4px 11px; min-height: 29px; flex-grow: 1;
 }
-.unity-base-popup-field__input:hover { border-color: #12F2E0; }
-.unity-base-popup-field__arrow { background-color: #A9B3BD; width: 10px; height: 10px; -unity-background-scale-mode: scale-to-fit; }
+.unity-base-popup-field__input:hover { background-image: resource("LifeVerse/UI/Skin/btn-hover"); }
+.unity-base-popup-field__text { flex-grow: 1; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; padding: 0; -unity-text-align: middle-left; }
+.unity-base-popup-field__arrow { width: 12px; height: 12px; margin-left: 8px; flex-shrink: 0; background-image: resource("LifeVerse/UI/Skin/arrow-down"); }
 
-.unity-toggle__input { flex-direction: row; align-items: center; }
-.unity-toggle__checkmark {
-    width: 20px; height: 20px; border-radius: 6px; border-width: 1px; border-color: #91979B; background-color: #2A3239; margin-right: 10px; flex-shrink: 0;
+/* a lista aberta de uma escolha */
+.unity-base-dropdown { position: absolute; left: 0; top: 0; right: 0; bottom: 0; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular"); font-size: 13px; color: #E8EDF5; }
+.unity-base-dropdown Label { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular"); color: #E8EDF5; }
+.unity-base-dropdown__container-outer {
+    position: absolute;
+    background-image: resource("LifeVerse/UI/Skin/panel-solid");
+    -unity-slice-left: 14; -unity-slice-top: 14; -unity-slice-right: 14; -unity-slice-bottom: 14; -unity-slice-scale: 0.5px;
+    padding: 5px; max-height: 320px;
 }
-.unity-toggle__input:checked > .unity-toggle__checkmark { background-color: #12706F; border-color: #12F2E0; }
-.unity-toggle__input:checked > .unity-toggle__checkmark > * { background-color: #FFFFFF; }
-.unity-toggle__input:hover > .unity-toggle__checkmark { border-color: #12F2E0; }
+.unity-base-dropdown__item { flex-direction: row; align-items: center; height: 26px; padding: 0 10px 0 6px; color: #E8EDF5; flex-shrink: 0; }
+.unity-base-dropdown__item:hover { background-color: #15837C; }
+.unity-base-dropdown__item:checked Label { color: #3FE3D3; }
+.unity-base-dropdown__checkmark { width: 8px; height: 8px; margin-right: 8px; border-radius: 4px; }
+.unity-base-dropdown__item:checked .unity-base-dropdown__checkmark { background-color: #3FE3D3; }
+.unity-base-dropdown__item-content { flex-direction: row; align-items: center; flex-grow: 1; }
+.unity-base-dropdown__label { margin: 0; padding: 0; }
+.unity-base-dropdown__separator { height: 1px; background-color: #3B4557; margin: 4px 2px; }
 
-.unity-base-slider__drag-container { flex-grow: 1; }
-.unity-base-slider__tracker { height: 6px; background-color: #2A3239; border-radius: 3px; border-width: 0; margin-top: 0; }
-.unity-base-slider__dragger { width: 18px; height: 18px; border-radius: 9px; background-color: #12F2E0; border-width: 0; top: -6px; }
-.unity-base-slider--horizontal { margin: 6px 0; }
-.unity-base-slider__input { margin: 6px 0; }
+/* caixas de marcar: a caixa e, ao lado, o texto */
+.unity-toggle { flex-direction: row; align-items: center; margin: 3px 2px; }
+.unity-toggle > .unity-base-field__label { min-width: 0; margin-right: 10px; font-size: 13px; color: #D3DAE6; }
+.unity-toggle__input { flex-direction: row; align-items: center; flex-grow: 0; }
+.unity-toggle__checkmark { width: 18px; height: 18px; flex-shrink: 0; background-image: resource("LifeVerse/UI/Skin/check"); }
+.unity-toggle__input:checked > .unity-toggle__checkmark, .unity-toggle:checked > .unity-toggle__input > .unity-toggle__checkmark { background-image: resource("LifeVerse/UI/Skin/check-on"); }
+.unity-toggle__text { margin-left: 8px; }
+.unity-toggle:hover .unity-toggle__checkmark { -unity-background-image-tint-color: #CFFFF9; }
+.unity-toggle:disabled { opacity: 0.5; }
+.lv-toggle { margin: 4px 2px; }
 
-.unity-scroll-view__vertical-scroller { width: 10px; }
-.unity-base-slider--vertical .unity-base-slider__tracker, .unity-scroller--vertical .unity-base-slider__tracker { width: 6px; height: auto; }
-.unity-scroller .unity-base-slider__dragger { width: 8px; height: auto; border-radius: 4px; background-color: #6D818D; top: 0; }
+/* controles deslizantes */
+.unity-base-slider { margin: 4px 2px; }
+.unity-base-slider__input { flex-direction: row; align-items: center; margin: 0; }
+.unity-base-slider__drag-container { flex-grow: 1; height: 20px; justify-content: center; }
+.unity-base-slider__tracker {
+    position: absolute; left: 0; right: 0; top: 7px; height: 7px;
+    background-image: resource("LifeVerse/UI/Skin/track");
+    -unity-slice-left: 8; -unity-slice-top: 6; -unity-slice-right: 8; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+}
+.unity-base-slider__dragger { position: absolute; width: 17px; height: 17px; top: 2px; margin: 0; background-image: resource("LifeVerse/UI/Skin/knob"); }
+.unity-base-slider__dragger:hover { -unity-background-image-tint-color: #A6FFF4; }
+.unity-base-slider__dragger-border { width: 0; height: 0; }
+
+/* barras de rolagem finas */
+.unity-scroll-view__content-and-vertical-scroll-container { flex-direction: row; flex-grow: 1; }
+.unity-scroll-view__content-viewport { flex-grow: 1; }
+.unity-scroll-view__vertical-scroller { width: 9px; margin-left: 3px; }
+.unity-scroll-view__horizontal-scroller { height: 9px; margin-top: 3px; }
+.unity-scroller .unity-base-slider { margin: 0; flex-grow: 1; }
+.unity-scroller--vertical .unity-base-slider__input { flex-direction: column; flex-grow: 1; }
+.unity-scroller--vertical .unity-base-slider__drag-container { height: auto; width: 9px; flex-grow: 1; justify-content: flex-start; }
+.unity-scroller--vertical .unity-base-slider__tracker { left: 1px; right: 1px; top: 0; bottom: 0; height: auto; background-image: none; background-color: rgba(0, 0, 0, 0.35); border-radius: 4px; }
+.unity-scroller--vertical .unity-base-slider__dragger {
+    width: 7px; left: 1px; top: 0;
+    background-image: resource("LifeVerse/UI/Skin/thumb");
+    -unity-slice-left: 7; -unity-slice-top: 8; -unity-slice-right: 7; -unity-slice-bottom: 8; -unity-slice-scale: 0.5px;
+}
+.unity-scroller--horizontal .unity-base-slider__drag-container { height: 9px; }
+.unity-scroller--horizontal .unity-base-slider__tracker { top: 1px; bottom: 1px; height: auto; background-image: none; background-color: rgba(0, 0, 0, 0.35); border-radius: 4px; }
+.unity-scroller--horizontal .unity-base-slider__dragger { height: 7px; top: 1px; background-image: none; background-color: #8592A9; border-radius: 3px; }
 .unity-scroller__low-button, .unity-scroller__high-button { display: none; }
-/* a barra de baixo tem muitos botões: menores */
-.lv-bar .lv-btn { padding: 5px 9px; margin: 1px; font-size: 13px; }
-.lv-mono { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Medium"); }
-
-
 /* itens de uma lista rolável não encolhem (senão se sobrepõem) */
 .unity-scroll-view__content-container > * { flex-shrink: 0; }
 .unity-scroll-view__content-container { flex-shrink: 0; }
-/* the button of an open window, as in the Godot client: teal, and orange for the inventory */
-.lv-btn-open { background-color: #0A3A3C; border-color: #12F2E0; }
-.lv-btn-open-orange { background-color: #4B3D30; border-color: #F4A340; }
-/* name plates over the avatars (client/Assets/ui/09_placas_nome.png) */
-.lv-plate { background-color: rgba(19, 35, 47, 0.86); border-width: 1px; border-color: #A9BCC3; border-radius: 14px; padding: 3px 12px 3px 10px; }
-.lv-plate-name { color: #FFFFFF; font-size: 14px; -unity-font-style: bold; padding: 0; margin: 0; }
+
+/* ------------------------------------------------ listas, seções, abas ------------------------------------------------ */
+.lv-row {
+    background-image: resource("LifeVerse/UI/Skin/row");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+    padding: 5px 9px; margin: 2px 0;
+}
+.lv-row:hover { background-image: resource("LifeVerse/UI/Skin/row-hover"); }
+.lv-divider { height: 1px; background-color: rgba(255, 255, 255, 0.13); margin: 8px 0; flex-shrink: 0; }
+.lv-root .lv-heading {
+    -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); color: #3FE3D3; font-size: 13px;
+    margin: 10px 0 5px 0; padding: 0 0 3px 0; border-bottom-width: 1px; border-bottom-color: rgba(63, 227, 211, 0.35);
+}
+.lv-sidebar {
+    background-image: resource("LifeVerse/UI/Skin/inset");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+    padding: 4px; flex-shrink: 0;
+}
+.lv-btn.lv-tab { margin: 1px 0; padding-top: 4px; padding-bottom: 4px; -unity-text-align: middle-left; color: #C3CCDC; white-space: normal; min-height: 29px; }
+.lv-btn.lv-tab:hover { color: #FFFFFF; background-image: resource("LifeVerse/UI/Skin/tab"); }
+.lv-btn.lv-tab.lv-btn-selected { color: #FFFFFF; background-image: resource("LifeVerse/UI/Skin/tab-selected"); }
+.lv-summary {
+    background-image: resource("LifeVerse/UI/Skin/row");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+    padding: 5px 10px; margin: 0 0 4px 0; color: #D8E2F0;
+}
+
+/* ------------------------------------------------ barras do jogo ------------------------------------------------ */
+.lv-bar { flex-direction: row; align-items: center; }
+.lv-menubar {
+    height: 30px; padding: 0 10px;
+    background-image: resource("LifeVerse/UI/Skin/menubar");
+    -unity-slice-left: 4; -unity-slice-top: 6; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+}
+.lv-navbar {
+    height: 38px; padding: 0 10px;
+    background-image: resource("LifeVerse/UI/Skin/navbar");
+    -unity-slice-left: 4; -unity-slice-top: 6; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+}
+.lv-toolbar {
+    justify-content: center; align-items: center; height: 62px; padding: 3px 8px 1px 8px;
+    background-image: resource("LifeVerse/UI/Skin/toolbar");
+    -unity-slice-left: 4; -unity-slice-top: 22; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+}
+.lv-menubar .lv-btn { min-height: 24px; height: 24px; padding-top: 0; padding-bottom: 0; margin: 0 1px; font-size: 13px; }
+.lv-menubar .lv-btn.lv-money { min-height: 22px; height: 22px; margin-left: 6px; }
+.lv-navbar .lv-btn { min-height: 28px; height: 28px; padding: 0 9px; margin: 0 2px; }
+.lv-nav-icon { width: 30px; padding: 0; align-items: center; justify-content: center; }
+.lv-address {
+    flex-direction: row; align-items: center; flex-grow: 1; flex-shrink: 1; height: 28px; margin: 0 8px; padding: 0 5px 0 9px; overflow: hidden;
+    background-image: resource("LifeVerse/UI/Skin/field");
+    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
+}
+.lv-address:hover { background-image: resource("LifeVerse/UI/Skin/field-focus"); }
+.lv-address Label { white-space: nowrap; margin: 0; padding: 0; }
+.lv-separator { width: 1px; height: 18px; background-color: rgba(255, 255, 255, 0.16); margin: 0 10px; flex-shrink: 0; }
+
+/* os botões da barra de baixo: o desenho em cima, o nome embaixo */
+.lv-btn.lv-tool {
+    background-image: resource("LifeVerse/UI/Skin/tool");
+    height: 54px; min-width: 64px; margin: 0 2px; padding-left: 7px; padding-right: 7px; padding-bottom: 3px;
+    font-size: 11px; color: #D5DCE8; -unity-text-align: lower-center; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis;
+}
+.lv-btn.lv-tool:hover { background-image: resource("LifeVerse/UI/Skin/tool-hover"); color: #FFFFFF; }
+.lv-btn.lv-tool:active { background-image: resource("LifeVerse/UI/Skin/tool-open"); }
+.lv-btn.lv-tool.lv-btn-open { background-image: resource("LifeVerse/UI/Skin/tool-open"); color: #FFFFFF; }
+.lv-btn.lv-tool.lv-btn-open-orange { background-image: resource("LifeVerse/UI/Skin/tool-open-orange"); color: #FFFFFF; }
+.lv-btn.lv-tool.lv-tool-compact { height: 40px; min-width: 40px; padding: 0; }
+.lv-btn.lv-tool.lv-dragging { opacity: 0.6; }
+/* ------------------------------------------------ menus e dicas ------------------------------------------------ */
+.lv-menu {
+    position: absolute; min-width: 246px; padding: 6px;
+    background-image: resource("LifeVerse/UI/Skin/panel-solid");
+    -unity-slice-left: 14; -unity-slice-top: 14; -unity-slice-right: 14; -unity-slice-bottom: 14; -unity-slice-scale: 0.5px;
+}
+.lv-btn.lv-menu-item { margin: 0; padding-top: 3px; padding-bottom: 3px; min-height: 27px; -unity-text-align: middle-left; background-image: none; }
+.lv-btn.lv-menu-item:hover { background-image: resource("LifeVerse/UI/Skin/tab-selected"); }
+.lv-menu-separator { height: 1px; background-color: rgba(255, 255, 255, 0.13); margin: 4px 6px; }
+.lv-tooltip {
+    position: absolute; max-width: 280px; padding: 4px 9px; font-size: 12px; color: #2B2108; white-space: normal;
+    background-image: resource("LifeVerse/UI/Skin/tooltip");
+    -unity-slice-left: 10; -unity-slice-top: 10; -unity-slice-right: 10; -unity-slice-bottom: 10; -unity-slice-scale: 0.5px;
+}
+
+/* ------------------------------------------------ progresso e notificações ------------------------------------------------ */
+.lv-progress {
+    height: 12px;
+    background-image: resource("LifeVerse/UI/Skin/track");
+    -unity-slice-left: 8; -unity-slice-top: 6; -unity-slice-right: 8; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+}
+.lv-progress-fill {
+    height: 12px; width: 0;
+    background-image: resource("LifeVerse/UI/Skin/fill");
+    -unity-slice-left: 8; -unity-slice-top: 6; -unity-slice-right: 8; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+}
+.lv-toast {
+    background-image: resource("LifeVerse/UI/Skin/panel-solid");
+    -unity-slice-left: 14; -unity-slice-top: 14; -unity-slice-right: 14; -unity-slice-bottom: 14; -unity-slice-scale: 0.5px;
+    padding: 9px 14px 9px 16px; margin: 3px 0; max-width: 360px; min-width: 220px;
+    border-left-width: 4px; border-top-left-radius: 6px; border-bottom-left-radius: 6px;
+}
+.lv-toast-info { border-left-color: #3FE3D3; }
+.lv-toast-good { border-left-color: #4ADE80; }
+.lv-toast-warn { border-left-color: #FBBF24; }
+.lv-toast-bad { border-left-color: #FF5C5C; }
+
+/* ------------------------------------------------ conversa, mini-mapa, nomes ------------------------------------------------ */
+.lv-chat { padding: 0; }
+.lv-chat > .lv-window-title { height: 28px; }
+.lv-chat-log { flex-grow: 1; margin: 4px 6px 0 8px; }
+.lv-chat-line { margin: 1px 0; white-space: normal; }
+.lv-chat-entry { flex-direction: row; align-items: center; flex-shrink: 0; padding: 4px 6px 6px 6px; }
+.lv-chat-entry > .unity-base-text-field { flex-grow: 1; margin: 0 4px 0 0; }
+.lv-map { padding: 0; }
+.lv-map > .lv-window-title { height: 26px; }
+.lv-map > .lv-window-title .lv-btn.lv-window-button { height: 19px; min-height: 19px; width: 21px; }
+.lv-plate {
+    background-image: resource("LifeVerse/UI/Skin/plate");
+    -unity-slice-left: 22; -unity-slice-top: 22; -unity-slice-right: 22; -unity-slice-bottom: 22; -unity-slice-scale: 0.5px;
+    padding: 3px 12px 3px 10px;
+}
+.lv-plate-name { color: #FFFFFF; font-size: 13px; -unity-font-style: bold; padding: 0; margin: 0; }
+
+/* ------------------------------------------------ entrada e carregamento ------------------------------------------------ */
+.lv-root .lv-brand { font-size: 60px; color: #FFFFFF; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); -unity-text-outline-width: 1px; -unity-text-outline-color: rgba(9, 60, 66, 0.9); text-shadow: 0px 3px 8px rgba(0, 0, 0, 0.75); letter-spacing: 2px; }
+.lv-slogan { font-size: 15px; color: #E8F6FF; text-shadow: 0px 1px 4px rgba(0, 0, 0, 0.9); }
+.lv-login-dock {
+    align-self: stretch; flex-shrink: 0; padding: 12px 20px 8px 20px;
+    background-image: resource("LifeVerse/UI/Skin/toolbar");
+    -unity-slice-left: 4; -unity-slice-top: 22; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+}
+.lv-login-fields { flex-direction: row; justify-content: center; align-items: flex-end; flex-wrap: wrap; }
+.lv-login-fields > * { margin: 3px 5px; }
+.lv-login-column { width: 180px; }
+.lv-login-column > .unity-base-field { margin: 0; }
+.lv-root .lv-btn.lv-login-enter { height: 31px; font-size: 14px; padding-left: 6px; padding-right: 6px; white-space: nowrap; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
+.lv-login-strip {
+    align-self: stretch; flex-direction: row; align-items: center; flex-shrink: 0; height: 30px; padding: 0 16px; background-color: rgba(5, 8, 12, 0.88);
+}
+.lv-card { padding: 14px 18px; }

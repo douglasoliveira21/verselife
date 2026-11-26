@@ -42,7 +42,10 @@ namespace LifeVerse.Unity.Audio
 
         /// <summary>"Ativar voz" off: nothing is sent and the microphone stays closed.</summary>
         public bool Off { get; set; }
-        private bool Wanted => !Off && !Muted && (TalkHeld || Locked);
+        private bool Wanted => !Off && !Muted && BlockedIn == null && (TalkHeld || Locked);
+        /// <summary>The parcel under the person that has voice off (null: voice works here). Nothing is sent and the microphone stays closed while it is set.</summary>
+        public string BlockedIn { get; set; }
+        public static string BlockedWords(string parcel) => "A voz está desligada em " + parcel + ".";
 
         private void Update()
         {

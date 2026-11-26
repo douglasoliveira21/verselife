@@ -5,6 +5,7 @@ using System.Linq;
 using LifeVerse.Shared.Networking;
 using LifeVerse.Unity.Avatar;
 using LifeVerse.Unity.UI;
+using LifeVerse.Unity.World;
 using UnityEngine;
 
 namespace LifeVerse.Unity.Server
@@ -63,7 +64,7 @@ namespace LifeVerse.Unity.Server
             yield return new WaitForSeconds(.5f);
             var failed = _results.Count(r => !r.Ok); Console.WriteLine($"event=e2e result={(failed == 0 ? "passed" : "failed")} steps={_results.Count} failed={failed}");
             try { System.IO.Directory.Delete(folder, true); } catch (Exception) { }
-            Application.Quit(failed == 0 ? 0 : 1);
+            CheckRun.Quit(failed == 0 ? 0 : 1);
         }
     }
 }

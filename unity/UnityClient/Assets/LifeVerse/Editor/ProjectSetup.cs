@@ -93,6 +93,8 @@ namespace LifeVerse.Unity.EditorTools
             if (File.Exists(ScenePath)) return;
             Directory.CreateDirectory("Assets/Scenes");
             var scene = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+            // no light of its own: the sun and the moon belong to the island's environment, and a light left here would shine on every island, night included
+            foreach (var root in scene.GetRootGameObjects()) if (root.GetComponent<Light>() != null) UnityEngine.Object.DestroyImmediate(root);
             EditorSceneManager.SaveScene(scene, ScenePath);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
         }

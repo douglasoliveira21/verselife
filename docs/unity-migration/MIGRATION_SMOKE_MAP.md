@@ -1,5 +1,7 @@
 ﻿# Equivalência dos testes de fumaça do Godot
 
+> **Documento histórico** (marcado em 26/11/2026): vários itens contados como parciais foram fechados depois (editor de anexos, animações, modos da interface, central de avisos, informações do terreno, configurações, espelho). Para o que ainda está aberto, vale [FALTA_FAZER.md](FALTA_FAZER.md).
+
 Gerado na Fase 14 (2026-11-20). Cada um dos 101 testes `client/Tests/<Nome>Smoke.cs` recebe um estado. A classificação foi feita pelo nome e pela descrição de cada teste e pelo que o cliente Unity tem hoje, sem rodar cada smoke. **Coberto**: há verificação equivalente no Unity (EditMode, auto-teste do mundo, API real ou xUnit). **Parcial**: parte do comportamento existe. **Não migrado**: a função não existe no cliente Unity. **Substituído**: outro meio cumpre o papel. **Não verificado**: não há evidência nos dois lados. Atualizado depois da Fase 15, quando teleporte, mapa, efeitos, mercado imobiliário, sincronia de configurações, dedos e atualização foram feitos.
 
 Resumo: Coberto: 75; Parcial: 25; Substituído: 1.

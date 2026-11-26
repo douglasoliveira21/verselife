@@ -27,7 +27,7 @@ namespace LifeVerse.Unity.UI
         public SocialWindow(ApiContext context) : base(context.Ui, "social", "Social", 440f, 470f, new Vector2(460, 90))
         {
             _c = context; var bar = UiKit.Row(); bar.style.marginBottom = 6;
-            foreach (var name in new[] { "Amigos", "Pedidos", "Mensagens", "Grupos", "Ilha" }) { var captured = name; var button = UiKit.Button(name, () => Show(captured)); _buttons[name] = button; bar.Add(button); var tab = new VisualElement(); tab.style.flexGrow = 1; tab.style.display = DisplayStyle.None; _tabs[name] = tab; }
+            foreach (var name in new[] { "Amigos", "Pedidos", "Mensagens", "Grupos", "Ilha" }) { var captured = name; var button = UiKit.Button(name, () => Show(captured)); _buttons[name] = button; bar.AddToClassList("lv-tabs"); bar.Add(button); var tab = new VisualElement(); tab.style.flexGrow = 1; tab.style.display = DisplayStyle.None; _tabs[name] = tab; }
             Body.Add(bar); _status = UiKit.Text("", "lv-small", "lv-muted"); Body.Add(_status);
             _friends = new ScrollView(); _friends.style.flexGrow = 1; _addId = UiKit.Field("Pedir amizade (identificador da pessoa)", false, 40); var ask = UiKit.Button("Pedir amizade", AskFriend); _tabs["Amigos"].Add(_friends); _tabs["Amigos"].Add(_addId); _tabs["Amigos"].Add(ask);
             _requests = new ScrollView(); _requests.style.flexGrow = 1; _tabs["Pedidos"].Add(_requests);

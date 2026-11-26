@@ -34,13 +34,36 @@ namespace LifeVerse.Unity.UI
 
         protected SectionWindow(ApiContext context, string id, string title, (string Id, string Text)[] sections, float width, float height, Vector2 position, float menuWidth = 190f) : base(context.Ui, id, title, width, height, position)
         {
-            _c = context; _summary = UiKit.Text("Carregando…", "lv-small"); _summary.style.whiteSpace = WhiteSpace.Normal; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
-            var menu = new ScrollView(); menu.style.width = menuWidth; menu.style.marginRight = 8;
-            foreach (var (sid, text) in sections) { var section = sid; var b = UiKit.Button(text, () => Show(section), "lv-btn-flat"); b.style.unityTextAlign = TextAnchor.MiddleLeft; _menu[sid] = b; menu.Add(b); }
+            _c = context; _summary = UiKit.Text("Carregando…", "lv-small", "lv-summary"); _summary.style.whiteSpace = WhiteSpace.Normal; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
+            var menu = new ScrollView { name = "sections" }; menu.AddToClassList("lv-sidebar"); menu.style.width = menuWidth; menu.style.marginRight = 10;
+            foreach (var (sid, text) in sections) { var section = sid; var b = UiKit.Button(text, () => Show(section), "lv-btn-flat"); b.AddToClassList("lv-tab"); UiKit.WithIcon(b, IconOfSection(sid), 15); b.style.whiteSpace = WhiteSpace.Normal; _menu[sid] = b; menu.Add(b); }
+            FitScreen();
+            // the summary of a window that has nothing to summarize takes no room
+            void Fold() => _summary.style.display = string.IsNullOrEmpty(_summary.text) ? DisplayStyle.None : DisplayStyle.Flex;
+            _summary.RegisterValueChangedCallback(e => Fold()); _summary.RegisterCallback<AttachToPanelEvent>(e => Fold());
             var right = new VisualElement(); right.style.flexGrow = 1; right.Add(_summary); right.Add(_status); _page.style.flexGrow = 1; right.Add(_page);
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexGrow = 1; row.style.flexShrink = 1; row.style.minHeight = 0; row.style.overflow = Overflow.Hidden; menu.style.minHeight = 0; right.style.minHeight = 0; _page.style.minHeight = 0;
             row.Add(menu); row.Add(right); Body.style.minHeight = 0; Body.style.overflow = Overflow.Hidden; Body.Add(row);
         }
+
+        private static readonly Dictionary<string, string> SectionIcons = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["geral"] = "info", ["visao"] = "eye", ["sobre"] = "user", ["resumo"] = "coin", ["extrato"] = "list", ["comprar"] = "plus", ["taxas"] = "info", ["enviar"] = "send",
+            ["visuais"] = "star", ["corpo"] = "avatar", ["roupas"] = "bag", ["animacoes"] = "play", ["editor"] = "user",
+            ["paravoce"] = "bulb", ["tudo"] = "grid", ["pessoas"] = "people", ["lugares"] = "pin", ["eventos"] = "calendar", ["grupos"] = "people", ["itens"] = "bag", ["lojas"] = "home", ["favoritos"] = "star",
+            ["meus"] = "people", ["descobrir"] = "search", ["convites"] = "mail", ["avisos"] = "bell", ["criar"] = "plus",
+            ["membros"] = "people", ["cargos"] = "shield", ["permissoes"] = "lock", ["chat"] = "chat", ["economia"] = "coins", ["propostas"] = "doc", ["loja"] = "bag", ["configuracoes"] = "settings",
+            ["pastas"] = "folder", ["sempasta"] = "folder-open", ["recentes"] = "history", ["atualizados"] = "download", ["devolvidos"] = "undo", ["lixeira"] = "trash", ["espaco"] = "chart", ["pacote"] = "download",
+            ["acesso"] = "user-add", ["banimentos"] = "ban", ["administracao"] = "shield", ["objetos"] = "cube", ["fisica"] = "move", ["desempenho"] = "chart", ["ambiente"] = "sun", ["midia"] = "volume", ["terreno"] = "mountain",
+            ["reinicio"] = "power", ["auditoria"] = "history", ["regras"] = "doc", ["terrenos"] = "grid", ["propriedade"] = "home", ["mapa"] = "map", ["demarcacao"] = "grid-dots", ["lista"] = "list", ["vendas"] = "coin", ["alugueis"] = "calendar",
+            ["contratos"] = "doc", ["prims"] = "cube", ["historico"] = "history", ["opcoes"] = "settings", ["perto"] = "target", ["amigos"] = "people", ["feed"] = "chat-dots", ["galeria"] = "image", ["conquistas"] = "star",
+            ["estatisticas"] = "chart", ["acoes"] = "dots", ["perfis"] = "copy",
+            ["General"] = "settings", ["Graphics"] = "monitor", ["Audio"] = "volume", ["Voice"] = "mic", ["Chat"] = "chat", ["Interface"] = "layers", ["Controls"] = "pointer", ["Camera"] = "camera", ["World"] = "globe", ["Avatar"] = "avatar",
+            ["Build"] = "hammer", ["Building"] = "hammer", ["Inventory"] = "bag", ["Scripts"] = "code", ["Network"] = "wifi", ["Privacy"] = "lock", ["Account"] = "user", ["Accessibility"] = "eye", ["Notifications"] = "bell", ["Metrics"] = "chart", ["Language"] = "globe",
+        };
+
+        /// <summary>The icon beside a section of the side menu.</summary>
+        public static string IconOfSection(string id) => id != null && SectionIcons.TryGetValue(id, out var icon) ? icon : "caret-right";
 
         public bool Press(string text) { if (!Actions.TryGetValue(text, out var run)) return false; run(); return true; }
 
@@ -105,7 +128,7 @@ namespace LifeVerse.Unity.UI
             var d = new DropdownField(label, options.Select(o => o.Text).ToList(), index); d.userData = options; Choices[label] = d; _page.Add(d); return d;
         }
         protected static string IdOf(DropdownField d) => d.userData is List<(string Id, string Text)> options && d.index >= 0 && d.index < options.Count ? options[d.index].Id : d.value;
-        protected void Title(string text) { var t = UiKit.Text(text, "lv-bold", "lv-accent"); t.style.marginTop = 8; _page.Add(t); }
+        protected void Title(string text) { var t = UiKit.Text(text, "lv-heading"); _page.Add(t); }
         protected void Line(string text, params string[] classes) { var t = UiKit.Text(text, classes.Length == 0 ? new[] { "lv-small" } : classes); t.style.whiteSpace = WhiteSpace.Normal; _page.Add(t); }
         protected VisualElement Row(Guid id, params VisualElement[] cells) { foreach (var c in cells) { c.style.marginRight = 8; if (c is Button) c.style.flexShrink = 0; else if (c is Label) { c.style.flexShrink = 1; c.style.minWidth = 40; c.style.whiteSpace = WhiteSpace.Normal; } } var r = UiKit.Row(cells); r.style.flexWrap = Wrap.Wrap; r.style.alignItems = Align.Center; r.AddToClassList("lv-row"); _page.Add(r); if (id != Guid.Empty) RowIds.Add(id); return r; }
         protected void Buttons(params VisualElement[] buttons) { var r = new VisualElement(); r.style.flexDirection = FlexDirection.Row; r.style.flexWrap = Wrap.Wrap; foreach (var b in buttons) r.Add(b); _page.Add(r); }

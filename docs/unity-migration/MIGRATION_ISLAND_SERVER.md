@@ -99,6 +99,29 @@ Leitura: queda, repouso e empilhamento batem dentro de ~2 cm e ~0,2 s; o PhysX a
 Não comparado: pilhas de várias caixas, rotação inicial, objetos finos em alta velocidade (túnel), custo com 200 corpos, corpos grandes sobre terreno inclinado, colisão entre dois corpos físicos. Também nada foi medido com os atritos de `PhysicsRules.Materials` (madeira, gelo etc.).
 
 Um defeito do meu código apareceu na comparação: o `Dispose` do `UnityIslandPhysics` usava a destruição adiada da Unity (fim do quadro), então corpos "destruídos" ainda colidiam com o cenário seguinte dentro do mesmo quadro. Agora destrói na hora. Não afeta o servidor (que vive o tempo todo e tem quadros entre as mudanças), só quem cria e destrói mundos seguidos.
+#### Segunda comparação (26/11/2026): materiais, rampas, colisões e muitos corpos
+
+Godot 4.7.2 (física padrão, a do servidor) contra o PhysX com três ajustes: atrito combinado pelo **menor** dos dois lados, chão e objetos fixos com atrito 1 e sem quique (como no Godot, onde não têm material) e o atrito por área do PhysX corrigido (`Physics.improvedPatchFriction`). Antes dos ajustes, uma caixa de vidro lançada a 6 m/s parava em 2,2 m (Godot 7,0 m), caixas tombavam ao escorregar e uma caixa não descia uma rampa de 35°.
+
+| Cenário | Godot | Unity |
+|---|---|---|
+| pilha de 5 caixas: topo / deriva / dorme | 4,46 / 0,011 / 1,6 s | 4,49 / 0,003 / 1,4 s |
+| caixa caindo torta: andou / dorme | 0,68 m / 1,9 s | 1,34 m / 2,5 s |
+| giro no chão (10 rad/s) | 1,90 rad | 1,45 rad |
+| bola a 80 m/s contra parede fina / contra o terreno | não atravessa | não atravessa |
+| bola contra bola parada (6 m/s): posições finais | 3,15 e 1,98 | 3,22 e 2,22 |
+| bola contra caixa de 10 kg: posições finais | 0,06 e -0,97 | 0,06 e -1,06 |
+| escorregar (vidro, metal, plástico) | 7,04 / 5,06 / 3,95 m | 8,29 / 5,68 / 4,32 m |
+| escorregar (carne, pedra, borracha) | 3,24 / 2,74 / 1,87 m | 3,48 / 2,91 / 1,94 m |
+| quique (pedra, metal, madeira): pico | 0,51 / 0,74 / 0,93 | 0,51 / 0,76 / 0,97 |
+| quique (plástico, vidro, borracha): pico | 1,18 / 1,47 / 2,65 | 1,24 / 1,58 / 2,91 |
+| bola elástica sobre caixa elástica: pico | 2,45 | 1,95 |
+| caixa grande em rampa de 10° / 25° / 35°: desceu | 0,11 / 0,26 / 13,3 m | 0,00 / 0,35 / 15,1 m |
+| bola em rampa de 10° / 25° / 35°: rolou | 0,00 / 8,9 / 11,1 m | 4,00 / 9,0 / 11,0 m |
+| 200 corpos, 8 s: dormindo / custo por passo | 186 / 4,1 ms | 100 / 0,2 ms |
+
+A bola parada na rampa de 10° no Godot e a soma dos quiques entre dois corpos não foram copiadas (a soma foi tentada com modificação de contato e deu 3,33, mais longe do Godot que os 1,95 de hoje).
+
 ### Scripts: o que está e o que falta
 
 O `IslandScripting*.cs` do Godot não depende de engine, então o `Core` o compila direto de `island-server/Scripts` (um `Compile Include` no `.csproj`; uma correção lá vale para os dois servidores). Só duas coisas foram escritas: `ServerConfiguration` (a parte que o código de scripts lê) e `HttpCompat` (sobrecargas do .NET 5+ que faltam no `netstandard2.1`). **Quando o servidor Godot for aposentado, essas fontes precisam ser movidas para o `Core`.** Verificado com Lua real: toque e chat. **Não verificado**: os demais eventos, HUD, mídia, efeitos, pagamentos, NPCs e gestos no servidor (o código é o mesmo do Godot, mas não há teste meu); Lua dentro do player Unity (só o compilador Lua foi autoverificado). **Física de objetos**: veja a seção abaixo.

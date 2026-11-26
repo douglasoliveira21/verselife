@@ -8,27 +8,69 @@ using UnityEngine.UIElements;
 namespace LifeVerse.Unity.UI
 {
     /// <summary>
-    /// The interface while playing: a bar at the top (the name of the game, the island, the connection and how many people are near), the chat at the bottom left, and a bar at the
-    /// bottom with the buttons that open the windows (chat, people, settings, help). <see cref="Register"/> adds a button for a window; the windows float over the game.
+    /// The interface while playing, laid out as the Second Life viewer: at the top the menu bar (the menus, the balance, how many people are near, the clock and the connection) and under it
+    /// the navigation bar (back, forward, where the person is, the search and the presence); the nearby chat at the bottom left, the mini-map at the top right, and at the bottom the toolbar
+    /// whose buttons open the floating windows. <see cref="Register"/> adds a button to the toolbar.
     /// </summary>
     public sealed class Hud
     {
+        public const float Edge = 8f;
         public readonly UiRoot Ui; public readonly ChatPanel Chat; public readonly NotificationCenter Notices;
-        public readonly VisualElement TopBar, BottomBar; public readonly DropdownField Presence = new DropdownField(new System.Collections.Generic.List<string> { "online", "away", "busy", "invisible" }, 0); public readonly Minimap Map = new Minimap(); public readonly PerformanceOverlay Perf = new PerformanceOverlay(); public readonly RadialMenu Radial = new RadialMenu(); private readonly Label _connection, _people, _island; private readonly Dictionary<string, FloatingWindow> _windows = new Dictionary<string, FloatingWindow>();
+        public readonly VisualElement TopBar, BottomBar, MenuBar, NavigationBar; public readonly DropdownField Presence = new DropdownField(new System.Collections.Generic.List<string> { "online", "away", "busy", "invisible" }, 0); public readonly Minimap Map = new Minimap(); public readonly PerformanceOverlay Perf = new PerformanceOverlay(); public readonly RadialMenu Radial = new RadialMenu(); private readonly Label _connection, _people, _island, _position, _clock; private readonly Dictionary<string, FloatingWindow> _windows = new Dictionary<string, FloatingWindow>();
         public bool Visible { get; private set; }
+        /// <summary>The field of the navigation bar: Enter asks the game to search for what was written (<see cref="SearchAsked"/>).</summary>
+        public readonly TextField Search; public Action<string> SearchAsked;
+        /// <summary>A click on the address (the map), and the two buttons at its end (about the island, about the land under the person).</summary>
+        public Action AddressPressed, IslandPressed, ParcelPressed;
+
+        /// <summary>The words of each presence of the account (the values are the platform's).</summary>
+        public static string PresenceWords(string status) => status switch { "online" => "Disponível", "away" => "Ausente", "busy" => "Ocupado", "invisible" => "Invisível", _ => status };
 
         public Hud(UiRoot ui, NotificationCenter notices)
         {
             Ui = ui; Notices = notices; Chat = new ChatPanel(ui.Settings);
-            TopBar = new VisualElement(); TopBar.AddToClassList("lv-bar"); TopBar.name = "topbar"; TopBar.style.position = Position.Absolute; TopBar.style.top = 14; TopBar.style.left = 18; TopBar.style.right = 18; TopBar.pickingMode = PickingMode.Position;
-            var logo = new Icon("cube", 28, new Color(.07f, .95f, .88f)) { name = "logo", tooltip = "LifeVerse" }; logo.style.marginRight = 6; TopBar.Add(logo); _menus = new VisualElement { name = "menus" }; _menus.style.flexDirection = FlexDirection.Row; TopBar.Add(_menus); IslandBack = UiKit.Button("‹", () => Travel?.Invoke(-1), "lv-btn-flat"); IslandBack.name = "island-back"; IslandBack.tooltip = "Voltar à ilha anterior"; IslandForward = UiKit.Button("›", () => Travel?.Invoke(1), "lv-btn-flat"); IslandForward.name = "island-forward"; IslandForward.tooltip = "Avançar para a próxima ilha"; IslandBack.style.marginLeft = 10; TopBar.Add(IslandBack); TopBar.Add(IslandForward); SetTravel(false, false); _island = UiKit.Text("", "lv-muted"); _island.style.marginLeft = 4; var pin = new Icon("pin", 18, new Color(.07f, .95f, .88f)); pin.style.marginLeft = 10; TopBar.Add(pin); TopBar.Add(_island); TopBar.Add(UiKit.Spacer());
-            var coin = new Icon("coin", 20, new Color(.96f, .64f, .25f)) { name = "coin" }; coin.style.marginRight = 6; TopBar.Add(coin); _balance = UiKit.Text("", "lv-bold"); _balance.style.marginRight = 6; TopBar.Add(_balance);
-            BuyCoins = UiKit.WithIcon(UiKit.Button("", () => BuyCoinsPressed?.Invoke(), "lv-btn-primary"), "plus", 16); BuyCoins.name = "buy-coins"; BuyCoins.tooltip = "Carteira: comprar VerseCoin"; BuyCoins.style.width = 32; BuyCoins.style.paddingLeft = 0; BuyCoins.style.marginRight = 18; ((UiKit.ButtonIcon)BuyCoins.userData).Only = true; TopBar.Add(BuyCoins);
-            _people = UiKit.Text("0 pessoas", "lv-muted"); _people.style.marginRight = 18; TopBar.Add(_people); Presence.style.width = 110; Presence.style.marginRight = 10; TopBar.Add(Presence); _connection = UiKit.Text("● desconectado", "lv-bad"); TopBar.Add(_connection);
-            BottomBar = new VisualElement(); BottomBar.AddToClassList("lv-bar"); BottomBar.name = "bottombar"; BottomBar.style.position = Position.Absolute; BottomBar.style.bottom = 14; BottomBar.style.left = 18; BottomBar.style.right = 18; BottomBar.style.justifyContent = Justify.Center; BottomBar.pickingMode = PickingMode.Position;
-            Chat.style.position = Position.Absolute; Chat.style.left = 18; Chat.style.bottom = 76;
-            Map.style.position = Position.Absolute; Map.style.left = 18; Map.style.top = 70; Perf.style.top = 270; Perf.style.display = DisplayStyle.None;
+            TopBar = new VisualElement { name = "topbar", pickingMode = PickingMode.Position }; TopBar.style.position = Position.Absolute; TopBar.style.top = 0; TopBar.style.left = 0; TopBar.style.right = 0;
+
+            // the menu bar: the menus on the left, the state of things on the right
+            MenuBar = Bar("lv-menubar", "menubar"); TopBar.Add(MenuBar);
+            var logo = new Icon("cube", 20, Teal) { name = "logo", tooltip = "LifeVerse" }; logo.style.marginRight = 8; MenuBar.Add(logo); _menus = new VisualElement { name = "menus" }; _menus.style.flexDirection = FlexDirection.Row; MenuBar.Add(_menus); MenuBar.Add(UiKit.Spacer());
+            var coin = new Icon("coin", 17, Gold) { name = "coin" }; coin.style.marginRight = 6; MenuBar.Add(coin); _balance = UiKit.Text("", "lv-bold", "lv-gold"); MenuBar.Add(_balance);
+            BuyCoins = UiKit.WithIcon(UiKit.Button("Comprar", () => BuyCoinsPressed?.Invoke(), "lv-btn-secondary"), "plus", 13); BuyCoins.AddToClassList("lv-money"); BuyCoins.name = "buy-coins"; BuyCoins.tooltip = "Carteira: comprar VerseCoin"; MenuBar.Add(BuyCoins);
+            MenuBar.Add(Separator()); var people = new Icon("people", 16, Muted); people.style.marginRight = 5; MenuBar.Add(people); _people = UiKit.Text("0 pessoas", "lv-muted"); MenuBar.Add(_people);
+            MenuBar.Add(Separator()); _clock = UiKit.Text("", "lv-muted"); _clock.name = "clock"; MenuBar.Add(_clock); Tick(); MenuBar.schedule.Execute(Tick).Every(5000);
+            MenuBar.Add(Separator()); _connection = UiKit.Text("● desconectado", "lv-bad"); MenuBar.Add(_connection);
+
+            // the navigation bar: where the person is, with the way back and forward
+            NavigationBar = Bar("lv-navbar", "navbar"); TopBar.Add(NavigationBar);
+            IslandBack = IconButton("chevron-left", "Voltar à ilha anterior", () => Travel?.Invoke(-1)); IslandBack.name = "island-back"; IslandForward = IconButton("chevron-right", "Avançar para a próxima ilha", () => Travel?.Invoke(1)); IslandForward.name = "island-forward"; NavigationBar.Add(IslandBack); NavigationBar.Add(IslandForward); SetTravel(false, false);
+            var address = new VisualElement { name = "address", tooltip = "Onde você está (clique para abrir o mapa)" }; address.AddToClassList("lv-address");
+            var pin = new Icon("pin", 16, Teal); pin.style.marginRight = 7; address.Add(pin); _island = UiKit.Text("", "lv-bold"); _island.style.flexShrink = 1; _island.style.overflow = Overflow.Hidden; _island.style.textOverflow = TextOverflow.Ellipsis; address.Add(_island);
+            _position = UiKit.Text("", "lv-muted"); _position.name = "position"; _position.style.marginLeft = 12; address.Add(_position); address.Add(UiKit.Spacer());
+            var about = IconButton("info", "Sobre a ilha", () => IslandPressed?.Invoke(), 15); about.name = "about-island"; address.Add(about); var parcel = IconButton("grid", "Sobre este terreno", () => ParcelPressed?.Invoke(), 15); parcel.name = "about-parcel"; address.Add(parcel);
+            address.RegisterCallback<ClickEvent>(e => { for (var t = e.target as VisualElement; t != null && t != address; t = t.parent) if (t is Button) return; AddressPressed?.Invoke(); });
+            NavigationBar.Add(address);
+            Search = new TextField { maxLength = 120, name = "nav-search", tooltip = "Buscar no LifeVerse (Enter)" }; Search.style.width = 220; Search.style.marginRight = 2; Search.textEdition.placeholder = "Buscar no LifeVerse…";
+            Search.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { RunSearch(); e.StopPropagation(); } else if (e.keyCode == KeyCode.Escape) Search.Blur(); }, TrickleDown.TrickleDown); NavigationBar.Add(Search);
+            var find = IconButton("search", "Buscar", RunSearch); find.name = "nav-search-go"; NavigationBar.Add(find); NavigationBar.Add(Separator());
+            Presence.formatSelectedValueCallback = PresenceWords; Presence.formatListItemCallback = PresenceWords; Presence.SetValueWithoutNotify(Presence.choices[0]); Presence.tooltip = "Como os outros veem você"; Presence.style.width = 128; NavigationBar.Add(Presence);
+
+            BottomBar = Bar("lv-toolbar", "bottombar"); BottomBar.style.position = Position.Absolute; BottomBar.style.bottom = 0; BottomBar.style.left = 0; BottomBar.style.right = 0;
+            Chat.style.position = Position.Absolute; Chat.style.left = Edge; Chat.style.bottom = FloatingWindow.BottomInset;
+            Map.style.position = Position.Absolute; Map.style.right = Edge; Map.style.top = FloatingWindow.TopInset; Perf.style.left = Edge; Perf.style.top = FloatingWindow.TopInset; Perf.style.display = DisplayStyle.None;
         }
+
+        private static readonly Color Teal = new Color(.247f, .89f, .827f), Gold = new Color(1f, .77f, .36f), Muted = new Color(.65f, .69f, .77f);
+        private static VisualElement Bar(string kind, string name) { var bar = new VisualElement { name = name, pickingMode = PickingMode.Position }; bar.AddToClassList("lv-bar"); bar.AddToClassList(kind); return bar; }
+        private static VisualElement Separator() { var line = new VisualElement { pickingMode = PickingMode.Ignore }; line.AddToClassList("lv-separator"); return line; }
+        private static Button IconButton(string icon, string tip, Action run, float size = 16f) { var button = UiKit.Button("", run, "lv-btn-flat"); button.tooltip = tip; button.AddToClassList("lv-nav-icon"); button.Add(new Icon(icon, size)); return button; }
+        private void Tick() => _clock.text = DateTime.Now.ToString("HH:mm");
+        /// <summary>Asks for the search with what the field of the navigation bar says (an empty field opens the search).</summary>
+        public void RunSearch() { var text = (Search.value ?? "").Trim(); Search.Blur(); Search.value = ""; SearchAsked?.Invoke(text); }
+
+        /// <summary>Where the person is, in the metres of the game, on the address of the navigation bar.</summary>
+        public void SetPosition(Vector3? game) => _position.text = game is { } p ? Mathf.RoundToInt(p.x) + ", " + Mathf.RoundToInt(p.y) + ", " + Mathf.RoundToInt(p.z) : "";
+        public string PositionText => _position.text;
+        public string IslandText => _island.text;
 
         public void Show()
         {
@@ -55,16 +97,23 @@ namespace LifeVerse.Unity.UI
         /// <summary>A menu of the top bar, as the Godot client's (Eu, Comunicar, Mundo, Conteúdo, Ajuda, Desenvolver): a title with a caret that opens a list of actions with icons under it.</summary>
         public Button AddMenu(string title, IReadOnlyList<(string Label, string Icon, Action Run)> items)
         {
-            Button button = null; button = UiKit.Button(title, () => ToggleMenu(button, items), "lv-btn-flat"); button.name = "menu-" + title; UiKit.WithTrailingIcon(button, "caret-down", 12); _menus.Add(button); return button;
+            Button button = null; button = UiKit.Button(title, () => ToggleMenu(button, items), "lv-btn-flat"); button.name = "menu-" + title; _menus.Add(button); return button;
         }
+
+        /// <summary>An entry with this label draws a line between two groups of a menu.</summary>
+        public const string MenuLine = "-";
 
         /// <summary>Opens (or closes) the list of a menu under its title.</summary>
         public void ToggleMenu(Button title, IReadOnlyList<(string Label, string Icon, Action Run)> items)
         {
             var wasThis = _openMenu != null && _openMenu.parent != null && _openMenu.userData == title; CloseMenu(); if (wasThis) return;
-            var list = new VisualElement { name = "menu-list", userData = title }; list.AddToClassList("lv-glass"); list.style.position = Position.Absolute; list.style.paddingTop = list.style.paddingBottom = 6; list.style.minWidth = 230;
-            var scale = Mathf.Max(.01f, Ui.Panel.scale); var at = title.worldBound; list.style.left = at.xMin; list.style.top = at.yMax + 6;
-            foreach (var (label, icon, run) in items) { var go = run; var entry = UiKit.WithIcon(UiKit.Button(label, () => { CloseMenu(); go?.Invoke(); }, "lv-btn-flat"), string.IsNullOrEmpty(icon) ? "dots" : icon); entry.style.unityTextAlign = TextAnchor.MiddleLeft; entry.style.marginBottom = 1; list.Add(entry); }
+            var list = new VisualElement { name = "menu-list", userData = title }; list.AddToClassList("lv-menu");
+            var at = title.worldBound; list.style.left = at.xMin; list.style.top = at.yMax + 2;
+            foreach (var (label, icon, run) in items)
+            {
+                if (label == MenuLine) { var line = new VisualElement { pickingMode = PickingMode.Ignore }; line.AddToClassList("lv-menu-separator"); list.Add(line); continue; }
+                var go = run; var entry = UiKit.WithIcon(UiKit.Button(label, () => { CloseMenu(); go?.Invoke(); }, "lv-btn-flat"), string.IsNullOrEmpty(icon) ? "dots" : icon, 15); entry.AddToClassList("lv-menu-item"); list.Add(entry);
+            }
             Ui.WindowLayer.Add(list); _openMenu = list; list.BringToFront();
             Ui.Root.RegisterCallback<PointerDownEvent>(OutsideMenu, TrickleDown.TrickleDown);
         }
@@ -108,7 +157,7 @@ namespace LifeVerse.Unity.UI
         /// <summary>Adds a button to the bottom bar that opens (or closes) a window.</summary>
         /// <summary>The icon of each button of the bar, as in the Godot client's toolbar (the window it opens shows it in its title too).</summary>
         /// <summary>The buttons that start hidden (they are in the menus of the top bar), until the person arranges the bar.</summary>
-        public static readonly string[] DefaultHidden = { "chat", "social", "more", "settings", "help" };
+        public static readonly string[] DefaultHidden = { "social", "more", "settings", "help" };
 
         /// <summary>The order the bar starts with (the Godot client's: speak, gestures, photo, build, people, map, inventory, mini-map…); ids not named keep their place after these.</summary>
         public void SetDefaultOrder(params string[] ids) { var rest = ToolbarDefaults.Where(id => !ids.Contains(id)).ToList(); ToolbarDefaults.Clear(); ToolbarDefaults.AddRange(ids.Where(id => rest.Contains(id) || BottomBar.Q<Button>("btn-" + id) != null)); ToolbarDefaults.AddRange(rest); }
@@ -116,13 +165,13 @@ namespace LifeVerse.Unity.UI
         public static readonly Dictionary<string, string> Icons = new Dictionary<string, string>
         {
             ["chat"] = "chat", ["people"] = "people", ["social"] = "user", ["inventory"] = "bag", ["wallet"] = "coin", ["search"] = "search", ["build"] = "hammer", ["voice"] = "mic",
-            ["notifications"] = "bell", ["map"] = "pin", ["more"] = "dots", ["settings"] = "settings", ["help"] = "help", ["gestures"] = "hand", ["photo"] = "photo", ["minimap"] = "map",
+            ["notifications"] = "bell", ["map"] = "globe", ["more"] = "dots", ["settings"] = "settings", ["help"] = "help", ["gestures"] = "hand", ["photo"] = "photo", ["minimap"] = "map", ["move"] = "run", ["camera"] = "camera",
         };
 
         public Button Register(string label, string id, Func<FloatingWindow> create)
         {
-            var button = UiKit.Button(label, () => Toggle(id, create)); button.name = "btn-" + id; button.tooltip = label;
-            if (Icons.TryGetValue(id, out var icon)) UiKit.WithIcon(button, icon);
+            var button = UiKit.Button(label, () => Toggle(id, create)); button.name = "btn-" + id; button.tooltip = label; button.AddToClassList("lv-tool");
+            UiKit.Stacked(button, Icons.TryGetValue(id, out var icon) ? icon : "dots");
             BottomBar.Add(button); if (!ToolbarDefaults.Contains(id)) ToolbarDefaults.Add(id); DragToReorder(button, id); return button;
         }
 
@@ -157,12 +206,28 @@ namespace LifeVerse.Unity.UI
 
         public FloatingWindow WindowOf(string id) => _windows.TryGetValue(id, out var window) && window.IsOpen ? window : null;
 
-        /// <summary>The window of the people around: everyone the server tells about, with how far they are, nearest first.</summary>
+        /// <summary>The keys of the game, by what they do.</summary>
+        public static readonly (string Title, (string Keys, string Does)[] Rows)[] HelpPages =
+        {
+            ("Mover", new[] { ("W A S D", "andar"), ("Shift", "correr"), ("Espaço", "pular ou subir voando"), ("F", "voar"), ("C ou Ctrl", "descer"), ("X", "sentar"), ("E", "entrar no carro e sair") }),
+            ("Câmera", new[] { ("Botão direito + mouse", "girar a câmera"), ("Roda do mouse", "aproximar e afastar"), ("V", "primeira pessoa"), ("Alt + V", "câmera solta") }),
+            ("Gestos", new[] { ("G", "acenar"), ("H", "dançar"), ("J", "aplaudir"), ("K", "apontar"), ("L", "cumprimentar"), ("N", "rir"), ("Q", "menu de gestos") }),
+            ("Interface", new[] { ("Enter", "abrir a conversa"), ("Esc", "sair da conversa"), ("B", "construir"), ("T", "editar o terreno"), ("F3", "desempenho"), ("F10", "mostrar a interface no modo imersivo"), ("F12", "tirar foto") }),
+        };
+
         public static FloatingWindow HelpWindow(UiRoot ui)
         {
-            var window = new FloatingWindow(ui, "help", "Ajuda", 380f, -1f, new Vector2(520, 160));
-            foreach (var line in new[] { "W A S D: andar · Shift: correr · Espaço: pular", "F: voar · C ou Ctrl: descer · X: sentar", "Botão direito + mouse: girar a câmera · roda: aproximar", "V: primeira pessoa · E: entrar no carro e sair", "G acenar · H dançar · J aplaudir · K apontar · L cumprimentar · N rir", "Enter: abre o chat · Esc: sai do chat" })
-            { var label = UiKit.Text(line, "lv-muted"); label.style.whiteSpace = WhiteSpace.Normal; label.style.marginBottom = 4; window.Body.Add(label); }
+            var window = new FloatingWindow(ui, "help", "Ajuda: atalhos e controles", 430f, 500f, new Vector2(420, 90)); window.SetIcon("help");
+            var list = new ScrollView(); list.style.flexGrow = 1; window.Body.style.minHeight = 0; window.Body.style.overflow = Overflow.Hidden; window.Body.Add(list);
+            foreach (var (title, rows) in HelpPages)
+            {
+                list.Add(UiKit.Text(title, "lv-heading"));
+                foreach (var (keys, does) in rows)
+                {
+                    var key = UiKit.Text(keys, "lv-inset", "lv-small", "lv-bold"); key.style.width = 160; key.style.paddingTop = key.style.paddingBottom = 2; key.style.unityTextAlign = TextAnchor.MiddleCenter; key.style.flexShrink = 0;
+                    var what = UiKit.Text(does, "lv-muted"); what.style.marginLeft = 10; what.style.whiteSpace = WhiteSpace.Normal; what.style.flexShrink = 1; var row = UiKit.Row(key, what); row.style.marginBottom = 3; list.Add(row);
+                }
+            }
             return window;
         }
     }

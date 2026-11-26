@@ -25,7 +25,7 @@ namespace LifeVerse.Unity.UI
         public int Suppressed { get; private set; }
         public event Action Changed;
 
-        public NotificationCenter(UiRoot ui) { _ui = ui; var corner = _ui.ToastLayer; corner.style.alignItems = Align.FlexEnd; corner.style.justifyContent = Justify.FlexStart; corner.style.paddingTop = 70; corner.style.paddingRight = 18; }
+        public NotificationCenter(UiRoot ui) { _ui = ui; var corner = _ui.ToastLayer; corner.style.alignItems = Align.FlexEnd; corner.style.justifyContent = Justify.FlexEnd; corner.style.paddingBottom = FloatingWindow.BottomInset; corner.style.paddingRight = 10; }   // as in the viewer: over the toolbar, on the right
 
         public Notice Show(string text, NoticeKind kind = NoticeKind.Info, float seconds = 5f)
         {

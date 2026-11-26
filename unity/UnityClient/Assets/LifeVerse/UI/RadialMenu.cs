@@ -108,7 +108,7 @@ namespace LifeVerse.Unity.UI
             for (var i = 0; i < count; i++)
             {
                 var centre = AngleOf(i, count); var half = Mathf.PI / count; var enabled = Slices[i].Enabled;
-                painter.fillColor = i == _hover && enabled ? Color.Lerp(new Color(.1f, .15f, .18f, Mathf.Max(Opacity, .5f)), new Color(.07f, .6f, .6f, .97f), Mathf.Clamp01(.25f + Glow)) : new Color(.1f, .15f, .18f, Opacity); painter.strokeColor = new Color(.43f, .5f, .55f, 1f); painter.lineWidth = 1.5f;
+                painter.fillColor = i == _hover && enabled ? Color.Lerp(new Color(.14f, .17f, .22f, Mathf.Max(Opacity, .5f)), new Color(.08f, .58f, .54f, .97f), Mathf.Clamp01(.25f + Glow)) : new Color(.12f, .15f, .2f, Opacity); painter.strokeColor = i == _hover && enabled ? new Color(.25f, .89f, .83f, 1f) : new Color(.39f, .44f, .53f, 1f); painter.lineWidth = 1.5f;
                 painter.BeginPath(); painter.Arc(_centre, Outer, new Angle(centre - half + .01f, AngleUnit.Radian), new Angle(centre + half - .01f, AngleUnit.Radian)); painter.Arc(_centre, Inner, new Angle(centre + half - .01f, AngleUnit.Radian), new Angle(centre - half + .01f, AngleUnit.Radian), ArcDirection.CounterClockwise); painter.ClosePath(); painter.Fill(); painter.Stroke();
             }
         }

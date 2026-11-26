@@ -39,7 +39,7 @@ namespace LifeVerse.Unity.Server
             var steps = Everything(); while (true) { try { if (!steps.MoveNext()) break; } catch (Exception exception) { Record("run", false, exception.GetType().Name + ": " + exception.Message); break; } yield return steps.Current; }
             var failed = _results.Count(r => !r.Ok); Console.WriteLine($"event=live_api result={(failed == 0 ? "passed" : "failed")} steps={_results.Count} failed={failed}");
             foreach (var r in _results.Where(r => !r.Ok)) Console.WriteLine($"event=live_failure name={r.Name} detail={r.Detail}");
-            Application.Quit(failed == 0 ? 0 : 1);
+            CheckRun.Quit(failed == 0 ? 0 : 1);
         }
 
         private void Record(string name, bool ok, string detail = "") { _results.Add((name, ok, detail)); Console.WriteLine($"event=live_step name={name} result={(ok ? "ok" : "FAIL")} detail={detail}"); }
@@ -117,6 +117,9 @@ namespace LifeVerse.Unity.Server
         yield return Step("avatar studio: own body, clothes and animations sent, worn, chosen; looks saved, shared and brought by code", AvatarStudio());
         yield return Step("people and discovery: relations, friends on the map, arrival check, island info, guest events, calendar, item detail", SocialDiscovery());
         yield return Step("entry: servers healthy, the start place chosen by the server, the island's asset list; script editor: server check, runtime, pause, permission, completion", EntryAndScripts());
+        yield return Step("buying from the search: coins from the test provider, product bought in its details, the store and its catalog", BuyFromSearch());
+        yield return Step("real estate notices: a payment writes one, it shows in My Properties and is marked as read", PropertyNotices());
+        yield return Step("voice switched off by a parcel; every synced setting accepted by the account", VoiceAndSync());
         yield return Step("live: notification channel (message pushed by the API)", Live());
         }
 
@@ -451,7 +454,7 @@ namespace LifeVerse.Unity.Server
             gp.Close(); hub.Close();
             // the history of an item, shown to the next owners
             yield return Call(_a, "GET", "/api/v1/inventory/items?page=1&pageSize=5", null, b => body = b); var rows = Json.Rows(body);
-            if (rows.Count == 0) { Check(true, "sem itens para o histórico (nada a conferir)"); yield break; }
+            Check(rows.Count > 0, "a conta de teste precisa ter um item (o passo dos arquivos cria) para conferir o histórico: " + Snip(body));
             var itemId = rows[0].Id("itemId"); var iw = new ItemWindow(_ca, itemId, rows[0].First("name")); iw.Open(); yield return Until(() => iw.HistoryShown.style.display == UnityEngine.UIElements.DisplayStyle.Flex, "a opção do histórico para o dono");
             iw.SetHistoryVisible(true); yield return Until(() => iw.Status.Length > 0, "mostrar o histórico");
             yield return Call(_a, "GET", "/api/v1/inventory/items/" + itemId + "/rights", null, b => body = b); Check(Json.One(body).Flag("showOwnerHistory"), "o histórico visível na API: " + iw.Status + " " + Snip(body));
@@ -549,6 +552,84 @@ namespace LifeVerse.Unity.Server
             bst.Fields["Código de um visual compartilhado"].value = st.LastCode; bst.Press("Trazer pelo código"); yield return Until(() => bst.Status.Length > 0, "B trazer pelo código"); Check(bst.Status.Contains("trazido"), "B traz o visual pelo código: " + bst.Status);
             st.Show("corpo"); yield return Until(() => st.Actions.ContainsKey("Voltar ao corpo do jogo"), "a aba do corpo de novo"); yield return new WaitForSeconds(.3f); st.Press("Voltar ao corpo do jogo"); yield return Until(() => st.Status.Contains("Corpo do jogo"), "voltar ao corpo do jogo");
             st.Close(); bst.Close(); try { System.IO.Directory.Delete(folder, true); } catch (System.IO.IOException) { }
+        }
+
+        /// <summary>The made-up secret of the test payment provider of tools/ApiLiveHost (a local host only).</summary>
+        private const string TestWebhookSecret = "live-host-test-webhook-secret-0123456789";
+
+        private IEnumerator BuyFromSearch()
+        {
+            // B buys a pack of coins; the test provider confirms it by a signed webhook, as a real gateway would
+            string body = null; yield return Call(_b, "GET", "/api/v1/economy/packages", null, b => body = b);
+            string pack = null; using (var d = JsonDocument.Parse(body)) pack = d.RootElement.GetProperty("packages").EnumerateArray().Select(p => p.GetProperty("id").GetString()).FirstOrDefault(); Check(pack != null, "o servidor oferece pacotes de moedas: " + Snip(body));
+            yield return Call(_b, "POST", "/api/v1/economy/coin-orders", JsonSerializer.Serialize(new { packageId = pack, method = "pix", idempotencyKey = Guid.NewGuid().ToString("N") }), b => body = b);
+            var order = Json.One(body); var paid = "{\"providerRef\":\"test-" + order.Id().ToString("N") + "\",\"status\":\"paid\",\"amountCents\":" + order.Number("priceCents") + "}";
+            var webhook = Task.Run(async () =>
+            {
+                using var hmac = new System.Security.Cryptography.HMACSHA256(System.Text.Encoding.UTF8.GetBytes(TestWebhookSecret)); var signature = BitConverter.ToString(hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(paid))).Replace("-", "").ToLowerInvariant();
+                using var http = new System.Net.Http.HttpClient(); using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Post, Url.TrimEnd('/') + "/api/v1/economy/payment-webhooks/test") { Content = new System.Net.Http.StringContent(paid, System.Text.Encoding.UTF8, "application/json") };
+                request.Headers.Add("X-Signature", signature); using var response = await http.SendAsync(request); return (int)response.StatusCode;
+            });
+            yield return Wait(webhook); Check(webhook.Result == 200, "o provedor de teste confirma o pagamento: " + webhook.Result);
+            yield return Call(_b, "GET", "/api/v1/economy/wallet", null, b => body = b); var before = Json.One(body).Number("availableCoins"); Check(before >= 50, "as moedas chegaram à carteira de B: " + Snip(body));
+            yield return Call(_b, "GET", "/api/v1/economy/products?page=1&pageSize=24", null, b => body = b);
+            var product = Json.Rows(body).Where(r => r.First("name") == "Imagem azul").Select(r => r.Id()).FirstOrDefault(id => id != Guid.Empty); Check(product != Guid.Empty, "o produto de A está no mercado: " + Snip(body));
+            var gs = new GlobalSearchWindow(_cb, new UserSettings()); gs.Open();
+            var found = false;
+            for (var attempt = 0; attempt < 8 && !found; attempt++)
+            {
+                gs.Show("itens"); yield return Until(() => gs.Fields.ContainsKey("Buscar"), "a aba Itens"); gs.Fields["Buscar"].value = "Imagem azul"; var loads = gs.Loads; gs.Press("Buscar"); yield return Until(() => gs.Loads > loads, "a busca de itens: " + gs.Status);
+                found = gs.RowIds.Contains(product); if (!found) yield return new WaitForSeconds(5f);
+            }
+            Check(found, "o produto aparece na busca: " + gs.SummaryText);
+            Check(gs.OpenResult(product), "abrir o produto"); yield return Until(() => gs.Actions.ContainsKey("Comprar") && gs.FactsText.Contains("Preço"), "o detalhe do produto: " + gs.Status);
+            gs.Press("Comprar"); yield return Until(() => gs.Bought || gs.Status.Length > 0, "a compra pelo detalhe"); Check(gs.Bought, "comprado pelo detalhe da busca: " + gs.Status);
+            yield return Call(_b, "GET", "/api/v1/economy/wallet", null, b => body = b); var after = Json.One(body).Number("availableCoins"); Check(after == before - 50, "a carteira foi debitada: " + before + " -> " + after);
+            yield return Call(_b, "GET", "/api/v1/inventory/items?view=all&page=1&pageSize=50", null, b => body = b); Check(body.Contains("Imagem azul"), "o item está no inventário de B: " + Snip(body));
+            yield return Until(() => gs.FactsText.Contains("Você já tem este item"), "o detalhe lido de novo diz que o item é de B: " + gs.FactsText);
+            // the store of the seller, from the search
+            string store = null;
+            for (var attempt = 0; attempt < 8 && store == null; attempt++)
+            {
+                string mine = null; yield return Call(_a, "GET", "/api/v1/discovery/stores/mine", null, b => mine = b); var id = Json.Rows(mine).Where(r => r.First("name") == "Loja da Alice").Select(r => r.Id()).FirstOrDefault(i => i != Guid.Empty); Check(id != Guid.Empty, "a loja de A: " + Snip(mine));
+                gs.Show("lojas"); yield return Until(() => gs.Fields.ContainsKey("Buscar"), "a aba Lojas"); gs.Fields["Buscar"].value = "Loja da Alice"; var loads = gs.Loads; gs.Press("Buscar"); yield return Until(() => gs.Loads > loads, "a busca de lojas: " + gs.Status);
+                if (gs.RowIds.Contains(id)) { Check(gs.OpenResult(id), "abrir a loja"); store = id.ToString(); } else yield return new WaitForSeconds(5f);
+            }
+            Check(store != null, "a loja aparece na busca: " + gs.SummaryText);
+            yield return Until(() => gs.Actions.ContainsKey("Ver produtos") && gs.FactsText.Contains("Loja virtual"), "o detalhe da loja: " + gs.FactsText);
+            gs.Press("Ver produtos"); yield return Until(() => gs.Section == "itens" && gs.RowIds.Contains(product), "o catálogo da loja: " + gs.Status + " " + gs.SummaryText); Check(gs.OwnerFilter == _aId, "o catálogo é o de quem vende"); gs.Close();
+        }
+
+        private IEnumerator PropertyNotices()
+        {
+            yield return Call(_b, "POST", "/api/v1/economy/transfer", JsonSerializer.Serialize(new { recipientUserId = _aId, amountCoins = 5, idempotencyKey = Guid.NewGuid().ToString("N"), message = "pelo Unity" }), null);
+            var mine = new MyPropertiesWindow(_ca); mine.Open(); yield return Until(() => mine.Notices.Items.Any(n => n.Kind == "payment_received" && !n.Read), "o aviso do pagamento recebido: " + mine.Notice);
+            Check(mine.StripText.Contains("aviso") && mine.TabText("avisos").StartsWith("Avisos ("), "a faixa e a aba mostram o que falta ler: " + mine.StripText + " / " + mine.TabText("avisos"));
+            mine.Show("avisos"); Check(mine.Count >= 1, "os avisos listados: " + mine.Count);
+            var one = mine.Notices.Items.First(n => !n.Read); var unread = mine.Notices.Unread; mine.MarkRead(one.Id); yield return Until(() => mine.Notices.Unread == unread - 1, "um aviso marcado como lido: " + mine.Notice);
+            mine.MarkRead(); yield return Until(() => mine.Notices.Unread == 0, "todos marcados como lidos: " + mine.Notice); Check(mine.StripText == "" && mine.TabText("avisos") == "Avisos", "a faixa some quando não há o que ler");
+            string body = null; yield return Call(_a, "GET", "/api/v1/properties/notices", null, b => body = b); Check(Json.One(body).Number("unread", -1) == 0, "lidos na API: " + Snip(body)); mine.Close();
+        }
+
+        private IEnumerator VoiceAndSync()
+        {
+            var land = "/api/v1/worlds/islands/" + _island + "/land"; string body = null; yield return Call(_a, "GET", land, null, b => body = b);
+            Guid parcel = Guid.Empty; var at = Vector3.zero; var name = "";
+            using (var d = JsonDocument.Parse(body))
+                foreach (var p in d.RootElement.GetProperty("parcels").EnumerateArray())
+                {
+                    var runs = p.GetProperty("runs"); if (p.GetProperty("name").GetString() != "Lote Unity Dois" || runs.GetArrayLength() == 0) continue;
+                    parcel = p.GetProperty("id").GetGuid(); name = p.GetProperty("name").GetString(); at = new Vector3((runs[0][1].GetInt32() + .5f) * 4f, 0f, (runs[0][0].GetInt32() + .5f) * 4f);
+                }
+            Check(parcel != Guid.Empty, "o terreno de A com suas células: " + Snip(body));
+            var host = new GameObject("voz do terreno"); var music = host.AddComponent<LifeVerse.Unity.Audio.LandMusic>(); music.PollSeconds = 1f; music.Setup(_a, () => _island, () => at); music.Load();
+            yield return Until(() => music.Version >= 0, "o terreno lido"); Check(music.VoiceOffIn == null, "a voz começa ligada");
+            yield return Call(_a, "PUT", land + "/parcels/" + parcel + "/options", JsonSerializer.Serialize(new { buildMode = "list", allowScripts = true, autoReturnMinutes = (int?)null, allowVoice = false }), null);
+            yield return Until(() => music.VoiceOffIn == name, "a mudança chega pela versão do terreno e a voz é desligada ali (versão " + music.Version + ")"); Destroy(host);
+            var settings = new UserSettings(); var sync = new AccountSync(settings, (m, p, b) => _a.ApiAsync(m, p, b), () => _a.UserId);
+            var first = sync.FetchAsync(); yield return Wait(first); Check(first.Result.Result == SyncResult.Ok, "a conta responde: " + first.Result.Message);
+            var push = sync.PushAllAsync(first.Result.Revision); yield return Wait(push); Check(push.Result.Result == SyncResult.Ok, "a API aceita tudo o que o cliente manda: " + push.Result.Message);
+            var back = sync.FetchAsync(); yield return Wait(back); Check(back.Result.Values.Count >= AccountSync.SettingIds.Length, "a conta guardou as configurações: " + back.Result.Values.Count + " de " + AccountSync.SettingIds.Length);
         }
 
         private IEnumerator Live()

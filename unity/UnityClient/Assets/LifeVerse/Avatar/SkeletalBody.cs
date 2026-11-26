@@ -17,7 +17,7 @@ namespace LifeVerse.Unity.Avatar
     /// </summary>
     public sealed class SkeletalBody : MonoBehaviour
     {
-        private sealed class Bone { public string Name; public Transform T; public Bone Parent; public Quaternion Rest; public int Depth; public Vector3 RestLocal; }
+        private sealed class Bone { public string Name; public Transform T; public Bone Parent; public Quaternion Rest; public int Depth; public Vector3 RestLocal; public Matrix4x4 RestInContent; }
 
         public const float Height = 1.8f, BlendSeconds = .2f;
         private readonly List<Bone> _bones = new List<Bone>(); private readonly Dictionary<string, Bone> _byName = new Dictionary<string, Bone>();
@@ -87,11 +87,18 @@ namespace LifeVerse.Unity.Avatar
             transform.localScale = Vector3.one * _unit;
             bounds = _renderers[0].bounds; foreach (var renderer in _renderers) bounds.Encapsulate(renderer.bounds);
             _content.position += transform.position - new Vector3(bounds.center.x, bounds.min.y, bounds.center.z);   // feet on the origin, centred
-            foreach (var bone in _bones) bone.RestLocal = bone.T.localPosition;
+            foreach (var bone in _bones) { bone.RestLocal = bone.T.localPosition; bone.RestInContent = _content.worldToLocalMatrix * bone.T.localToWorldMatrix; }
             _fingers.Prepare(content.GetComponentsInChildren<Transform>(true), side => _byName.TryGetValue("hand_" + side, out var hand) ? hand.T : null);
             bounds = _renderers[0].bounds; foreach (var renderer in _renderers) bounds.Encapsulate(renderer.bounds); RenderBounds = bounds;
             foreach (var renderer in _renderers) { if (renderer is SkinnedMeshRenderer skinned) { skinned.updateWhenOffscreen = true; if (skinned.sharedMesh != null) for (var sub = 0; sub < skinned.sharedMesh.subMeshCount; sub++) Triangles += (int)(skinned.sharedMesh.GetIndexCount(sub) / 3); } else if (renderer.TryGetComponent<MeshFilter>(out var filter) && filter.sharedMesh != null) for (var sub = 0; sub < filter.sharedMesh.subMeshCount; sub++) Triangles += (int)(filter.sharedMesh.GetIndexCount(sub) / 3); }
             return true;
+        }
+
+        /// <summary>Where a standard bone of this body rests, in the space of the content (as read, before any pose or slider): what a garment made elsewhere is tied to.</summary>
+        public bool RestOf(Transform bone, out Matrix4x4 inContent)
+        {
+            foreach (var known in _bones) if (known.T == bone) { inContent = known.RestInContent; return true; }
+            inContent = Matrix4x4.identity; return false;
         }
 
         /// <summary>How much the legs grew (metres) after <see cref="ApplyShape"/>, the body lifted by the same so the feet stay on the ground.</summary>

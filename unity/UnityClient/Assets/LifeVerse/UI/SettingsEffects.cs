@@ -58,6 +58,7 @@ namespace LifeVerse.Unity.UI
         /// <summary>The effects of the picture on the island's volume and the camera: fog, volumetric light, glow, colour, ambient occlusion, reflections, shadow bands and sharpness, the smoothing of edges and the render scale.</summary>
         public static void Effects(SettingsStore store, LifeVerse.Unity.World.IslandEnvironment environment, Camera camera)
         {
+            if (environment != null) { var preset = store.Get("graphics.preset"); var (contrast, saturation) = LifeVerse.Unity.World.IslandEnvironment.AdjustmentOf(preset == "verylow" || preset == "low" ? 0 : preset == "medium" ? 1 : preset == "ultra" ? 3 : 2); environment.SetAdjustment(contrast, saturation); }
             environment?.SetEffects(store.Bool("graphics.fog"), store.Bool("graphics.volumetric"), store.Bool("graphics.glow"), store.Bool("graphics.color_adjust"), store.Bool("graphics.ssao"), store.Get("graphics.ssao_quality"), store.Bool("graphics.ssr"), (int)store.Float("graphics.shadow_cascades"), store.Get("graphics.shadow_quality"));
             RenderScale.Target = Mathf.Clamp(store.Int("graphics.render_scale"), 50, 100); RenderScale.Dynamic = store.Bool("graphics.dynamic_resolution"); RenderScale.Install();
             if (camera != null && camera.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>() is { } data)
@@ -95,7 +96,7 @@ namespace LifeVerse.Unity.UI
             if (hud != null) { hud.Map.Rotate = store.Bool("world.minimap_rotate"); hud.Map.ShowNames = store.Bool("world.minimap_names"); hud.Map.ShowBuildings = store.Bool("world.minimap_buildings"); if (!hud.Map.Rotate) hud.Map.Turn(0f); }
             MapLayers.Parcels = store.Bool("world.map_parcels"); MapLayers.Friends = store.Bool("world.map_friends"); MapLayers.Names = store.Bool("world.map_names"); MapLayers.Events = store.Bool("world.map_events");
             MapLayers.Favorites = store.Bool("world.map_favorites"); MapLayers.Featured = store.Bool("world.map_featured");
-            if (ui != null) ui.WindowLayer.style.opacity = Mathf.Clamp(store.Int("interface.window_opacity"), 30, 100) / 100f;
+            if (ui != null) ui.WindowLayer.style.opacity = 1f - (1f - Mathf.Clamp(store.Int("interface.window_opacity"), 30, 100) / 100f) * .15f;   // blended in linear light, a window shows far more through it than the number says
             LifeVerse.Unity.Avatar.AvatarView.ShowNames = store.Bool("avatar.show_names"); LifeVerse.Unity.Avatar.AvatarView.ShowOwnName = store.Bool("avatar.show_own_name");
             RadialMenu.Scale = Mathf.Clamp(store.Int("interface.radial_size"), 60, 150) / 100f; RadialMenu.Opacity = Mathf.Clamp(store.Int("interface.radial_opacity"), 50, 100) / 100f; RadialMenu.Glow = Mathf.Clamp(store.Int("interface.radial_glow"), 0, 100) / 100f; RadialMenu.Speed = store.Float("interface.radial_speed"); RadialMenu.Tooltips = store.Bool("interface.radial_tooltips"); RadialMenu.ReduceMotion = store.Bool("accessibility.reduce_motion");
             LuaEditorWindow.FontSize = store.Int("scripts.font_size"); LuaEditorWindow.Indent = store.Int("scripts.indent"); LuaEditorWindow.AutoComplete = store.Bool("scripts.autocomplete");
@@ -122,7 +123,7 @@ namespace LifeVerse.Unity.UI
             if (people != null) people.Budget = BudgetFor(store.Int("avatars.max_full"), store.Get("avatars.lod"), store.Bool("avatars.simplify_distant"), store.Int("avatars.visibility_distance"), store.Int("avatars.max_reduced"), store.Int("avatars.triangle_budget"));
             LifeVerse.Unity.Avatar.AvatarView.AnimationDivisor = AnimationDivisorOf(store.Get("avatars.animation_quality"));
             LifeVerse.Unity.World.WorldObjects.MaxDistance = Mathf.Clamp(store.Int("world.object_distance"), 10, 1000);
-            if (ocean != null) ocean.Waves = store.Bool("graphics.water_waves");
+            if (ocean != null) { ocean.Waves = store.Bool("graphics.water_waves"); ocean.Detailed = !(store.Get("graphics.preset") is "verylow" or "low" or "medium"); }   // the low presets get the cheaper sea
             AutoQuality.Enabled = store.Bool("perf.auto_quality");
             LifeVerse.Unity.Avatar.DefaultClips.Disabled = !store.Bool("avatar.default_animations"); NamePlates.ShowTitles = store.Bool("avatar.show_titles");
             var media = store.Bool("privacy.external_media"); if (media != LifeVerse.Unity.World.WorldObjects.ExternalMedia) { LifeVerse.Unity.World.WorldObjects.ExternalMedia = media; objects?.RefreshMedia(); }
@@ -218,9 +219,18 @@ namespace LifeVerse.Unity.UI
         /// <summary>The performance numbers asked in the settings (FPS, frame time, memory): the overlay shows when any is on, with the memory line when asked.</summary>
         public static bool Metrics(SettingsStore store, Hud hud)
         {
-            var want = store.Bool("metrics.fps") || store.Bool("metrics.frame_time") || store.Bool("metrics.memory");
+            var want = store.Bool("metrics.fps") || store.Bool("metrics.frame_time") || store.Bool("metrics.memory") || store.Bool("network.ping");
             if (hud != null && hud.PerformanceVisible != want) hud.TogglePerformance();
             return want;
+        }
+
+        /// <summary>The interface volume, the detail of far objects and the size of the cache of downloaded files.</summary>
+        public static void Resources(SettingsStore store)
+        {
+            if (store == null) return;
+            LifeVerse.Unity.Audio.UiSounds.Volume = store.Float("audio.interface");
+            LifeVerse.Unity.World.WorldObjects.LodAt = LifeVerse.Unity.World.WorldObjects.LodFractionOf(store.Get("perf.object_lod"));
+            LifeVerse.Unity.World.AssetPreloader.LimitBytes = Mathf.Max(256, store.Int("perf.resource_cache")) * 1024L * 1024L;
         }
 
         // ---- the screen ----

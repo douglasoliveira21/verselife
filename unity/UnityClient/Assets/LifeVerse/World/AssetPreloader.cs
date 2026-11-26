@@ -18,6 +18,8 @@ namespace LifeVerse.Unity.World
     {
         public const int Parallel = 3;
         public const long MaxCacheBytes = 512L * 1024 * 1024;
+        /// <summary>"Tamanho do cache de recursos": what the folder of downloaded files may hold (the game sets it from the settings).</summary>
+        public static long LimitBytes = 2048L * 1024 * 1024;
         private readonly Dictionary<Guid, AssetEntry> _known = new Dictionary<Guid, AssetEntry>();
         private readonly Func<Guid, Task<byte[]>> _download; private readonly string _folder;
         public long DoneBytes { get; private set; }

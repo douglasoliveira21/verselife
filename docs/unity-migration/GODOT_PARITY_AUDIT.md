@@ -47,6 +47,8 @@ Em tamanho, o cliente Unity tem perto de **um quarto** do cliente Godot. O mundo
 
 ## O que falta, área por área
 
+> **Levantamento original**, de 25/11/2026. O que foi feito depois está em "Feito depois do levantamento", no fim do arquivo; o que ainda está aberto está em [FALTA_FAZER.md](FALTA_FAZER.md).
+
 ### 1. Gestão da ilha (Godot: `IslandManagement/`, 19 arquivos)
 O Unity tem geral, permissões, regras, terrenos e mídia numa janela só. Faltam:
 - **Acesso:** modo de entrada (pública, só convidados, fechada) e lista de pessoas liberadas com validade (`management/access`, `access/allow`, `access/mode`).
@@ -479,3 +481,30 @@ Cada uma segue a regra do Godot (`client/Scripts/Settings/*`), em `UI/SettingsEf
 - **Câmera e interface:** câmera desacoplada (ALT + V solta a câmera, as teclas de andar a movem e o avatar fica parado; Esc devolve; não passa do alcance) e foco por clique duplo em pessoas e objetos, as duas com as opções do Godot (4 opções novas em Câmera › Câmera livre, desligadas por padrão como lá); arrastar um botão da barra sobre outro troca o lugar; "Pagar…" no botão direito de uma pessoa abre a carteira com ela como quem recebe (o valor é confirmado na carteira).
 - **Ainda falta:** comprar produto e loja dentro dos detalhes da busca, ícones nas conquistas do grupo, refazer o encaixe de uma roupa com esqueleto, os sliders do rosto num corpo próprio e o guarda-roupa do homem do jogo (sem os arquivos).
 - Verificado: EditMode 204/204 (7 testes novos: gráficos, prévia do terreno, de onde vêm as miniaturas, arrastar, direitos do conteúdo e datas, variações de animação, câmera desacoplada e clique duplo); auto-teste 331 checks; API real 28/28 (passo novo: prazo do banimento e da liberação, troca de permissões, gráficos de desempenho, evento e loja do grupo, histórico do item).
+
+### Pendências curtas e opções do cliente (26/11/2026)
+- **Avisos imobiliários:** aba "Avisos" em Minhas propriedades (com a contagem na aba e uma faixa em cima enquanto há o que ler), marcar um ou todos como lidos; o jogo pergunta pelos avisos 8 s depois de entrar e a cada 5 minutos e anuncia cada um uma vez.
+- **Busca:** a compra pelo detalhe pede confirmação, confere o saldo, manda uma só chave enquanto não houver resposta e relê o item; o detalhe de uma loja mostra dono, lugar, categoria e destaques, com "Ver produtos" (aba Itens só daquele vendedor) e "Ver o proprietário"; "Ver a loja" num item abre a loja. O botão "Abrir o mercado" saiu.
+- **Perfil:** conquistas com o ícone que o servidor indica (estrela quando o cliente não o tem), na aba Conquistas e no Feed. Conquistas de grupo não existem no servidor.
+- **Voz por terreno:** num terreno com a voz desligada o microfone fica fechado, o botão vira "Sem voz" e aparece "A voz está desligada em <terreno>". O servidor de ilha já cortava a voz. A versão do terreno é perguntada a cada 10 s, e uma mudança de regra ou de música chega sozinha.
+- **Sincronia com a conta:** vão todas as configurações que agem no Unity e estão na lista da plataforma (`AccountPreferenceRules`), mais as teclas; o que o Unity só mostra desligado fica como a conta tem.
+- **Roupa com esqueleto:** é reencaixada na pose de descanso do corpo de quem veste, como no Godot (aparece onde foi feita, no espaço do modelo, e dobra com os ossos).
+- **Opções que passaram a valer:** volume dos sons da interface, "LOD de objetos", "Tamanho do cache de recursos" (o padrão passou de 512 MB para os 2048 MB do catálogo) e "Ping, jitter e perda de pacotes" (no painel de desempenho). O `LifeVerse.Wire` ganhou a perda de pacotes (o protocolo não mudou).
+- **Verificado:** EditMode 214/214 (10 testes novos), testes do protocolo 25/25, o `tools/ApiLiveHost` compila e o cliente Windows compila.
+- **Verificado dentro do editor** (o Controle Inteligente de Aplicativos bloqueia o `LifeVerse.exe` nesta máquina; entraram `Server/CheckRun.cs` e `Editor/EditorChecks.cs` para rodar as mesmas verificações em modo Play): API real local 31/31 e autoteste do mundo com 331 verificações. O player gerado em si não foi executado, e não houve fotos.
+- **Defeitos achados por essas execuções e corrigidos:** o `GameApp` lia a pasta de dados num inicializador de campo, o que quebrava o jogo ao apertar Play no editor; a sessão expirada era avisada fora da thread principal, e a tela de entrada não voltava (a parada dos avisos imobiliários mexe na interface nesse caminho); quando o pedido de sentar num objeto se perdia e era reenviado, a pessoa acabava sentada fora do objeto (a causa do teste de sentar "que às vezes falha"); e o passo novo de compra da verificação ao vivo pedia um pacote de moedas que não existe.
+
+### Aparência e física (26/11/2026)
+- **Imagem:** o último passo passou a ser o do Godot (tonemapper filmic com branco 6, contraste e saturação do preset em "Ajuste de cor"), por uma tabela externa do HDRP; sol, céu e luz ambiente nas mesmas unidades do Godot, e o sol do mesmo lado (estava espelhado).
+- **Mar:** shader próprio portado do Godot (cor pela profundidade, três ondulações, espuma, reflexo do céu, brilho do sol, horizonte e o teto visto de baixo), mais barato nos presets Baixo e Médio. A folha de espuma separada saiu.
+- **Chão:** cozido com a conta do shader do Godot, granulação calibrada e quase sem brilho. **Debaixo d'água:** o azul que o Godot põe sobre a tela.
+- **Defeito antigo corrigido:** a luz direcional padrão na cena inicial iluminava todas as ilhas, inclusive de noite.
+- **Física:** 32 cenários nos dois motores; atrito como no Godot (tabela em `MIGRATION_ISLAND_SERVER.md`).
+- **Verificado no editor:** EditMode, o build do cliente, o autoteste do mundo e as fotos das nove vistas contra as do Godot. **Não verificado:** o player gerado e o desempenho.
+
+### Interface no formato do Second Life (26/11/2026)
+A pedido do dono, a interface do cliente Unity **deixou de imitar a do Godot** e passou a seguir o visualizador do Second Life.
+- **Visual:** texturas próprias (barras com relevo, janelas com sombra, botões com volume), geradas por `unity/tools/ui-skin/generate.py`, e um `Theme.uss` novo.
+- **Corrigido:** a seta das listas de escolha ficava embaixo do texto; a lista aberta não tinha fundo; as caixas de marcar ficavam fora de linha; o mini-mapa cobria a barra de cima; os títulos não saíam em negrito; as dicas dos botões não apareciam.
+- **Novo:** barra de menus com saldo, pessoas, hora e conexão; barra de endereço com voltar/avançar, ilha, posição e busca; barra de ferramentas com ícone e nome; janelas que minimizam e mudam de tamanho; janelas **Mover** e **Câmera**; mini-mapa com zoom, fechar e o norte; avisos embaixo à direita; entrada e carregamento refeitos; ícones nos menus laterais e no inventário.
+- **Verificado no editor:** EditMode 225/225, autoteste do mundo com 337 verificações e fotos das telas (`img/ui-*.png`). **Não verificado:** o player gerado.

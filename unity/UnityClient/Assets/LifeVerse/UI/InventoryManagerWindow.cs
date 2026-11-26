@@ -85,6 +85,12 @@ namespace LifeVerse.Unity.UI
             "objects" => "objeto", "textures" => "textura", "sounds" => "som", "animations" => "animação", "clothing" => "roupa", "accessories" => "acessório", "models" => "modelo", "scripts" => "script", "packages" => "construção", "packs" => "pacote", _ => category,
         };
 
+        /// <summary>The picture of a kind of item.</summary>
+        public static string IconOfCategory(string category) => category switch
+        {
+            "objects" => "cube", "textures" => "texture", "sounds" => "volume", "animations" => "play", "clothing" => "avatar", "accessories" => "star", "models" => "cube", "scripts" => "code", "packages" => "home", "packs" => "folder", _ => "bag",
+        };
+
         /// <summary>A refusal of the inventory in words.</summary>
         public static string Words(int status, string body)
         {
@@ -138,7 +144,7 @@ namespace LifeVerse.Unity.UI
         {
             var id = G(item, "itemId"); var box = new Toggle(); Toggles["item:" + id] = box; var name = S(item, "name");
             var flags = (Flag(item, "favorite") ? "★ " : "") + (Flag(item, "hasUpdate") ? "versão nova · " : "") + (S(item, "origin") is "returned" or "recovered" ? "devolvido · " : "");
-            var cells = new List<VisualElement> { box, UiKit.Text(name, "lv-bold"), UiKit.Text(flags + CategoryWords(S(item, "category")) + " · " + Size(I(item, "size")) + (Has(item, "folderId") && _folders.Count > 0 ? " · " + PathOf(G(item, "folderId")) : ""), "lv-small", "lv-muted"), UiKit.Spacer() };
+            var cells = new List<VisualElement> { box, new Icon(IconOfCategory(S(item, "category")), 18, new Color(.62f, .72f, .88f)) { name = "kind-icon" }, UiKit.Text(name, "lv-bold"), UiKit.Text(flags + CategoryWords(S(item, "category")) + " · " + Size(I(item, "size")) + (Has(item, "folderId") && _folders.Count > 0 ? " · " + PathOf(G(item, "folderId")) : ""), "lv-small", "lv-muted"), UiKit.Spacer() };
             if (view == "trash") { cells.Add(Btn("Restaurar", () => Change("POST", Inv + "/items/" + id + "/restore", "{}", name + " voltou da lixeira.", reload))); cells.Add(Sure("Apagar de vez", () => "Apagar " + name + " para sempre?", () => Change("DELETE", Inv + "/items/" + id + "/purge", null, name + " foi apagado.", reload))); }
             else cells.Add(Btn("Detalhes", () => Detail(item, reload)));
             var row = Row(id, cells.ToArray()); if (view == "trash") return;

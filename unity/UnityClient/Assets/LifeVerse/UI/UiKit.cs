@@ -4,28 +4,45 @@ using UnityEngine.UIElements;
 
 namespace LifeVerse.Unity.UI
 {
-    /// <summary>The small pieces every screen is made of (labels, buttons, fields, rows), styled by the classes of Theme.uss ("vidro escuro").</summary>
+    /// <summary>The small pieces every screen is made of (labels, buttons, fields, rows), styled by the classes of Theme.uss.</summary>
     public static class UiKit
     {
         public static Label Text(string text, params string[] classes) { var label = new Label(text); foreach (var c in classes) label.AddToClassList(c); label.pickingMode = PickingMode.Ignore; return label; }
 
-        /// <summary>Puts an icon before the words of a button (the words stay its text, for whoever reads it).</summary>
         /// <summary>The icon a button draws before its words (see <see cref="WithIcon"/>).</summary>
-        public sealed class ButtonIcon { public string Name; public float Size; public bool Only; }
+        public sealed class ButtonIcon { public string Name; public float Size; public bool Only, Stacked, Alert; }
 
         /// <summary>Puts an icon before the words of a button. It is drawn by the button itself (a child element would stop the button from measuring its words), and the words stay its text.</summary>
         public static Button WithIcon(Button button, string icon, float size = 16f)
         {
             var mark = new ButtonIcon { Name = icon, Size = size }; button.userData = mark;
             button.style.paddingLeft = 8 + size + 5; button.style.flexShrink = 0; button.style.whiteSpace = WhiteSpace.NoWrap; button.AddToClassList("lv-btn-icon");
-            button.generateVisualContent += context =>
-            {
-                var box = button.contentRect; var left = mark.Only ? (button.layout.width - mark.Size) / 2f - button.resolvedStyle.paddingLeft - button.resolvedStyle.borderLeftWidth : -mark.Size - 5f;
-                var colour = mark.Only ? new Color(.9f, .93f, .95f) : button.resolvedStyle.color;
-                Icon.DrawInto(context, mark.Name, new Rect(box.x + left, box.y + (box.height - mark.Size) / 2f, mark.Size, mark.Size), colour);
-            };
+            button.generateVisualContent += context => Draw(context, button, mark);
             return button;
         }
+
+        /// <summary>A button of the bottom toolbar: the icon on top and the words under it (the words stay its text).</summary>
+        public static Button Stacked(Button button, string icon, float size = 22f)
+        {
+            var mark = new ButtonIcon { Name = icon, Size = size, Stacked = true }; button.userData = mark; button.style.whiteSpace = WhiteSpace.NoWrap; button.AddToClassList("lv-btn-icon");
+            button.generateVisualContent += context => Draw(context, button, mark);
+            return button;
+        }
+
+        private static void Draw(MeshGenerationContext context, Button button, ButtonIcon mark)
+        {
+            var box = button.contentRect; var colour = mark.Only ? new Color(.9f, .93f, .95f) : button.resolvedStyle.color;
+            Rect at;
+            if (mark.Only) at = new Rect((button.layout.width - mark.Size) / 2f, (button.layout.height - mark.Size) / 2f, mark.Size, mark.Size);
+            else if (mark.Stacked) at = new Rect((button.layout.width - mark.Size) / 2f, 8f, mark.Size, mark.Size);
+            else at = new Rect(box.x - mark.Size - 5f, box.y + (box.height - mark.Size) / 2f, mark.Size, mark.Size);
+            Icon.DrawInto(context, mark.Name, at, colour);
+            if (!mark.Alert) return;
+            var painter = context.painter2D; painter.fillColor = new Color(.9f, .28f, .3f); painter.BeginPath(); painter.Arc(new Vector2(at.xMax + 2f, at.y + 2f), 4.5f, new Angle(0f), new Angle(360f)); painter.Fill();
+        }
+
+        /// <summary>Puts a red dot on the icon of a button (something waits there), or takes it away.</summary>
+        public static void Alert(Button button, bool on) { if (button?.userData is not ButtonIcon mark || mark.Alert == on) return; mark.Alert = on; button.MarkDirtyRepaint(); }
 
         /// <summary>An icon after the words of a button (the caret of a menu).</summary>
         public static Button WithTrailingIcon(Button button, string icon, float size = 12f)
@@ -41,8 +58,10 @@ namespace LifeVerse.Unity.UI
         public static void IconOnly(Button button, bool on)
         {
             if (button.userData is not ButtonIcon mark) { button.style.fontSize = on ? 11 : StyleKeyword.Null; return; }
-            mark.Only = on; button.style.color = on ? new Color(0f, 0f, 0f, 0f) : StyleKeyword.Null; button.style.width = on ? 36 : StyleKeyword.Null; button.style.overflow = on ? Overflow.Hidden : StyleKeyword.Null;
-            button.style.paddingLeft = on ? 0 : 8 + mark.Size + 5; button.style.paddingRight = on ? 0 : StyleKeyword.Null; button.MarkDirtyRepaint();
+            mark.Only = on; button.style.color = on ? new Color(0f, 0f, 0f, 0f) : StyleKeyword.Null; button.style.width = on ? (mark.Stacked ? 42 : 36) : StyleKeyword.Null; button.style.overflow = on ? Overflow.Hidden : StyleKeyword.Null;
+            if (mark.Stacked) { button.EnableInClassList("lv-tool-compact", on); button.style.minWidth = on ? 40 : StyleKeyword.Null; }
+            else { button.style.paddingLeft = on ? 0 : 8 + mark.Size + 5; button.style.paddingRight = on ? 0 : StyleKeyword.Null; }
+            button.MarkDirtyRepaint();
         }
 
         public static Button Button(string text, Action onClick, string kind = "lv-btn")

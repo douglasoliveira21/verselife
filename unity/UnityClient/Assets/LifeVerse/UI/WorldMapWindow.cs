@@ -199,8 +199,8 @@ namespace LifeVerse.Unity.UI
             _c = context; _playerPosition = playerPosition; Canvas.Current = context.CurrentIsland != null ? context.CurrentIsland() : Guid.Empty;
             _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
             _search = UiKit.Field("Buscar ilha", false, 60); _search.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) LoadAtlas(); }, TrickleDown.TrickleDown);
-            var left = new VisualElement(); left.style.width = 250; left.style.marginRight = 8; left.Add(_search); left.Add(UiKit.Button("Buscar", LoadAtlas)); left.Add(_status);
-            _results = new ScrollView(); _results.style.height = 150; left.Add(UiKit.Text("Ilhas", "lv-bold", "lv-accent")); left.Add(_results);
+            var left = new VisualElement { name = "map-side" }; left.AddToClassList("lv-sidebar"); left.AddToClassList("lv-list"); left.style.width = 250; left.style.marginRight = 10; left.Add(_search); left.Add(UiKit.Button("Buscar", LoadAtlas)); left.Add(_status);
+            _results = new ScrollView(); _results.style.height = 150; left.Add(UiKit.Text("Ilhas", "lv-heading")); left.Add(_results);
             _places = new ScrollView(); _places.style.flexGrow = 1; left.Add(_places);
             var centre = new VisualElement(); centre.style.flexGrow = 1; _parcelsToggle = new Toggle("Mostrar terrenos (nas ilhas grandes na tela)") { name = "show-parcels" }; _parcelsToggle.RegisterValueChangedCallback(e => SetParcels(e.newValue)); centre.Add(_parcelsToggle); centre.Add(Canvas);
             _parcelLine = UiKit.Text("", "lv-small"); _parcelLine.style.whiteSpace = WhiteSpace.Normal;
@@ -209,6 +209,8 @@ namespace LifeVerse.Unity.UI
             _travel = UiKit.Button("Viajar", Travel, "lv-btn-primary"); _favorite = UiKit.Button("Favoritar", ToggleFavorite); _markName = UiKit.Field("Nome do marco", false, 60); _mark = UiKit.Button("Salvar marco aqui", AddMark);
             centre.Add(UiKit.Row(_travel, _favorite)); centre.Add(UiKit.Row(_markName, _mark));
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexGrow = 1; row.Add(left); row.Add(centre); Body.Add(row);
+            // the map takes the room left and never draws outside it
+            Body.style.minHeight = 0; Body.style.overflow = Overflow.Hidden; row.style.minHeight = 0; centre.style.minHeight = 0; left.style.minHeight = 0; Canvas.style.overflow = Overflow.Hidden; Canvas.style.minHeight = 150; Canvas.style.flexShrink = 1; FitScreen();
             Canvas.TileOf = island => _tileCache.TryGetValue(island.Id, out var tile) && tile.Version == island.TileVersion ? tile.Texture : null; Canvas.TileWanted = FetchTile;
             Canvas.ParcelsWanted = LoadParcels;
             Canvas.Clicked += OnClicked; SetChosen(null); SetParcels(MapLayers.Parcels); LoadAtlas(); LoadPanels(); LoadEvents();

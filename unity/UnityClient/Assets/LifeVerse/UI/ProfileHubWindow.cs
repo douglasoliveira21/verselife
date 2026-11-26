@@ -84,6 +84,7 @@ namespace LifeVerse.Unity.UI
                 var post = G(item, "postId"); var line = (S(item, "title").Length > 0 ? S(item, "title") + " · " : "") + S(item, "text");
                 var cells = new List<VisualElement> { UiKit.Text(When(Date(item, "at")), "lv-small", "lv-muted"), UiKit.Text(line.Length > 0 ? line : "(imagem)", "lv-small"), UiKit.Spacer() };
                 if (S(item, "visibility") == "friends") cells.Insert(1, UiKit.Text("só amigos", "lv-small", "lv-accent"));
+                if (S(item, "kind") == "achievement") cells.Insert(0, Medal(item, 26f));
                 if (IsSelf && post != Guid.Empty) cells.Add(Sure("Apagar a publicação", () => "Apagar esta publicação?", () => Send("DELETE", Me + "/posts/" + post, null, "Publicação apagada.", () => Show("feed"))));
                 Row(post, cells.ToArray()); if (Flag(item, "hasImage") && post != Guid.Empty) Picture(U + "/profile/posts/" + post + "/image", 160);
             }
@@ -121,9 +122,15 @@ namespace LifeVerse.Unity.UI
         private void Achievements(JsonElement p)
         {
             var list = Arr(p, "achievements"); Title(list.Count + " conquista(s)");
-            foreach (var a in list) Row(Guid.Empty, UiKit.Text("🏅 " + S(a, "title"), "lv-bold"), UiKit.Text(S(a, "description") + " · " + When(Date(a, "unlockedAt")), "lv-small", "lv-muted"));
+            foreach (var a in list) Row(Guid.Empty, Medal(a, 30f), UiKit.Text(S(a, "title"), "lv-bold"), UiKit.Text(S(a, "description") + " · " + When(Date(a, "unlockedAt")), "lv-small", "lv-muted"));
             if (list.Count == 0) Line("Nenhuma conquista à vista.", "lv-small", "lv-muted");
         }
+
+        private static readonly Color MedalColour = new Color32(0xF4, 0xA3, 0x40, 0xFF);
+
+        /// <summary>The icon of an achievement: the one the server names, or a star when this client does not have it (as the Godot client does).</summary>
+        public static string AchievementIcon(JsonElement achievement) => IconShapes.Has(S(achievement, "icon")) ? S(achievement, "icon") : "star";
+        private static Icon Medal(JsonElement achievement, float size) => new Icon(AchievementIcon(achievement), size, MedalColour);
 
         private void Stats(JsonElement p)
         {

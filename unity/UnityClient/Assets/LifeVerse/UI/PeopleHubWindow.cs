@@ -33,6 +33,7 @@ namespace LifeVerse.Unity.UI
 
         protected override void Fill(string section)
         {
+            _summary.text = "";   // this window has nothing to sum up (the line stays out of the way)
             switch (section) { case "perto": Nearby(); break; case "recentes": Recent(); break; case "amigos": Friends(); break; }
         }
 

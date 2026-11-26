@@ -12,6 +12,7 @@ namespace LifeVerse.Unity.Audio
     /// <summary>
     /// The music of the parcel under the person: a file the owner points to. This computer downloads it, so the address is checked again here (https, no machine inside a network, mp3 or ogg, a size limit, no redirects), and the person
     /// can turn all parcel music off. Walking into another parcel changes the music; open ground has none. A parcel whose music is not set to "start by itself" stays quiet.
+    /// It also keeps the parcels that switched voice off (<see cref="VoiceOffIn"/>), and asks every ten seconds whether the land changed.
     /// </summary>
     public sealed class LandMusic : MonoBehaviour
     {
@@ -42,6 +43,26 @@ namespace LifeVerse.Unity.Audio
 
         public void Setup(IslandEntryClient api, Func<Guid> island, Func<Vector3?> where) { _api = api; _island = island; _where = where; }
 
+        private readonly Dictionary<long, string> _noVoice = new Dictionary<long, string>();
+        /// <summary>The name of the parcel under the person that has voice off, or null where voice works. The island server cuts the voice there by itself; this is what the client shows and why the microphone stays closed.</summary>
+        public string VoiceOffIn { get; private set; }
+        /// <summary>The version of the land last read (-1: none).</summary>
+        public long Version { get; private set; } = -1;
+        /// <summary>How often the version of the land is asked, in seconds (0: never).</summary>
+        public float PollSeconds { get; set; } = 10f;
+        private float _sincePoll; private bool _polling;
+
+        /// <summary>Asks for the land version (a few bytes) and reads the whole land again only when it changed: rules, sales and music set by others show up.</summary>
+        public void Poll() { if (_api == null || _polling) return; _polling = true; StartCoroutine(WaitVersion(_api.ApiAsync("GET", "/api/v1/worlds/islands/" + _island() + "/land/version", null))); }
+        private System.Collections.IEnumerator WaitVersion(Task<(int Status, string Body)> task) { while (!task.IsCompleted) yield return null; _polling = false; if (!task.IsFaulted && task.Result.Status == 200 && VersionOf(task.Result.Body) is { } v && v != Version) Load(); }
+
+        /// <summary>The "version" of a land answer, or null.</summary>
+        public static long? VersionOf(string json)
+        {
+            try { using var d = JsonDocument.Parse(json); return d.RootElement.ValueKind == JsonValueKind.Object && d.RootElement.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : (long?)null; }
+            catch (JsonException) { return null; }
+        }
+
         private void Awake() { _bus = BusSource.Make(gameObject, Bus.Music, 1f, false, 30f, true); }
 
         public static string RefusalText(string code) { switch (code) { case "too_long": return "O endereço da música é longo demais."; case "not_https": return "A música precisa de um endereço https."; case "bad_host": return "Esse endereço não é de um site público."; case "bad_type": return "A música precisa ser um arquivo mp3 ou ogg."; default: return "Esse endereço não pode tocar."; } }
@@ -52,28 +73,39 @@ namespace LifeVerse.Unity.Audio
 
         public void ReadLand(string json)
         {
-            _cells.Clear();
+            _cells.Clear(); _noVoice.Clear(); Version = VersionOf(json) ?? -1;
             try
             {
                 using var document = JsonDocument.Parse(json); if (!document.RootElement.TryGetProperty("parcels", out var list) || list.ValueKind != JsonValueKind.Array) return;
                 foreach (var item in list.EnumerateArray())
                 {
-                    if (!item.TryGetProperty("media", out var media) || media.ValueKind != JsonValueKind.String || !item.TryGetProperty("runs", out var runs)) continue;
+                    if (!item.TryGetProperty("runs", out var runs)) continue;
+                    if (item.TryGetProperty("allowVoice", out var voice) && voice.ValueKind == JsonValueKind.False)
+                    {
+                        var parcel = item.TryGetProperty("name", out var pn) && pn.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(pn.GetString()) ? pn.GetString() : "este terreno";
+                        foreach (var cell in LandMath.FromRuns(runs.EnumerateArray().Select(r => r.EnumerateArray().Select(x => x.GetInt32()).ToArray()))) _noVoice[cell] = parcel;
+                    }
+                    if (!item.TryGetProperty("media", out var media) || media.ValueKind != JsonValueKind.String) continue;
                     using var m = JsonDocument.Parse(string.IsNullOrWhiteSpace(media.GetString()) ? "{}" : media.GetString()); var root = m.RootElement; if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("musicUrl", out var url) || url.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(url.GetString())) continue;
                     var tune = new Tune { Parcel = item.TryGetProperty("id", out var id) && Guid.TryParse(id.GetString(), out var g) ? g : Guid.Empty, Url = url.GetString(), Volume = root.TryGetProperty("volume", out var v) && v.TryGetDouble(out var vol) ? (float)Math.Max(0, Math.Min(1, vol)) : .6f, Autoplay = !(root.TryGetProperty("autoplay", out var a) && a.ValueKind == JsonValueKind.False), Name = root.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String ? n.GetString() : "" };
                     foreach (var cell in LandMath.FromRuns(runs.EnumerateArray().Select(r => r.EnumerateArray().Select(x => x.GetInt32()).ToArray()))) _cells[cell] = tune;
                 }
             }
-            catch (Exception exception) when (exception is JsonException || exception is KeyNotFoundException || exception is InvalidOperationException || exception is FormatException) { _cells.Clear(); }
-            Evaluate(true);
+            catch (Exception exception) when (exception is JsonException || exception is KeyNotFoundException || exception is InvalidOperationException || exception is FormatException) { _cells.Clear(); _noVoice.Clear(); }
+            Evaluate(false);   // the land is read again whenever it changes: the same tune goes on playing, only another one starts over
         }
 
-        private void Update() { _since += Time.unscaledDeltaTime; if (_since < .25f) return; _since = 0f; Evaluate(false); }
+        private void Update()
+        {
+            if (PollSeconds > 0f) { _sincePoll += Time.unscaledDeltaTime; if (_sincePoll >= PollSeconds) { _sincePoll = 0f; Poll(); } }
+            _since += Time.unscaledDeltaTime; if (_since < .25f) return; _since = 0f; Evaluate(false);
+        }
 
         /// <summary>Looks at where the person stands and plays what that parcel plays (force: look again even in the same parcel).</summary>
         public void Evaluate(bool force)
         {
-            var at = _where?.Invoke(); Tune tune = null; if (at.HasValue) _cells.TryGetValue(LandMath.Key(LandMath.CellOf(at.Value.x), LandMath.CellOf(at.Value.z)), out tune);
+            var at = _where?.Invoke(); Tune tune = null; string quiet = null; if (at.HasValue) { var key = LandMath.Key(LandMath.CellOf(at.Value.x), LandMath.CellOf(at.Value.z)); _cells.TryGetValue(key, out tune); _noVoice.TryGetValue(key, out quiet); }
+            VoiceOffIn = quiet;
             CurrentParcel = tune?.Parcel ?? Guid.Empty;
             var look = Island != null ? Island : IslandFinder?.Invoke(); if (look != _watching) { if (_watching != null) _watching.MusicChanged -= OnIslandMusic; _watching = look; if (_watching != null) _watching.MusicChanged += OnIslandMusic; }
             // the parcel's own music, or else the music of the whole island; a parcel with its own music that is set not to start by itself stays quiet (it does not fall back)

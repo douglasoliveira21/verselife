@@ -4,18 +4,24 @@ Mede os mesmos cenários nos dois motores, com os parâmetros de `island-server/
 
 | Cenário | O que mede |
 |---|---|
-| `drop` | bola solta de 4,5 m: instante e velocidade do impacto, onde repousa, quando dorme |
-| `bounce` | bola com quique 1,0 solta de 5,5 m: altura do pico depois do primeiro impacto |
-| `on_box` | bola cai sobre uma caixa fixa de 1 m |
-| `box_drop` | caixa física solta de 3,5 m |
-| `kick` | bola parada recebe um impulso de 3,6 N·s (o de quem anda a 4 m/s): distância rolada |
+| `drop`, `box_drop`, `on_box` | queda de bola e de caixa, repouso e quando dormem |
+| `bounce`, `material_bounce_*`, `ball_on_box_bounce` | altura do quique, por material e entre dois corpos |
+| `kick` | bola parada recebe o impulso de quem anda: distância rolada |
+| `stack`, `tilted`, `spin` | pilha de cinco caixas, caixa que cai torta, caixa girando |
+| `tunnel_wall`, `tunnel_ground` | bola pequena a 80 m/s contra parede fina e contra o terreno |
+| `collide`, `collide_heavy` | bola contra bola e contra caixa pesada |
+| `slide_*` | caixa lançada a 6 m/s, com o atrito de cada material |
+| `slope_box_*`, `slope_ball_*` | caixa grande e bola em terreno inclinado a 10°, 25° e 35° |
+| `crowd` | 200 corpos: quantos dormem, se algum atravessa o chão e o custo por passo |
+
+Os cenários e as medidas estão em `main.gd` (Godot) e em `UnityClient/Assets/LifeVerse/Server/PhysicsComparisonReport.cs`.
 
 ```powershell
 # Godot (projeto separado, sem tocar no island-server)
 Godot_v4.7.2-stable_mono_win64_console.exe --headless --path unity\PhysicsComparison
 
-# Unity (player Windows construído com BuildClient.BuildWindows)
-unity\UnityClient\Builds\Windows\LifeVerse.exe -batchmode -nographics -lifeverse-physics-report -logFile -
+# Unity (no editor; no player gerado também serve: LifeVerse.exe -batchmode -nographics -lifeverse-physics-report)
+Unity.exe -batchmode -nographics -projectPath unity\UnityClient -executeMethod LifeVerse.Unity.EditorTools.EditorChecks.Play -lifeverse-editor-run saida.txt -lifeverse-physics-report
 ```
 
 Resultados e leitura: `docs/unity-migration/MIGRATION_ISLAND_SERVER.md`, seção "Física de objetos".

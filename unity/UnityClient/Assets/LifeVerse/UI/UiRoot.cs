@@ -1,11 +1,11 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace LifeVerse.Unity.UI
 {
     /// <summary>
-    /// The root of the whole interface: one UI Toolkit document over the game with the "vidro escuro" theme (Theme.uss, Inter font) and four layers from back to front: the
-    /// screens (login, loading), the HUD, the floating windows and the notifications. It draws at the scale of <see cref="UserSettings"/> (automatic from the screen height, or
+    /// The root of the whole interface: one UI Toolkit document over the game with the theme of Theme.uss (Inter font, the textures of Skin) and layers from back to front: the
+    /// screens (login, loading), the HUD, the floating windows, the notifications and the hints. It draws at the scale of <see cref="UserSettings"/> (automatic from the screen height, or
     /// chosen). The layers let the mouse through where nothing is drawn, so the world can still be clicked.
     /// </summary>
     public sealed class UiRoot : MonoBehaviour
@@ -16,6 +16,8 @@ namespace LifeVerse.Unity.UI
         public VisualElement HudLayer { get; private set; }
         public VisualElement WindowLayer { get; private set; }
         public VisualElement ToastLayer { get; private set; }
+        public VisualElement HintLayer { get; private set; }
+        public Tooltips Hints { get; private set; }
         public UIDocument Document { get; private set; }
         public PanelSettings Panel { get; private set; }
 
@@ -36,10 +38,14 @@ namespace LifeVerse.Unity.UI
             Document = gameObject.AddComponent<UIDocument>(); Document.panelSettings = Panel;
             Root = Document.rootVisualElement; Root.AddToClassList("lv-root"); Root.pickingMode = PickingMode.Ignore; Root.style.flexGrow = 1;
             var theme = Resources.Load<StyleSheet>("LifeVerse/UI/Theme"); if (theme != null) Root.styleSheets.Add(theme); else Debug.LogWarning("[LifeVerse] Theme.uss não encontrado");
-            ScreenLayer = Layer("screens"); HudLayer = Layer("hud"); WindowLayer = Layer("windows"); ToastLayer = Layer("toasts");
-            Root.Add(ScreenLayer); Root.Add(HudLayer); Root.Add(WindowLayer); Root.Add(ToastLayer);
+            // the open list of a choice is added to the panel itself, outside the root: the theme goes there too
+            if (theme != null) Root.RegisterCallback<AttachToPanelEvent>(e => Cover(theme)); Cover(theme);
+            ScreenLayer = Layer("screens"); HudLayer = Layer("hud"); WindowLayer = Layer("windows"); ToastLayer = Layer("toasts"); HintLayer = Layer("hints");
+            Root.Add(ScreenLayer); Root.Add(HudLayer); Root.Add(WindowLayer); Root.Add(ToastLayer); Root.Add(HintLayer); Hints = new Tooltips(Root, HintLayer);
             ApplySettings();
         }
+
+        private void Cover(StyleSheet theme) { var top = Root?.panel?.visualTree; if (theme != null && top != null && !top.styleSheets.Contains(theme)) top.styleSheets.Add(theme); }
 
         /// <summary>Puts the scale and the accessibility choices on the interface (called when the settings change).</summary>
         public void ApplySettings()

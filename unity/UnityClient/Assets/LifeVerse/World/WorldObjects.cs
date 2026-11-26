@@ -648,6 +648,9 @@ namespace LifeVerse.Unity.World
 
         /// <summary>From this share of its range on, a model is drawn with a lighter copy of its meshes.</summary>
         public const float LodFraction = .3f;
+        /// <summary>"LOD de objetos": past which share of its range a model is drawn with its lighter meshes (the lower the detail asked, the sooner).</summary>
+        public static float LodAt = LodFraction;
+        public static float LodFractionOf(string detail) => detail == "low" ? .1f : detail == "medium" ? .2f : LodFraction;
         public int LodObjects { get; private set; }
         public bool IsLow(Guid id) => _objects.TryGetValue(id, out var entry) && entry.LowShown;
 
@@ -690,7 +693,7 @@ namespace LifeVerse.Unity.World
             foreach (var entry in _objects.Values)
             {
                 var distance = Vector3.Distance(origin, entry.Object.transform.position); var range = LimitRange(entry.Range);
-                SetLod(entry, entry.LowShown ? distance > range * LodFraction * .9f : distance > range * LodFraction);
+                SetLod(entry, entry.LowShown ? distance > range * LodAt * .9f : distance > range * LodAt);
                 var hide = entry.Culled ? distance > range * .9f : distance > range;
                 if (hide != entry.Culled) { entry.Culled = hide; foreach (var r in entry.Renderers) if (r != null) r.enabled = !hide && !(entry.Model != null && r == entry.Object.GetComponent<MeshRenderer>()); }
                 if (entry.Culled) culled++;

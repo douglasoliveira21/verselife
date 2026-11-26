@@ -1,5 +1,7 @@
 ﻿# Migração para Unity 6 HDRP — Checklist de funcionalidades
 
+> **Documento histórico** (marcado em 26/11/2026): as colunas "Não iniciado" não foram mantidas depois das fases 7 a 15 e das rodadas de paridade. Para o que ainda está aberto, vale [FALTA_FAZER.md](FALTA_FAZER.md).
+
 Cada linha é uma funcionalidade do LifeVerse com a sua correspondência planejada na Unity. A classificação é **por área** (medida no nível de arquivo na auditoria). A classificação **por classe** é a Fase 2b e será registrada aqui antes de a área ser migrada.
 
 Classes: **R** = reutilizável sem mudança (DLL de `shared`/`scripting`/`backend`); **A** = reutilizável com adaptação; **E** = depende da engine, reimplementar; **O** = obsoleta somente após substituição comprovada.

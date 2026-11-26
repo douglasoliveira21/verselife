@@ -66,7 +66,7 @@ namespace LifeVerse.Unity.Avatar
                     var holder = new GameObject("Wearable " + item.Slot); if (!await import.InstantiateMainSceneAsync(holder.transform)) { Destroy(holder); continue; }
                     foreach (var collider in holder.GetComponentsInChildren<Collider>()) Destroy(collider);
                     var skins = holder.GetComponentsInChildren<SkinnedMeshRenderer>();
-                    if (skins.Length > 0 && Bind(skins, body)) { holder.transform.SetParent(body.Content, false); Skinned++; }
+                    if (skins.Length > 0 && Bind(skins, body, holder.transform)) { holder.transform.SetParent(body.Content, false); Skinned++; }
                     else
                     {
                         var bone = body.BoneOf(BoneMapper.Map(item.AttachBone) ?? DefaultBone(item.Slot)) ?? body.Content; holder.transform.SetParent(bone, false);
@@ -82,17 +82,35 @@ namespace LifeVerse.Unity.Avatar
         /// <summary>The bone a piece goes on when it does not say: by its slot.</summary>
         public static string DefaultBone(string slot) => slot switch { "hat" or "glasses" or "ears" or "eyes" or "hair" => "head", "neck" => "neck", "back" => "chest", "gloves" => "hand_r", "shoes" => "foot_l", _ => "hips" };
 
-        /// <summary>Points each bone of a skinned garment at the body's bone of the same standard name; false when too few match (then the piece is fixed rigidly instead).</summary>
-        public static bool Bind(SkinnedMeshRenderer[] skins, SkeletalBody body)
+        /// <summary>
+        /// Ties a skinned garment to the body's bones by their standard names (a bone the body lacks follows the hips) and fits it to the body's own rest pose, as the Godot client does: at rest the garment shows
+        /// where it was made, in the space of the model, whatever the proportions of the skeleton it came with, and it bends from there. False when too few bones match (the piece is then left as it came,
+        /// to be fixed rigidly). <paramref name="garment"/> is the root the garment's model was put under.
+        /// </summary>
+        public static bool Bind(SkinnedMeshRenderer[] skins, SkeletalBody body, Transform garment)
         {
-            var bound = 0; var total = 0;
+            var bound = 0; var total = 0; var plans = new List<(SkinnedMeshRenderer Skin, Transform[] Bones, Matrix4x4[] Poses)>();
             foreach (var skin in skins)
             {
-                var bones = skin.bones; var mapped = new Transform[bones.Length];
-                for (var i = 0; i < bones.Length; i++) { total++; var standard = bones[i] != null ? BoneMapper.Map(bones[i].name) : null; var target = standard != null ? body.BoneOf(standard) : null; mapped[i] = target != null ? target : body.BoneOf("hips"); if (target != null) bound++; }
-                if (mapped.Any(b => b == null)) return false; skin.bones = mapped; skin.rootBone = body.BoneOf("hips") ?? mapped.FirstOrDefault(); skin.updateWhenOffscreen = true;
+                var bones = skin.bones; var own = skin.sharedMesh != null ? skin.sharedMesh.bindposes : null; if (own == null) return false;
+                var mapped = new Transform[bones.Length]; var toModel = Matrix4x4.identity; var measured = false;
+                for (var i = 0; i < bones.Length; i++)
+                {
+                    total++; var standard = bones[i] != null ? BoneMapper.Map(bones[i].name) : null; var target = standard != null ? body.BoneOf(standard) : null; mapped[i] = target != null ? target : body.BoneOf("hips"); if (target != null) bound++;
+                    // from the space of the mesh to the space of the garment's model (the same for every bone of a well made file; it carries a change of units)
+                    if (!measured && standard != null && i < own.Length) { toModel = garment.worldToLocalMatrix * bones[i].localToWorldMatrix * own[i]; measured = true; }
+                }
+                var poses = new Matrix4x4[mapped.Length];
+                for (var i = 0; i < mapped.Length; i++) { if (mapped[i] == null || !body.RestOf(mapped[i], out var rest)) return false; poses[i] = rest.inverse * toModel; }
+                plans.Add((skin, mapped, poses));
             }
-            return total > 0 && bound * 2 >= total;
+            if (total == 0 || bound * 2 < total) return false;
+            foreach (var (skin, mapped, poses) in plans)
+            {
+                var mesh = skin.sharedMesh; mesh.bindposes = poses; skin.sharedMesh = mesh;   // the garment's import belongs to this person alone
+                skin.bones = mapped; skin.rootBone = body.BoneOf("hips"); skin.updateWhenOffscreen = true;
+            }
+            return true;
         }
 
         private static Task<byte[]> Fetch(string kind, Guid id)

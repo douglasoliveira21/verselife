@@ -132,6 +132,7 @@ public sealed class WireClient : IDisposable
     public WireClient()
     {
         _manager = WireTransport.NewManager(_listener);
+        _manager.EnableStatistics = true;   // para a perda de pacotes mostrada ao jogador
         _listener.PeerConnectedEvent += peer => { _peer = peer; Connected?.Invoke(); };
         _listener.PeerDisconnectedEvent += (_, info) => { _peer = null; Disconnected?.Invoke(WireTransport.ToReason(info.Reason)); };
         _listener.NetworkReceiveEvent += (peer, reader, _, _) => Receive(peer, reader.GetRemainingBytesSpan());
@@ -145,6 +146,8 @@ public sealed class WireClient : IDisposable
 
     public bool IsConnected => _peer?.ConnectionState == ConnectionState.Connected;
     public int RoundTripMilliseconds => _peer?.Ping * 2 ?? 0;
+    /// <summary>De cada cem pacotes enviados nesta conexão, quantos se perderam (0 sem conexão).</summary>
+    public long PacketLossPercent => _peer?.Statistics.PacketLossPercent ?? 0;
 
     public bool Connect(string host, int port)
     {

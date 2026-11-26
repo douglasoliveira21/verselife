@@ -18,11 +18,29 @@ namespace LifeVerse.Unity.UI
         public Texture2D Texture => _texture;
         public int OtherDots { get; private set; }
 
+        /// <summary>The buttons of the title: closer (a factor below 1) or farther (above 1), and close.</summary>
+        public Action<float> ZoomAsked; public Action CloseAsked;
+        private readonly VisualElement _holder; private readonly Label _north;
+        public Vector2 NorthAt => new Vector2(_north.style.left.value.value, _north.style.top.value.value);
+
         public Minimap()
         {
-            name = "minimap"; AddToClassList("lv-glass"); style.width = Size + 12; style.height = Size + 12; style.paddingLeft = style.paddingRight = style.paddingTop = style.paddingBottom = 5; pickingMode = PickingMode.Position;
-            _picture = new VisualElement { pickingMode = PickingMode.Ignore }; _picture.style.width = Size; _picture.style.height = Size; _picture.style.borderTopLeftRadius = _picture.style.borderTopRightRadius = _picture.style.borderBottomLeftRadius = _picture.style.borderBottomRightRadius = 9; _picture.style.overflow = Overflow.Hidden; Add(_picture);
+            name = "minimap"; AddToClassList("lv-window"); AddToClassList("lv-map"); style.width = Size + 16; style.minWidth = Size + 16; pickingMode = PickingMode.Position;
+            var title = new VisualElement { name = "map-title" }; title.AddToClassList("lv-window-title"); var mark = new Icon("map", 14); mark.style.marginRight = 6; title.Add(mark); title.Add(UiKit.Text("Mini-mapa", "lv-title-text"));
+            title.Add(TitleButton("zoom-in", "Aproximar", () => ZoomAsked?.Invoke(1f / 1.3f))); title.Add(TitleButton("zoom-out", "Afastar", () => ZoomAsked?.Invoke(1.3f))); title.Add(TitleButton("close", "Fechar o mini-mapa", () => CloseAsked?.Invoke())); Add(title);
+            _holder = new VisualElement { name = "map-area" }; _holder.style.width = Size; _holder.style.height = Size; _holder.style.marginLeft = _holder.style.marginRight = 7; _holder.style.marginTop = _holder.style.marginBottom = 6; Add(_holder);
+            _picture = new VisualElement { pickingMode = PickingMode.Ignore }; _picture.style.width = Size; _picture.style.height = Size; _picture.style.borderTopLeftRadius = _picture.style.borderTopRightRadius = _picture.style.borderBottomLeftRadius = _picture.style.borderBottomRightRadius = 9; _picture.style.overflow = Overflow.Hidden; _picture.style.backgroundColor = new Color(.04f, .16f, .34f); _holder.Add(_picture);
             _self = new VisualElement { pickingMode = PickingMode.Ignore }; _self.style.position = Position.Absolute; _self.style.width = 12; _self.style.height = 12; _self.style.backgroundColor = Color.white; _self.style.borderTopLeftRadius = _self.style.borderTopRightRadius = _self.style.borderBottomLeftRadius = _self.style.borderBottomRightRadius = 6; _self.style.borderTopWidth = _self.style.borderBottomWidth = _self.style.borderLeftWidth = _self.style.borderRightWidth = 2; _self.style.borderTopColor = _self.style.borderBottomColor = _self.style.borderLeftColor = _self.style.borderRightColor = new Color(.07f, .95f, .88f); _picture.Add(_self);
+            _north = new Label("N") { pickingMode = PickingMode.Ignore, name = "north" }; _north.AddToClassList("lv-bold"); _north.style.position = Position.Absolute; _north.style.width = 16; _north.style.height = 16; _north.style.fontSize = 12; _north.style.paddingLeft = _north.style.paddingRight = _north.style.paddingTop = _north.style.paddingBottom = 0; _north.style.marginLeft = _north.style.marginRight = _north.style.marginTop = _north.style.marginBottom = 0; _north.style.unityTextAlign = TextAnchor.MiddleCenter; _north.style.color = Color.white; _north.style.unityTextOutlineColor = Color.black; _north.style.unityTextOutlineWidth = .8f; _holder.Add(_north); PlaceNorth();
+        }
+
+        private static Button TitleButton(string icon, string tip, Action run) { var button = UiKit.Button("", run, icon == "close" ? "lv-close" : "lv-window-button"); button.tooltip = tip; button.name = "map-" + icon; button.Add(new Icon(icon, 12)); return button; }
+
+        /// <summary>The letter of the north: at the top of the map, or turning with it around the disc.</summary>
+        private void PlaceNorth()
+        {
+            var angle = (Rotate ? -Heading : 0f) * Mathf.Deg2Rad; var radius = Size / 2f - 10f;
+            _north.style.left = Size / 2f + Mathf.Sin(angle) * radius - 8f; _north.style.top = Size / 2f - Mathf.Cos(angle) * radius - 8f;
         }
 
         /// <summary>The colour of a place of the map: by how deep the water is, or how high the land.</summary>
@@ -90,6 +108,7 @@ namespace LifeVerse.Unity.UI
         {
             Heading = heading; _picture.style.rotate = new Rotate(Rotate ? -heading : 0f);
             foreach (var tag in _names) tag.style.rotate = new Rotate(Rotate ? heading : 0f);
+            PlaceNorth();
         }
 
         private void DrawBuildings(MeshGenerationContext context)
@@ -111,7 +130,7 @@ namespace LifeVerse.Unity.UI
             var radius = Rotate ? Size / 2f : 9f; _picture.style.borderTopLeftRadius = _picture.style.borderTopRightRadius = _picture.style.borderBottomLeftRadius = _picture.style.borderBottomRightRadius = radius;
             Turn(Heading); _buildingLayer.MarkDirtyRepaint();
             Frame(self);
-            if (_coords == null) { _coords = new Label { pickingMode = PickingMode.Ignore }; _coords.AddToClassList("lv-small"); _coords.style.position = Position.Absolute; _coords.style.left = 8; _coords.style.bottom = 6; _coords.style.color = Color.white; _coords.style.unityTextOutlineColor = Color.black; _coords.style.unityTextOutlineWidth = .3f; Add(_coords); }
+            if (_coords == null) { _coords = new Label { pickingMode = PickingMode.Ignore }; _coords.AddToClassList("lv-small"); _coords.style.position = Position.Absolute; _coords.style.left = 4; _coords.style.bottom = 2; _coords.style.color = Color.white; _coords.style.unityTextOutlineColor = Color.black; _coords.style.unityTextOutlineWidth = .6f; _holder.Add(_coords); }
             _coords.style.display = ShowCoords ? DisplayStyle.Flex : DisplayStyle.None; _coords.text = Mathf.RoundToInt(self.x) + ", " + Mathf.RoundToInt(self.y) + ", " + Mathf.RoundToInt(self.z);
             if (!ShowAvatars) others = new List<Vector3>();
             if ((_map != null ? InFrame(self) : PointOf(self)) is { } p) { _self.style.display = DisplayStyle.Flex; _self.style.left = p.x - 6; _self.style.top = p.y - 6; } else _self.style.display = DisplayStyle.None;
@@ -146,7 +165,7 @@ namespace LifeVerse.Unity.UI
 
         public PerformanceOverlay()
         {
-            name = "performance"; AddToClassList("lv-glass"); pickingMode = PickingMode.Ignore; style.position = Position.Absolute; style.left = 18; style.top = 70; style.paddingTop = style.paddingBottom = 6;
+            name = "performance"; AddToClassList("lv-glass"); pickingMode = PickingMode.Ignore; style.position = Position.Absolute; style.left = Hud.Edge; style.top = FloatingWindow.TopInset; style.paddingTop = style.paddingBottom = 6;
             _text = UiKit.Text("", "lv-small"); _text.style.whiteSpace = WhiteSpace.Pre; Add(_text);
         }
 

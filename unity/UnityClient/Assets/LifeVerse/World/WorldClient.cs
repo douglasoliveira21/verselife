@@ -28,6 +28,9 @@ namespace LifeVerse.Unity.World
         private readonly List<string> _log = new List<string>();
 
         public bool Connected => _client != null && _client.IsConnected;
+        /// <summary>The round trip to the island now (ms) and the share of packets lost, as the transport counts them.</summary>
+        public int RoundTripMilliseconds => _client?.RoundTripMilliseconds ?? 0;
+        public long PacketLossPercent => _client?.PacketLossPercent ?? 0;
         public bool Authenticated { get; private set; }
         public string RejectCode { get; private set; }
         public int ProtocolMismatch { get; private set; }

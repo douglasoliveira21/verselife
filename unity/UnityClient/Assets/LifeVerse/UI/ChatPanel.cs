@@ -27,19 +27,29 @@ namespace LifeVerse.Unity.UI
         public bool ShowTime = true; public float VisibleSeconds = 6f;
         private float _lastMessage; private bool _hovered, _watching;
         public bool LogShown => _log.style.opacity.value > .5f;
-        private void ShowLog() { _log.style.opacity = 1f; if (!_watching) { _watching = true; RegisterCallback<PointerEnterEvent>(_ => { _hovered = true; ShowLog(); }); RegisterCallback<PointerLeaveEvent>(_ => { _hovered = false; _lastMessage = Time.unscaledTime; }); schedule.Execute(FadeIfIdle).Every(250); } }
-        private void FadeIfIdle() { if (VisibleSeconds <= 0f || Typing || _hovered || Minimized) { _log.style.opacity = 1f; return; } if (Time.unscaledTime - _lastMessage > VisibleSeconds) _log.style.opacity = 0f; }
+        private void ShowLog() { _log.style.opacity = 1f; SetFrame(true); if (!_watching) { _watching = true; RegisterCallback<PointerEnterEvent>(_ => { _hovered = true; ShowLog(); }); RegisterCallback<PointerLeaveEvent>(_ => { _hovered = false; _lastMessage = Time.unscaledTime; }); schedule.Execute(FadeIfIdle).Every(250); } }
+        private void FadeIfIdle() { if (VisibleSeconds <= 0f || Typing || _hovered || Minimized) { _log.style.opacity = 1f; SetFrame(true); return; } if (Time.unscaledTime - _lastMessage > VisibleSeconds) { _log.style.opacity = 0f; SetFrame(false); } }
+        /// <summary>The window around the chat: gone while nothing is being said, as the nearby chat of the viewer, and back with a message, the mouse or the keyboard.</summary>
+        public bool FrameShown { get; private set; } = true;
+        private readonly VisualElement _title;
+        private void SetFrame(bool shown) { FrameShown = shown; style.unityBackgroundImageTintColor = new Color(1f, 1f, 1f, shown ? Mathf.Clamp(_settings.ChatOpacity, .3f, 1f) : 0f); if (_title != null) _title.style.opacity = shown ? 1f : 0f; }
         private readonly Button _minimize;
         /// <summary>Minimized, the chat keeps only the line to write in (the messages stay and come back).</summary>
         public bool Minimized { get; private set; }
-        public void SetMinimized(bool minimized) { Minimized = minimized; _log.style.display = minimized ? DisplayStyle.None : DisplayStyle.Flex; style.height = minimized ? 62 : 230; _minimize.text = minimized ? "+" : "–"; _minimize.tooltip = minimized ? "Mostrar as mensagens" : "Minimizar o chat"; }
+        public const float OpenHeight = 250f, FoldedHeight = 76f;
+        public void SetMinimized(bool minimized) { Minimized = minimized; _log.style.display = minimized ? DisplayStyle.None : DisplayStyle.Flex; style.height = minimized ? FoldedHeight : OpenHeight; if (_minimize.Q<Icon>() is { } icon) icon.Name = minimized ? "expand" : "minus"; _minimize.tooltip = minimized ? "Mostrar as mensagens" : "Minimizar o chat"; }
+        /// <summary>The button beside the field that says what was written.</summary>
+        public readonly Button SendButton;
 
         public ChatPanel(UserSettings settings)
         {
-            _settings = settings; name = "chat"; AddToClassList("lv-glass"); style.width = 420; style.height = 230; style.paddingBottom = 6; pickingMode = PickingMode.Position;
-            _minimize = UiKit.Button("–", () => SetMinimized(!Minimized), "lv-btn-flat"); _minimize.tooltip = "Minimizar o chat"; _minimize.style.position = Position.Absolute; _minimize.style.right = 4; _minimize.style.top = 2; _minimize.style.width = 26; _minimize.style.height = 22;
-            _log = new ScrollView(ScrollViewMode.Vertical); _log.style.flexGrow = 1; _log.verticalScrollerVisibility = ScrollerVisibility.Auto; Add(_log); Add(_minimize);
-            _input = UiKit.Field("", false, MaxLength); _input.style.marginTop = 4; Add(_input);
+            _settings = settings; name = "chat"; AddToClassList("lv-window"); AddToClassList("lv-chat"); style.width = 420; style.height = OpenHeight; pickingMode = PickingMode.Position;
+            var title = _title = new VisualElement { name = "chat-title" }; title.AddToClassList("lv-window-title"); var mark = new Icon("chat", 16); mark.style.marginRight = 7; title.Add(mark); title.Add(UiKit.Text("Conversa por perto", "lv-title-text"));
+            _minimize = UiKit.Button("", () => SetMinimized(!Minimized), "lv-window-button"); _minimize.tooltip = "Minimizar o chat"; _minimize.name = "chat-minimize"; _minimize.Add(new Icon("minus", 13)); title.Add(_minimize); Add(title);
+            _log = new ScrollView(ScrollViewMode.Vertical); _log.AddToClassList("lv-chat-log"); _log.style.flexGrow = 1; _log.style.flexShrink = 1; _log.style.minHeight = 0; _log.verticalScrollerVisibility = ScrollerVisibility.Auto; Add(_log);
+            var entry = new VisualElement { name = "chat-entry" }; entry.AddToClassList("lv-chat-entry");
+            _input = UiKit.Field("", false, MaxLength); _input.textEdition.placeholder = "Escreva e aperte Enter…"; entry.Add(_input);
+            SendButton = UiKit.Button("", () => Submit(), "lv-btn-primary"); SendButton.name = "chat-send"; SendButton.tooltip = "Enviar"; SendButton.style.width = 36; SendButton.style.paddingLeft = SendButton.style.paddingRight = 0; SendButton.style.alignItems = Align.Center; SendButton.style.justifyContent = Justify.Center; SendButton.Add(new Icon("send", 15)); entry.Add(SendButton); Add(entry);
             _input.RegisterCallback<FocusInEvent>(e => SetTyping(true)); _input.RegisterCallback<FocusOutEvent>(e => SetTyping(false));
             _input.RegisterCallback<KeyDownEvent>(OnKey, TrickleDown.TrickleDown);
             ApplySettings();
@@ -47,7 +57,7 @@ namespace LifeVerse.Unity.UI
 
         public void ApplySettings()
         {
-            style.backgroundColor = new Color(27f / 255f, 38f / 255f, 46f / 255f, Mathf.Clamp(_settings.ChatOpacity, .3f, 1f) * .9f);
+            SetFrame(FrameShown);
             foreach (var child in _log.contentContainer.Children()) child.style.fontSize = _settings.ChatFontSize;
         }
 
@@ -85,7 +95,7 @@ namespace LifeVerse.Unity.UI
             _lines.Add(line); if (_lines.Count > MaxLines) { _lines.RemoveAt(0); if (_log.contentContainer.childCount > 0) _log.contentContainer.RemoveAt(0); }
             var label = new Label(); label.AddToClassList("lv-chat-line"); label.style.fontSize = _settings.ChatFontSize; label.enableRichText = true;
             var when = line.Time.ToLocalTime().ToString("HH:mm"); _lastMessage = Time.unscaledTime; ShowLog();
-            label.text = line.System ? "<color=#A9B3BD><i>" + Escape(line.Text) + "</i></color>" : (ShowTime ? "<color=#7B858C>" + when + "</color> " : "") + "<color=#2EE6D0><b>" + Escape(line.Name) + "</b></color>  " + Escape(line.Text);
+            label.text = line.System ? "<color=#A6B1C4><i>" + Escape(line.Text) + "</i></color>" : (ShowTime ? "<color=#77829A>" + when + "</color> " : "") + "<color=#3FE3D3><b>" + Escape(line.Name) + "</b></color>  " + Escape(line.Text);
             _log.Add(label); schedule.Execute(() => _log.scrollOffset = new Vector2(0, float.MaxValue / 2f)).StartingIn(30);
         }
 

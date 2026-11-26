@@ -258,6 +258,8 @@ Todas falam com as rotas reais do backend, cujos contratos (os `record` de pedid
 
 **Verificação**: `-lifeverse-world-selfcheck` com 149 verificações (18 novas: envio por multipart com os campos certos, foto registrada, versões, galeria e capa, casamento, conversa do grupo e da ilha, produto publicado, dividir/ampliar/juntar com as células escolhidas, música e ambiente inválidos não saem, o homem do LifeVerse carregado); 55 de 55 testes Edit (4 novos). **Ainda não**: roupas e acessórios do homem, publicar um novo item direto do inventário (sem o arquivo), as pendências que a quinta parte (abaixo) resolveu ou esclareceu: células do terreno e a API real.
 
+> **Documento histórico** (marcado em 26/11/2026): a tabela de fases ainda cita lacunas já resolvidas (roupas próprias, colisão dos olhos, mapa-múndi). Para o que ainda está aberto, vale [FALTA_FAZER.md](FALTA_FAZER.md).
+
 ### Fase 9, quinta parte: o cliente exercitado contra a API real
 
 **Como se exercita a API real sem Postgres nem produção.** `tools/ApiLiveHost` sobe o backend de verdade (`WebApplicationFactory`, ambiente "Testing", banco **em memória**, `http://127.0.0.1:5099`) num processo local; nada toca a produção nem credenciais reais. O player roda `LifeVerse.exe -lifeverse-live-api http://127.0.0.1:5099` (`LiveApiCheck`): cria duas contas e usa **as mesmas janelas da pessoa** (login, personagem, ilhas, social, grupos, arquivos, economia, ofertas, perfil, eventos, gestão e terrenos, scripts) contra as respostas verdadeiras. Resultado: **14 etapas, 0 falhas**. Para repetir: `dotnet build tools\ApiLiveHost -c Release`, `dotnet run --project tools\ApiLiveHost -c Release --no-build -- 5099`, e rodar o player.

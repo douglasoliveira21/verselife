@@ -1,5 +1,7 @@
 # Verificação das pendências — 20/11/2026
 
+> **Documento histórico** (marcado em 26/11/2026): as lacunas funcionais listadas aqui foram feitas depois. Para o que ainda está aberto, vale [FALTA_FAZER.md](FALTA_FAZER.md).
+
 ## Resultados executados nesta revisão
 
 - API: 2.562 aprovados, 39 ignorados, zero falhas (2.601 no total).

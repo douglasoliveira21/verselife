@@ -27,6 +27,9 @@ namespace LifeVerse.Unity.UI
         public const int MaxHistory = 10, PageSize = 20;
         private readonly UserSettings _settings; private readonly Action _save; private readonly Action<Guid, float?, float?> _go;
         private string _query = "", _sort = "", _rights = "", _minPrice = "", _maxPrice = "", _creator = ""; private bool _free;
+        private Guid _ownerFilter; private string _ownerName = ""; private bool _keepOwner; private Action _back;
+        /// <summary>The owner whose products the Itens tab is showing (empty: everybody's).</summary>
+        public Guid OwnerFilter => _ownerFilter;
         private VisualElement _suggestions; private IVisualElementScheduledItem _typing;
         /// <summary>The suggestions on screen (for the tests).</summary>
         public readonly List<string> Suggested = new List<string>();
@@ -95,7 +98,7 @@ namespace LifeVerse.Unity.UI
 
         protected override void Fill(string section)
         {
-            Opened = Guid.Empty; _summary.text = "";
+            Opened = Guid.Empty; _summary.text = ""; if (!_keepOwner) _ownerFilter = Guid.Empty;
             if (section == "paravoce") ForYou(); else if (section == "favoritos") Favorites(); else Results(section);
         }
 
@@ -110,12 +113,13 @@ namespace LifeVerse.Unity.UI
         public static string KindWords(string kind) => kind switch { "island" => "Ilha", "parcel" => "Terreno", "person" => "Pessoa", "group" => "Grupo", "store" => "Loja", "product" => "Produto", "event" => "Evento", "poi" => "Ponto de interesse", _ => kind };
 
         /// <summary>The address of a search: text, kinds, page, order and the filters of items and events.</summary>
-        public static string SearchPath(string q, string[] types, int page, string sort, string minPrice = "", string maxPrice = "", string rights = "", string creator = "", bool free = false)
+        public static string SearchPath(string q, string[] types, int page, string sort, string minPrice = "", string maxPrice = "", string rights = "", string creator = "", bool free = false, Guid owner = default)
         {
             var path = "/api/v1/search?page=" + Math.Max(1, page) + "&pageSize=" + PageSize;
             if (!string.IsNullOrWhiteSpace(q)) path += "&q=" + Uri.EscapeDataString(q.Trim()); if (types != null && types.Length > 0) path += "&types=" + string.Join(",", types);
             if (!string.IsNullOrEmpty(sort)) path += "&sort=" + sort; if (long.TryParse((minPrice ?? "").Trim(), out var min) && min >= 0) path += "&minPrice=" + min; if (long.TryParse((maxPrice ?? "").Trim(), out var max) && max >= 0) path += "&maxPrice=" + max;
             if (!string.IsNullOrEmpty(rights)) path += "&rights=" + rights; if (!string.IsNullOrWhiteSpace(creator)) path += "&creator=" + Uri.EscapeDataString(creator.Trim()); if (free) path += "&free=true";
+            if (owner != Guid.Empty) path += "&owner=" + owner;
             return path;
         }
 
@@ -170,6 +174,9 @@ namespace LifeVerse.Unity.UI
 
         // ---- the search bar and the suggestions ----
 
+        /// <summary>Searches everything for a text (what was written on the navigation bar of the game).</summary>
+        public void Find(string text) { _query = (text ?? "").Trim(); Show("tudo"); }
+
         private void Bar(string tab)
         {
             var query = Field("Buscar", _query, 120); _suggestions = new VisualElement(); _page.Add(_suggestions);
@@ -180,7 +187,7 @@ namespace LifeVerse.Unity.UI
             if (tab == "itens") { min = Field("Preço mínimo (VC)", _minPrice, 9); max = Field("Preço máximo (VC)", _maxPrice, 9); creator = Field("Criador", _creator, 40); rights = Choice("Direitos", RightsFilters.ToList(), _rights); }
             if (tab == "eventos") free = Check("Só gratuitos", _free);
             Buttons(Btn("Buscar", () => { _query = query.value; _sort = IdOf(sort); if (min != null) { _minPrice = min.value; _maxPrice = max.value; _creator = creator.value; _rights = IdOf(rights); } if (free != null) _free = free.value; Results(tab); }, "lv-btn-primary"),
-                Btn("Limpar", () => { _query = ""; _sort = ""; _minPrice = _maxPrice = _creator = _rights = ""; _free = false; Results(tab); }));
+                Btn("Limpar", () => { _query = ""; _sort = ""; _minPrice = _maxPrice = _creator = _rights = ""; _free = false; _ownerFilter = Guid.Empty; Results(tab); }));
         }
 
         /// <summary>Asks for suggestions for what is being typed and shows them as buttons that search for them.</summary>
@@ -200,9 +207,10 @@ namespace LifeVerse.Unity.UI
         private void Results(string tab, int page = 1)
         {
             Reset(); Opened = Guid.Empty; Bar(tab);
+            if (tab == "itens" && _ownerFilter != Guid.Empty) { Line("Só os produtos de " + _ownerName + ".", "lv-small", "lv-accent"); Buttons(Btn("Ver todos os itens", () => { _ownerFilter = Guid.Empty; Results(tab); })); }
             if (_query.Trim().Length == 0 && tab == "tudo") { Line("Digite o que procurar: pessoas, ilhas, terrenos, eventos, grupos, produtos ou lojas.", "lv-small", "lv-muted"); return; }
             if (page == 1 && _query.Trim().Length > 0 && _settings.KeepSearchHistory) { _settings.RecentSearches = Remember(_settings.RecentSearches, _query); _save?.Invoke(); }
-            var sort = _sort; var path = SearchPath(_query, TypesOf(tab), page, sort, tab == "itens" ? _minPrice : "", tab == "itens" ? _maxPrice : "", tab == "itens" ? _rights : "", tab == "itens" ? _creator : "", tab == "eventos" && _free);
+            var sort = _sort; var path = SearchPath(_query, TypesOf(tab), page, sort, tab == "itens" ? _minPrice : "", tab == "itens" ? _maxPrice : "", tab == "itens" ? _rights : "", tab == "itens" ? _creator : "", tab == "eventos" && _free, tab == "itens" ? _ownerFilter : Guid.Empty);
             Get(path, root =>
             {
                 var counts = Obj(root, "counts"); var total = I(root, "total");
@@ -227,7 +235,7 @@ namespace LifeVerse.Unity.UI
 
         private void Detail(JsonElement item, Action back)
         {
-            Reset(); var kind = S(item, "kind"); var id = G(item, "id"); var title = S(item, "title"); Opened = id; FactsText = ""; Access = ""; Relation = ""; Bought = false;
+            Reset(); var kind = S(item, "kind"); var id = G(item, "id"); var title = S(item, "title"); Opened = id; FactsText = ""; Access = ""; Relation = ""; Bought = false; _back = back;
             Signal("open");
             Buttons(Btn("Voltar aos resultados", back)); Title(title); Line(Describe(item), "lv-small", "lv-muted");
             if (S(item, "description").Length > 0) Line(S(item, "description"));
@@ -244,7 +252,7 @@ namespace LifeVerse.Unity.UI
             if (kind == "person") { var relation = UiKit.Text("", "lv-small", "lv-accent"); _page.Add(relation); this.Then(_c.Api.ApiAsync("GET", "/api/v1/social/relations?ids=" + id), r => { if (r.Status == 200) try { using var d = JsonDocument.Parse(r.Body); if (d.RootElement.TryGetProperty(id.ToString(), out var rel) && rel.ValueKind == JsonValueKind.String) { Relation = rel.GetString(); relation.text = RelationWords(Relation); } } catch (JsonException) { } }); actions.Add(Btn("Ver perfil", () => new ProfileHubWindow(_c, id).Open(), "lv-btn-primary")); actions.Add(Btn("Ações com a pessoa…", () => new PersonActionsWindow(_c, id, title).Open())); }
             if (kind == "group") actions.Add(Btn("Ver grupo", () => new GroupProfileWindow(_c, id).Open(), "lv-btn-primary"));
             if (kind == "event") actions.Add(Btn("Participar", () => Send("POST", "/api/v1/discovery/events/" + id + "/join", "{}", "Você vai participar de " + title + ".")));
-            if (kind == "product") actions.Add(Btn("Abrir o mercado", () => new MarketWindow(_c).Open()));
+            if (kind == "store") StoreDetail(id, facts);
             var favorite = Flag(item, "favorite");
             actions.Add(Btn(favorite ? "Tirar dos favoritos" : "Favoritar", () => Send(favorite ? "DELETE" : "PUT", "/api/v1/search/favorites/" + kind + "/" + id, favorite ? null : "{}", favorite ? "Tirado dos favoritos." : "Nos favoritos.", null, Words)));
             actions.Add(Btn("Copiar o link", () => { GUIUtility.systemCopyBuffer = LinkOf(kind, id, x, z); Say("Link copiado: " + LinkOf(kind, id, x, z), false); }));
@@ -334,7 +342,7 @@ namespace LifeVerse.Unity.UI
         {
             if (r.Status == 404) { Facts(area, new[] { "Este item não está mais à venda." }); return; }
             if (r.Status != 200) { Facts(area, new[] { "Não foi possível carregar o item agora." }); return; }
-            using var d = JsonDocument.Parse(r.Body); var p = d.RootElement; var price = I(p, "priceCoins"); var creator = Obj(p, "creator"); var seller = Obj(p, "seller"); var asset = Obj(p, "asset"); var store = Obj(p, "store");
+            using var d = JsonDocument.Parse(r.Body); var p = d.RootElement; var price = I(p, "priceCoins"); var name = S(p, "name"); var creator = Obj(p, "creator"); var seller = Obj(p, "seller"); var asset = Obj(p, "asset"); var store = Obj(p, "store");
             CanBuy = Flag(p, "canBuy"); var own = Flag(p, "isOwn"); var owned = Flag(p, "owned");
             Facts(area, new[]
             {
@@ -346,21 +354,94 @@ namespace LifeVerse.Unity.UI
                 own ? "Este item é seu." : owned ? "Você já tem este item." : "",
             });
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexWrap = Wrap.Wrap; area.Add(row);
-            var key = Guid.NewGuid().ToString("N"); var label = own ? "Este item é seu" : owned && price == 0 ? "Você já pegou este item" : price > 0 ? "Comprar por " + Coins(price) : "Pegar grátis";
-            Button buy = null; buy = Btn(label, () =>
-            {
-                buy.SetEnabled(false); buy.text = "Comprando…";
-                this.Then(_c.Api.ApiAsync("POST", "/api/v1/economy/products/" + id + "/purchase", JsonSerializer.Serialize(new { idempotencyKey = key })), b =>
-                {
-                    if (b.Status >= 200 && b.Status < 300) { buy.text = "Comprado"; Bought = true; Say("Comprado! O item está no seu inventário.", false); _c.Notices.Show("Item comprado.", NoticeKind.Good); return; }
-                    buy.text = label; buy.SetEnabled(true); Say(BuyWords(b.Status, b.Body), true);
-                });
-            }, "lv-btn-primary"); buy.SetEnabled(CanBuy && !own); Actions["Comprar"] = Actions[label]; row.Add(buy);
+            var taken = owned && price == 0; var label = own ? "Este item é seu" : taken ? "Você já pegou este item" : price > 0 ? "Comprar por " + Coins(price) : "Pegar grátis";
+            Button buy = null; buy = Sure(label, () => price > 0 ? "Confirmar: " + Coins(price) + " saem agora da carteira" : "Confirmar: pegar grátis", () => Purchase(id, name, price, buy, label, area), "lv-btn-primary");
+            buy.SetEnabled(CanBuy && !own && !taken); Actions["Comprar"] = Actions[label]; row.Add(buy);
             var creatorId = G(creator, "id"); if (creatorId != Guid.Empty) row.Add(Btn("Ver o criador", () => new ProfileHubWindow(_c, creatorId).Open()));
-            var storeId = G(store, "id"); if (storeId != Guid.Empty) row.Add(Btn("Ver a loja", () => { Show("lojas"); }));
+            var sellerId = G(seller, "id"); if (sellerId != Guid.Empty && sellerId != creatorId) row.Add(Btn("Ver o vendedor", () => { if (S(seller, "kind") == "group") new GroupProfileWindow(_c, sellerId).Open(); else new ProfileHubWindow(_c, sellerId).Open(); }));
+            var storeId = G(store, "id"); if (storeId != Guid.Empty) row.Add(Btn("Ver a loja", () => OpenStore(storeId)));
         });
 
         public bool Bought { get; private set; }
+        private bool _buying; private string _buyKey = ""; private Guid _buyKeyFor;
+
+        /// <summary>The words when the wallet does not reach the price.</summary>
+        public static string ShortOfCoins(long balance, long price) => "Saldo insuficiente: você tem " + Coins(balance) + " e o item custa " + Coins(price) + ".";
+
+        /// <summary>
+        /// Buys the item on screen: the balance is looked at first, and the purchase carries one key. If no answer comes the same key is sent next time (so the first attempt cannot be charged twice);
+        /// after any answer the next attempt is a new one. The item is read again afterwards, so the page shows what is true now.
+        /// </summary>
+        private void Purchase(Guid id, string name, long price, Button buy, string label, VisualElement area)
+        {
+            if (_buying) return; _buying = true; buy.SetEnabled(false); buy.text = "Comprando…"; Bought = false;
+            void Back(string words) { _buying = false; buy.text = label; buy.SetEnabled(true); Say(words, true); }
+            void Pay()
+            {
+                if (_buyKeyFor != id || _buyKey.Length == 0) { _buyKey = Guid.NewGuid().ToString("N"); _buyKeyFor = id; }
+                this.Then(_c.Api.ApiAsync("POST", "/api/v1/economy/products/" + id + "/purchase", JsonSerializer.Serialize(new { idempotencyKey = _buyKey }, Options)), b =>
+                {
+                    if (b.Status > 0) _buyKey = "";
+                    if (b.Status < 200 || b.Status >= 300) { Back(b.Status == 0 ? "Sem conexão com o servidor. Confira o inventário antes de tentar de novo." : BuyWords(b.Status, b.Body)); return; }
+                    _buying = false; Bought = true; buy.text = "Comprado"; _c.Notices.Show("Item comprado.", NoticeKind.Good);
+                    var done = "Compra feita! “" + name + "” está no seu inventário.";
+                    if (Opened != id) { Say(done, false); return; }
+                    area.Clear(); FactsText = ""; ItemDetail(id, area); Say(done, false);
+                });
+            }
+            if (price <= 0) { Pay(); return; }
+            this.Then(_c.Api.ApiAsync("GET", "/api/v1/economy/wallet"), w =>
+            {
+                long? balance = null; if (w.Status == 200) try { using var d = JsonDocument.Parse(w.Body); if (Has(d.RootElement, "availableCoins")) balance = I(d.RootElement, "availableCoins"); } catch (JsonException) { }
+                if (balance is { } have && have < price) Back(ShortOfCoins(have, price)); else Pay();   // a wallet that cannot be read leaves the decision to the server
+            });
+        }
+
+        // ---- a store ----
+
+        /// <summary>The lines about a store, from <c>/discovery/stores/{id}</c>.</summary>
+        public static List<string> StoreLines(JsonElement s)
+        {
+            var owner = Obj(s, "owner"); var island = Obj(s, "island"); var count = I(s, "productCount"); var featured = Arr(s, "featured");
+            var lines = new List<string>
+            {
+                S(owner, "displayName").Length > 0 ? "Proprietário(a): " + S(owner, "displayName") + "." : "",
+                S(s, "kind") == "physical" ? "Loja física" + (S(island, "name").Length > 0 ? " em " + S(island, "name") : "") + "." : "Loja virtual: sem endereço no mundo.",
+                S(s, "categoryLabel"),
+                count == 0 ? "Nenhum produto à venda agora." : count + (count == 1 ? " produto publicado." : " produtos publicados."),
+            };
+            if (featured.Count > 0) { lines.Add("Em destaque:"); foreach (var f in featured) lines.Add("• " + S(f, "name") + " — " + (I(f, "priceCoins") > 0 ? Coins(I(f, "priceCoins")) : "gratuito")); }
+            return lines.Where(l => l.Length > 0).ToList();
+        }
+
+        private void StoreDetail(Guid id, VisualElement area) => this.Then(_c.Api.ApiAsync("GET", "/api/v1/discovery/stores/" + id), r =>
+        {
+            if (r.Status != 200) { Facts(area, new[] { r.Status == 404 ? "Esta loja não está mais disponível." : "Não foi possível carregar a loja agora." }); return; }
+            using var d = JsonDocument.Parse(r.Body); var s = d.RootElement; Facts(area, StoreLines(s));
+            var owner = G(s, "ownerId"); var name = S(s, "name"); var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexWrap = Wrap.Wrap; area.Add(row);
+            if (owner == Guid.Empty) return;
+            var products = Btn("Ver produtos", () => ShowProductsOf(owner, name), "lv-btn-primary"); products.SetEnabled(I(s, "productCount") > 0); row.Add(products);
+            row.Add(Btn("Ver o proprietário", () => new ProfileHubWindow(_c, owner).Open()));
+        });
+
+        /// <summary>The catalog of a store: the items its owner sells, on the Itens tab.</summary>
+        public void ShowProductsOf(Guid owner, string storeName)
+        {
+            _ownerFilter = owner; _ownerName = storeName; _query = ""; _keepOwner = true; Show("itens"); _keepOwner = false;
+        }
+
+        /// <summary>Opens the details of a store by its id (from an item it sells); "Voltar" returns to where the item was opened from.</summary>
+        public void OpenStore(Guid id) => this.Then(_c.Api.ApiAsync("GET", "/api/v1/discovery/stores/" + id), r =>
+        {
+            if (r.Status != 200) { Say(r.Status == 404 ? "Esta loja não está mais disponível." : UiTasks.Explain(r.Status, r.Body), true); return; }
+            using var d = JsonDocument.Parse(r.Body); var s = d.RootElement; var island = Obj(s, "island");
+            var hit = JsonSerializer.Serialize(new
+            {
+                kind = "store", id, title = S(s, "name"), subtitle = S(island, "name").Length > 0 ? "Loja em " + S(island, "name") : "Loja virtual", description = S(s, "description"),
+                islandId = Guid.TryParse(S(island, "id"), out var at) ? at.ToString() : null, x = Has(s, "x") ? (double?)D(s, "x") : null, z = Has(s, "z") ? (double?)D(s, "z") : null,
+            }, Options);
+            using var item = JsonDocument.Parse(hit); Detail(item.RootElement.Clone(), _back ?? (() => Show("lojas")));
+        });
 
         /// <summary>How the person shown relates to the one searching (friend, blocked, a request either way), from <c>/api/v1/social/relations</c>.</summary>
         public string Relation { get; private set; } = "";

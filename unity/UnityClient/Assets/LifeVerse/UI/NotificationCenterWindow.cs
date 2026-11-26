@@ -86,7 +86,7 @@ namespace LifeVerse.Unity.UI
         public NotificationCenterWindow(ApiContext context, Action<int> unreadChanged = null) : base(context.Ui, "notification-center", "Notificações", 520f, 560f, new Vector2(400, 80))
         {
             _c = context; _unreadChanged = unreadChanged; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
-            var bar = new VisualElement(); bar.style.flexDirection = FlexDirection.Row; bar.style.flexWrap = Wrap.Wrap; foreach (var (id, text) in Tabs) { var tab = id; var b = UiKit.Button(text, () => Show(tab), "lv-btn-flat"); _tabButtons[id] = b; bar.Add(b); } Body.Add(bar);
+            var bar = new VisualElement(); bar.AddToClassList("lv-tabs"); foreach (var (id, text) in Tabs) { var tab = id; var b = UiKit.Button(text, () => Show(tab)); _tabButtons[id] = b; bar.Add(b); } Body.Add(bar);
             _search = UiKit.Field("Buscar nas notificações", false, 60); _search.style.flexGrow = 1; _search.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) Reload(); }, TrickleDown.TrickleDown);
             _unreadOnly = new Toggle("Só não lidas"); _unreadOnly.RegisterValueChangedCallback(_ => Reload());
             Body.Add(UiKit.Row(_search, UiKit.Button("Buscar", Reload))); Body.Add(UiKit.Row(_unreadOnly, UiKit.Spacer(), UiKit.Button("Marcar tudo como lido", MarkAllRead, "lv-btn-primary"))); Body.Add(_status);

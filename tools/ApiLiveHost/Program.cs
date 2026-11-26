@@ -21,6 +21,9 @@ using var factory = new WebApplicationFactory<global::Program>().WithWebHostBuil
     builder.UseSetting("Jwt:SigningKey", "live-host-jwt-signing-key-0123456789-abcdefghijklmnop");
     builder.UseSetting("IslandServer:SharedKey", "live-host-island-service-key-0123456789-abcdef");
     builder.UseSetting("IslandEntry:SigningKey", "live-host-island-entry-key-0123456789-abcdefgh");
+    // the test payment provider (no money moves; refused in production): the live check buys coins with it, signing the webhook with this made-up secret (the same one is in LiveApiCheck.cs)
+    builder.UseSetting("Economy:Payments:Provider", "test");
+    builder.UseSetting("Economy:Payments:WebhookSecret", "live-host-test-webhook-secret-0123456789");
     builder.UseSetting("ObjectStorage:LocalRoot", Path.Combine(Path.GetTempPath(), "lifeverse-live-assets-" + database));
     builder.ConfigureServices(services =>
     {

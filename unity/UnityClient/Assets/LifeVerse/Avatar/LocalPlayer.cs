@@ -38,6 +38,23 @@ namespace LifeVerse.Unity.Avatar
         private float _headSentAt = -10f;
         /// <summary>When set it replaces the keyboard (tests and scripted walks).</summary>
         public Func<PlayerInputSample> Scripted;
+        /// <summary>The movement buttons on screen (the "Mover" window): what it says is added to the keyboard. Null when there are none.</summary>
+        public Func<PlayerInputSample> Pad;
+
+        /// <summary>What the keyboard and the buttons on screen ask for together: the directions add up (never past 1), a button pressed in either counts.</summary>
+        public static PlayerInputSample Merge(PlayerInputSample keys, PlayerInputSample pad)
+        {
+            keys.Forward = Mathf.Clamp(keys.Forward + pad.Forward, -1f, 1f); keys.Right = Mathf.Clamp(keys.Right + pad.Right, -1f, 1f);
+            keys.Run |= pad.Run; keys.Jump |= pad.Jump; keys.Descend |= pad.Descend; return keys;
+        }
+
+        private PlayerInputSample Sample()
+        {
+            if (Scripted != null) return Scripted();
+            if (Pad == null) return ReadKeyboard();
+            var pad = Pad(); if (ObjectSeat.HasValue && (ServerSeated || State.Seated) && (pad.Forward != 0f || pad.Jump)) StandUp();   // walking away stands up, as with the keys
+            return Merge(ReadKeyboard(), pad);
+        }
 
         public AuthoritativePlayerState State { get; } = new AuthoritativePlayerState();
         public NetworkMotionState Motion { get; private set; }
@@ -98,7 +115,7 @@ namespace LifeVerse.Unity.Avatar
             if (Driving != null) { State.X = Driving.GamePosition.x; State.Y = Driving.GamePosition.y + LifeVerse.Shared.Vehicles.VehicleFleet.DriverHeight; State.Z = Driving.GamePosition.z; State.Seated = true; Motion = NetworkMotionState.Sit; HeadingDegrees = -Driving.Yaw * Mathf.Rad2Deg; }
             SendHeadLook();
             KeepAskingForSeat();
-            if (ObjectSeat.HasValue) { if (State.Seated || ServerSeated) { _seatSeen = true; _standing = 0f; } else if (_seatSeen) { _standing += delta; if (_standing > .6f) ObjectSeat = null; } }   // a reconcile can flicker the seat for a moment: only a lasting stand counts   // stood up (X, or the server said so): back to the ground where the person was
+            if (ObjectSeat.HasValue) { if (State.Seated || ServerSeated) { _seatSeen = true; _standing = 0f; } else if (_seatSeen && _wantSeat != true) { _standing += delta; if (_standing > .6f) ObjectSeat = null; } }   // stood up (X, or the server said so): back to the ground where the person was. A reconcile can flicker the seat, and a lost request is being asked again: neither is standing up
             var onSeat = ObjectSeat.HasValue && (State.Seated || ServerSeated && _seatSeen); var shown = onSeat ? ObjectSeat.Value : GamePosition; var shownHeading = onSeat ? ObjectSeatHeading : HeadingDegrees;
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
             if (view != null)
@@ -143,6 +160,8 @@ namespace LifeVerse.Unity.Avatar
 
         /// <summary>Asks to start or stop flying (the F key, the radial menu).</summary>
         public void RequestFlight() => _flyEdge = true;
+        /// <summary>Sits where the person is, or stands up (the X key).</summary>
+        public void RequestSit() => _sitEdge = true;
 
         // ---- vehicles: the server drives the car and pins the driver to it; the client sends the throttle, the steering and the brake ----
 
@@ -157,7 +176,7 @@ namespace LifeVerse.Unity.Avatar
 
         private void DriveOnce()
         {
-            var sample = Scripted != null ? Scripted() : ReadKeyboard();
+            var sample = Sample();
             Sequence++; Client.Send(new SubmitVehicleInputMessage(Mathf.Clamp(sample.Forward, -1f, 1f), Mathf.Clamp(sample.Right, -1f, 1f), sample.Jump));
         }
 
@@ -199,7 +218,7 @@ namespace LifeVerse.Unity.Avatar
 
         private void StepOnce()
         {
-            var sample = Scripted != null ? Scripted() : ReadKeyboard();
+            var sample = Sample();
             sample.Typing |= Typing;
             if (_flyEdge) { sample.Fly = true; _flyEdge = false; }
             if (_sitEdge) { sample.Sit = true; _sitEdge = false; _asking = true; }

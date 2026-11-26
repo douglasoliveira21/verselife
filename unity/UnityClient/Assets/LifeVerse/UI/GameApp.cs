@@ -58,15 +58,44 @@ namespace LifeVerse.Unity.UI
             Ui = UiRoot.Create(Settings); Notices = new NotificationCenter(Ui); Hud = new Hud(Ui, Notices);
             Login = new LoginView(Settings, "Versão " + Application.version + "  •  Unity"); Login.SignIn += OnSignIn; Login.Register += OnRegister; Ui.ScreenLayer.Add(Login);
             Loading = new LoadingView(); Loading.Back.clicked += BackToLogin;
-            _api = new IslandEntryClient(apiBase); _api.SessionExpired += OnSessionExpired;
+            _api = new IslandEntryClient(apiBase); _api.SessionExpired += () => _sessionGone = true;   // told from a worker thread: the screens change on the next frame
             Context = new ApiContext { Ui = Ui, Api = _api, Notices = Notices, CurrentIsland = () => _island, EnterIsland = id => Teleport(id), TravelTo = (id, x, z) => Teleport(id, x, z) };
-            Hud.Map.RegisterCallback<WheelEvent>(e => { if (Store == null) return; Store.Set("world.minimap_zoom", Mathf.RoundToInt(Mathf.Clamp(Hud.Map.ZoomMetres * (e.delta.y > 0 ? 1.15f : 1f / 1.15f), 40f, 1000f) / 10f) * 10 + ""); SettingsEffects.Interface(Store, Hud, Ui); Settings.Save(SettingsPath); e.StopPropagation(); });
+            Hud.Map.RegisterCallback<WheelEvent>(e => { if (Store == null) return; ZoomMap(e.delta.y > 0 ? 1.15f : 1f / 1.15f); e.StopPropagation(); });
+            Hud.Map.ZoomAsked = ZoomMap; Hud.Map.CloseAsked = () => SetMinimap(false);
             RegisterWindows(); Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             Hud.Chat.TypingChanged += typing => { if (Player != null) Player.Typing = typing; };
-            Hud.Perf.Extra = () => (Store != null && Store.Bool("metrics.memory") ? "memória " + (UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576L) + " MB   " : "") + (Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots);
+            Hud.Perf.Extra = () => (Store != null && Store.Bool("network.ping") ? Network.Describe() + "\n" : "") + (Store != null && Store.Bool("metrics.memory") ? "memória " + (UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576L) + " MB   " : "") + (Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots);
             if (SavedLogin.Load(SavedLoginPath) is { } saved) Login.FillSaved(saved.Login, saved.Password);
             ApplyAudio(); StartCoroutine(StartSounds()); StartCoroutine(LoadIslands()); StartCoroutine(WatchServers()); Login.MusicToggled += () => { Settings.LoginMusicMuted = !Settings.LoginMusicMuted; Login.SetMusic(Settings.LoginMusicMuted); Settings.Save(SettingsPath); };
-            Sync = new AccountSync(Settings, (m, p, b) => _api.ApiAsync(m, p, b), () => _api.UserId, () => Settings.Save(SettingsPath)); UpdateInfo = new UpdateCheck(Application.version); Ui.Root.Then(_api.ApiAsync("GET", UpdateCheck.Route), r => { UpdateInfo.Apply(r.Status, r.Body); ShowUpdate(); });
+            Sync = new AccountSync(Settings, (m, p, b) => _api.ApiAsync(m, p, b), () => _api.UserId, () => Settings.Save(SettingsPath), Store); UpdateInfo = new UpdateCheck(Application.version); Ui.Root.Then(_api.ApiAsync("GET", UpdateCheck.Route), r => { UpdateInfo.Apply(r.Status, r.Body); ShowUpdate(); });
+        }
+
+        /// <summary>Brings the mini-map closer (a factor below 1) or farther, and keeps the choice in the settings.</summary>
+        public void ZoomMap(float factor)
+        {
+            if (Store == null) return;
+            Store.Set("world.minimap_zoom", Mathf.RoundToInt(Mathf.Clamp(Hud.Map.ZoomMetres * factor, 40f, 1000f) / 10f) * 10 + ""); SettingsEffects.Interface(Store, Hud, Ui); Settings.Save(SettingsPath);
+        }
+
+        /// <summary>Opens the search (or uses the one already open) and looks for what was written on the navigation bar.</summary>
+        public void SearchFor(string text)
+        {
+            var window = Hud.WindowOf("search") as GlobalSearchWindow ?? Hud.Toggle("search", SearchWindow) as GlobalSearchWindow; if (window == null) return;
+            window.Raise(); if (!string.IsNullOrWhiteSpace(text)) window.Find(text);
+        }
+
+        private FloatingWindow SearchWindow() => new GlobalSearchWindow(Context, Settings, () => Settings.Save(SettingsPath), (island, x, z) => { if (x is { } px && z is { } pz) MoveToSpot(island, px, pz); else Context.EnterIsland(island); });
+        private FloatingWindow MapWindow() => new WorldMapWindow(Context, () => Player != null ? Player.GamePosition : (Vector3?)null);
+        private FloatingWindow PeopleWindow() => new PeopleHubWindow(Context, NearbyPeople, RecentPeople, OpenPersonActions, name => GoToPerson(name));
+        private FloatingWindow SettingsPanel() => new SettingsCatalogWindow(Context, Store, SettingsApplied, id => SettingsEffects.Info(id, this), SettingActions(), () => OpenClassicSettings().Open());
+        private FloatingWindow MovePanel() => new MoveWindow(Ui, () => Player, () => Follow);
+        private FloatingWindow CameraPanel() => new CameraWindow(Ui, () => Follow, () => Player != null ? Player.HeadingDegrees : 0f);
+
+        /// <summary>The name of the island on the navigation bar: the short code at once, the name when the platform tells it.</summary>
+        private void NameIsland()
+        {
+            var island = _island; Hud.SetIsland("Ilha " + island.ToString().Substring(0, 8));
+            Ui.ScreenLayer.Then(_api.ApiAsync("GET", "/api/v1/worlds/islands/" + island), r => { if (r.Status != 200 || island != _island) return; var name = Json.One(r.Body).Text("name"); if (!string.IsNullOrWhiteSpace(name)) Hud.SetIsland(name); });
         }
 
         // ---- the live channel of the platform: notices, the bell, teleport invites, the balance ----
@@ -85,7 +114,21 @@ namespace LifeVerse.Unity.UI
             if (Events == null) { Events = new LiveEvents(Context, Settings) { Me = () => _api.UserId, MoveTo = MoveToSpot, BellChanged = CountBellSoon }; Live.Received += Events.Handle; Events.BalanceChanged += b => Hud.SetBalance(b); }
             LifeVerse.Unity.Avatar.AvatarWardrobe.Files = async (kind, id) => { var r = await _api.GetBytesAsync("/api/v1/avatars/" + kind + "/" + id + "/file"); return r.Status == 200 ? r.Bytes : null; };
             Ui.ScreenLayer.Then(_api.ApiAsync("GET", "/api/v1/economy/wallet"), r => { if (r.Status == 200) try { using var d = System.Text.Json.JsonDocument.Parse(r.Body); if (d.RootElement.TryGetProperty("availableCoins", out var c) && c.TryGetInt64(out var coins)) Hud.SetBalance(coins); } catch (System.Text.Json.JsonException) { } });
-            if (string.IsNullOrEmpty(LiveAddress)) Live.Begin(ApiBase, () => _api.AccessToken); else Live.BeginAt(LiveAddress, () => _api.AccessToken); CountBell();
+            if (string.IsNullOrEmpty(LiveAddress)) Live.Begin(ApiBase, () => _api.AccessToken); else Live.BeginAt(LiveAddress, () => _api.AccessToken); CountBell(); WatchPropertyNotices();
+        }
+
+        // ---- the real estate notices: asked soon after signing in and then every five minutes (as the Godot client does), each one announced once ----
+        private IVisualElementScheduledItem _noticePoll; private NoticeTeller _noticeTeller;
+        private void WatchPropertyNotices()
+        {
+            StopPropertyNotices(); _noticeTeller = new NoticeTeller();
+            _noticePoll = Ui.Root.schedule.Execute(PollPropertyNotices).Every(300000).StartingIn(8000);
+        }
+        private void StopPropertyNotices() { _noticePoll?.Pause(); _noticePoll = null; _noticeTeller = null; }
+        public void PollPropertyNotices()
+        {
+            var teller = _noticeTeller; if (teller == null) return;
+            Ui.Root.Then(_api.ApiAsync("GET", NoticesData.Path), r => { if (teller == _noticeTeller && r.Status == 200 && NoticesData.Parse(r.Body) is { } data && teller.Tell(data) is { } words) Notices.Show(words, NoticeKind.Info); });
         }
 
         /// <summary>Goes to a spot: inside this island the island moves the avatar; on another island the game travels there.</summary>
@@ -95,7 +138,7 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>The number on the bell: the unread notifications as the server counts them.</summary>
-        public void SetBell(int unread) { Unread = Math.Max(0, unread); if (Bell != null) Bell.text = Unread > 0 ? "Avisos (" + (Unread > 99 ? "99+" : Unread.ToString()) + ")" : "Avisos"; }
+        public void SetBell(int unread) { Unread = Math.Max(0, unread); if (Bell != null) { Bell.text = Unread > 0 ? "Avisos (" + (Unread > 99 ? "99+" : Unread.ToString()) + ")" : "Avisos"; UiKit.Alert(Bell, Unread > 0); } }
 
         public void CountBell() => Ui.Root.Then(_api.ApiAsync("GET", CenterPage.ListPath("todas", true, null, 0, 1)), r => { if (r.Status == 200 && CenterPage.Parse(r.Body) is { } page) SetBell(page.Unread); });
 
@@ -130,46 +173,49 @@ namespace LifeVerse.Unity.UI
         private void RegisterWindows()
         {
             Hud.Register("Chat", "chat", () => { Hud.Chat.Focus(); return null; });
-            Hud.Register("Pessoas", "people", () => new PeopleHubWindow(Context, NearbyPeople, RecentPeople, OpenPersonActions, name => GoToPerson(name)));
+            Hud.Register("Pessoas", "people", PeopleWindow);
             Hud.Register("Social", "social", () => new SocialWindow(Context));
             Hud.Register("Inventário", "inventory", () => new InventoryManagerWindow(Context, Store));
             Hud.Register("Carteira", "wallet", () => new WalletHubWindow(Context));
-            Hud.Register("Buscar", "search", () => new GlobalSearchWindow(Context, Settings, () => Settings.Save(SettingsPath), (island, x, z) => { if (x is { } px && z is { } pz) MoveToSpot(island, px, pz); else Context.EnterIsland(island); }));
+            Hud.Register("Buscar", "search", SearchWindow);
             Hud.Register("Construir", "build", () => { ToggleBuild(); return null; });
-            Hud.Register("Voz", "voice", () => { if (Voice == null) return null; if (Voice.Off) { Notices.Show("A voz está desligada em Configurações > Voz.", NoticeKind.Info); return null; } Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure " + KeyBindings.KeyName(KeyBindings.Of(GameAction.Talk)) + " para falar.", NoticeKind.Info); return null; });
+            VoiceButton = Hud.Register("Voz", "voice", () => { if (Voice == null) return null; if (Voice.Off) { Notices.Show("A voz está desligada em Configurações > Voz.", NoticeKind.Info); return null; } if (Voice.BlockedIn != null) { Notices.Show(LifeVerse.Unity.Audio.VoiceChat.BlockedWords(Voice.BlockedIn), NoticeKind.Warn); return null; } Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure " + KeyBindings.KeyName(KeyBindings.Of(GameAction.Talk)) + " para falar.", NoticeKind.Info); return null; });
             Bell = Hud.Register("Avisos", "notifications", () => new NotificationCenterWindow(Context, SetBell));
-            Hud.Register("Mapa", "map", () => new WorldMapWindow(Context, () => Player != null ? Player.GamePosition : (Vector3?)null));
+            Hud.Register("Mapa", "map", MapWindow);
             Hud.Register("Mais", "more", MoreWindow);
-            Hud.Register("Configurações", "settings", () => new SettingsCatalogWindow(Context, Store, SettingsApplied, id => SettingsEffects.Info(id, this), SettingActions(), () => OpenClassicSettings().Open()));
+            Hud.Register("Configurações", "settings", SettingsPanel);
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui)); Hud.Travel = TravelIslands;
             Hud.Register("Gestos", "gestures", () => { OpenRadial(new Vector2(Screen.width / 2f, Screen.height / 2f) / Mathf.Max(.01f, Ui.Panel.scale)); return null; }); Hud.Register("Foto", "photo", () => { TakePhoto(); return null; });
             Hud.Register("Mini-mapa", "minimap", () => { SetMinimap(!MinimapShown); return null; });
+            Hud.Register("Mover", "move", MovePanel); Hud.Register("Câmera", "camera", CameraPanel);
+            Hud.SearchAsked = SearchFor; Hud.AddressPressed = () => Hud.Toggle("map", MapWindow); Hud.IslandPressed = () => { if (_island != Guid.Empty) new IslandInfoWindow(Context, _island).Open(); }; Hud.ParcelPressed = () => OpenParcelHere();
             Hud.Reordered += (id, onto) => { Settings.ToolbarOrder = ToolbarLayout.Place(ToolbarLayout.Order(Hud.ToolbarDefaults, Settings.ToolbarOrder), id, onto); if (!Settings.ToolbarCustomized) { Settings.ToolbarHidden = new List<string>(Hud.DefaultHidden); Settings.ToolbarCustomized = true; } Settings.Save(SettingsPath); ApplyInterface(); };
-            Hud.SetDefaultOrder("voice", "gestures", "photo", "build", "people", "map", "inventory", "minimap", "search", "wallet", "notifications");
+            Hud.SetDefaultOrder("chat", "voice", "move", "camera", "gestures", "photo", "build", "people", "map", "minimap", "inventory", "search", "wallet", "notifications");
             Hud.BuyCoinsPressed = () => Hud.Toggle("wallet", () => new WalletHubWindow(Context));
             // the menus of the top bar, as in the Godot client
             FloatingWindow Open(FloatingWindow w) { w?.Open(); return w; }
+            (string, string, Action) Line() => (Hud.MenuLine, "", null);
             Hud.AddMenu("Eu", new (string, string, Action)[]
             {
                 ("Meu perfil", "user", () => Open(new ProfileHubWindow(Context, _api.UserId))), ("Avatar: visuais, corpo, roupas e animações", "avatar", () => Open(OpenAvatarStudio())), ("Meu personagem", "user", () => OpenCharacter()?.Open()),
-                ("Anexos do corpo", "pin", () => Open(new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment))), ("Inventário", "bag", () => Hud.Toggle("inventory", () => new InventoryManagerWindow(Context, Store))),
-                ("Carteira", "coin", () => Hud.Toggle("wallet", () => new WalletHubWindow(Context))), ("Minhas propriedades", "home", () => Open(new MyPropertiesWindow(Context))),
-                ("Configurações", "settings", () => Hud.Toggle("settings", () => new SettingsCatalogWindow(Context, Store, SettingsApplied, id => SettingsEffects.Info(id, this), SettingActions(), () => OpenClassicSettings().Open()))),
-                ("Barra de ferramentas", "layers", () => Open(ToolbarWindow())), ("Sair da ilha", "power", BackToLogin),
+                ("Anexos do corpo", "pin", () => Open(new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment))), Line(),
+                ("Inventário", "bag", () => Hud.Toggle("inventory", () => new InventoryManagerWindow(Context, Store))), ("Carteira", "coin", () => Hud.Toggle("wallet", () => new WalletHubWindow(Context))), ("Minhas propriedades", "home", () => Open(new MyPropertiesWindow(Context))), Line(),
+                ("Controles de movimento", "run", () => Hud.Toggle("move", MovePanel)), ("Controles da câmera", "camera", () => Hud.Toggle("camera", CameraPanel)),
+                ("Configurações", "settings", () => Hud.Toggle("settings", SettingsPanel)), ("Barra de ferramentas", "layers", () => Open(ToolbarWindow())), Line(), ("Sair da ilha", "power", BackToLogin),
             });
             Hud.AddMenu("Comunicar", new (string, string, Action)[]
             {
-                ("Conversa local", "chat", () => Hud.Chat.Focus()), ("Pessoas", "people", () => Hud.Toggle("people", () => new PeopleHubWindow(Context, NearbyPeople, RecentPeople, OpenPersonActions, name => GoToPerson(name)))),
-                ("Mensagens e amigos", "chat-dots", () => Hud.Toggle("social", () => new SocialWindow(Context))), ("Grupos", "people", () => Open(new GroupsHubWindow(Context))),
+                ("Conversa local", "chat", () => Hud.Chat.Focus()), ("Pessoas", "people", () => Hud.Toggle("people", PeopleWindow)),
+                ("Mensagens e amigos", "chat-dots", () => Hud.Toggle("social", () => new SocialWindow(Context))), ("Grupos", "people", () => Open(new GroupsHubWindow(Context))), Line(),
                 ("Avisos", "bell", () => Hud.Toggle("notifications", () => new NotificationCenterWindow(Context, SetBell))), ("Gestos", "hand", () => OpenRadial(new Vector2(Screen.width / 2f, Screen.height / 2f) / Mathf.Max(.01f, Ui.Panel.scale))),
             });
             Hud.AddMenu("Mundo", new (string, string, Action)[]
             {
-                ("Mapa do mundo", "map", () => Hud.Toggle("map", () => new WorldMapWindow(Context, () => Player != null ? Player.GamePosition : (Vector3?)null))), ("Buscar no LifeVerse", "search", () => Hud.Toggle("search", () => new GlobalSearchWindow(Context, Settings, () => Settings.Save(SettingsPath), (island, x, z) => { if (x is { } px && z is { } pz) MoveToSpot(island, px, pz); else Context.EnterIsland(island); }))),
-                ("Eventos, marcos e fotos", "calendar", () => Open(new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f))),
+                ("Mapa do mundo", "globe", () => Hud.Toggle("map", MapWindow)), ("Buscar no LifeVerse", "search", () => Hud.Toggle("search", SearchWindow)),
+                ("Eventos, marcos e fotos", "calendar", () => Open(new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f))), Line(),
                 ("Sobre a ilha", "info", () => Open(new IslandInfoWindow(Context, _island))), ("Gerenciar esta ilha", "settings", () => Open(new IslandManagementWindow(Context, _island))), ("Gerenciar terrenos", "grid", () => Open(new LandManagementWindow(Context, _island, Here))),
-                ("Sobre este terreno", "pin", () => OpenParcelHere()), ("Mercado imobiliário", "home", () => Open(new RealEstateMarketWindow(Context))), ("Editar terreno   T", "mountain", ToggleTerrain), ("Tirar foto   F12", "photo", TakePhoto),
-                ("Ilha anterior", "chevron-left", () => TravelIslands(-1)), ("Próxima ilha", "chevron-right", () => TravelIslands(1)),
+                ("Sobre este terreno", "pin", () => OpenParcelHere()), ("Mercado imobiliário", "home", () => Open(new RealEstateMarketWindow(Context))), ("Editar terreno   T", "mountain", ToggleTerrain), Line(),
+                ("Tirar foto   F12", "photo", TakePhoto), ("Ilha anterior", "chevron-left", () => TravelIslands(-1)), ("Próxima ilha", "chevron-right", () => TravelIslands(1)),
             });
             Hud.AddMenu("Conteúdo", new (string, string, Action)[]
             {
@@ -183,11 +229,19 @@ namespace LifeVerse.Unity.UI
             Hud.Presence.RegisterValueChangedCallback(e => { if (Current == Phase.Playing) Api.ApiAsync("PUT", "/api/v1/social/presence", System.Text.Json.JsonSerializer.Serialize(new { status = e.newValue, privacyJson = (string)null })); });
         }
 
+        private static string MoreIcon(string label)
+        {
+            if (label.StartsWith("Perfil") || label.Contains("personagem")) return "user"; if (label.StartsWith("Grupos")) return "people"; if (label.StartsWith("Mercado imob") || label.Contains("propriedades")) return "home"; if (label.StartsWith("Mercado")) return "bag";
+            if (label.StartsWith("Eventos")) return "calendar"; if (label.StartsWith("Ofertas")) return "download"; if (label.StartsWith("Sobre")) return "info"; if (label.Contains("ilha")) return "settings"; if (label.Contains("terreno")) return "grid";
+            if (label.StartsWith("Script")) return "code"; if (label.StartsWith("Avatar")) return "avatar"; if (label.StartsWith("Barra")) return "layers"; if (label.StartsWith("Anexos")) return "pin"; return "dots";
+        }
+
         /// <summary>The windows that do not fit in the bar: profile, groups, market, events and photos, the island and its management, item offers, scripts and the character.</summary>
         private FloatingWindow MoreWindow()
         {
-            var window = new FloatingWindow(Ui, "more", "Mais", 300f, -1f, new Vector2(520, 380));
-            void Add(string label, Func<FloatingWindow> create) { var button = UiKit.Button(label, () => { window.Close(); create()?.Open(); }); button.style.marginBottom = 3; window.Body.Add(button); }
+            var window = new FloatingWindow(Ui, "more", "Mais", 470f, -1f, new Vector2(420, 130));
+            var grid = new VisualElement(); grid.style.flexDirection = FlexDirection.Row; grid.style.flexWrap = Wrap.Wrap; window.Body.Add(grid);
+            void Add(string label, Func<FloatingWindow> create) { var button = UiKit.WithIcon(UiKit.Button(label, () => { window.Close(); create()?.Open(); }), MoreIcon(label), 16); button.style.width = 218; button.style.unityTextAlign = TextAnchor.MiddleLeft; button.style.whiteSpace = WhiteSpace.Normal; button.style.height = 38; grid.Add(button); }
             Add("Perfil", () => new ProfileHubWindow(Context, _api.UserId)); Add("Grupos", () => new GroupsHubWindow(Context)); Add("Mercado", () => new MarketWindow(Context)); Add("Mercado imobiliário", () => new RealEstateMarketWindow(Context)); Add("Minhas propriedades", () => new MyPropertiesWindow(Context));
             Add("Eventos, marcos e fotos", () => new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f));
             Add("Ofertas de itens", () => new OffersWindow(Context)); Add("Sobre a ilha", () => new IslandInfoWindow(Context, _island)); Add("Gestão da ilha", () => new IslandManagementWindow(Context, _island)); Add("Gestão de terrenos", () => new LandManagementWindow(Context, _island, Here)); Add("Sobre este terreno", OpenParcelHere);
@@ -324,11 +378,12 @@ namespace LifeVerse.Unity.UI
         /// <summary>Opens or closes the mini-map; "Mini-mapa aberto" in Configurações follows it (and the other way round).</summary>
         public void SetMinimap(bool on)
         {
-            MinimapShown = on; Hud.Map.style.visibility = on ? Visibility.Visible : Visibility.Hidden;
+            MinimapShown = on; Hud.Map.style.visibility = on ? Visibility.Visible : Visibility.Hidden; Hud.BottomBar.Q<Button>("btn-minimap")?.EnableInClassList("lv-btn-open", on);
             if (Store != null && Store.Bool("world.minimap_open") != on) Store.Set("world.minimap_open", on ? "true" : "false", false);
         }
         /// <summary>Where "Lembrar senha" keeps the sealed login (the checks point it elsewhere).</summary>
-        public string SavedLoginPath { get; set; } = SavedLogin.DefaultPath;
+        public string SavedLoginPath { get => _savedLoginPath ??= SavedLogin.DefaultPath; set => _savedLoginPath = value; }   // asked when first needed: Unity refuses the data folder in a field initializer
+        private string _savedLoginPath;
         public bool SavedPassword { get; private set; }
 
         /// <summary>The health of the API on the login screen, every 20 seconds while it is open.</summary>
@@ -352,6 +407,7 @@ namespace LifeVerse.Unity.UI
             if (wanted > 0f && !LoginMusic.isPlaying) LoginMusic.Play(); else if (wanted <= 0f && LoginMusic.volume <= .001f && LoginMusic.isPlaying) LoginMusic.Stop();
         }
 
+        private volatile bool _sessionGone;
         private void OnSessionExpired() { if (Current == Phase.Login) return; BackToLogin(); Login.Fail("Sua sessão acabou. Entre de novo."); }
 
         // ---- opening the island ----
@@ -376,7 +432,7 @@ namespace LifeVerse.Unity.UI
             yield return new WaitUntil(() => Client.SelfPeerId >= 0 && PeopleViews != null && PeopleViews.ViewOf(Client.SelfPeerId) != null);
             Player.Attach(Client, Client.Terrain, PeopleViews, Follow); Player.Vehicles = _world.GetComponentInChildren<VehicleViews>(); ApplySettingsToWorld();
             Client.DisconnectedBy += OnDisconnected; Client.ChatReceived += OnChat; Client.PlayerSpawned += OnSpawned; Client.PlayerDespawned += OnDespawned;
-            Hud.SetIsland("Ilha " + _island.ToString().Substring(0, 8)); Show(Phase.Playing); Notices.Show("Você entrou na ilha.", NoticeKind.Good);
+            NameIsland(); Show(Phase.Playing); Notices.Show("Você entrou na ilha.", NoticeKind.Good);
             Reconnects = 0; if (Settings.IslandYaw.TryGetValue(_island.ToString("N"), out var yaw) && Follow != null) Follow.Yaw = yaw; Islands.Visit(_island); Hud.SetTravel(Islands.CanBack, Islands.CanForward); ApplyInterface(); SetMinimap(Store.Bool("world.minimap_open"));
             if (Sync != null && Sync.Enabled) { var pull = Sync.PullIfEnabledAsync(); while (!pull.IsCompleted) yield return null; if (pull.Result.Result == SyncResult.Ok && pull.Result.Values.Count > 0) { ApplySettingsToWorld(); Settings.Save(SettingsPath); } }
         }
@@ -487,6 +543,15 @@ namespace LifeVerse.Unity.UI
         public LandMusic ParcelMusic { get; private set; }
         public VoiceChat Voice { get; private set; }
         public VoiceListener Hearing { get; private set; }
+        public Button VoiceButton { get; private set; }
+
+        /// <summary>The parcel under the person may switch voice off: the microphone is then kept closed, the button says so and the person is told once.</summary>
+        public void ApplyLandVoice()
+        {
+            var off = ParcelMusic != null ? ParcelMusic.VoiceOffIn : null; if (Voice.BlockedIn == off) return;
+            Voice.BlockedIn = off; if (VoiceButton != null) { VoiceButton.text = off != null ? "Sem voz" : "Voz"; VoiceButton.tooltip = off != null ? LifeVerse.Unity.Audio.VoiceChat.BlockedWords(off) : "Voz"; }
+            if (off != null && !Voice.Off) Notices.Show(LifeVerse.Unity.Audio.VoiceChat.BlockedWords(off), NoticeKind.Info);
+        }
         public BusSource LoginTheme { get; private set; }
         private MicTest _micTest;
         private float _nextSplash, _footprintClock = 2f;
@@ -495,7 +560,7 @@ namespace LifeVerse.Unity.UI
         public void ApplyAudio()
         {
             KeyBindings.Load(Settings.Keys); KeyBindings.Blocked = () => Hud != null && Hud.Chat != null && Hud.Chat.Typing || Ui != null && Ui.Root != null && Ui.Root.panel != null && Ui.Root.panel.focusController != null && Ui.Root.panel.focusController.focusedElement is TextField;
-            MicDevices.Preferred = Settings.InputDevice; UiSounds.Enabled = Settings.UiSounds; Buses.SetAll(Settings.MasterVolume, Settings.AmbientVolume, Settings.EffectsVolume, Settings.MusicVolume, Settings.MediaVolume, Settings.VoiceVolume);
+            SettingsEffects.Resources(Store); MicDevices.Preferred = Settings.InputDevice; UiSounds.Enabled = Settings.UiSounds; Buses.SetAll(Settings.MasterVolume, Settings.AmbientVolume, Settings.EffectsVolume, Settings.MusicVolume, Settings.MediaVolume, Settings.VoiceVolume);
             if (Voice != null) { Voice.Gate = Settings.VoiceSensitivity; Voice.EchoGuard = Settings.EchoGuard; }
             SettingsEffects.Voice(Store, Voice, Hearing, ref _openMicApplied); SpeakingIndicators = Store == null || Store.Bool("voice.indicators");
             if (ParcelMusic != null) ParcelMusic.Enabled = Settings.ParcelMusic;
@@ -592,11 +657,12 @@ namespace LifeVerse.Unity.UI
 
         private void Update()
         {
+            if (_sessionGone) { _sessionGone = false; OnSessionExpired(); }
             TickLoginMusic(); SettingsEffects.RenderScale.Tick(Time.unscaledDeltaTime);
             if (Current == Phase.Playing && Store != null) TickAutoQuality();
             if (Current != Phase.Playing || Client == null) return;
             var views = PeopleViews; Hud.SetConnection(Client.Connected, Mathf.Max(0, (views?.Count ?? 1) - 1));
-            if (Hud.PerformanceVisible) Hud.Perf.Frame(Time.unscaledDeltaTime);
+            SampleNetwork(); if (Hud.PerformanceVisible) Hud.Perf.Frame(Time.unscaledDeltaTime);
             _mapClock += Time.unscaledDeltaTime;
             if (Hud.Map.Rotate && Follow != null) Hud.Map.Turn(Follow.Yaw);
             if (_mapClock > .25f && Player != null && Client.Terrain != null)
@@ -604,7 +670,7 @@ namespace LifeVerse.Unity.UI
                 _mapClock = 0f; Hud.Map.Paint(Client.Terrain.Map);
                 var others = new List<Vector3>(); var names = new List<string>(); if (views != null) foreach (var peer in views.Peers) if (peer != Client.SelfPeerId) { var view = views.ViewOf(peer); others.Add(view.GamePosition); names.Add(view.DisplayName); }
                 _footprintClock += .25f; if (_footprintClock >= 2f && Client.Objects != null) { _footprintClock = 0f; if (Hud.Map.ShowBuildings) Client.Objects.Footprints(Hud.Map.Buildings); else Hud.Map.Buildings.Clear(); }
-                Hud.Map.Place(Player.GamePosition, others, names);
+                Hud.Map.Place(Player.GamePosition, others, names); Hud.SetPosition(Player.GamePosition); VoiceButton?.EnableInClassList("lv-btn-open", Voice != null && Voice.Locked);
             }
             _recentClock += Time.unscaledDeltaTime; if (_recentClock > 2f) { _recentClock = 0f; NoteRecent(); }
             Builder?.Tick(Time.unscaledDeltaTime); TerrainTools?.Tick(Time.unscaledDeltaTime);
@@ -614,7 +680,7 @@ namespace LifeVerse.Unity.UI
                 Ambient.SetTargets(AmbientLevels.Compute(edge, Player.State.Swimming, spot.y, weather));
                 if (Player.State.Swimming && new Vector2(Player.State.VelocityX, Player.State.VelocityZ).magnitude > .5f && Time.unscaledTime > _nextSplash) { _nextSplash = Time.unscaledTime + 1.05f; Ambient.Splash(); }
             }
-            if (Voice != null) Voice.TalkHeld = KeyBindings.Held(GameAction.Talk);
+            if (Voice != null) { Voice.TalkHeld = KeyBindings.Held(GameAction.Talk); ApplyLandVoice(); }
             if (Hearing != null && PeopleViews != null) foreach (var peer in PeopleViews.Peers) { var view = PeopleViews.ViewOf(peer); if (view != null) view.SetSpeaking(SpeakingIndicators && (peer == Client.SelfPeerId ? Voice != null && Voice.Talking : Hearing.IsSpeaking(peer))); }
             if (Keyboard.current is { } keyboard && !Hud.Chat.Typing)
             {
@@ -871,9 +937,20 @@ namespace LifeVerse.Unity.UI
             if (Sync != null && Sync.Enabled) _ = Sync.PushAppliedAsync();
         }
 
+        /// <summary>"Ping, jitter e perda de pacotes": the connection to the island, sampled once a second while the setting is on.</summary>
+        public LifeVerse.Unity.World.NetworkQuality Network { get; } = new LifeVerse.Unity.World.NetworkQuality();
+        private float _nextPing;
+        private void SampleNetwork()
+        {
+            if (Time.unscaledTime < _nextPing) return; _nextPing = Time.unscaledTime + 1f;
+            if (Client == null || !Client.Connected) Network.Clear(); else if (Store != null && Store.Bool("network.ping")) Network.Add(Client.RoundTripMilliseconds, Client.PacketLossPercent);
+        }
+
         private void OnSettingChanged(string id)
         {
-            if (id.StartsWith("metrics.", StringComparison.Ordinal)) SettingsEffects.Metrics(Store, Hud);
+            if (id.StartsWith("metrics.", StringComparison.Ordinal) || id == "network.ping") SettingsEffects.Metrics(Store, Hud);
+            else if (id == "audio.interface" || id == "perf.object_lod") SettingsEffects.Resources(Store);
+            else if (id == "perf.resource_cache") { SettingsEffects.Resources(Store); LifeVerse.Unity.World.AssetPreloader.Prune(LifeVerse.Unity.World.WorldJoin.CacheFolder, LifeVerse.Unity.World.AssetPreloader.LimitBytes); }
             else if (id == "camera.default_distance" && Follow != null) Follow.Distance = Store.Float(id);
             else if (id == "camera.default_mode" && Follow != null) Follow.SetFirstPerson(Store.Get(id) == "first");
             else if (id == "world.minimap_open" && Store.Bool(id) != MinimapShown) SetMinimap(Store.Bool(id));
@@ -927,7 +1004,7 @@ namespace LifeVerse.Unity.UI
             WorldObjects.MaxLights = Store.Int("world.max_lights"); WorldObjects.MaxLightShadows = Store.Int("world.max_light_shadows"); if (Client != null && Client.Objects != null) Client.Objects.RefreshBudget();
             SettingsEffects.World(Store, PeopleViews, _world != null ? _world.GetComponentInChildren<LifeVerse.Unity.World.OceanView>() : null, Client != null ? Client.Objects : null);
             SettingsEffects.Toasts(Store, Notices); SettingsEffects.Build(Store, Builder); LifeVerse.Unity.Avatar.AvatarSounds.FootstepsEnabled = Store.Bool("avatar.footsteps");
-            if (Store.Bool("metrics.fps") || Store.Bool("metrics.frame_time") || Store.Bool("metrics.memory")) SettingsEffects.Metrics(Store, Hud);
+            if (Store.Bool("metrics.fps") || Store.Bool("metrics.frame_time") || Store.Bool("metrics.memory") || Store.Bool("network.ping")) SettingsEffects.Metrics(Store, Hud);
         }
 
         /// <summary>"Qualidade automática": lowers the preset one level when the frames stay well below the target (see <see cref="SettingsEffects.AutoQuality"/>).</summary>
@@ -953,7 +1030,7 @@ namespace LifeVerse.Unity.UI
 
         public void BackToLogin()
         {
-            Live?.End(); SetBell(0);
+            Live?.End(); SetBell(0); StopPropertyNotices();
             if (Client != null) { Client.DisconnectedBy -= OnDisconnected; Client.ChatReceived -= OnChat; Client.PlayerSpawned -= OnSpawned; Client.PlayerDespawned -= OnDespawned; }
             if (_entering != null) { StopCoroutine(_entering); _entering = null; }
             TearDownWorld(); Show(Phase.Login); Login.SetBusy(false);

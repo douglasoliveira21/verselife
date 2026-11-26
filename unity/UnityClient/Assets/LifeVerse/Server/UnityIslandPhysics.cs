@@ -23,8 +23,10 @@ namespace LifeVerse.Unity.Server
         /// and 1.0 gives 8.1 m: the angular value is calibrated on that one scenario (rolling ball), so boxes that slide may still differ.
         /// </summary>
         public static float AngularDamping = 1.0f, LinearDamping = .05f;
-        /// <summary>How the friction of a body and of what it touches are combined (set by the comparison tool; Average is the engine default).</summary>
-        public static PhysicsMaterialCombine FrictionCombineMode = PhysicsMaterialCombine.Average;
+        /// <summary>How the friction of a body and of what it touches are combined: Godot takes the smaller of the two (the ground and the fixed objects have friction 1, so a body keeps its own).</summary>
+        public const PhysicsMaterialCombine FrictionCombineMode = PhysicsMaterialCombine.Minimum;
+        /// <summary>What the ground and the fixed objects are made of, as in Godot, where they have no material of their own: friction 1, no bounce.</summary>
+        private static PhysicsMaterial StillMaterial() => new PhysicsMaterial("still") { dynamicFriction = 1f, staticFriction = 1f, bounciness = 0f, frictionCombine = FrictionCombineMode, bounceCombine = PhysicsMaterialCombine.Maximum };
         private const float FellOutBelow = -60f, FixedStep = 1f / 60f;
 
         private sealed class Body
@@ -54,6 +56,7 @@ namespace LifeVerse.Unity.Server
         public UnityIslandPhysics()
         {
             Physics.simulationMode = SimulationMode.Script;
+            Physics.improvedPatchFriction = true;   // without it PhysX may apply up to twice the friction asked on a flat contact, and a box stops far sooner than in Godot
             _root = new GameObject("LifeVerse Island Physics");
             if (Application.isPlaying) UnityEngine.Object.DontDestroyOnLoad(_root);
         }
@@ -86,7 +89,7 @@ namespace LifeVerse.Unity.Server
             var mesh = new Mesh { name = "IslandGround", indexFormat = vertices.Length > 65000 ? UnityEngine.Rendering.IndexFormat.UInt32 : UnityEngine.Rendering.IndexFormat.UInt16 };
             mesh.vertices = vertices; mesh.triangles = triangles;
             _ground = new GameObject("Ground"); _ground.transform.SetParent(_root.transform, false);
-            _ground.AddComponent<MeshCollider>().sharedMesh = mesh;
+            var floor = _ground.AddComponent<MeshCollider>(); floor.sharedMesh = mesh; floor.sharedMaterial = StillMaterial();
         }
 
         /// <summary>The object, as a body, a fixed collider or nothing: only what moves and what bodies can hit exists.</summary>
@@ -171,8 +174,9 @@ namespace LifeVerse.Unity.Server
             foreach (var collider in body.Object.GetComponents<Collider>()) Kill(collider);
             body.Reach = AddShape(body.Object, def.PrimitiveType, settings.CollisionShape, scale, true);
             // Godot adds the two bounces (the ground has none, so the body keeps its own) and Unity averages them by default: Maximum gives the Godot result against a ground without bounce
+            // (between two bouncy bodies it gives less than Godot: a measured sum came out further from Godot than this)
             var material = new PhysicsMaterial { dynamicFriction = settings.Friction, staticFriction = settings.Friction, bounciness = settings.Bounce, bounceCombine = PhysicsMaterialCombine.Maximum, frictionCombine = FrictionCombineMode };
-            foreach (var collider in body.Object.GetComponents<Collider>()) collider.material = material;
+            foreach (var collider in body.Object.GetComponents<Collider>()) collider.sharedMaterial = material;
             var rb = body.Rigidbody; rb.mass = Mathf.Clamp(settings.Mass, PhysicsRules.MinMass, PhysicsRules.MaxMass); rb.angularDamping = AngularDamping; rb.linearDamping = LinearDamping; rb.WakeUp();
         }
 
@@ -185,6 +189,7 @@ namespace LifeVerse.Unity.Server
             if (existing != null) Kill(existing.Object);
             var obj = new GameObject("Fixed_" + def.Id.ToString("N")); obj.transform.SetParent(_root.transform, false); obj.transform.SetPositionAndRotation(position, rotation);
             AddShape(obj, def.PrimitiveType, settings.CollisionShape, scale, false);
+            foreach (var collider in obj.GetComponents<Collider>()) collider.sharedMaterial = StillMaterial();
             var tag = obj.AddComponent<BodyTag>(); tag.Id = def.Id; tag.Owner = this;
             _fixed[def.Id] = new Fixed { Object = obj, Signature = signature };
         }

@@ -13,6 +13,9 @@ namespace LifeVerse.Unity.Audio
     public static class UiSounds
     {
         public static bool Enabled { get; set; } = true;
+        private static float _volume = 1f;
+        /// <summary>The volume of the sounds of the interface alone, 0 to 1 (on top of the Efeitos volume they play under).</summary>
+        public static float Volume { get => _volume; set => _volume = Mathf.Clamp01(value); }
         public static int Played { get; private set; }
         public static UiSound? Last { get; private set; }
         private static readonly Dictionary<UiSound, AudioClip> Clips = new Dictionary<UiSound, AudioClip>(); private static readonly Dictionary<UiSound, float> LastAt = new Dictionary<UiSound, float>();
@@ -60,8 +63,9 @@ namespace LifeVerse.Unity.Audio
         /// <summary>Plays a sound of the interface (nothing when they are off, or the same one was played a moment ago).</summary>
         public static bool Play(UiSound sound)
         {
-            if (!Enabled) return false; var now = Time.realtimeSinceStartup; if (LastAt.TryGetValue(sound, out var before) && now - before < .04f) return false; LastAt[sound] = now;
-            Ready(); _source.PlayOneShot(ClipOf(sound)); Played++; Last = sound; return true;
+            if (!Enabled || !Application.isPlaying) return false;   // outside play mode (editor tests) there is no game to sound in
+            var now = Time.realtimeSinceStartup; if (LastAt.TryGetValue(sound, out var before) && now - before < .04f) return false; LastAt[sound] = now;
+            Ready(); _source.PlayOneShot(ClipOf(sound), Volume); Played++; Last = sound; return true;
         }
 
         public static void Click() => Play(UiSound.Click);

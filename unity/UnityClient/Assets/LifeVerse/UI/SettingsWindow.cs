@@ -26,7 +26,7 @@ namespace LifeVerse.Unity.UI
             foreach (var name in new[] { "Gráficos", "Áudio", "Controles", "Interface", "Acessibilidade", "Conta" })
             {
                 var tab = new VisualElement(); tab.style.display = DisplayStyle.None; Body.Add(tab); _tabs[name] = tab; var captured = name;
-                var button = UiKit.Button(name, () => Show(captured)); _buttons[name] = button; tabBar.Add(button);
+                var button = UiKit.Button(name, () => Show(captured)); _buttons[name] = button; tabBar.AddToClassList("lv-tabs"); tabBar.Add(button);
             }
             BuildGraphics(_tabs["Gráficos"]); BuildAudio(_tabs["Áudio"]); BuildControls(_tabs["Controles"]); BuildInterface(_tabs["Interface"]); BuildAccessibility(_tabs["Acessibilidade"]); BuildAccount(_tabs["Conta"]);
             Show("Gráficos");

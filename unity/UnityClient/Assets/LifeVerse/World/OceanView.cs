@@ -5,14 +5,13 @@ namespace LifeVerse.Unity.World
     /// <summary>
     /// Open ocean around the island: one large water surface that follows the camera so it reaches the horizon. The mesh is a grid whose cells grow with the distance
     /// from its centre (fine under the camera, 50 m at the edge), and its vertices ride the same waves as the Godot ocean (a sum of four sines of the world position,
-    /// 0.22 m high, fading out with distance), recomputed every frame. Two normal maps slide over it at different speeds for the ripples; the transparent HDRP material
-    /// shows the sea floor through the shallows, and seen from below the same surface is a translucent ceiling (double sided). Swimming physics are the server's
+    /// 0.22 m high, fading out with distance), recomputed every frame. Its shader (LifeVerse/Ocean) is the water of the Godot client: colour by depth, sliding ripples, foam on the shallows,
+    /// the sky mirrored and the sun's glint, and seen from below a translucent ceiling (double sided). Swimming physics are the server's
     /// (AuthoritativeMovement); this is visual only. The surface sits at the sea level of the terrain map.
     /// </summary>
     public sealed class OceanView : MonoBehaviour
     {
         public const float PlaneSize = 2600f, SnapStep = 2f, WaveHeight = .22f, WaveFadeStart = 140f, WaveFadeEnd = 300f;
-        private const float SwellTile = 70f, RippleTile = 9f;
         private const int Cells = 160; // per side; cells grow as |u|^3, so the centre is fine and the rim coarse
 
         public Camera Camera;
@@ -20,8 +19,10 @@ namespace LifeVerse.Unity.World
         public bool Waves = true; private bool _flat;
         private Transform _plane;
         private Material _material;
-        /// <summary>The colour and opacity of the sea: between the Godot shallow (0.05, 0.50, 0.58) and deep (0.005, 0.07, 0.22) colours, nearly opaque, so the sand under deep water does not shine through.</summary>
-        public static readonly Color WaterColour = new Color(.02f, .2f, .34f, .9f);
+        /// <summary>The full sea (three layers of ripples, lacy foam, clouds in the mirror), or the cheaper one of the low presets.</summary>
+        public bool Detailed { get; set; } = true;
+        private Texture2D _swell, _ripples, _foam;
+        public Material Material => _material;
         private Mesh _mesh;
         private Vector3[] _local, _world;
         private bool _animate = true;
@@ -36,17 +37,16 @@ namespace LifeVerse.Unity.World
         private void Awake()
         {
             var prototype = Resources.Load<Material>("LifeVerse/OceanMaterial");
-            _material = prototype != null ? new Material(prototype) : new Material(Shader.Find("HDRP/Lit"));
-            _material.SetColor("_BaseColor", WaterColour);   // the deep blue of the Godot sea (its colour goes from turquoise in the shallows to this deep blue, almost opaque)
+            _material = prototype != null ? new Material(prototype) : new Material(Shader.Find("LifeVerse/Ocean"));
+            // the same noises as the Godot sea: about ten and twenty-three waves across the two normal maps, and the lace of the foam
+            _swell = ProceduralTextures.NormalMap(512, 10, 4, 3, 7f); _ripples = ProceduralTextures.NormalMap(512, 23, 3, 9, 5f); _foam = ProceduralTextures.GreyNoise(256, 8, 3, 17);
+            _material.SetTexture("_NormalA", _swell); _material.SetTexture("_NormalB", _ripples); _material.SetTexture("_FoamNoise", _foam);
             var plane = new GameObject("OceanPlane"); plane.transform.SetParent(transform, false); _plane = plane.transform;
             plane.AddComponent<MeshFilter>().sharedMesh = BuildMesh();
             var renderer = plane.AddComponent<MeshRenderer>(); renderer.sharedMaterial = _material;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; renderer.receiveShadows = false;
             renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off; renderer.motionVectorGenerationMode = MotionVectorGenerationMode.ForceNoMotion;   // a plane of water needs neither: they only cost every pixel of it
-            Foam = gameObject.AddComponent<ShoreFoam>(); Foam.Ocean = this;   // the surf on the shore, per pixel
         }
-
-        public ShoreFoam Foam { get; private set; }
 
         private static float Axis(int i) { var u = (float)i / Cells * 2f - 1f; return Mathf.Sign(u) * Mathf.Pow(Mathf.Abs(u), 3f) * PlaneSize * .5f; }
 
@@ -76,9 +76,7 @@ namespace LifeVerse.Unity.World
             var time = _animate ? Time.time : 0f;
             if (Waves) { DisplaceVertices(planePosition, position, time); _flat = false; }
             else if (!_flat) { _flat = true; _mesh.vertices = _local; }   // the waves were turned off: the sea lies flat
-            // texture coordinates are metres from the plane's centre: tiling 1 / tile, offset = where the plane sits in tiles, plus the slide of the ripples
-            SetTexture("_NormalMap", SwellTile, planePosition, new Vector2(.020f, .012f) * time * SwellTile / 10f);
-            SetTexture("_DetailMap", RippleTile, planePosition, new Vector2(-.05f, .035f) * time * RippleTile / 10f);
+            _material.SetFloat("_WaveTime", time); _material.SetFloat("_Detail", Detailed ? 1f : 0f);
         }
 
         private void DisplaceVertices(Vector3 planePosition, Vector3 camera, float time)
@@ -93,12 +91,6 @@ namespace LifeVerse.Unity.World
             _mesh.vertices = _world;
         }
 
-        private void SetTexture(string name, float tile, Vector3 planePosition, Vector2 slide)
-        {
-            _material.SetTextureScale(name, new Vector2(1f / tile, 1f / tile));
-            _material.SetTextureOffset(name, new Vector2(planePosition.x / tile, planePosition.z / tile) + slide);
-        }
-
         /// <summary>The height of the water surface at a place right now (the sea level plus the wave under the plane's current fade), for things that float.</summary>
         public float SurfaceAt(float worldX, float worldZ, Vector3 camera)
         {
@@ -107,6 +99,6 @@ namespace LifeVerse.Unity.World
             return SeaLevel + (Waves ? Wave(worldX, worldZ, _animate ? Time.time : 0f) * WaveHeight * fade : 0f);
         }
 
-        private void OnDestroy() { if (_material != null) Destroy(_material); if (_mesh != null) Destroy(_mesh); }
+        private void OnDestroy() { if (_material != null) Destroy(_material); if (_mesh != null) Destroy(_mesh); if (_swell != null) Destroy(_swell); if (_ripples != null) Destroy(_ripples); if (_foam != null) Destroy(_foam); }
     }
 }

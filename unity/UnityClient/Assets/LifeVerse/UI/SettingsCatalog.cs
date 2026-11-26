@@ -52,7 +52,7 @@ namespace LifeVerse.Unity.UI
         };
 
         /// <summary>Godot marks these as unavailable there; the Unity client has them.</summary>
-        private static readonly HashSet<string> UnityHas = new HashSet<string> { "voice.echo_cancel", "accessibility.contrast" };
+        private static readonly HashSet<string> UnityHas = new HashSet<string> { "voice.echo_cancel", "accessibility.contrast", "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache" };
 
         /// <summary>The settings that act in the Unity client (by a value bound to the old settings, or an effect applied in the world, the interface, the audio or the screen), plus every Info and Action handled here.</summary>
         public static readonly HashSet<string> InUnity = new HashSet<string>
@@ -76,6 +76,7 @@ namespace LifeVerse.Unity.UI
             "voice.enabled", "voice.open_mic", "voice.hearing_distance", "voice.spatial", "voice.indicators", "controls.double_tap_run", "controls.hold_to_fly", "camera.fp_look_smoothing", "camera.fp_collision",
             "world.minimap_open", "world.minimap_rotate", "world.minimap_names", "world.minimap_buildings", "world.map_parcels", "world.map_friends", "world.map_names", "world.map_events", "world.map_favorites", "world.map_featured",
             "interface.radial_speed", "interface.radial_tooltips", "general.keep_on_top", "general.download_update", "avatar.show_titles", "avatar.default_animations", "avatar.open_mirror", "privacy.external_media", "build.space", "build.import_collision",
+            "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache",
             "accessibility.keyboard", "camera.focus_double_click", "camera.allow_detached", "camera.detached_range", "camera.detached_speed",
         };
 

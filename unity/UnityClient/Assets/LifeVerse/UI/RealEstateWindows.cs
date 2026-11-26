@@ -96,13 +96,13 @@ namespace LifeVerse.Unity.UI
         public RealEstateMarketWindow(ApiContext context) : base(context.Ui, "real-estate", "Mercado imobiliário", 720f, 560f, new Vector2(240, 70))
         {
             _c = context; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; _total = UiKit.Text("", "lv-bold");
-            _tabs = new VisualElement(); _tabs.style.flexDirection = FlexDirection.Row; _tabs.style.flexWrap = Wrap.Wrap; foreach (var (id, text) in MarketFilter.Tabs) { var tab = id; _tabs.Add(UiKit.Button(text, () => SelectTab(tab), "lv-btn-flat")); } Body.Add(_tabs);
+            _tabs = new VisualElement(); _tabs.AddToClassList("lv-tabs"); foreach (var (id, text) in MarketFilter.Tabs) { var tab = id; var b = UiKit.Button(text, () => SelectTab(tab)); b.userData = tab; _tabs.Add(b); } Body.Add(_tabs);
             _query = UiKit.Field("Buscar", false, 60); _maxPrice = UiKit.Field("Preço máximo", false, 12); _periods = UiKit.Field("Períodos do aluguel", false, 3, "1"); _query.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) Search(1); }, TrickleDown.TrickleDown);
             _query.style.flexGrow = 1; _query.style.minWidth = 200; _maxPrice.style.width = 150; _periods.style.width = 200; Body.Add(UiKit.Row(_query, _maxPrice, UiKit.Button("Buscar", () => Search(1), "lv-btn-primary"))); Body.Add(_periods); Body.Add(_total); Body.Add(_status); _list.style.flexGrow = 1; _list.style.minHeight = 240; Body.Add(_list);
             _pages = new VisualElement(); _pages.style.flexDirection = FlexDirection.Row; Body.Add(_pages); SelectTab("terrenos");
         }
 
-        public void SelectTab(string tab) { Tab = tab; _filter.ApplyTab(tab); Search(1); }
+        public void SelectTab(string tab) { Tab = tab; foreach (var b in _tabs.Children()) b.EnableInClassList("lv-btn-selected", (string)b.userData == tab); _filter.ApplyTab(tab); Search(1); }
 
         public void Search(int page)
         {
@@ -231,15 +231,73 @@ namespace LifeVerse.Unity.UI
         }
     }
 
+    /// <summary>One notice the real estate wrote for the person (a rent that is ending, a sale, a payment received).</summary>
+    public sealed class PropertyNotice
+    {
+        public Guid Id; public string Kind = "", Title = "", Body = ""; public DateTimeOffset At; public bool Read;
+    }
+
+    /// <summary>What <c>GET /api/v1/properties/notices</c> says: the notices, newest first, and how many are unread.</summary>
+    public sealed class NoticesData
+    {
+        public int Unread; public List<PropertyNotice> Items = new List<PropertyNotice>();
+        public const string Path = "/api/v1/properties/notices?take=40", ReadPath = "/api/v1/properties/notices/read";
+
+        public static NoticesData Parse(string json)
+        {
+            try
+            {
+                using var d = JsonDocument.Parse(json); var root = d.RootElement; if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array) return null;
+                string S(JsonElement e, string n) => e.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+                var data = new NoticesData { Unread = root.TryGetProperty("unread", out var u) && u.ValueKind == JsonValueKind.Number && u.TryGetInt32(out var count) ? count : 0 };
+                foreach (var e in items.EnumerateArray())
+                {
+                    if (e.ValueKind != JsonValueKind.Object || !Guid.TryParse(S(e, "id"), out var id)) continue;
+                    data.Items.Add(new PropertyNotice { Id = id, Kind = S(e, "kind"), Title = S(e, "title"), Body = S(e, "body"), At = e.TryGetProperty("at", out var at) && at.ValueKind == JsonValueKind.String && at.TryGetDateTimeOffset(out var when) ? when : default, Read = e.TryGetProperty("read", out var read) && read.ValueKind == JsonValueKind.True });
+                }
+                return data;
+            }
+            catch (JsonException) { return null; }
+        }
+
+        /// <summary>The body that marks as read the notices of <paramref name="ids"/>, or every notice when there are none.</summary>
+        public static string ReadBody(IReadOnlyCollection<Guid> ids) => ids == null || ids.Count == 0 ? "{\"ids\":null}" : "{\"ids\":[" + string.Join(",", ids.Select(i => "\"" + i + "\"")) + "]}";
+
+        /// <summary>The strip over the properties while something is unread ("" when nothing is).</summary>
+        public string Strip()
+        {
+            if (Unread <= 0) return ""; var newest = Items.FirstOrDefault(n => !n.Read)?.Title ?? "";
+            return Unread == 1 ? "Você tem 1 aviso novo: " + newest : "Você tem " + Unread + " avisos novos. O mais recente: " + newest;
+        }
+    }
+
+    /// <summary>Remembers which notices the person was already told about, so each one is announced once.</summary>
+    public sealed class NoticeTeller
+    {
+        private readonly HashSet<Guid> _told = new HashSet<Guid>(); private bool _first = true;
+
+        /// <summary>The words about what is new in <paramref name="data"/>, or null when there is nothing new to say.</summary>
+        public string Tell(NoticesData data)
+        {
+            var fresh = data.Items.Where(n => !n.Read && _told.Add(n.Id)).ToList(); var first = _first; _first = false;
+            if (fresh.Count == 0) return null; if (fresh.Count == 1) return fresh[0].Title;
+            return first ? "Você tem " + fresh.Count + " avisos novos sobre os seus imóveis." : fresh.Count + " avisos novos sobre os seus imóveis. O mais recente: " + fresh[0].Title;
+        }
+    }
+
     /// <summary>
     /// "Minhas propriedades": the islands and parcels the person owns (with what is on sale or for rent), the contracts they have as landlord or tenant (renew or end them), the payments and the islands or parcels someone wants to give them
     /// (accept or decline). Everything is read from the server and every change goes through it.
     /// </summary>
     public sealed class MyPropertiesWindow : FloatingWindow
     {
-        public static readonly (string Id, string Text)[] Tabs = { ("resumo", "Resumo"), ("ilhas", "Ilhas"), ("terrenos", "Terrenos"), ("alugueis", "Aluguéis"), ("anuncios", "Anúncios"), ("pagamentos", "Pagamentos") };
-        private readonly ApiContext _c; private readonly ScrollView _list = new ScrollView(); private readonly Label _status;
+        public static readonly (string Id, string Text)[] Tabs = { ("resumo", "Resumo"), ("ilhas", "Ilhas"), ("terrenos", "Terrenos"), ("alugueis", "Aluguéis"), ("anuncios", "Anúncios"), ("pagamentos", "Pagamentos"), ("avisos", "Avisos") };
+        private readonly ApiContext _c; private readonly ScrollView _list = new ScrollView(); private readonly Label _status, _stripText; private readonly VisualElement _strip; private readonly Dictionary<string, Button> _tabButtons = new Dictionary<string, Button>();
         public PropertiesData Data { get; private set; }
+        public NoticesData Notices { get; private set; } = new NoticesData();
+        /// <summary>The strip over the page while a notice is unread ("" when it is hidden).</summary>
+        public string StripText => _strip.style.display == DisplayStyle.None ? "" : _stripText.text;
+        public string TabText(string id) => _tabButtons[id].text;
         public string Tab { get; private set; } = "resumo";
         public int Count => _list.contentContainer.childCount;
         public string Notice => _status.text;
@@ -247,20 +305,51 @@ namespace LifeVerse.Unity.UI
         public MyPropertiesWindow(ApiContext context) : base(context.Ui, "my-properties", "Minhas propriedades", 640f, 520f, new Vector2(260, 80))
         {
             _c = context; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
-            var tabs = new VisualElement(); tabs.style.flexDirection = FlexDirection.Row; tabs.style.flexWrap = Wrap.Wrap; foreach (var (id, text) in Tabs) { var tab = id; tabs.Add(UiKit.Button(text, () => Show(tab), "lv-btn-flat")); } Body.Add(tabs); Body.Add(_status); _list.style.flexGrow = 1; _list.style.minHeight = 260; Body.Add(_list); Reload();
+            var tabs = new VisualElement(); tabs.AddToClassList("lv-tabs"); foreach (var (id, text) in Tabs) { var tab = id; var b = UiKit.Button(text, () => Show(tab)); _tabButtons[id] = b; tabs.Add(b); } Body.Add(tabs);
+            _stripText = UiKit.Text("", "lv-bold", "lv-accent"); _stripText.style.whiteSpace = WhiteSpace.Normal; _stripText.style.flexShrink = 1; _strip = UiKit.Row(_stripText, UiKit.Spacer(), UiKit.Button("Ver avisos", () => Show("avisos"), "lv-btn-primary"), UiKit.Button("Marcar como lidos", () => MarkRead())); _strip.style.display = DisplayStyle.None; Body.Add(_strip);
+            Body.Add(_status); _list.style.flexGrow = 1; _list.style.minHeight = 260; Body.Add(_list); Reload();
+            context.FollowWhileShown(this, (type, _) => { if (type == "wallet.changed") Reload(); });
+        }
+
+        public void ReloadNotices() => this.Then(_c.Api.ApiAsync("GET", NoticesData.Path), r =>
+        {
+            if (r.Status != 200 || NoticesData.Parse(r.Body) is not { } data) return;   // an older server has no notices: the properties still work
+            Notices = data; _tabButtons["avisos"].text = data.Unread > 0 ? "Avisos (" + data.Unread + ")" : "Avisos";
+            _stripText.text = data.Strip(); _strip.style.display = data.Unread > 0 ? DisplayStyle.Flex : DisplayStyle.None; if (Tab == "avisos") Show(Tab);
+        });
+
+        /// <summary>Marks as read the notices given, or every one of them when none is given.</summary>
+        public void MarkRead(params Guid[] ids) => this.Then(_c.Api.ApiAsync("POST", NoticesData.ReadPath, NoticesData.ReadBody(ids)), r =>
+        {
+            if (r.Status >= 200 && r.Status < 300) { _status.text = ""; ReloadNotices(); } else _status.text = UiTasks.Explain(r.Status, r.Body);
+        });
+
+        private void ShowNotices()
+        {
+            if (Notices.Items.Count == 0) { Line("Nenhum aviso."); return; }
+            foreach (var n in Notices.Items)
+            {
+                var notice = n; var box = new VisualElement(); box.AddToClassList("lv-row"); box.style.flexDirection = FlexDirection.Column; box.style.marginBottom = 4; box.style.opacity = n.Read ? .7f : 1f;
+                box.Add(UiKit.Row(UiKit.Text((n.Read ? "" : "● ") + n.Title, n.Read ? "lv-small" : "lv-bold"), UiKit.Spacer(), UiKit.Text(n.At == default ? "" : n.At.ToLocalTime().ToString("dd/MM/yyyy HH:mm"), "lv-dim", "lv-small")));
+                if (n.Body.Length > 0) { var body = UiKit.Text(n.Body, "lv-small", "lv-muted"); body.style.whiteSpace = WhiteSpace.Normal; box.Add(body); }
+                if (!n.Read) box.Add(UiKit.Row(UiKit.Button("Marcar como lido", () => MarkRead(notice.Id))));
+                _list.Add(box);
+            }
         }
 
         public void Reload() => this.Then(_c.Api.ApiAsync("GET", "/api/v1/properties/mine"), r =>
         {
             if (r.Status != 200) { _status.text = r.Status == 404 ? "O servidor ainda não tem as propriedades." : UiTasks.Explain(r.Status, r.Body); return; }
-            Data = PropertiesData.Parse(r.Body); if (Data == null) { _status.text = "Resposta inesperada do servidor."; return; } _status.text = ""; Show(Tab);
+            Data = PropertiesData.Parse(r.Body); if (Data == null) { _status.text = "Resposta inesperada do servidor."; return; } _status.text = ""; Show(Tab); ReloadNotices();
         });
 
         public void Show(string tab)
         {
+            foreach (var pair in _tabButtons) pair.Value.EnableInClassList("lv-btn-selected", pair.Key == tab);
             Tab = tab; _list.Clear(); if (Data == null) return; Row(null);
             switch (tab)
             {
+                case "avisos": ShowNotices(); break;
                 case "resumo":
                     Line("Total de propriedades: " + Data.Total + "  ·  em uso: " + Data.InUse + "  ·  alugadas a outros: " + Data.RentedOut); Line("Renda mensal dos aluguéis: " + LandText.Money(Data.MonthlyRevenue) + "  ·  vencendo em breve: " + Data.ExpiringSoon);
                     foreach (var t in Data.Transfers)
