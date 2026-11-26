@@ -14,7 +14,7 @@ namespace LifeVerse.Unity.World
     /// <summary>What the API gives for entering an island: where the island server listens and the single-use ticket (the same fields the Godot client reads).</summary>
     public sealed class EntryResult
     {
-        public bool Ok, Starting; public int Status; public string Token = "", Host = "", Message = ""; public int Port, ProtocolVersion;
+        public bool Ok, Starting, OtherEngine; public int Status; public string Token = "", Host = "", Message = ""; public int Port, ProtocolVersion;
     }
 
     public sealed class IslandSnapshotResult { public bool Ok; public int Status; public string TerrainJson = "{}", EnvironmentJson = "{}"; }
@@ -29,7 +29,10 @@ namespace LifeVerse.Unity.World
         private readonly HttpClient _http; private readonly string _baseUrl;
         public string AccessToken { get; private set; } = "";
 
-        public IslandEntryClient(string apiBaseUrl, TimeSpan? timeout = null) { _baseUrl = apiBaseUrl.TrimEnd('/'); _http = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) }; }
+        /// <summary>This client is the Unity one: the API sends it only to islands that run the Unity island server (LifeVerse Wire 12), lists only those and starts it on one of them.</summary>
+        public const string Engine = "unity", EngineHeader = "X-LifeVerse-Engine";
+
+        public IslandEntryClient(string apiBaseUrl, TimeSpan? timeout = null) { _baseUrl = apiBaseUrl.TrimEnd('/'); _http = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) }; _http.DefaultRequestHeaders.Add(EngineHeader, Engine); }
 
                 /// <summary>The refresh token and when the access token ends (15 minutes after signing in): the client asks for a new pair a minute before, or when the API refuses the old one.</summary>
         public string RefreshToken { get; private set; } = "";
@@ -160,7 +163,7 @@ namespace LifeVerse.Unity.World
                 using var response = await SendAsync(HttpMethod.Post, $"{_baseUrl}/api/v1/worlds/islands/{islandId}/entry-token", string.Empty, ct).ConfigureAwait(false);
                 var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false); var status = (int)response.StatusCode;
                 if (status == 503 && IsStarting(body)) return new EntryResult { Starting = true, Status = status, Message = "Iniciando a ilha…" };
-                if (!response.IsSuccessStatusCode) return new EntryResult { Status = status, Message = EntryFailure(status) };
+                if (!response.IsSuccessStatusCode) { var mismatch = EngineMismatch(body); return new EntryResult { Status = status, OtherEngine = mismatch != null, Message = mismatch ?? EntryFailure(status) }; }
                 using var document = JsonDocument.Parse(body); var root = document.RootElement;
                 return new EntryResult
                 {
@@ -172,6 +175,13 @@ namespace LifeVerse.Unity.World
         }
 
         /// <summary>The API answers 503 with state "starting" (or "running" before the first heartbeat) while the island's server comes up: keep asking.</summary>
+        /// <summary>The words of the API when the island runs on the other engine (409 "engine_mismatch"), or null.</summary>
+        public static string EngineMismatch(string body)
+        {
+            try { using var d = JsonDocument.Parse(string.IsNullOrWhiteSpace(body) ? "{}" : body); var r = d.RootElement; return r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var e) && e.GetString() == "engine_mismatch" ? (r.TryGetProperty("title", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : "Esta ilha ainda roda no LifeVerse clássico.") : null; }
+            catch (JsonException) { return null; }
+        }
+
         public static bool IsStarting(string body)
         {
             try { using var document = JsonDocument.Parse(body); return document.RootElement.TryGetProperty("state", out var state) && (state.GetString() == "starting" || state.GetString() == "running"); }

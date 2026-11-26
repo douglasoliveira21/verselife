@@ -56,6 +56,17 @@ namespace LifeVerse.Unity.Tests.EditMode
         }
 
         [Test]
+        public void TheOwnAvatarIsKnownByTheTicket()
+        {
+            string B64(string json) => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            var avatar = Guid.NewGuid().ToString(); var token = B64("{\"alg\":\"HS256\"}") + "." + B64("{\"sub\":\"x\",\"avatar_id\":\"" + avatar + "\"}") + ".assinatura";
+            Assert.AreEqual(avatar, LifeVerse.Unity.World.WorldClient.AvatarIdOf(token)); Assert.IsNull(LifeVerse.Unity.World.WorldClient.AvatarIdOf("ana")); Assert.IsNull(LifeVerse.Unity.World.WorldClient.AvatarIdOf("a.b@.c"));
+            var client = new UnityEngine.GameObject("c").AddComponent<LifeVerse.Unity.World.WorldClient>();
+            try { client.Token = token; Assert.IsTrue(client.IsSelf(avatar.ToUpperInvariant(), "outro nome")); Assert.IsFalse(client.IsSelf(Guid.NewGuid().ToString(), "x")); client.Token = "ana"; Assert.IsTrue(client.IsSelf("", "ana")); }
+            finally { UnityEngine.Object.DestroyImmediate(client.gameObject); }
+        }
+
+        [Test]
         public void TheServerMayChooseTheIsland()
         {
             Assert.IsNull(LoginView.Validate(false, "ana", "", "senha", "", out var id)); Assert.AreEqual(Guid.Empty, id);

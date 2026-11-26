@@ -38,6 +38,7 @@ namespace LifeVerse.Unity.UI
         public static (string Message, bool Retry) Explain(int status, string code) => (code, status) switch
         {
             ("island_not_found", _) => ("Essa ilha não existe mais.", false),
+            ("engine_mismatch", _) => ("Essa ilha ainda roda no LifeVerse clássico: este cliente não consegue entrar nela.", false),
             ("island_private", _) => ("Essa ilha é privada e você não tem acesso a ela.", false),
             ("access_denied", _) => ("Você não tem permissão para entrar nessa ilha.", false),
             ("island_closed", _) => ("Essa ilha está temporariamente fechada.", false),

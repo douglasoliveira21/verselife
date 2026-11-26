@@ -40,6 +40,23 @@ namespace LifeVerse.Unity.World
         /// <summary>Told when the server accepts a person: the number the server gave this player (their id in snapshots).</summary>
         public int SelfPeerId { get; private set; } = -1;
 
+        /// <summary>Whether a spawned avatar is this client's own: the avatar named inside the entry ticket (the "avatar_id" claim of the API's signed ticket); a ticket that is not a JWT (the local
+        /// test islands) names the person directly.</summary>
+        public bool IsSelf(string avatarId, string displayName) { var own = AvatarIdOf(Token); return own != null ? string.Equals(own, avatarId, StringComparison.OrdinalIgnoreCase) : displayName == Token; }
+
+        /// <summary>The "avatar_id" claim of an entry ticket (read only: the island server is the one that checks the signature), or null when the text is not a JWT.</summary>
+        public static string AvatarIdOf(string token)
+        {
+            var parts = (token ?? "").Split('.'); if (parts.Length != 3) return null;
+            try
+            {
+                var payload = parts[1].Replace('-', '+').Replace('_', '/'); payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+                using var d = System.Text.Json.JsonDocument.Parse(Convert.FromBase64String(payload));
+                return d.RootElement.TryGetProperty("avatar_id", out var a) && a.ValueKind == System.Text.Json.JsonValueKind.String ? a.GetString() : null;
+            }
+            catch (Exception exception) when (exception is FormatException || exception is System.Text.Json.JsonException || exception is ArgumentException) { return null; }
+        }
+
         // what the avatar side (LifeVerse.Unity.Avatar) listens to: people arriving and leaving, where everybody is, gestures
         public event Action<SpawnPlayerMessage> PlayerSpawned;
         public event Action<DespawnPlayerMessage> PlayerDespawned;
@@ -107,7 +124,7 @@ namespace LifeVerse.Unity.World
                 case AuthResultMessage result: Authenticated = result.Success; if (!result.Success) RejectCode = result.Code; break;
                 case ProtocolRejectedMessage rejected: ProtocolMismatch = rejected.ServerVersion; break;
                 case SpawnPlayerMessage spawn:
-                    if (SelfPeerId < 0 && spawn.DisplayName == Token) SelfPeerId = spawn.PeerId;
+                    if (SelfPeerId < 0 && IsSelf(spawn.AvatarId, spawn.DisplayName)) SelfPeerId = spawn.PeerId;
                     PlayerSpawned?.Invoke(spawn); break;
                 case DespawnPlayerMessage gone: PlayerDespawned?.Invoke(gone); break;
                 case AppearanceChangedMessage changed: AppearanceChanged?.Invoke(changed); break;

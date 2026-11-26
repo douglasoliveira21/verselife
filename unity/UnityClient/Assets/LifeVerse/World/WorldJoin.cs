@@ -39,7 +39,7 @@ namespace LifeVerse.Unity.World
                 var request = api.RequestEntryAsync(islandId); while (!request.IsCompleted) yield return null;
                 entry = request.Result;
                 if (entry.Ok) break;
-                if (!entry.Starting) { FailureStatus = entry.Status; Fail(entry.Message); yield break; }
+                if (!entry.Starting) { FailureStatus = entry.OtherEngine ? 0 : entry.Status; Fail(entry.Message); yield break; }
                 if (++StartAttempts > MaxStartAttempts) { Fail("A ilha não iniciou a tempo. Tente de novo em instantes."); yield break; }
                 var until = Time.realtimeSinceStartup + StartRetrySeconds; while (Time.realtimeSinceStartup < until) yield return null;
             }
