@@ -10,7 +10,7 @@ namespace LifeVerse.Unity.Tests.EditMode
         [Test]
         public void TheCatalogCameFromGodotWhole()
         {
-            var all = SettingsCatalog.All; Assert.AreEqual(204, all.Count, "196 do Godot + 8 do Unity");
+            var all = SettingsCatalog.All; Assert.AreEqual(208, all.Count, "196 do Godot + 8 do Unity + 4 da câmera livre do Godot");
             Assert.AreEqual(all.Count, all.Select(d => d.Id).Distinct().Count(), "ids repetidos");
             foreach (var (id, _) in SettingsCatalog.Categories) Assert.IsTrue(all.Any(d => d.Category == id), "categoria vazia: " + id);
             Assert.IsTrue(all.All(d => SettingsCatalog.Categories.Any(c => c.Id == d.Category)), "categoria desconhecida");

@@ -24,6 +24,9 @@ namespace LifeVerse.Unity.UI
         public static readonly (string Id, string Text)[] EntryKinds = { ("allow", "Pode entrar"), ("build", "Pode entrar e construir"), ("ban", "Proibido de entrar") };
         public static readonly (string Id, string Text)[] BuildModes = { ("owner", "Só o dono"), ("list", "O dono e a lista"), ("everyone", "Todos"), ("nobody", "Ninguém") };
         public static readonly (string Id, string Text)[] ArrivalModes = { ("free", "Livre (chega onde quiser)"), ("forced", "Sempre no ponto de chegada"), ("disabled", "Teleporte desligado") };
+        /// <summary>Saves the picture of the parcel ("asset:" and the id of an image of the inventory; empty takes it off).</summary>
+        public void SaveImage(string value) { var v = (value ?? "").Trim(); Send("PUT", P + "/image", new { image = v }, v.Length == 0 ? "Imagem retirada." : "Imagem salva.", () => Show("geral"), LandManagementWindow.Words); }
+
         private readonly Guid _island, _parcel; private readonly Func<Vector3?> _where; private JsonElement _about;
         public Guid Parcel => _parcel;
         public JsonElement About => _about;
@@ -83,7 +86,8 @@ namespace LifeVerse.Unity.UI
             Title("Finalidade"); var category = Choice("Finalidade", LandManagementWindow.Categories.ToList(), S(p, "category"));
             Buttons(Btn("Salvar a finalidade", () => Send("PUT", P + "/category", new { category = IdOf(category) }, "Finalidade salva.", () => Show("geral"), LandManagementWindow.Words)));
             Title("Imagem"); var image = Field("Imagem (identificador de uma imagem sua; vazio tira)", S(p, "imageUrl"), 200);
-            Buttons(Btn("Salvar a imagem", () => Send("PUT", P + "/image", new { image = image.value.Trim() }, image.value.Trim().Length == 0 ? "Imagem retirada." : "Imagem salva.", () => Show("geral"), LandManagementWindow.Words)));
+            Buttons(Btn("Escolher no inventário", () => new TexturePickerWindow(_c, (builtin, id) => { if (builtin) return; image.value = "asset:" + id; SaveImage(image.value); }, "Escolha a imagem do terreno", false).Open()),
+                Btn("Salvar a imagem", () => SaveImage(image.value)), Btn("Tirar a imagem", () => { image.value = ""; SaveImage(""); }));
             Title("Chegada"); var mode = Choice("Teleporte para o terreno", ArrivalModes.ToList(), S(p, "teleportMode").Length > 0 ? S(p, "teleportMode") : "free");
             var x = Field("Ponto de chegada X (vazio = o centro)", Has(p, "spawnX") ? D(p, "spawnX").ToString("0.#", CultureInfo.InvariantCulture) : "", 10); var z = Field("Ponto de chegada Z", Has(p, "spawnZ") ? D(p, "spawnZ").ToString("0.#", CultureInfo.InvariantCulture) : "", 10); var yaw = Field("Virado para (graus)", D(p, "yaw").ToString("0", CultureInfo.InvariantCulture), 6);
             Buttons(Btn("Usar onde estou", () => { var at = _where?.Invoke(); if (at == null) { Say("Não sei onde você está agora.", true); return; } x.value = at.Value.x.ToString("0.#", CultureInfo.InvariantCulture); z.value = at.Value.z.ToString("0.#", CultureInfo.InvariantCulture); }),

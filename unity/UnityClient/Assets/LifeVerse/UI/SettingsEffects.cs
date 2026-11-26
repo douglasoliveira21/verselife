@@ -33,10 +33,12 @@ namespace LifeVerse.Unity.UI
             follow.FieldOfView = store.Int("camera.fov"); follow.FirstPersonFieldOfView = store.Int("camera.fp_fov"); follow.ZoomStep = store.Float("camera.zoom_step");
             follow.HeightOffset = store.Float("camera.height"); follow.Shoulder = store.Float("camera.shoulder"); follow.Smoothing = FollowRate(store.Float("camera.smoothing"));
             follow.Collide = store.Bool("camera.collision"); follow.WheelToFirstPerson = store.Bool("camera.wheel_first_person");
+            follow.FreeOptions = (follow.FreeOptions with { FocusOnDoubleClick = store.Bool("camera.focus_double_click"), AllowDetached = store.Bool("camera.allow_detached"), DetachedRange = store.Float("camera.detached_range"), DetachedSpeed = store.Float("camera.detached_speed") }).Clamped();
+            if (!follow.FreeOptions.AllowDetached) follow.SetDetached(false);
             follow.Options = (follow.Options with
             {
                 HeadBob = store.Bool("camera.fp_bob") && !reduceMotion, BobStrength = store.Float("camera.fp_bob_strength"), Sway = store.Bool("camera.fp_sway") && !reduceMotion, SwayStrength = store.Float("camera.fp_sway_strength"),
-                Stabilization = store.Float("camera.fp_stabilization"),
+                Stabilization = store.Float("camera.fp_stabilization"), LookSmoothing = store.Float("camera.fp_look_smoothing"), Collision = store.Bool("camera.fp_collision"),
             }).Clamped();
         }
 
@@ -90,11 +92,108 @@ namespace LifeVerse.Unity.UI
         public static void Interface(SettingsStore store, Hud hud, UiRoot ui)
         {
             if (hud != null) { hud.Chat.ShowTime = store.Bool("chat.show_time"); hud.Chat.VisibleSeconds = store.Int("chat.visible_seconds"); hud.Map.ZoomMetres = store.Int("world.minimap_zoom"); hud.Map.ShowCoords = store.Bool("world.show_coords"); hud.Map.ShowAvatars = store.Bool("world.minimap_avatars"); hud.Map.style.opacity = Mathf.Clamp(store.Int("interface.map_opacity"), 30, 100) / 100f; }
+            if (hud != null) { hud.Map.Rotate = store.Bool("world.minimap_rotate"); hud.Map.ShowNames = store.Bool("world.minimap_names"); hud.Map.ShowBuildings = store.Bool("world.minimap_buildings"); if (!hud.Map.Rotate) hud.Map.Turn(0f); }
+            MapLayers.Parcels = store.Bool("world.map_parcels"); MapLayers.Friends = store.Bool("world.map_friends"); MapLayers.Names = store.Bool("world.map_names"); MapLayers.Events = store.Bool("world.map_events");
+            MapLayers.Favorites = store.Bool("world.map_favorites"); MapLayers.Featured = store.Bool("world.map_featured");
             if (ui != null) ui.WindowLayer.style.opacity = Mathf.Clamp(store.Int("interface.window_opacity"), 30, 100) / 100f;
             LifeVerse.Unity.Avatar.AvatarView.ShowNames = store.Bool("avatar.show_names"); LifeVerse.Unity.Avatar.AvatarView.ShowOwnName = store.Bool("avatar.show_own_name");
-            RadialMenu.Scale = Mathf.Clamp(store.Int("interface.radial_size"), 60, 150) / 100f; RadialMenu.Opacity = Mathf.Clamp(store.Int("interface.radial_opacity"), 50, 100) / 100f; RadialMenu.Glow = Mathf.Clamp(store.Int("interface.radial_glow"), 0, 100) / 100f;
+            RadialMenu.Scale = Mathf.Clamp(store.Int("interface.radial_size"), 60, 150) / 100f; RadialMenu.Opacity = Mathf.Clamp(store.Int("interface.radial_opacity"), 50, 100) / 100f; RadialMenu.Glow = Mathf.Clamp(store.Int("interface.radial_glow"), 0, 100) / 100f; RadialMenu.Speed = store.Float("interface.radial_speed"); RadialMenu.Tooltips = store.Bool("interface.radial_tooltips"); RadialMenu.ReduceMotion = store.Bool("accessibility.reduce_motion");
             LuaEditorWindow.FontSize = store.Int("scripts.font_size"); LuaEditorWindow.Indent = store.Int("scripts.indent"); LuaEditorWindow.AutoComplete = store.Bool("scripts.autocomplete");
         }
+
+        /// <summary>The avatar budget of the settings (the same rule as the Godot client): the LOD stretches or shrinks the ranges, "simplificar distantes" off means no reduced avatars,
+        /// and the visibility distance is where the last ones disappear.</summary>
+        public static LifeVerse.Shared.Avatar.DetailBudget BudgetFor(int maxFull, string lod, bool simplify, int visibility = 120, int maxReduced = 24, int triangleBudgetThousands = 250)
+        {
+            var baseline = new LifeVerse.Shared.Avatar.DetailBudget(); var k = lod switch { "high" => 1.5f, "low" => .6f, _ => 1f };
+            var reduced = (simplify ? baseline.ReducedRange : baseline.FullRange) * k;
+            return baseline with
+            {
+                MaxFull = Mathf.Clamp(maxFull, 1, 40), FullRange = baseline.FullRange * k, ReducedRange = reduced, BasicRange = Mathf.Max(visibility, reduced + 1f),
+                MaxReduced = simplify ? Mathf.Clamp(maxReduced, 0, 60) : 0, Triangles = Mathf.Clamp(triangleBudgetThousands, 50, 1000) * 1000,
+            };
+        }
+
+        public static int AnimationDivisorOf(string quality) => quality switch { "high" => 1, "low" => 3, _ => 2 };
+
+        /// <summary>Avatars (budget and animation), objects (how far they are drawn) and the sea (waves).</summary>
+        public static void World(SettingsStore store, LifeVerse.Unity.Avatar.PlayerViews people, LifeVerse.Unity.World.OceanView ocean, LifeVerse.Unity.World.WorldObjects objects = null)
+        {
+            if (people != null) people.Budget = BudgetFor(store.Int("avatars.max_full"), store.Get("avatars.lod"), store.Bool("avatars.simplify_distant"), store.Int("avatars.visibility_distance"), store.Int("avatars.max_reduced"), store.Int("avatars.triangle_budget"));
+            LifeVerse.Unity.Avatar.AvatarView.AnimationDivisor = AnimationDivisorOf(store.Get("avatars.animation_quality"));
+            LifeVerse.Unity.World.WorldObjects.MaxDistance = Mathf.Clamp(store.Int("world.object_distance"), 10, 1000);
+            if (ocean != null) ocean.Waves = store.Bool("graphics.water_waves");
+            AutoQuality.Enabled = store.Bool("perf.auto_quality");
+            LifeVerse.Unity.Avatar.DefaultClips.Disabled = !store.Bool("avatar.default_animations"); NamePlates.ShowTitles = store.Bool("avatar.show_titles");
+            var media = store.Bool("privacy.external_media"); if (media != LifeVerse.Unity.World.WorldObjects.ExternalMedia) { LifeVerse.Unity.World.WorldObjects.ExternalMedia = media; objects?.RefreshMedia(); }
+            LifeVerse.Unity.Avatar.MoveGestures.DoubleTapRunEnabled = store.Bool("controls.double_tap_run"); LifeVerse.Unity.Avatar.MoveGestures.HoldToFlyEnabled = store.Bool("controls.hold_to_fly");
+        }
+
+        /// <summary>
+        /// "Qualidade automática" (as in the Godot client): the frame rate is averaged over windows of 5 seconds; after 3 windows in a row below 70% of the target, the preset goes down one level,
+        /// at most once a minute. A custom preset is never touched.
+        /// </summary>
+        public static class AutoQuality
+        {
+            public const float WindowSeconds = 5f, CooldownSeconds = 60f; public const int BadWindowsNeeded = 3;
+            public static bool Enabled;
+            private static float _timer, _cooldown, _sum; private static int _bad, _samples;
+
+            public static bool IsBad(float averageFps, float target) => target > 0f && averageFps < target * .7f;
+            /// <summary>The preset below this one, or null at the bottom (or for custom / automatic).</summary>
+            public static string Below(string preset) => preset switch { "ultra" => "high", "high" => "medium", "medium" => "low", "low" => "verylow", _ => null };
+
+            /// <summary>The frame rate the game aims at: the limit, the refresh rate with vertical sync, or 144.</summary>
+            public static float TargetFps(UserSettings settings)
+            {
+                var limit = settings.FpsLimit > 0 ? settings.FpsLimit : 1000f; var refresh = settings.VSync ? (float)Screen.currentResolution.refreshRateRatio.value : 0f;
+                return refresh > 0f ? Mathf.Min(limit, refresh) : Mathf.Min(limit, 144f);
+            }
+
+            public static void Reset() { _timer = _cooldown = _sum = 0f; _bad = _samples = 0; }
+
+            /// <summary>Called each frame; returns the preset to switch to when it is time to lower it, else null.</summary>
+            public static string Tick(float dt, float fps, float target, string preset)
+            {
+                if (!Enabled) { _bad = 0; return null; }
+                _cooldown = Mathf.Max(0f, _cooldown - dt); _timer += dt;
+                if (_timer >= 1f) { _timer = 0f; _sum += fps; _samples++; }
+                if (_samples < WindowSeconds) return null;
+                var average = _sum / _samples; _sum = 0f; _samples = 0;
+                _bad = IsBad(average, target) ? _bad + 1 : 0;
+                if (_bad < BadWindowsNeeded || _cooldown > 0f) return null;
+                _bad = 0; var lower = Below(preset); if (lower == null) return null;
+                _cooldown = CooldownSeconds; return lower;
+            }
+        }
+
+        /// <summary>The voice: on or off, the hearing distance, spatial or not. "Microfone aberto" opens the microphone when it changes (the padlock of the toolbar still opens and closes it in between).</summary>
+        public static void Voice(SettingsStore store, LifeVerse.Unity.Audio.VoiceChat voice, LifeVerse.Unity.Audio.VoiceListener hearing, ref string openMicApplied)
+        {
+            if (store == null) return; var on = store.Bool("voice.enabled");
+            if (voice != null)
+            {
+                voice.Off = !on; var open = store.Get("voice.open_mic");
+                if (open != openMicApplied) { voice.Locked = on && open == "true"; openMicApplied = open; }
+                if (!on) voice.Locked = false;
+            }
+            if (hearing != null) { hearing.Off = !on; hearing.HearingDistance = store.Float("voice.hearing_distance"); hearing.Spatial = store.Bool("voice.spatial"); }
+        }
+
+        /// <summary>"Janela sempre no topo": keeps the game window above the others (Windows; elsewhere it does nothing). Whether it was applied.</summary>
+        public static bool KeepOnTop(bool on)
+        {
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+            var window = GetActiveWindow(); if (window == IntPtr.Zero) return false;
+            return SetWindowPos(window, on ? new IntPtr(-1) : new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);   // TOPMOST / NOTOPMOST, keep size and place, do not activate
+#else
+            return false;
+#endif
+        }
+#if UNITY_STANDALONE_WIN && !UNITY_EDITOR
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetActiveWindow();
+        [System.Runtime.InteropServices.DllImport("user32.dll")] [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)] private static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+#endif
 
         /// <summary>Deletes the files of islands kept on disk (they come again when needed). How many were deleted.</summary>
         public static int ClearCache()
@@ -112,7 +211,8 @@ namespace LifeVerse.Unity.UI
 
         public static void Build(SettingsStore store, BuildEditor builder)
         {
-            if (builder == null) return; builder.SnapToGrid = store.Bool("build.snap"); builder.Grid = Mathf.Max(.05f, store.Float("build.move_step")); builder.RotateStep = Mathf.Max(1f, store.Float("build.rotate_step")); builder.ScaleStep = Mathf.Max(.01f, store.Float("build.scale_step"));
+            ModelImportWindow.CollisionShape = store.Get("build.import_collision");
+            if (builder == null) return; builder.LocalAxes = store.Get("build.space") == "local"; builder.SnapToGrid = store.Bool("build.snap"); builder.Grid = Mathf.Max(.05f, store.Float("build.move_step")); builder.RotateStep = Mathf.Max(1f, store.Float("build.rotate_step")); builder.ScaleStep = Mathf.Max(.01f, store.Float("build.scale_step"));
         }
 
         /// <summary>The performance numbers asked in the settings (FPS, frame time, memory): the overlay shows when any is on, with the memory line when asked.</summary>

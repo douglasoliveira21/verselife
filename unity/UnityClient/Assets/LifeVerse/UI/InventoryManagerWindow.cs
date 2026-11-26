@@ -141,7 +141,55 @@ namespace LifeVerse.Unity.UI
             var cells = new List<VisualElement> { box, UiKit.Text(name, "lv-bold"), UiKit.Text(flags + CategoryWords(S(item, "category")) + " · " + Size(I(item, "size")) + (Has(item, "folderId") && _folders.Count > 0 ? " · " + PathOf(G(item, "folderId")) : ""), "lv-small", "lv-muted"), UiKit.Spacer() };
             if (view == "trash") { cells.Add(Btn("Restaurar", () => Change("POST", Inv + "/items/" + id + "/restore", "{}", name + " voltou da lixeira.", reload))); cells.Add(Sure("Apagar de vez", () => "Apagar " + name + " para sempre?", () => Change("DELETE", Inv + "/items/" + id + "/purge", null, name + " foi apagado.", reload))); }
             else cells.Add(Btn("Detalhes", () => Detail(item, reload)));
-            Row(id, cells.ToArray());
+            var row = Row(id, cells.ToArray()); if (view == "trash") return;
+            // the right button opens the quick actions under the row (wear, details, bin); a left drag carries the item onto a folder
+            row.RegisterCallback<PointerDownEvent>(e => { if (e.button == 1) { ToggleQuick(row, item, reload); e.StopPropagation(); } });
+            Draggable(row, id, name, reload);
+        }
+
+        /// <summary>The quick actions of an item (the right button on its row): wear it, open its details, or send it to the bin.</summary>
+        public VisualElement ToggleQuick(VisualElement row, JsonElement item, Action reload)
+        {
+            var existing = row.parent?.Q<VisualElement>("quick-" + G(item, "itemId")); if (existing != null) { existing.RemoveFromHierarchy(); return null; }
+            var id = G(item, "itemId"); var name = S(item, "name");
+            var quick = UiKit.Row(Btn("Vestir", () => Change("POST", Inv + "/items/" + id + "/equip", new { slot = "accessory" }, name + " vestido.", () => Change("POST", Inv + "/items/" + id + "/used", "{}", null, null))),
+                Btn("Detalhes", () => Detail(item, reload)), Sure("Lixeira", () => "Mandar " + name + " para a lixeira?", () => Change("DELETE", Inv + "/items/" + id, null, name + " foi para a lixeira.", reload)));
+            quick.name = "quick-" + id; quick.style.marginLeft = 28; quick.style.marginBottom = 4; var at = row.parent.IndexOf(row); row.parent.Insert(at + 1, quick); return quick;
+        }
+
+        // ---- dragging an item onto a folder ----
+        private Label _ghost; private Guid _dragging; private Vector2 _dragFrom; private bool _dragMoved;
+
+        /// <summary>The folder ("" for the top) of the row under a point of the panel, or null when it is not a folder.</summary>
+        public static string FolderUnder(VisualElement picked)
+        {
+            for (var e = picked; e != null; e = e.parent) if (e.userData is string tag && tag.StartsWith("drop-folder:", StringComparison.Ordinal)) return tag.Substring("drop-folder:".Length);
+            return null;
+        }
+
+        private void Draggable(VisualElement row, Guid id, string name, Action reload)
+        {
+            row.RegisterCallback<PointerDownEvent>(e => { if (e.button != 0 || e.target is Button || e.target is Toggle || (e.target as VisualElement)?.parent is Toggle) return; _dragging = id; _dragFrom = e.position; _dragMoved = false; row.CapturePointer(e.pointerId); });
+            row.RegisterCallback<PointerMoveEvent>(e =>
+            {
+                if (_dragging != id || !row.HasPointerCapture(e.pointerId)) return;
+                if (!_dragMoved && ((Vector2)e.position - _dragFrom).sqrMagnitude < 36f) return; _dragMoved = true;
+                if (_ghost == null) { _ghost = UiKit.Text("", "lv-glass", "lv-small"); _ghost.style.position = Position.Absolute; _ghost.pickingMode = PickingMode.Ignore; _ghost.style.paddingLeft = _ghost.style.paddingRight = 8; }
+                if (_ghost.parent == null) _c.Ui.WindowLayer.Add(_ghost); _ghost.text = "📦 " + name + "  →  solte numa pasta"; _ghost.style.left = e.position.x + 12; _ghost.style.top = e.position.y + 8;
+            });
+            row.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (_dragging != id) return; _dragging = Guid.Empty; if (row.HasPointerCapture(e.pointerId)) row.ReleasePointer(e.pointerId); _ghost?.RemoveFromHierarchy(); if (!_dragMoved) return;
+                var target = FolderUnder(row.panel?.Pick(e.position)); if (target == null) { Say("Solte o item sobre uma pasta (ou sobre Início).", false); return; }
+                DropOnFolder(id, target, reload);
+            });
+        }
+
+        /// <summary>Moves one item into a folder ("" is the top).</summary>
+        public void DropOnFolder(Guid item, string folder, Action reload)
+        {
+            Guid? to = Guid.TryParse(folder, out var t) ? t : (Guid?)null;
+            Change("POST", Inv + "/move", new { itemIds = new[] { item }, folderIds = Array.Empty<Guid>(), targetFolderId = to }, "Item movido para " + (to is { } f ? PathOf(f) : "fora das pastas") + ".", reload);
         }
 
         private void Bulk(Action reload)
@@ -188,7 +236,7 @@ namespace LifeVerse.Unity.UI
         private void Folders(Guid? open = null, int page = 1) => LoadFolders(() =>
         {
             _folder = open; Reset();
-            var crumbs = new List<VisualElement> { Btn("Início", () => Folders(null)) };
+            var top = Btn("Início", () => Folders(null)); top.userData = "drop-folder:"; var crumbs = new List<VisualElement> { top };
             if (open is { } o) { var chain = new List<Guid>(); Guid? at = o; var seen = new HashSet<Guid>(); while (at is { } c && seen.Add(c)) { chain.Insert(0, c); var f = _folders.FirstOrDefault(x => G(x, "id") == c); at = Guid.TryParse(S(f, "parentId"), out var p) ? p : (Guid?)null; } foreach (var c in chain) { var id = c; crumbs.Add(UiKit.Text("/", "lv-muted")); crumbs.Add(UiKit.Button(FolderName(id), () => Folders(id), "lv-btn-flat")); } }
             Buttons(crumbs.ToArray());
             var children = _folders.Where(f => (Guid.TryParse(S(f, "parentId"), out var p) ? p : (Guid?)null) == open).OrderBy(f => S(f, "name")).ToList();
@@ -201,7 +249,7 @@ namespace LifeVerse.Unity.UI
                     Btn("Renomear", () => { if (newName.value.Trim().Length == 0) { Say("Escreva o nome novo no campo acima.", true); return; } Change("PATCH", Inv + "/folders/" + id, new { name = newName.value.Trim() }, "Pasta renomeada.", () => Folders(open)); }) };
                 if (open != null) cells.Add(Btn("Levar para o início", () => Change("PATCH", Inv + "/folders/" + id, new { toTop = true }, "Pasta levada para o início.", () => Folders(open))));
                 cells.Add(Sure("Apagar a pasta", () => "Mandar " + name + " e o que tem dentro para a lixeira?", () => Change("DELETE", Inv + "/folders/" + id, null, name + " foi para a lixeira.", () => Folders(open))));
-                Row(id, cells.ToArray());
+                var folderRow = Row(id, cells.ToArray()); folderRow.userData = "drop-folder:" + id;
             }
             if (open is { } here)
             {

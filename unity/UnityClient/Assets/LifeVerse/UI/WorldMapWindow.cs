@@ -18,9 +18,33 @@ namespace LifeVerse.Unity.UI
     /// The atlas drawn from above: every island a square at its place (colored by whether this player can enter), dragged with the mouse and zoomed with the wheel. Clicking an island selects it, and clicking inside it chooses a spot of
     /// its ground. The conversions between the screen and the atlas are plain functions so they can be tested.
     /// </summary>
+    /// <summary>What the world map draws, from the settings (Mundo > Mapa): parcels, friends, names, events, favorites and featured islands.</summary>
+    public static class MapLayers
+    {
+        public static bool Parcels, Friends = true, Names = true, Events = true, Favorites = true, Featured = true;
+
+        /// <summary>The marks over an island (by the layers that are on): events, featured, favorite, friends there.</summary>
+        public static List<(string Icon, Color Colour)> Badges(AtlasIsland island, bool hasEvent, bool featured, bool friendThere)
+        {
+            var list = new List<(string, Color)>();
+            if (Events && hasEvent) list.Add(("calendar", new Color(.5f, .66f, 1f)));
+            if (Featured && featured) list.Add(("star", new Color(1f, .6f, .2f)));
+            if (Favorites && island.Favorite) list.Add(("star", new Color(.3f, .9f, 1f)));
+            if (Friends && friendThere) list.Add(("people", new Color(.45f, .95f, .55f)));
+            return list;
+        }
+
+        /// <summary>The featured islands, as in the Godot client: the welcome island first, then the most visited and favorited (at most 8).</summary>
+        public static List<Guid> FeaturedOf(IEnumerable<AtlasIsland> items) => items.OrderByDescending(i => i.IsWelcome).ThenByDescending(i => (i.Visitors ?? 0) * 2 + i.Favorites)
+            .Where(i => i.IsWelcome || (i.Visitors ?? 0) * 2 + i.Favorites > 0).Take(8).Select(i => i.Id).ToList();
+    }
+
     public sealed class MapCanvas : VisualElement
     {
         public readonly List<AtlasIsland> Islands = new List<AtlasIsland>(); public readonly List<MapPin> Pins = new List<MapPin>();
+        public readonly HashSet<Guid> EventIslands = new HashSet<Guid>(), FeaturedIslands = new HashSet<Guid>(), FriendIslands = new HashSet<Guid>();
+        /// <summary>The marks drawn in the last frame (for the tests).</summary>
+        public int BadgesDrawn { get; private set; }
         public Vector2 Centre;                 // the point of the atlas in the middle of the view (meters)
         public float Scale = .05f;             // pixels per meter
         public Guid Selected, Current; public (double X, double Y)? Spot; public (double X, double Y)? You;
@@ -84,7 +108,7 @@ namespace LifeVerse.Unity.UI
             var seen = new HashSet<Guid>();
             foreach (var island in Islands)
             {
-                var size = island.Size * Scale; if (size < 46f) continue;   // too small to name
+                var size = island.Size * Scale; if (size < 46f || !MapLayers.Names) continue;   // too small to name (or names are off)
                 var top = ToScreen(MapCoordinates.Rect(island).MinX, MapCoordinates.Rect(island).MinY); if (top.x > contentRect.width || top.y > contentRect.height || top.x + size < 0 || top.y + size < 0) continue;
                 if (island.HasTile) { var tile = TileOf?.Invoke(island); if (tile == null) TileWanted?.Invoke(island); else { if (!_tiles.TryGetValue(island.Id, out var image)) { image = new VisualElement { pickingMode = PickingMode.Ignore }; image.style.position = Position.Absolute; image.style.opacity = .85f; _tiles[island.Id] = image; Insert(0, image); } image.style.backgroundImage = new StyleBackground(Background.FromTexture2D(tile)); image.style.left = top.x; image.style.top = top.y; image.style.width = size; image.style.height = size; image.style.display = DisplayStyle.Flex; _shownTiles.Add(island.Id); } }
                 if (!_labels.TryGetValue(island.Id, out var label)) { label = UiKit.Text(island.Name, "lv-small"); label.pickingMode = PickingMode.Ignore; label.style.position = Position.Absolute; label.style.color = Color.white; _labels[island.Id] = label; Add(label); }
@@ -112,6 +136,18 @@ namespace LifeVerse.Unity.UI
                 p.fillColor = ColorOf(island); p.BeginPath(); Rect(p, a.x, a.y, w, h); p.Fill();
                 p.lineWidth = island.Id == Selected ? 3f : island.Id == Current ? 2.5f : 1f; p.strokeColor = island.Id == Selected ? Color.white : island.Id == Current ? new Color(.4f, .9f, 1f) : new Color(0, 0, 0, .5f); p.BeginPath(); Rect(p, a.x, a.y, w, h); p.Stroke();
             }
+            var badges = 0;
+            foreach (var island in Islands)
+            {
+                var r = MapCoordinates.Rect(island); var a = ToScreen(r.MinX, r.MinY); var b = ToScreen(r.MaxX, r.MaxY); if (b.x - a.x < 40f || b.x < 0 || b.y < 0 || a.x > contentRect.width || a.y > contentRect.height) continue;
+                var marks = MapLayers.Badges(island, EventIslands.Contains(island.Id), FeaturedIslands.Contains(island.Id), FriendIslands.Contains(island.Id)); var start = (a.x + b.x) / 2f - marks.Count * 10f;
+                for (var i = 0; i < marks.Count; i++)
+                {
+                    var centre = new Vector2(start + i * 20f + 10f, a.y - 2f); p.fillColor = new Color(.05f, .08f, .12f, .9f); p.BeginPath(); p.Arc(centre, 9.5f, 0f, 360f); p.Fill();
+                    Icon.DrawInto(mgc, marks[i].Icon, new Rect(centre.x - 6.5f, centre.y - 6.5f, 13f, 13f), marks[i].Colour); badges++;
+                }
+            }
+            BadgesDrawn = badges;
             var drawn = 0;
             if (ShowParcels)
                 foreach (var island in Islands)
@@ -175,7 +211,7 @@ namespace LifeVerse.Unity.UI
             var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexGrow = 1; row.Add(left); row.Add(centre); Body.Add(row);
             Canvas.TileOf = island => _tileCache.TryGetValue(island.Id, out var tile) && tile.Version == island.TileVersion ? tile.Texture : null; Canvas.TileWanted = FetchTile;
             Canvas.ParcelsWanted = LoadParcels;
-            Canvas.Clicked += OnClicked; SetChosen(null); LoadAtlas(); LoadPanels();
+            Canvas.Clicked += OnClicked; SetChosen(null); SetParcels(MapLayers.Parcels); LoadAtlas(); LoadPanels(); LoadEvents();
         }
 
         // ---- the pictures of the islands from above: kept in memory (the most recently asked ones), asked a few at a time, and an island with no picture is not asked again for a while ----
@@ -230,6 +266,7 @@ namespace LifeVerse.Unity.UI
             if (r.Status != 200) { _status.text = UiTasks.Explain(r.Status, r.Body); return; }
             Page = MapApi.ParseAtlas(r.Body); Canvas.Islands.Clear(); Canvas.Islands.AddRange(Page.Items); _status.text = Page.Items.Count == 0 ? "Nenhuma ilha encontrada." : Page.Items.Count + " ilha(s)" + (Page.Truncated ? " (há mais: refine a busca)" : "");
             _results.Clear(); foreach (var island in Page.Items.Take(60)) { var captured = island; _results.Add(UiKit.Button(island.Name + "  ·  " + island.AccessWords, () => Choose(captured, true), "lv-btn-flat")); }
+            Canvas.FeaturedIslands.Clear(); foreach (var id in MapLayers.FeaturedOf(Page.Items)) Canvas.FeaturedIslands.Add(id);
             UpdateYou(); if (Canvas.Centre == Vector2.zero && Canvas.Scale <= .05f) { var current = Page.Items.FirstOrDefault(i => i.Id == Canvas.Current); if (current != null) Canvas.Fit(current); else Canvas.Fit(); } else Canvas.Refresh(); RebuildPins();
         });
 
@@ -254,7 +291,17 @@ namespace LifeVerse.Unity.UI
                 if (root.TryGetProperty("limits", out var limits) && limits.TryGetProperty("landmarks", out var lm) && lm.TryGetInt32(out var max) && max > 0) MaxLandmarks = max;
             }
             catch (JsonException) { return; }
-            FillPlaces(); RebuildPins();
+            Canvas.FriendIslands.Clear(); foreach (var f in Friends) if (f.Island != Guid.Empty) Canvas.FriendIslands.Add(f.Island);
+            FillPlaces(); RebuildPins(); Canvas.Refresh();
+        });
+
+        /// <summary>The islands with events coming (marked on the map when "Eventos no mapa" is on).</summary>
+        public void LoadEvents() => this.Then(_c.Api.ApiAsync("GET", "/api/v1/discovery/events"), r =>
+        {
+            if (r.Status != 200) return; Canvas.EventIslands.Clear();
+            try { using var d = JsonDocument.Parse(r.Body); if (d.RootElement.ValueKind == JsonValueKind.Array) foreach (var e in d.RootElement.EnumerateArray()) if (e.TryGetProperty("islandId", out var i) && i.ValueKind == JsonValueKind.String && Guid.TryParse(i.GetString(), out var id)) Canvas.EventIslands.Add(id); }
+            catch (JsonException) { }
+            Canvas.Refresh();
         });
 
         private void FillPlaces()

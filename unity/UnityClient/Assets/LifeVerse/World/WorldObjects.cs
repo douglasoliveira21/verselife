@@ -249,6 +249,17 @@ namespace LifeVerse.Unity.World
         /// <summary>Only tests let a media address be a local file; people's objects are https only (the island checks the same).</summary>
         public static bool MediaFilesAllowed;
 
+        /// <summary>"Mídia externa": off, no picture or video is fetched from the internet (the sites never see this player's address); the surface keeps its own material.</summary>
+        public static bool ExternalMedia = true;
+        public static bool MediaBlocked(string url) => !ExternalMedia && Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp);
+
+        /// <summary>Puts the media of every object again (after "Mídia externa" changes).</summary>
+        public void RefreshMedia()
+        {
+            foreach (var entry in new List<Entry>(_objects.Values))
+                if (entry.State != null && entry.Object != null && MediaOf(entry.State.MaterialJson, out _, out _, out _, out _, out _)) { entry.ShapeKey = ""; Upsert(entry.State); }   // rebuilt: its own material comes back, then the media if allowed
+        }
+
         private void DropMedia(Entry entry)
         {
             if (entry.Video != null) { entry.Video.Stop(); Destroy(entry.Video); entry.Video = null; }
@@ -258,7 +269,7 @@ namespace LifeVerse.Unity.World
 
         private void ApplyMedia(Entry entry, WorldObjectState state)
         {
-            DropMedia(entry); if (!MediaOf(state.MaterialJson, out var type, out var url, out var playing, out var loop, out var glow)) return;
+            DropMedia(entry); if (!MediaOf(state.MaterialJson, out var type, out var url, out var playing, out var loop, out var glow) || MediaBlocked(url)) return;
             var renderer = entry.Object.GetComponent<MeshRenderer>(); if (renderer == null || !renderer.enabled || renderer.sharedMaterials.Length == 0) return;
             var instances = renderer.materials; entry.MediaMaterials = instances;   // this object's own copies, so a picture on one wall is not on every wall
             if (type == "image") { _ = ShowImage(entry, url, glow, entry.Generation); return; }
@@ -655,14 +666,32 @@ namespace LifeVerse.Unity.World
         }
 
         /// <summary>Hides what is beyond its range of the camera (a 1 m object vanishes past 120 m, a 10 m one past 600 m) and shows it again inside 90 % of the range, so it does not flicker at the edge.</summary>
+        /// <summary>"Distância dos objetos" (metres): no object is drawn farther than this; 1000 (the most) hides none beyond its own range.</summary>
+        public static float MaxDistance = 1000f;
+        public static float LimitRange(float own) => MaxDistance >= 1000f ? own : Mathf.Min(own, Mathf.Max(10f, MaxDistance));
+
+        /// <summary>The ground squares of the larger objects (at least 1.5 m across), in game metres, for the outlines of the mini-map.</summary>
+        public void Footprints(List<Rect> into, float minimum = 1.5f)
+        {
+            into.Clear();
+            foreach (var entry in _objects.Values)
+            {
+                var any = false; var bounds = new UnityEngine.Bounds();
+                foreach (var r in entry.Renderers) { if (r == null || r is ParticleSystemRenderer) continue; if (!any) { bounds = r.bounds; any = true; } else bounds.Encapsulate(r.bounds); }
+                if (!any || (bounds.size.x < minimum && bounds.size.z < minimum)) continue;
+                var low = GameSpace.ToGame(bounds.min); var high = GameSpace.ToGame(bounds.max);
+                into.Add(Rect.MinMaxRect(Mathf.Min(low.x, high.x), Mathf.Min(low.z, high.z), Mathf.Max(low.x, high.x), Mathf.Max(low.z, high.z)));
+            }
+        }
+
         public void Cull(Camera camera)
         {
             if (camera == null) return; var origin = camera.transform.position; var culled = 0;
             foreach (var entry in _objects.Values)
             {
-                var distance = Vector3.Distance(origin, entry.Object.transform.position);
-                SetLod(entry, entry.LowShown ? distance > entry.Range * LodFraction * .9f : distance > entry.Range * LodFraction);
-                var hide = entry.Culled ? distance > entry.Range * .9f : distance > entry.Range;
+                var distance = Vector3.Distance(origin, entry.Object.transform.position); var range = LimitRange(entry.Range);
+                SetLod(entry, entry.LowShown ? distance > range * LodFraction * .9f : distance > range * LodFraction);
+                var hide = entry.Culled ? distance > range * .9f : distance > range;
                 if (hide != entry.Culled) { entry.Culled = hide; foreach (var r in entry.Renderers) if (r != null) r.enabled = !hide && !(entry.Model != null && r == entry.Object.GetComponent<MeshRenderer>()); }
                 if (entry.Culled) culled++;
             }

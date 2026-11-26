@@ -985,6 +985,16 @@ namespace LifeVerse.Unity.Server
             radial.Open(ui, many, new Vector2(5, 5)); yield return null; var kept = radial.Centre; Expect(radial.PageCount == 2 && radial.Slices.Count == 11 && kept.x >= 150f && kept.y >= 150f, "com 14 ações o menu vira duas páginas e o anel não sai da tela: " + radial.PageCount + " " + kept); _checks++;
             radial.Choose(-1, radial.Centre); Expect(radial.Page == 1 && radial.Slices.Count == 3, "tocar no meio vai para a próxima página"); radial.Close();            yield return new WaitForSeconds(.6f);
             Expect(app.Hud.Map.Texture != null && app.Hud.Map.OtherDots >= 1, "o mapa foi pintado e mostra as outras pessoas: " + app.Hud.Map.OtherDots); _checks++;
+            // the settings brought last from the Godot client: mini-map (open, names, turning), voice off, external media, the avatar budget
+            Expect(!app.MinimapShown && app.Hud.Map.style.visibility == UnityEngine.UIElements.Visibility.Hidden, "o mini-mapa começa fechado, como no Godot"); app.Store.Set("world.minimap_open", "true");
+            Expect(app.MinimapShown && app.Hud.Map.style.visibility == UnityEngine.UIElements.Visibility.Visible, "«Mini-mapa aberto» abre o mini-mapa"); _checks++;
+            Expect(app.Hud.Map.NamesShown >= 1, "o mini-mapa mostra o nome de quem está perto: " + app.Hud.Map.NamesShown); _checks++;
+            app.Store.Set("world.minimap_rotate", "true"); app.SettingsApplied(); yield return new WaitForSeconds(.4f); var turned = app.Hud.Map.Heading;
+            Expect(app.Hud.Map.Rotate && app.Follow != null && Mathf.Abs(Mathf.DeltaAngle(turned, app.Follow.Yaw)) < 1f, "o mini-mapa gira com a câmera"); app.Store.Set("world.minimap_rotate", "false"); app.SettingsApplied(); _checks++;
+            app.Store.Set("voice.enabled", "false"); app.SettingsApplied(); Expect(app.Voice.Off && app.Hearing.Off, "«Ativar voz» desligado: nada sai nem entra"); app.Store.Set("voice.enabled", "true"); app.SettingsApplied(); Expect(!app.Voice.Off && !app.Hearing.Off, "a voz volta"); _checks++;
+            app.Store.Set("avatars.max_full", "3"); app.Store.Set("avatars.lod", "high"); app.SettingsApplied(); Expect(app.PeopleViews.Budget.MaxFull == 3 && Mathf.Abs(app.PeopleViews.Budget.FullRange - 37.5f) < .01f, "o orçamento dos avatares segue as configurações");
+            app.Store.Set("avatars.max_full", "10"); app.Store.Set("avatars.lod", "medium"); app.SettingsApplied(); _checks++;
+            app.Store.Set("privacy.external_media", "false"); app.SettingsApplied(); Expect(!LifeVerse.Unity.World.WorldObjects.ExternalMedia, "mídia externa desligada"); app.Store.Set("privacy.external_media", "true"); app.SettingsApplied(); _checks++;
             Expect(LifeVerse.Unity.UI.Minimap.ColourOf(-5f, 0f).b > LifeVerse.Unity.UI.Minimap.ColourOf(3f, 0f).b && LifeVerse.Unity.UI.Minimap.ColourOf(-1f, 0f).b > LifeVerse.Unity.UI.Minimap.ColourOf(-6f, 0f).b - 200, "a água é azul e a terra não"); _checks++;
             Expect(app.Hud.TogglePerformance(), "ligar a sobreposição de desempenho"); yield return new WaitForSeconds(.8f); Expect(app.Hud.Perf.Fps > 1f && app.Hud.Perf.FrameMs > 0f, "a sobreposição mede quadros por segundo: " + app.Hud.Perf.Fps); _checks++; app.Hud.TogglePerformance();
 
@@ -1272,7 +1282,7 @@ namespace LifeVerse.Unity.Server
             Expect(app.Store.SaveProfile("antes do teste") == null, "guardar as configurações de antes do teste");
             var cfg = new LifeVerse.Unity.UI.SettingsCatalogWindow(app.Context, app.Store, app.SettingsApplied, id => LifeVerse.Unity.UI.SettingsEffects.Info(id, app), app.SettingActions(), () => app.OpenClassicSettings().Open()); cfg.Open();
             yield return null; Expect(cfg.Section == "Graphics" && cfg.Controls.ContainsKey("graphics.vsync") && cfg.SummaryText.Contains("valem no Unity"), "a janela abre em Gráficos com as opções do catálogo"); _checks++; yield return Snap("ui-settings");
-            Expect(cfg.Change("graphics.water_waves", "false") == "" && !cfg.Controls["graphics.water_waves"].enabledSelf, "o que o Unity ainda não faz aparece desligado e não muda");
+            Expect(cfg.Change("graphics.vegetation", "low") == "" && !cfg.Controls["graphics.vegetation"].enabledSelf, "o que o Unity ainda não faz aparece desligado e não muda");
             cfg.Change("graphics.preset", "high"); cfg.Change("graphics.shadow_distance", "300"); Expect(app.Store.Get("graphics.preset") == "custom" && cfg.Status.Contains("Personalizada"), "mudar as sombras à mão deixa a predefinição Personalizada");
             cfg.Change("perf.render_distance", "800"); Expect(app.Follow.Camera.farClipPlane == 800f, "a distância de renderização chega à câmera: " + app.Follow.Camera.farClipPlane); _checks++;
             cfg.Show("Camera"); yield return null; cfg.Change("camera.fov", "90"); cfg.Change("camera.shoulder", "0.5"); cfg.Change("camera.fp_bob", "false"); yield return null; yield return null;

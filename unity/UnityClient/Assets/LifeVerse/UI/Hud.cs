@@ -123,7 +123,27 @@ namespace LifeVerse.Unity.UI
         {
             var button = UiKit.Button(label, () => Toggle(id, create)); button.name = "btn-" + id; button.tooltip = label;
             if (Icons.TryGetValue(id, out var icon)) UiKit.WithIcon(button, icon);
-            BottomBar.Add(button); if (!ToolbarDefaults.Contains(id)) ToolbarDefaults.Add(id); return button;
+            BottomBar.Add(button); if (!ToolbarDefaults.Contains(id)) ToolbarDefaults.Add(id); DragToReorder(button, id); return button;
+        }
+
+        /// <summary>A button of the bar was dragged onto another (its id, the other's id): the game saves the new order.</summary>
+        public event Action<string, string> Reordered;
+        private string _dragId; private Vector2 _dragFrom; private bool _dragMoved;
+
+        /// <summary>The id of the bar button under a point of the panel, or null.</summary>
+        public string ToolbarIdAt(VisualElement picked) { for (var e = picked; e != null; e = e.parent) if (e is Button b && b.parent == BottomBar && b.name.StartsWith("btn-", StringComparison.Ordinal)) return b.name.Substring(4); return null; }
+
+        public void DropOnto(string id, string onto) { if (id != null && onto != null && id != onto) Reordered?.Invoke(id, onto); }
+
+        private void DragToReorder(Button button, string id)
+        {
+            button.RegisterCallback<PointerDownEvent>(e => { if (e.button != 0) return; _dragId = id; _dragFrom = e.position; _dragMoved = false; }, TrickleDown.TrickleDown);
+            button.RegisterCallback<PointerMoveEvent>(e => { if (_dragId != id || _dragMoved) return; if (((Vector2)e.position - _dragFrom).sqrMagnitude > 400f) { _dragMoved = true; button.AddToClassList("lv-dragging"); } }, TrickleDown.TrickleDown);
+            button.RegisterCallback<PointerUpEvent>(e =>
+            {
+                if (_dragId != id) return; _dragId = null; button.RemoveFromClassList("lv-dragging"); if (!_dragMoved) return;
+                DropOnto(id, ToolbarIdAt(button.panel?.Pick(e.position)));
+            }, TrickleDown.TrickleDown);
         }
 
         public FloatingWindow Toggle(string id, Func<FloatingWindow> create)

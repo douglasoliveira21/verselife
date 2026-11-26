@@ -16,7 +16,8 @@ namespace LifeVerse.Unity.UI
     public sealed class ItemWindow : FloatingWindow
     {
         private readonly ApiContext _c; private readonly Guid _item; private readonly Label _status; private readonly Toggle[,] _bits = new Toggle[3, 4]; private readonly TextField _to, _note; private readonly Toggle _keep;
-        private long? _revision; private readonly ApiList _history; private bool _loading;
+        private long? _revision; private readonly ApiList _history; private bool _loading; private readonly Toggle _historyShown;
+        public Toggle HistoryShown => _historyShown;
         public int Owner => Read(0); public int Group => Read(1); public int NextOwner => Read(2);
         public bool Loaded { get; private set; }
 
@@ -36,7 +37,8 @@ namespace LifeVerse.Unity.UI
             Body.Add(grid); Body.Add(UiKit.Button("Salvar os direitos", Save, "lv-btn-primary")); Body.Add(UiKit.Divider());
             Body.Add(UiKit.Text("Dar este item", "lv-bold", "lv-accent")); _to = UiKit.Field("Para (identificador da pessoa)", false, 40); _note = UiKit.Field("Mensagem (opcional)", false, 200); _keep = UiKit.Check("Ficar com uma cópia (precisa do direito de copiar)", false, _ => { }); Body.Add(_to); Body.Add(_note); Body.Add(_keep);
             Body.Add(Controls.Confirm("Oferecer", () => "Confirmar a oferta", Offer, "lv-btn-secondary")); Body.Add(UiKit.Divider());
-            Body.Add(UiKit.Text("Histórico", "lv-bold", "lv-accent")); _history = new ApiList(context, () => "/api/v1/inventory/items/" + item + "/history", row => UiKit.Row(UiKit.Text(row.First("summary", "event", "kind", "action"), "lv-muted", "lv-small"), UiKit.Spacer(), UiKit.Text(DiscoveryWindow.When(row.Text("at", "createdAt")), "lv-dim", "lv-small")), "Sem histórico.", false); _history.style.maxHeight = 120; Body.Add(_history);
+            Body.Add(UiKit.Text("Histórico", "lv-bold", "lv-accent"));
+            _historyShown = UiKit.Check("Quem tiver o item depois de mim pode ver o histórico (os nomes de quem passou no meio ficam ocultos)", false, v => { if (!_loading) SetHistoryVisible(v); }); _historyShown.name = "history-visible"; _historyShown.style.display = DisplayStyle.None; Body.Add(_historyShown); _history = new ApiList(context, () => "/api/v1/inventory/items/" + item + "/history", row => UiKit.Row(UiKit.Text(row.First("summary", "event", "kind", "action"), "lv-muted", "lv-small"), UiKit.Spacer(), UiKit.Text(DiscoveryWindow.When(row.Text("at", "createdAt")), "lv-dim", "lv-small")), "Sem histórico.", false); _history.style.maxHeight = 120; Body.Add(_history);
             if (asset != Guid.Empty) AddVersions(asset);
             Load();
         }
@@ -79,16 +81,25 @@ namespace LifeVerse.Unity.UI
 
         private void Set(int column, int value) { _loading = true; for (var bit = 0; bit < 4; bit++) _bits[column, bit].value = (value & Rights[bit].Bit) != 0; _loading = false; }
 
+        /// <summary>Lets (or stops) the next owners see the history of the item (only the owner decides).</summary>
+        public void SetHistoryVisible(bool visible) => this.Then(_c.Api.ApiAsync("PUT", "/api/v1/inventory/items/" + _item + "/history-visibility", JsonSerializer.Serialize(new { visible })), r =>
+        {
+            if (r.Status < 200 || r.Status >= 300) { Say(UiTasks.Explain(r.Status, r.Body), true); return; }
+            Say(visible ? "Quem tiver o item agora pode ver o histórico (os nomes de quem passou no meio ficam ocultos)." : "O histórico ficou só para você.", false);
+        });
+
         public void Load()
         {
             this.Then(_c.Api.ApiAsync("GET", "/api/v1/inventory/items/" + _item + "/rights"), r =>
             {
                 if (r.Status != 200) { Say(UiTasks.Explain(r.Status), true); return; }
-                var all = Json.One(r.Body); var row = all.Has("permissions") ? all.Child("permissions") : all; Set(0, (int)row.Number("owner")); Set(1, (int)row.Number("group")); Set(2, (int)row.Number("nextOwner")); _revision = all.Has("revision") ? all.Number("revision") : row.Has("revision") ? row.Number("revision") : (long?)null; Loaded = true; Say("", false); _history.Reload();
+                var all = Json.One(r.Body); _loading = true; _historyShown.SetValueWithoutNotify(all.Flag("showOwnerHistory")); _historyShown.style.display = all.Flag("isOwner") ? DisplayStyle.Flex : DisplayStyle.None; _loading = false;
+                var row = all.Has("permissions") ? all.Child("permissions") : all; Set(0, (int)row.Number("owner")); Set(1, (int)row.Number("group")); Set(2, (int)row.Number("nextOwner")); _revision = all.Has("revision") ? all.Number("revision") : row.Has("revision") ? row.Number("revision") : (long?)null; Loaded = true; Say("", false); _history.Reload();
             });
         }
 
         private void Say(string text, bool error) { _status.text = text; _status.EnableInClassList("lv-bad", error); }
+        public string Status => _status.text;
 
         public void Save() => this.Then(_c.Api.ApiAsync("PUT", "/api/v1/inventory/items/" + _item + "/rights", JsonSerializer.Serialize(new { owner = Owner, group = Group, nextOwner = NextOwner, expectedRevision = _revision })), r =>
         {

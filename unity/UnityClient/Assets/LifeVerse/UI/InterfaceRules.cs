@@ -25,6 +25,13 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>The toolbar keeps at least one button: hiding the last visible one is refused.</summary>
+        /// <summary>The order after a button is dragged onto another: it takes the place of the one it was dropped on (the others shift).</summary>
+        public static List<string> Place(IReadOnlyList<string> order, string id, string onto)
+        {
+            var list = order.ToList(); if (id == onto || !list.Contains(id) || !list.Contains(onto)) return list;
+            var to = list.IndexOf(onto); list.Remove(id); list.Insert(Math.Min(to, list.Count), id); return list;
+        }
+
         public static bool CanHide(IReadOnlyList<string> all, IReadOnlyCollection<string> hidden, string id) => all.Count(x => x != id && !hidden.Contains(x)) > 0;
 
         public static List<string> Split(string text) => (text ?? "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()).Where(x => x.Length > 0).Distinct().ToList();

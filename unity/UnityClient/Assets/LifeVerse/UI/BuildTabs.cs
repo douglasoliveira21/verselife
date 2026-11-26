@@ -134,6 +134,7 @@ namespace LifeVerse.Unity.UI
             var conteudo = _tabs["Conteúdo"]; _contentList = UiKit.Text("", "lv-body"); _contentList.style.whiteSpace = WhiteSpace.Normal; _contentList.style.display = DisplayStyle.None; conteudo.Add(_contentList); _contentTree = new VisualElement(); conteudo.Add(_contentTree);
             _contentAsset = UiKit.Field("Identificador do item do inventário", false, 40); conteudo.Add(_contentAsset);
             conteudo.Add(UiKit.Row(UiKit.Button("Pôr no objeto", () => AddContent(), "lv-btn-primary"), UiKit.Button("Escolher do inventário…", PickContent), UiKit.Button("Tirar", RemoveContent)));
+            conteudo.Add(UiKit.Button("Permissões", ContentPermissions));
             conteudo.Add(UiKit.Divider()); conteudo.Add(UiKit.Button("Scripts do objeto…", () => { if (_b.Selection.Count == 1) new LuaEditorWindow(_c, _c.CurrentIsland(), _b.Selection[0]).Open(); else Say("Selecione um só objeto.", true); }));
 
             // Alinhar: the shared align arithmetic, one axis at a time
@@ -151,6 +152,7 @@ namespace LifeVerse.Unity.UI
             _normalStrength = UiKit.Slide("Força do relevo", 0f, 2f, 1f, v => EditMaterial(m => m["normalStrength"] = Math.Round(v, 2))); _aoStrength = UiKit.Slide("Força da oclusão", 0f, 1f, 1f, v => EditMaterial(m => m["aoStrength"] = Math.Round(v, 2))); _offsetX = UiKit.Slide("Deslocar X", -1f, 1f, 0f, v => EditMaterial(m => m["uvOffsetX"] = Math.Round(v, 3))); _offsetY = UiKit.Slide("Deslocar Y", -1f, 1f, 0f, v => EditMaterial(m => m["uvOffsetY"] = Math.Round(v, 3)));
             look.Add(_normalStrength); look.Add(_aoStrength); look.Add(_offsetX); look.Add(_offsetY);
             look.Add(UiKit.Divider()); look.Add(UiKit.Text("Uma face só", "lv-bold")); _face = new DropdownField("Face", Enumerable.Range(0, 6).Select(i => "Face " + i).ToList(), 0); look.Add(_face); look.Add(UiKit.Check("Escolher a face clicando no objeto", false, v => _b.FacePick = v));
+            look.Add(UiKit.Row(UiKit.Button("Textura nesta face…", () => new TexturePickerWindow(_c, SetFaceTexture, "Textura da face").Open()), UiKit.Button("Face sem textura", () => EditFace(f => { f.Remove("texture"); f.Remove("builtin"); f["noTexture"] = true; }))));
             look.Add(Controls.ColourField("Cor da face", "#FFFFFF", value => EditFace(f => f["color"] = value), "#FFFFFF", "#C0392B", "#27AE60", "#2980B9", "#F4A340", "#222222")); look.Add(UiKit.Button("Tirar o que é só desta face", () => EditMaterial(m => { if (m["faces"] is JsonArray faces) { var index = FaceIndex(); var entry = faces.OfType<JsonObject>().FirstOrDefault(x => x["index"]?.GetValue<int>() == index); if (entry != null) faces.Remove(entry); if (faces.Count == 0) m.Remove("faces"); } })));
             look.Add(UiKit.Divider()); look.Add(UiKit.Text("Mídia na superfície", "lv-bold")); _mediaType = new DropdownField("Tipo", new List<string> { "image", "video" }, 0); _mediaUrl = UiKit.Field("Endereço (https://…)", false, 500); look.Add(_mediaType); look.Add(_mediaUrl);
             look.Add(UiKit.Row(UiKit.Button("Aplicar mídia", ApplyMedia, "lv-btn-primary"), UiKit.Button("Reproduzir / pausar", () => EditMaterial(m => { if (m["media"] is JsonObject media) media["playing"] = !(media["playing"]?.GetValue<bool>() ?? false); })), UiKit.Button("Tirar mídia", () => EditMaterial(m => m.Remove("media")))));
@@ -223,6 +225,25 @@ namespace LifeVerse.Unity.UI
         {
             var mode = SaleModes.First(s => s.Label == _sale.value).Id; var problem = SaleProblem(mode, _price.value, out var amount); if (problem != null) { Say(problem, true); return; }
             SendProperties(new JsonObject { ["saleType"] = mode, ["salePrice"] = (int)amount });
+        }
+
+        /// <summary>What may be done with the content (as the Godot client explains it): the content changes only when the object may be modified; an item inside keeps the rights it has in the inventory.</summary>
+        public static string ContentRightsText(int objectRights, int? itemRights)
+        {
+            var text = (objectRights & LifeVerse.Shared.Items.ItemRights.Modify) != 0 ? "O objeto pode ser modificado: você muda o conteúdo dele." : "O objeto não pode ser modificado: o conteúdo é só de leitura.";
+            if (itemRights is { } r) text += " Item: você pode " + InventoryManagerWindow.RightsWords(r) + ". Dentro do objeto ele mantém essas mesmas permissões.";
+            return text;
+        }
+
+        private void ContentPermissions()
+        {
+            if (_b.Selection.Count != 1 || _b.StateOf(_b.Selection[0]) is not { } state) { Say("Selecione um só objeto.", true); return; }
+            if (!Guid.TryParse(_contentAsset.value.Trim(), out var asset)) { Say(ContentRightsText(state.OwnerRights, null), false); return; }
+            this.Then(_c.Api.ApiAsync("GET", "/api/v1/inventory/items?page=1&pageSize=100&assetId=" + asset), r =>
+            {
+                int? rights = null; if (r.Status == 200) foreach (var row in Json.Rows(r.Body)) if (row.Id("assetId") == asset) { rights = (int)row.Number("ownerRights"); break; }
+                Say(ContentRightsText(state.OwnerRights, rights) + (rights == null ? " (o item não está no seu inventário)" : ""), false);
+            });
         }
 
         private void AddContent()

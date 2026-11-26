@@ -6,7 +6,7 @@ using UnityEngine;
 namespace LifeVerse.Unity.Avatar
 {
     /// <summary>The angles of one instant of the body (degrees): how far each limb swings, the arms out to the side, how the body leans and how far it sinks (sitting).</summary>
-    public struct PoseValues { public float LegL, LegR, ArmL, ArmR, ArmSideL, ArmSideR, Pitch, Drop; }
+    public struct PoseValues { public float LegL, LegR, ArmL, ArmR, ArmSideL, ArmSideR, Pitch, Drop, Yaw; }
 
     /// <summary>
     /// A person in the world. By default a simple procedural body (torso, head, arms and legs hinged at the shoulders and hips) dressed from the appearance the server sends
@@ -28,6 +28,8 @@ namespace LifeVerse.Unity.Avatar
         public AvatarAppearance Appearance { get; private set; } = new AvatarAppearance();
         public SkeletalBody Skeleton { get; private set; }
         public AvatarDetail Detail { get; private set; } = AvatarDetail.Full;
+        /// <summary>A reduced avatar is posed once every this many frames (1 high, 2 normal, 3 low), as in the Godot client.</summary>
+        public static int AnimationDivisor = 2; private float _poseDelta;
         /// <summary>The head leans up (positive) or down (negative) this far, radians, as the person looks (already within what a head can do).</summary>
         public float HeadPitch { get; private set; }
 
@@ -259,7 +261,9 @@ namespace LifeVerse.Unity.Avatar
             }
             Speed = new Vector2(_velocityGame.x, _velocityGame.z).magnitude;
             if (Detail == AvatarDetail.Hidden) return;   // nobody sees it: not even posed
-            Pose(delta);
+            _poseDelta += delta;
+            if (Detail == AvatarDetail.Reduced && AnimationDivisor > 1 && Time.frameCount % AnimationDivisor != 0) return;   // "Qualidade das animações": a reduced avatar is posed every few frames
+            Pose(_poseDelta); _poseDelta = 0f;
         }
 
         private static float Ease(float current, float target, float delta, float rate = 12f) => Mathf.Lerp(current, target, 1f - Mathf.Exp(-rate * delta));
@@ -297,6 +301,37 @@ namespace LifeVerse.Unity.Avatar
             return p;
         }
 
+        /// <summary>The state whose animation the person may have swapped ("Idle", "Walk", "Run", "Sit", "Dance", "Wave", "Greet", "Laugh"), or null.</summary>
+        public static string StateOf(NetworkMotionState motion, Gesture gesture) => gesture switch
+        {
+            Gesture.Greet => "Greet", Gesture.Laugh => "Laugh",
+            _ => motion switch { NetworkMotionState.Idle => "Idle", NetworkMotionState.Walk => "Walk", NetworkMotionState.Run => "Run", NetworkMotionState.Sit => "Sit", NetworkMotionState.Dance => "Dance", NetworkMotionState.Wave => "Wave", _ => null },
+        };
+
+        /// <summary>
+        /// The alternatives of the game's own library ("builtin:…" in the appearance), as the Godot client draws them on the simple body: a relaxed or alert stand, a happy or tired walk, a sprint, a relaxed seat,
+        /// a groove or a spin, a big wave, a bow and a doubled-up laugh. Unknown names keep the pose as it is.
+        /// </summary>
+        public static PoseValues Vary(PoseValues p, string variant, float phase)
+        {
+            var s = Mathf.Sin(phase);
+            switch (variant)
+            {
+                case "Idle@relaxed": p.ArmSideL = -9f + s * 2f; p.ArmSideR = 9f - s * 2f; p.Pitch = s * 2f; break;
+                case "Idle@alert": p.Pitch = 5f; p.ArmL = p.ArmR = -28f; p.ArmSideL = -6f; p.ArmSideR = 6f; break;
+                case "Walk@happy": p.LegL *= 1.3f; p.LegR *= 1.3f; p.ArmL *= 1.5f; p.ArmR *= 1.5f; p.Pitch = -3f; p.Drop = -Mathf.Abs(s) * .04f; break;
+                case "Walk@tired": p.LegL *= .6f; p.LegR *= .6f; p.ArmL *= .3f; p.ArmR *= .3f; p.Pitch = 14f; break;
+                case "Run@sprint": p.LegL *= 1.35f; p.LegR *= 1.35f; p.ArmL *= 1.4f; p.ArmR *= 1.4f; p.Pitch = 17f; break;
+                case "Sit@relaxed": p.Pitch = 11f; p.ArmL = p.ArmR = -28f; break;
+                case "Dance@groove": p.Yaw = s * 14f; p.ArmL = -(100f + s * 50f); p.ArmR = -(100f - s * 50f); p.LegL = s * 17f; p.LegR = -p.LegL; break;
+                case "Dance@spin": p.Yaw = Mathf.Repeat(phase * 57.3f * .65f, 360f); p.ArmSideL = -138f; p.ArmSideR = 138f; p.ArmL = p.ArmR = 0f; break;
+                case "Wave@big": p.ArmSideR = 150f + s * 15f; p.ArmR = 0f; p.Pitch = s * 3f; break;
+                case "Greet@bow": p.Pitch = 54f * Mathf.Abs(Mathf.Sin(phase * .5f)); p.ArmL = p.ArmR = 17f; break;
+                case "Laugh@doubled": p.Pitch = 20f + Mathf.Abs(Mathf.Sin(phase * 8f)) * 5f; p.ArmL = p.ArmR = -20f; break;
+            }
+            return p;
+        }
+
         private void Pose(float delta)
         {
             var motion = Motion; var running = motion == NetworkMotionState.Run; var walking = motion == NetworkMotionState.Walk || running;
@@ -305,9 +340,10 @@ namespace LifeVerse.Unity.Avatar
             _phase += delta * (walking ? Mathf.Clamp(Speed, 1f, 7f) * 1.9f : motion == NetworkMotionState.Swim ? 4f : motion == NetworkMotionState.Dance ? 6f : 1.6f);
             var amplitude = walking ? Mathf.Clamp01(Speed / 6.4f) * (running ? 62f : 42f) : 0f; _swing = Ease(_swing, amplitude, delta);
             var pose = Evaluate(motion, ActiveGesture, _phase, _swing, Speed);
+            var state = StateOf(motion, ActiveGesture); if (state != null && Appearance.AnimationOverrides.TryGetValue(state, out var source) && source.StartsWith(AnimationStates.BuiltinPrefix, System.StringComparison.Ordinal)) pose = Vary(pose, state + "@" + source.Substring(AnimationStates.BuiltinPrefix.Length), _phase);
             if (Skeleton != null && Detail >= AvatarDetail.Reduced) { Skeleton.Tick(delta, motion, ActiveGesture, Speed, _phase, pose, HeadPitch, Detail >= AvatarDetail.Full); return; }
             _bodyPitch = Ease(_bodyPitch, pose.Pitch, delta); _sitDrop = Ease(_sitDrop, pose.Drop, delta);
-            _body.localRotation = Quaternion.Euler(_bodyPitch, 0f, 0f); _body.localPosition = new Vector3(0f, -_sitDrop, 0f);
+            _body.localRotation = Quaternion.Euler(_bodyPitch, pose.Yaw, 0f); _body.localPosition = new Vector3(0f, -_sitDrop, 0f);
             _head.localRotation = Quaternion.Euler(-HeadPitch * Mathf.Rad2Deg, 0f, 0f);
             _leftLeg.localRotation = Quaternion.Euler(pose.LegL, 0f, 0f); _rightLeg.localRotation = Quaternion.Euler(pose.LegR, 0f, 0f);
             _leftArm.localRotation = Quaternion.Euler(pose.ArmL, 0f, pose.ArmSideL); _rightArm.localRotation = Quaternion.Euler(pose.ArmR, 0f, pose.ArmSideR);

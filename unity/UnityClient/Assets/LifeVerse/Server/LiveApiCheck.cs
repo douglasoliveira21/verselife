@@ -112,6 +112,7 @@ namespace LifeVerse.Unity.Server
         yield return Step("avatar: attachments (wear, move, change, take off)", Attachments());
         yield return Step("search (full): for you, tabs, suggestions, details, favorite, report, interests", SearchFull());
         yield return Step("groups (full): create in 4 steps, invite, accept, roles, permissions, notices, chat, chest, votes, active group", GroupsFull());
+        yield return Step("small details: ban and allow deadlines, permission change, group events and store, item history", SmallDetails());
         yield return Step("wallet and profile (full): summary, statement, coins, fees, bio, post, feed, someone else's profile", WalletAndProfile());
         yield return Step("avatar studio: own body, clothes and animations sent, worn, chosen; looks saved, shared and brought by code", AvatarStudio());
         yield return Step("people and discovery: relations, friends on the map, arrival check, island info, guest events, calendar, item detail", SocialDiscovery());
@@ -413,6 +414,48 @@ namespace LifeVerse.Unity.Server
             yield return Call(_a, "GET", "/api/v1/groups/active", null, b => body = b); Check(body.Contains(name), "o grupo ativo na API: " + hub.Status + " " + Snip(body));
             hub.Show("descobrir"); yield return Until(() => hub.Loads >= 1 && hub.Actions.ContainsKey("Buscar"), "descobrir grupos"); Check(hub.Status.Length == 0, "descobrir grupos sem erro: " + hub.Status);
             gp.Close(); hub.Close(); theirs.Close();
+        }
+
+        private IEnumerator SmallDetails()
+        {
+            string body = null; var mg = "/api/v1/worlds/islands/" + _island + "/management";
+            var gm = new IslandManagementWindow(_ca, _island); gm.Open(); yield return Until(() => gm.SummaryText.Length > 0, "a gestão da ilha");
+            // a ban whose deadline changes
+            gm.Show("banimentos"); yield return Until(() => gm.Actions.ContainsKey("Banir"), "os banimentos: " + gm.Status); gm.Ban(_bName, "prazo do Unity", "2"); yield return Until(() => gm.RowIds.Count >= 1, "o banimento na lista: " + gm.Status);
+            var ban = gm.RowIds.First(); gm.ChangeBan(ban, "9"); yield return Until(() => gm.Status.Contains("Novo prazo") || gm.Status.Length > 0 && !gm.Status.Contains("banida"), "mudar o prazo do banimento: " + gm.Status);
+            yield return Call(_a, "GET", mg + "/bans?status=active", null, b => body = b);
+            using (var d = JsonDocument.Parse(body)) { var item = d.RootElement.GetProperty("items").EnumerateArray().First(); var until = item.GetProperty("expiresAt").GetDateTimeOffset(); Check(until > DateTimeOffset.UtcNow.AddDays(8), "o prazo novo do banimento na API: " + gm.Status + " " + Snip(body)); }
+            gm.ChangeBan(ban, ""); yield return Until(() => gm.Status.Contains("para sempre"), "banimento para sempre: " + gm.Status);
+            gm.Press("Retirar"); yield return Until(() => gm.RowIds.Count == 0, "retirar o banimento: " + gm.Status);
+            // an allowance whose deadline changes
+            gm.Show("acesso"); yield return Until(() => gm.Fields.ContainsKey("Nome da pessoa"), "o acesso: " + gm.Status); gm.Fields["Nome da pessoa"].value = _bName; gm.Press("Liberar"); yield return Until(() => gm.RowIds.Count >= 1, "B liberada: " + gm.Status);
+            var allow = gm.RowIds.First(); gm.ChangeAllow(allow, "3"); yield return Until(() => gm.Status.Contains("Novo prazo"), "mudar o prazo da liberação: " + gm.Status);
+            yield return Call(_a, "GET", mg + "/access", null, b => body = b); Check(body.Contains("expiresAt") && !body.Contains("\"expiresAt\":null"), "o prazo da liberação na API: " + Snip(body));
+            gm.Press("Tirar"); yield return Until(() => gm.RowIds.Count == 0, "tirar a liberação: " + gm.Status);
+            // permissions swapped for the ticked ones
+            gm.Show("permissoes"); yield return Until(() => gm.Toggles.Count >= 2 && gm.RowIds.Contains(_bId), "as permissões de B: " + gm.Status);
+            foreach (var t in gm.Toggles.Values) t.value = false; gm.Toggles.Values.Skip(1).First().value = true; gm.Press("Trocar pelas marcadas"); yield return Until(() => gm.Status.Contains("trocadas") || gm.Status.Length > 0 && !gm.Status.Contains("dadas"), "trocar as permissões: " + gm.Status);
+            Check(gm.Status.Contains("trocadas"), "a API aceita a troca das permissões: " + gm.Status);
+            var loads = gm.Loads; gm.Show("desempenho"); yield return Until(() => gm.Loads > loads, "o desempenho"); Check(gm.Status.Length == 0, "o desempenho com gráficos abre sem erro: " + gm.Status);
+            gm.Close();
+            // a group: an event and the store tab
+            var name = "Grupo Det " + Guid.NewGuid().ToString("N").Substring(0, 4);
+            var hub = new GroupsHubWindow(_ca); hub.Open(); hub.Show("criar"); yield return Until(() => hub.Actions.ContainsKey("Continuar"), "criar grupo");
+            hub.Creating.Name = name; hub.Creating.Description = "Detalhes"; hub.CreateNow(); yield return Until(() => hub.Created != Guid.Empty || hub.Status.Length > 0 && !hub.Status.Contains("criado"), "o grupo: " + hub.Status);
+            var gp = new GroupProfileWindow(_ca, hub.Created); gp.Open(); yield return Until(() => gp.SummaryText.Contains(name), "o perfil do grupo");
+            gp.Show("eventos"); yield return Until(() => gp.Fields.ContainsKey("Nome do evento"), "a aba de eventos: " + gp.Status);
+            gp.Fields["Nome do evento"].value = "Festa do Unity"; gp.Fields["Ilha (identificador; vazio = a ilha onde você está)"].value = _island.ToString(); gp.Press("Marcar"); yield return Until(() => gp.Status.Length > 0, "marcar o evento");
+            Check(gp.Status.Contains("Evento marcado"), "a API aceita o evento: " + gp.Status);
+            yield return Call(_a, "GET", "/api/v1/groups/" + hub.Created + "/events", null, b => body = b); Check(body.Contains("Festa do Unity"), "o evento na API: " + Snip(body));
+            gp.Show("loja"); yield return Until(() => gp.Fields.ContainsKey("Preço (VC)") || gp.Status.Length > 0, "a aba da loja: " + gp.Status); Check(gp.Status.Length == 0, "a loja do grupo abre sem erro: " + gp.Status);
+            gp.Close(); hub.Close();
+            // the history of an item, shown to the next owners
+            yield return Call(_a, "GET", "/api/v1/inventory/items?page=1&pageSize=5", null, b => body = b); var rows = Json.Rows(body);
+            if (rows.Count == 0) { Check(true, "sem itens para o histórico (nada a conferir)"); yield break; }
+            var itemId = rows[0].Id("itemId"); var iw = new ItemWindow(_ca, itemId, rows[0].First("name")); iw.Open(); yield return Until(() => iw.HistoryShown.style.display == UnityEngine.UIElements.DisplayStyle.Flex, "a opção do histórico para o dono");
+            iw.SetHistoryVisible(true); yield return Until(() => iw.Status.Length > 0, "mostrar o histórico");
+            yield return Call(_a, "GET", "/api/v1/inventory/items/" + itemId + "/rights", null, b => body = b); Check(Json.One(body).Flag("showOwnerHistory"), "o histórico visível na API: " + iw.Status + " " + Snip(body));
+            iw.SetHistoryVisible(false); yield return new WaitForSeconds(1f); iw.Close();
         }
 
         private IEnumerator WalletAndProfile()

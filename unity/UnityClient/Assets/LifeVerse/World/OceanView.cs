@@ -17,7 +17,7 @@ namespace LifeVerse.Unity.World
 
         public Camera Camera;
         public float SeaLevel = -.8f;
-        public bool Waves = true;
+        public bool Waves = true; private bool _flat;
         private Transform _plane;
         private Material _material;
         /// <summary>The colour and opacity of the sea: between the Godot shallow (0.05, 0.50, 0.58) and deep (0.005, 0.07, 0.22) colours, nearly opaque, so the sand under deep water does not shine through.</summary>
@@ -74,7 +74,8 @@ namespace LifeVerse.Unity.World
             var planePosition = new Vector3(Mathf.Round(position.x / SnapStep) * SnapStep, SeaLevel, Mathf.Round(position.z / SnapStep) * SnapStep);
             _plane.position = planePosition; IsUnderwater = position.y < SeaLevel;
             var time = _animate ? Time.time : 0f;
-            if (Waves) DisplaceVertices(planePosition, position, time);
+            if (Waves) { DisplaceVertices(planePosition, position, time); _flat = false; }
+            else if (!_flat) { _flat = true; _mesh.vertices = _local; }   // the waves were turned off: the sea lies flat
             // texture coordinates are metres from the plane's centre: tiling 1 / tile, offset = where the plane sits in tiles, plus the slide of the ripples
             SetTexture("_NormalMap", SwellTile, planePosition, new Vector2(.020f, .012f) * time * SwellTile / 10f);
             SetTexture("_DetailMap", RippleTile, planePosition, new Vector2(-.05f, .035f) * time * RippleTile / 10f);

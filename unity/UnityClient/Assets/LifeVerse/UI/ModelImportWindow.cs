@@ -74,6 +74,8 @@ namespace LifeVerse.Unity.UI
         public UploadResult Uploaded { get; private set; }
         public Guid PlacedAsset { get; private set; }
         public static float PlacementSize = 2f; public static string CollisionShape = "triangle";
+        /// <summary>Told when the person picks another collision in the window, so "Colisão de modelos importados" follows.</summary>
+        public static Action<string> CollisionChosen;
 
         public ModelImportWindow(ApiContext context, BuildEditor editor) : base(context.Ui, "model-import", "Importar um modelo 3D", 460f, 640f, new Vector2(120, 40))
         {
@@ -132,7 +134,7 @@ namespace LifeVerse.Unity.UI
         public void Place()
         {
             if (Glb == null || Report == null || !Report.Valid) return; var problem = SizeProblem(_worldSize.value, out var meters); if (problem != null) { _status.text = problem; _status.AddToClassList("lv-bad"); return; }
-            PlacementSize = meters; CollisionShape = Shapes[Math.Max(0, _shape.index)].Id; _place.SetEnabled(false); _status.text = "Enviando…"; _status.RemoveFromClassList("lv-bad");
+            PlacementSize = meters; CollisionShape = Shapes[Math.Max(0, _shape.index)].Id; CollisionChosen?.Invoke(CollisionShape); _place.SetEnabled(false); _status.text = "Enviando…"; _status.RemoveFromClassList("lv-bad");
             var name = Path.GetFileNameWithoutExtension(FileName); this.Then(_c.Api.UploadAsync(name + ".glb", Glb, "models"), r =>
             {
                 Uploaded = Uploads.Read(r.Status, r.Body); if (!Uploaded.Ok) { _status.text = Uploaded.Message; _status.AddToClassList("lv-bad"); _place.SetEnabled(true); return; }

@@ -53,7 +53,8 @@ namespace LifeVerse.Unity.UI
 
         public void Begin(string apiBase, UserSettings settings = null)
         {
-            ApiBase = apiBase; Settings = settings ?? UserSettings.Load(SettingsPath); GraphicsQuality.Apply(Settings); Store = new SettingsStore(Settings); Store.Changed += OnSettingChanged;
+            ApiBase = apiBase; Settings = settings ?? UserSettings.Load(SettingsPath); GraphicsQuality.Apply(Settings); Store = new SettingsStore(Settings); Store.Set("world.minimap_open", "false", false);   // as in the Godot client, the game always starts with the mini-map closed
+            Store.Changed += OnSettingChanged; if (Store.Bool("general.keep_on_top")) SettingsEffects.KeepOnTop(true); ModelImportWindow.CollisionChosen = shape => Store.Set("build.import_collision", shape, false);
             Ui = UiRoot.Create(Settings); Notices = new NotificationCenter(Ui); Hud = new Hud(Ui, Notices);
             Login = new LoginView(Settings, "Versão " + Application.version + "  •  Unity"); Login.SignIn += OnSignIn; Login.Register += OnRegister; Ui.ScreenLayer.Add(Login);
             Loading = new LoadingView(); Loading.Back.clicked += BackToLogin;
@@ -135,14 +136,15 @@ namespace LifeVerse.Unity.UI
             Hud.Register("Carteira", "wallet", () => new WalletHubWindow(Context));
             Hud.Register("Buscar", "search", () => new GlobalSearchWindow(Context, Settings, () => Settings.Save(SettingsPath), (island, x, z) => { if (x is { } px && z is { } pz) MoveToSpot(island, px, pz); else Context.EnterIsland(island); }));
             Hud.Register("Construir", "build", () => { ToggleBuild(); return null; });
-            Hud.Register("Voz", "voice", () => { if (Voice == null) return null; Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure " + KeyBindings.KeyName(KeyBindings.Of(GameAction.Talk)) + " para falar.", NoticeKind.Info); return null; });
+            Hud.Register("Voz", "voice", () => { if (Voice == null) return null; if (Voice.Off) { Notices.Show("A voz está desligada em Configurações > Voz.", NoticeKind.Info); return null; } Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure " + KeyBindings.KeyName(KeyBindings.Of(GameAction.Talk)) + " para falar.", NoticeKind.Info); return null; });
             Bell = Hud.Register("Avisos", "notifications", () => new NotificationCenterWindow(Context, SetBell));
             Hud.Register("Mapa", "map", () => new WorldMapWindow(Context, () => Player != null ? Player.GamePosition : (Vector3?)null));
             Hud.Register("Mais", "more", MoreWindow);
             Hud.Register("Configurações", "settings", () => new SettingsCatalogWindow(Context, Store, SettingsApplied, id => SettingsEffects.Info(id, this), SettingActions(), () => OpenClassicSettings().Open()));
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui)); Hud.Travel = TravelIslands;
             Hud.Register("Gestos", "gestures", () => { OpenRadial(new Vector2(Screen.width / 2f, Screen.height / 2f) / Mathf.Max(.01f, Ui.Panel.scale)); return null; }); Hud.Register("Foto", "photo", () => { TakePhoto(); return null; });
-            Hud.Register("Mini-mapa", "minimap", () => { MinimapShown = !MinimapShown; Hud.Map.style.visibility = MinimapShown ? Visibility.Visible : Visibility.Hidden; return null; });
+            Hud.Register("Mini-mapa", "minimap", () => { SetMinimap(!MinimapShown); return null; });
+            Hud.Reordered += (id, onto) => { Settings.ToolbarOrder = ToolbarLayout.Place(ToolbarLayout.Order(Hud.ToolbarDefaults, Settings.ToolbarOrder), id, onto); if (!Settings.ToolbarCustomized) { Settings.ToolbarHidden = new List<string>(Hud.DefaultHidden); Settings.ToolbarCustomized = true; } Settings.Save(SettingsPath); ApplyInterface(); };
             Hud.SetDefaultOrder("voice", "gestures", "photo", "build", "people", "map", "inventory", "minimap", "search", "wallet", "notifications");
             Hud.BuyCoinsPressed = () => Hud.Toggle("wallet", () => new WalletHubWindow(Context));
             // the menus of the top bar, as in the Godot client
@@ -215,6 +217,17 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>Finds the person with a name that is nearby (the world only knows names) among the platform's people and opens what can be done to them.</summary>
+        /// <summary>"Pagar…" on a person (the right button): the wallet opens with that person as who receives (found by the name the avatar shows).</summary>
+        public void PayPerson(string displayName)
+        {
+            Ui.ScreenLayer.Then(Api.ApiAsync("GET", "/api/v1/social/people?q=" + Uri.EscapeDataString(displayName)), r =>
+            {
+                var match = r.Status == 200 ? Json.Rows(r.Body).FirstOrDefault(p => string.Equals(p.First("displayName", "username"), displayName, StringComparison.OrdinalIgnoreCase) || string.Equals(p.Text("username"), displayName, StringComparison.OrdinalIgnoreCase)) : default;
+                if (r.Status != 200 || match.Id() == Guid.Empty) { Notices.Show("Não achei " + displayName + " na plataforma.", NoticeKind.Warn); return; }
+                var wallet = new WalletWindow(Context); wallet.Open(); wallet.PayTo(match.Id(), displayName);
+            });
+        }
+
         private void OpenPersonActions(string displayName)
         {
             Ui.ScreenLayer.Then(Api.ApiAsync("GET", "/api/v1/social/people?q=" + Uri.EscapeDataString(displayName)), r =>
@@ -260,6 +273,8 @@ namespace LifeVerse.Unity.UI
             AttachmentEditing?.Close(); AttachmentEditing = new AttachmentEditor(Context, a, () => OwnAttachments, () => Follow != null ? Follow.Camera : null, () => Follow, RefreshOwnAttachments); return AttachmentEditing;
         }
 
+        /// <summary>"Indicadores de fala": who is talking shows it over the head.</summary>
+        public bool SpeakingIndicators = true; private string _openMicApplied;
         public PlayerViews PeopleViews => _world != null ? _world.GetComponentInChildren<PlayerViews>() : null;
 
         // ---- the list of islands, before signing in ----
@@ -305,6 +320,13 @@ namespace LifeVerse.Unity.UI
         public string StartReason { get; private set; } = "";
         /// <summary>Whether the mini-map shows (the "Mini-mapa" button hides and shows it).</summary>
         public bool MinimapShown { get; private set; } = true;
+
+        /// <summary>Opens or closes the mini-map; "Mini-mapa aberto" in Configurações follows it (and the other way round).</summary>
+        public void SetMinimap(bool on)
+        {
+            MinimapShown = on; Hud.Map.style.visibility = on ? Visibility.Visible : Visibility.Hidden;
+            if (Store != null && Store.Bool("world.minimap_open") != on) Store.Set("world.minimap_open", on ? "true" : "false", false);
+        }
         /// <summary>Where "Lembrar senha" keeps the sealed login (the checks point it elsewhere).</summary>
         public string SavedLoginPath { get; set; } = SavedLogin.DefaultPath;
         public bool SavedPassword { get; private set; }
@@ -355,7 +377,7 @@ namespace LifeVerse.Unity.UI
             Player.Attach(Client, Client.Terrain, PeopleViews, Follow); Player.Vehicles = _world.GetComponentInChildren<VehicleViews>(); ApplySettingsToWorld();
             Client.DisconnectedBy += OnDisconnected; Client.ChatReceived += OnChat; Client.PlayerSpawned += OnSpawned; Client.PlayerDespawned += OnDespawned;
             Hud.SetIsland("Ilha " + _island.ToString().Substring(0, 8)); Show(Phase.Playing); Notices.Show("Você entrou na ilha.", NoticeKind.Good);
-            Reconnects = 0; if (Settings.IslandYaw.TryGetValue(_island.ToString("N"), out var yaw) && Follow != null) Follow.Yaw = yaw; Islands.Visit(_island); Hud.SetTravel(Islands.CanBack, Islands.CanForward); ApplyInterface();
+            Reconnects = 0; if (Settings.IslandYaw.TryGetValue(_island.ToString("N"), out var yaw) && Follow != null) Follow.Yaw = yaw; Islands.Visit(_island); Hud.SetTravel(Islands.CanBack, Islands.CanForward); ApplyInterface(); SetMinimap(Store.Bool("world.minimap_open"));
             if (Sync != null && Sync.Enabled) { var pull = Sync.PullIfEnabledAsync(); while (!pull.IsCompleted) yield return null; if (pull.Result.Result == SyncResult.Ok && pull.Result.Values.Count > 0) { ApplySettingsToWorld(); Settings.Save(SettingsPath); } }
         }
 
@@ -427,7 +449,7 @@ namespace LifeVerse.Unity.UI
             var views = new GameObject("People").AddComponent<PlayerViews>(); views.transform.SetParent(_world.transform); views.Camera = cam; views.Attach(Client);
             var cars = new GameObject("Vehicles").AddComponent<VehicleViews>(); cars.transform.SetParent(_world.transform); cars.Attach(Client);
             Follow = _world.AddComponent<FollowCamera>(); Follow.Camera = cam; Follow.Terrain = terrain; Follow.Distance = Store.Float("camera.default_distance"); SettingsEffects.Camera(Store, Follow, Settings.ReduceMotion); Player = _world.AddComponent<LocalPlayer>();
-            Plates = new NamePlates(Ui); Follow.PickPoint = PickPoint; Follow.OverInterface = point => UiKit.IsOver(Ui.Root, point);
+            Plates = new NamePlates(Ui); Follow.PickPoint = PickPoint; Follow.PickFocus = PickFocus; Follow.OverInterface = point => UiKit.IsOver(Ui.Root, point);
             Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             // what scripts of objects ask of the person: dialogs, permission requests and panels (the island checks every answer)
             ScriptDialogs = new ScriptDialogs(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } }; ScriptPanels = new ScriptHud(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } };
@@ -443,7 +465,7 @@ namespace LifeVerse.Unity.UI
             AvatarAttachments.Loader = asset => Client != null && Client.AssetLoader != null ? Client.AssetLoader(asset) : System.Threading.Tasks.Task.FromResult<byte[]>(null);
             objects.MediaAudio = host => BusSource.Make(host, Bus.Media, .8f, true, 25f, true).Source;
             ParcelMusic = new GameObject("ParcelMusic").AddComponent<LandMusic>(); ParcelMusic.transform.SetParent(_world.transform); ParcelMusic.Setup(_api, () => _island, () => Player != null ? Player.GamePosition : (Vector3?)null); ParcelMusic.IslandFinder = () => Client != null && Client.Environment != null ? Client.Environment.GetComponent<IslandLookService>() : null; ParcelMusic.Load();
-            Voice = new GameObject("Voice").AddComponent<VoiceChat>(); Voice.transform.SetParent(_world.transform); Voice.Attach(Client); Hearing = new GameObject("Hearing").AddComponent<VoiceListener>(); Hearing.transform.SetParent(_world.transform); Hearing.Attach(Client);
+            _openMicApplied = null; Voice = new GameObject("Voice").AddComponent<VoiceChat>(); Voice.transform.SetParent(_world.transform); Voice.Attach(Client); Hearing = new GameObject("Hearing").AddComponent<VoiceListener>(); Hearing.transform.SetParent(_world.transform); Hearing.Attach(Client);
             Hearing.PositionOf = peer => PeopleViews != null && PeopleViews.ViewOf(peer) != null ? PeopleViews.ViewOf(peer).GamePosition : (Vector3?)null; Voice.HearingOthers = () => Hearing.AnySpeaking(); ApplyAudio();
             TerrainTools = new TerrainEditor(Context, () => Client, () => Follow != null ? Follow.Camera : null, () => Client != null ? Client.Terrain : null);
             Effects = new GameObject("Effects").AddComponent<ObjectEffects>(); Effects.transform.SetParent(_world.transform); Effects.Attach(Client);
@@ -467,7 +489,7 @@ namespace LifeVerse.Unity.UI
         public VoiceListener Hearing { get; private set; }
         public BusSource LoginTheme { get; private set; }
         private MicTest _micTest;
-        private float _nextSplash;
+        private float _nextSplash, _footprintClock = 2f;
 
         /// <summary>Puts the volumes and the voice settings on the sound system (called at the start and whenever the settings change).</summary>
         public void ApplyAudio()
@@ -475,6 +497,7 @@ namespace LifeVerse.Unity.UI
             KeyBindings.Load(Settings.Keys); KeyBindings.Blocked = () => Hud != null && Hud.Chat != null && Hud.Chat.Typing || Ui != null && Ui.Root != null && Ui.Root.panel != null && Ui.Root.panel.focusController != null && Ui.Root.panel.focusController.focusedElement is TextField;
             MicDevices.Preferred = Settings.InputDevice; UiSounds.Enabled = Settings.UiSounds; Buses.SetAll(Settings.MasterVolume, Settings.AmbientVolume, Settings.EffectsVolume, Settings.MusicVolume, Settings.MediaVolume, Settings.VoiceVolume);
             if (Voice != null) { Voice.Gate = Settings.VoiceSensitivity; Voice.EchoGuard = Settings.EchoGuard; }
+            SettingsEffects.Voice(Store, Voice, Hearing, ref _openMicApplied); SpeakingIndicators = Store == null || Store.Bool("voice.indicators");
             if (ParcelMusic != null) ParcelMusic.Enabled = Settings.ParcelMusic;
         }
 
@@ -570,15 +593,18 @@ namespace LifeVerse.Unity.UI
         private void Update()
         {
             TickLoginMusic(); SettingsEffects.RenderScale.Tick(Time.unscaledDeltaTime);
+            if (Current == Phase.Playing && Store != null) TickAutoQuality();
             if (Current != Phase.Playing || Client == null) return;
             var views = PeopleViews; Hud.SetConnection(Client.Connected, Mathf.Max(0, (views?.Count ?? 1) - 1));
             if (Hud.PerformanceVisible) Hud.Perf.Frame(Time.unscaledDeltaTime);
             _mapClock += Time.unscaledDeltaTime;
+            if (Hud.Map.Rotate && Follow != null) Hud.Map.Turn(Follow.Yaw);
             if (_mapClock > .25f && Player != null && Client.Terrain != null)
             {
                 _mapClock = 0f; Hud.Map.Paint(Client.Terrain.Map);
-                var others = new List<Vector3>(); if (views != null) foreach (var peer in views.Peers) if (peer != Client.SelfPeerId) others.Add(views.ViewOf(peer).GamePosition);
-                Hud.Map.Place(Player.GamePosition, others);
+                var others = new List<Vector3>(); var names = new List<string>(); if (views != null) foreach (var peer in views.Peers) if (peer != Client.SelfPeerId) { var view = views.ViewOf(peer); others.Add(view.GamePosition); names.Add(view.DisplayName); }
+                _footprintClock += .25f; if (_footprintClock >= 2f && Client.Objects != null) { _footprintClock = 0f; if (Hud.Map.ShowBuildings) Client.Objects.Footprints(Hud.Map.Buildings); else Hud.Map.Buildings.Clear(); }
+                Hud.Map.Place(Player.GamePosition, others, names);
             }
             _recentClock += Time.unscaledDeltaTime; if (_recentClock > 2f) { _recentClock = 0f; NoteRecent(); }
             Builder?.Tick(Time.unscaledDeltaTime); TerrainTools?.Tick(Time.unscaledDeltaTime);
@@ -589,7 +615,7 @@ namespace LifeVerse.Unity.UI
                 if (Player.State.Swimming && new Vector2(Player.State.VelocityX, Player.State.VelocityZ).magnitude > .5f && Time.unscaledTime > _nextSplash) { _nextSplash = Time.unscaledTime + 1.05f; Ambient.Splash(); }
             }
             if (Voice != null) Voice.TalkHeld = KeyBindings.Held(GameAction.Talk);
-            if (Hearing != null && PeopleViews != null) foreach (var peer in PeopleViews.Peers) { var view = PeopleViews.ViewOf(peer); if (view != null) view.SetSpeaking(peer == Client.SelfPeerId ? Voice != null && Voice.Talking : Hearing.IsSpeaking(peer)); }
+            if (Hearing != null && PeopleViews != null) foreach (var peer in PeopleViews.Peers) { var view = PeopleViews.ViewOf(peer); if (view != null) view.SetSpeaking(SpeakingIndicators && (peer == Client.SelfPeerId ? Voice != null && Voice.Talking : Hearing.IsSpeaking(peer))); }
             if (Keyboard.current is { } keyboard && !Hud.Chat.Typing)
             {
                 if (KeyBindings.Pressed(GameAction.Chat)) Hud.Chat.Focus();
@@ -691,6 +717,16 @@ namespace LifeVerse.Unity.UI
         public readonly IslandHistory Islands = new IslandHistory();
 
         /// <summary>The point a ray of the screen hits, in the Unity scene: the nearest of a person (their chest), an object (the centre of its box) and the ground.</summary>
+        /// <summary>What a double click focuses on: the nearest person or object under the ray (the ground is not a target: a double click there still walks).</summary>
+        public Vector3? PickFocus(Ray ray)
+        {
+            Vector3? best = null; void Keep(Vector3 point) { if (best == null || Vector3.Distance(ray.origin, point) < Vector3.Distance(ray.origin, best.Value)) best = point; }
+            var person = AvatarPick.Pick(ray, People()); var view = person >= 0 ? PeopleViews?.ViewOf(person) : null; if (view != null) Keep(LifeVerse.Unity.World.GameSpace.ToUnity(view.GamePosition) + Vector3.up * 1.4f);
+            if (Client?.Objects != null && Client.Objects.Pick(ray, 80f, out _, out var box)) Keep(box.center);
+            if (best is { } b && Client?.Terrain != null && Client.Terrain.Raycast(ray) is { } ground && Vector3.Distance(ray.origin, ground) + .5f < Vector3.Distance(ray.origin, b)) return null;   // the ground is in front
+            return best;
+        }
+
         public Vector3? PickPoint(Ray ray)
         {
             Vector3? best = null; void Keep(Vector3 point) { if (best == null || Vector3.Distance(ray.origin, point) < Vector3.Distance(ray.origin, best.Value)) best = point; }
@@ -732,8 +768,9 @@ namespace LifeVerse.Unity.UI
                 else
                 {
                     ContextTarget = "person"; var name = view.DisplayName;
-                    items.Add(new RadialItem("Perfil e ações", () => OpenPersonActions(name), name.Length > 0));
+                    items.Add(new RadialItem("Perfil e ações", () => OpenPersonActions(name), name.Length > 0, name.Length > 0 ? "Ver o perfil, adicionar como amigo, mandar mensagem e mais." : "O nome desta pessoa ainda não chegou."));
                     items.Add(new RadialItem("Dar zoom", () => { if (Follow == null) return; Follow.ZoomTarget = head; Follow.ZoomDistance = 2.5f; }));
+                    items.Add(new RadialItem("Pagar…", () => PayPerson(name), name.Length > 0, name.Length > 0 ? "Mandar moedas para " + name + " pela carteira (você confirma o valor)." : "O nome desta pessoa ainda não chegou."));
                 }
                 return items;
             }
@@ -839,6 +876,8 @@ namespace LifeVerse.Unity.UI
             if (id.StartsWith("metrics.", StringComparison.Ordinal)) SettingsEffects.Metrics(Store, Hud);
             else if (id == "camera.default_distance" && Follow != null) Follow.Distance = Store.Float(id);
             else if (id == "camera.default_mode" && Follow != null) Follow.SetFirstPerson(Store.Get(id) == "first");
+            else if (id == "world.minimap_open" && Store.Bool(id) != MinimapShown) SetMinimap(Store.Bool(id));
+            else if (id == "general.keep_on_top") SettingsEffects.KeepOnTop(Store.Bool(id));
         }
 
         /// <summary>The buttons of Configurações that do something once.</summary>
@@ -846,6 +885,8 @@ namespace LifeVerse.Unity.UI
         {
             ["account.leave_island"] = () => { if (Current == Phase.Playing) BackToLogin(); },
             ["account.quit"] = Application.Quit,
+            ["general.download_update"] = () => { var release = UpdateInfo?.Release; if (release != null && UpdateInfo.Status != LifeVerse.Shared.Updates.UpdateStatus.UpToDate && UpdateInfo.CanDownload) Application.OpenURL(release.DownloadUrl); else Notices.Show(UpdateInfo == null ? "Ainda não foi possível saber se há versão nova." : "Você já tem a versão mais recente.", NoticeKind.Info); },
+            ["avatar.open_mirror"] = () => { if (Current == Phase.Playing) OpenAvatarStudio().Open(); else Notices.Show("O espelho abre dentro de uma ilha.", NoticeKind.Info); },
             ["advanced.open_data"] = () => Application.OpenURL("file:///" + Application.persistentDataPath.Replace(System.IO.Path.DirectorySeparatorChar, '/')),
             ["advanced.open_logs"] = () => Application.OpenURL("file:///" + System.IO.Path.GetDirectoryName(Application.consoleLogPath ?? Application.persistentDataPath)?.Replace(System.IO.Path.DirectorySeparatorChar, '/')),
             ["advanced.export_diagnostics"] = () => Notices.Show("Diagnóstico salvo em " + SettingsEffects.WriteDiagnostics(Store, this), NoticeKind.Good, 10f),
@@ -884,8 +925,20 @@ namespace LifeVerse.Unity.UI
                 amount => { if (Effects != null) Effects.Quality = Mathf.Min(1f, GraphicsQuality.Current.RainAmount) * amount; if (environment != null) environment.RainQuality = GraphicsQuality.Current.RainAmount * amount; });
             SettingsEffects.Effects(Store, environment, Follow != null ? Follow.Camera : null); SettingsEffects.Interface(Store, Hud, Ui);
             WorldObjects.MaxLights = Store.Int("world.max_lights"); WorldObjects.MaxLightShadows = Store.Int("world.max_light_shadows"); if (Client != null && Client.Objects != null) Client.Objects.RefreshBudget();
+            SettingsEffects.World(Store, PeopleViews, _world != null ? _world.GetComponentInChildren<LifeVerse.Unity.World.OceanView>() : null, Client != null ? Client.Objects : null);
             SettingsEffects.Toasts(Store, Notices); SettingsEffects.Build(Store, Builder); LifeVerse.Unity.Avatar.AvatarSounds.FootstepsEnabled = Store.Bool("avatar.footsteps");
             if (Store.Bool("metrics.fps") || Store.Bool("metrics.frame_time") || Store.Bool("metrics.memory")) SettingsEffects.Metrics(Store, Hud);
+        }
+
+        /// <summary>"Qualidade automática": lowers the preset one level when the frames stay well below the target (see <see cref="SettingsEffects.AutoQuality"/>).</summary>
+        private void TickAutoQuality()
+        {
+            var preset = Store.Get("graphics.preset"); if (preset == "custom") return;
+            if (preset == "auto") preset = SettingsStore.PresetKeyOf(SettingsStore.PresetIndexOf("auto"));
+            var lower = SettingsEffects.AutoQuality.Tick(Time.unscaledDeltaTime, 1f / Mathf.Max(.0001f, Time.unscaledDeltaTime), SettingsEffects.AutoQuality.TargetFps(Settings), preset);
+            if (lower == null) return;
+            Store.Set("graphics.preset", lower, false); SettingsApplied();
+            Notices.Show("O jogo estava abaixo da meta de quadros: a qualidade gráfica passou para " + (SettingsCatalog.Find("graphics.preset")?.Choices.FirstOrDefault(c => c.Id == lower).Label ?? lower) + ".", NoticeKind.Info, 8f);
         }
 
         // ---- moving between screens ----

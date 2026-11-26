@@ -64,6 +64,9 @@ namespace LifeVerse.Unity.UI
         /// <summary>Puts a texture on the object (or on the chosen face, when one is chosen in Aparência): a pattern of the system or an image of the inventory; the other kind is taken off.</summary>
         public void SetTexture(bool builtin, string id) => EditMaterial(m => { m.Remove("texture"); m.Remove("builtin"); m[builtin ? "builtin" : "texture"] = id; });
 
+        /// <summary>Puts a texture on the chosen face only (the rest of the object keeps its own), as the Godot client does with the face picker.</summary>
+        public void SetFaceTexture(bool builtin, string id) => EditFace(f => { f.Remove("texture"); f.Remove("builtin"); f.Remove("noTexture"); f[builtin ? "builtin" : "texture"] = id; });
+
         // ---- Conteúdo in folders, as the Godot client groups it ----
         public static readonly string[] ContentFolders = { "Scripts", "Objetos", "Sons", "Animações", "Imagens", "Texturas", "Materiais", "Notecards", "Outros" };
         public static string FolderOfCategory(string category) => category switch
@@ -136,11 +139,12 @@ namespace LifeVerse.Unity.UI
     {
         private readonly ApiContext _c; private readonly Action<bool, string> _chosen; private readonly VisualElement _inventory;
         public int InventoryCount => _inventory.childCount;
-        public TexturePickerWindow(ApiContext context, Action<bool, string> chosen, string title = "Escolha uma textura") : base(context.Ui, "texture-picker", title, 420f, 480f, new Vector2(460, 110))
+        public TexturePickerWindow(ApiContext context, Action<bool, string> chosen, string title = "Escolha uma textura", bool systemPatterns = true) : base(context.Ui, "texture-picker", title, 420f, 480f, new Vector2(460, 110))
         {
             _c = context; _chosen = chosen; var scroll = new ScrollView(); scroll.style.flexGrow = 1; Body.Add(scroll);
-            scroll.Add(UiKit.Text("Do sistema", "lv-bold", "lv-accent")); var grid = new VisualElement(); grid.style.flexDirection = FlexDirection.Row; grid.style.flexWrap = Wrap.Wrap; scroll.Add(grid);
-            foreach (var (id, label) in BuiltInTextures.All)
+            var grid = new VisualElement(); grid.style.flexDirection = FlexDirection.Row; grid.style.flexWrap = Wrap.Wrap;
+            if (systemPatterns) { scroll.Add(UiKit.Text("Do sistema", "lv-bold", "lv-accent")); scroll.Add(grid); }
+            foreach (var (id, label) in systemPatterns ? (System.Collections.Generic.IEnumerable<(string, string)>)BuiltInTextures.All : Array.Empty<(string, string)>())
             {
                 var pick = id; var cell = new VisualElement(); cell.style.width = 88; cell.style.marginRight = 6; cell.style.marginBottom = 6; cell.style.alignItems = Align.Center;
                 var preview = new Image { image = BuiltInTextures.Get(id), scaleMode = ScaleMode.ScaleToFit }; preview.style.width = 72; preview.style.height = 72; cell.Add(preview);
@@ -156,5 +160,24 @@ namespace LifeVerse.Unity.UI
         }
 
         public void Choose(bool builtin, string id) { _chosen?.Invoke(builtin, id); Close(); }
+    }
+
+    /// <summary>"Escolha um item": the items of the inventory (any kind), with a search; picking one gives its asset and its name.</summary>
+    public sealed class InventoryPickWindow : FloatingWindow
+    {
+        private readonly ApiContext _c; private readonly Action<Guid, string> _chosen; private readonly VisualElement _list; private readonly TextField _search;
+        public int Count => _list.childCount;
+        public InventoryPickWindow(ApiContext context, Action<Guid, string> chosen, string title = "Escolha um item") : base(context.Ui, "inventory-pick", title, 420f, 460f, new Vector2(470, 120))
+        {
+            _c = context; _chosen = chosen; _search = UiKit.Field("Buscar", false, 60); Body.Add(_search); _search.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return) Load(); }, TrickleDown.TrickleDown);
+            Body.Add(UiKit.Button("Buscar", Load)); var scroll = new ScrollView(); scroll.style.flexGrow = 1; _list = new VisualElement(); scroll.Add(_list); Body.Add(scroll); Load();
+        }
+
+        private void Load() => this.Then(_c.Api.ApiAsync("GET", "/api/v1/inventory/items?page=1&pageSize=100&q=" + Uri.EscapeDataString(_search.value ?? "")), r =>
+        {
+            _list.Clear(); if (r.Status != 200) { _list.Add(UiKit.Text(UiTasks.Explain(r.Status, r.Body), "lv-bad")); return; }
+            var rows = Json.Rows(r.Body); if (rows.Count == 0) _list.Add(UiKit.Text("Nada no inventário com esse nome.", "lv-muted", "lv-small"));
+            foreach (var row in rows) { var asset = row.Id("assetId"); var label = row.First("name", "displayName"); _list.Add(UiKit.Button((label.Length > 0 ? label : asset.ToString().Substring(0, 8)) + "  ·  " + row.First("category"), () => { _chosen?.Invoke(asset, label); Close(); }, "lv-btn-flat")); }
+        });
     }
 }

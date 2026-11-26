@@ -18,7 +18,7 @@ namespace LifeVerse.Unity.UI
     {
         public static readonly (string Id, string Text)[] Sections =
         {
-            ("geral", "Geral"), ("membros", "Membros"), ("cargos", "Cargos"), ("permissoes", "Permissões"), ("avisos", "Avisos"), ("chat", "Chat"), ("terrenos", "Terrenos"), ("economia", "Economia"), ("propostas", "Propostas"), ("configuracoes", "Configurações"),
+            ("geral", "Geral"), ("membros", "Membros"), ("cargos", "Cargos"), ("permissoes", "Permissões"), ("avisos", "Avisos"), ("chat", "Chat"), ("terrenos", "Terrenos"), ("economia", "Economia"), ("propostas", "Propostas"), ("eventos", "Eventos"), ("loja", "Loja"), ("configuracoes", "Configurações"),
         };
         public static readonly (string Id, string Text)[] Criteria = { ("majority", "Maioria simples"), ("absolute", "Maioria absoluta (mais da metade de quem pode votar)"), ("two_thirds", "Dois terços") };
         private readonly Guid _group; private JsonElement _view;
@@ -34,7 +34,7 @@ namespace LifeVerse.Unity.UI
             switch (section)
             {
                 case "geral": General(view, card); break; case "membros": Members(); break; case "cargos": Roles(false); break; case "permissoes": Roles(true); break; case "avisos": Announcements(); break;
-                case "chat": Chat(); break; case "terrenos": Lands(); break; case "economia": Economy(); break; case "propostas": Proposals(); break; case "configuracoes": Settings(view, card); break;
+                case "chat": Chat(); break; case "terrenos": Lands(); break; case "economia": Economy(); break; case "propostas": Proposals(); break; case "eventos": Events(); break; case "loja": Store(); break; case "configuracoes": Settings(view, card); break;
             }
         });
 
@@ -70,6 +70,7 @@ namespace LifeVerse.Unity.UI
             foreach (var m in list)
             {
                 var user = G(m, "userId"); var name = S(m, "username"); var cells = new List<VisualElement> { UiKit.Text(name, "lv-bold"), UiKit.Text(S(m, "roleName") + " · desde " + When(Date(m, "joinedAt")) + (Date(m, "mutedUntil") is { } mu && mu > DateTimeOffset.UtcNow ? " · silenciado" : ""), "lv-small", "lv-muted"), UiKit.Spacer() };
+                cells.Add(Btn("Perfil", () => new ProfileHubWindow(_c, user).Open()));
                 if (user != _c.Api.UserId)
                 {
                     if (Can(GroupPermissions.Mute)) cells.Add(Btn("Silenciar " + name, () => Change("POST", P + "/members/" + user + "/mute", new { minutes = 60, reason = "" }, name + " silenciado por 1 hora.", "membros")));
@@ -182,6 +183,83 @@ namespace LifeVerse.Unity.UI
         /// <summary>A number of VerseCoin typed in a field: whole, from 1 to the most one operation may move. Null when it is not.</summary>
         public static long? AmountOf(string text) => long.TryParse((text ?? "").Trim().Replace(".", ""), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n >= 1 && n <= GroupRules.MaxCoinsPerOperation ? n : (long?)null;
 
+        /// <summary>The icon of a line of the statement: money in, money out, the product sold, the parcel paid, or a coin.</summary>
+        public static string LedgerIcon(string type, long amount) => type switch
+        {
+            "contribution" => "coins", "withdrawal" => "download", "sale" or "product_sale" => "bag", "land" or "parcel" or "rent" => "home", "fee" or "join_fee" => "user-add", _ => amount >= 0 ? "plus" : "minus",
+        };
+
+        // ---- Eventos ----
+
+        /// <summary>A date and hour typed as "dd/mm/aaaa hh:mm" (Brasília time is the person's own clock), or null.</summary>
+        public static DateTimeOffset? ParseWhen(string text) => DateTime.TryParseExact((text ?? "").Trim(), new[] { "dd/MM/yyyy HH:mm", "d/M/yyyy H:mm", "dd/MM/yyyy" }, new System.Globalization.CultureInfo("pt-BR"), System.Globalization.DateTimeStyles.AssumeLocal, out var d) ? new DateTimeOffset(d) : (DateTimeOffset?)null;
+
+        private void Events() => Get(P + "/events", list =>
+        {
+            var events = Items(list); Title("Próximos eventos (" + events.Count + ")");
+            foreach (var e in events)
+            {
+                var id = G(e, "id"); var name = S(e, "name"); var joined = Flag(e, "joined");
+                var cells = new List<VisualElement> { UiKit.Text(name, "lv-bold"), UiKit.Text(When(Date(e, "startsAt")) + " · " + S(e, "islandName") + " · " + I(e, "attending") + (I(e, "capacity") > 0 ? " de " + I(e, "capacity") : "") + " vão · por " + S(e, "organizer"), "lv-small", "lv-muted"), UiKit.Spacer() };
+                cells.Add(joined ? Btn("Não vou mais", () => Change("DELETE", P + "/events/" + id + "/join", null, "Você saiu de " + name + ".", "eventos")) : Btn("Vou", () => Change("POST", P + "/events/" + id + "/join", "{}", "Você vai a " + name + ".", "eventos")));
+                if (Can(GroupPermissions.ManageEvents) || G(e, "organizerUserId") == _c.Api.UserId) cells.Add(Sure("Cancelar", () => "Cancelar " + name + "?", () => Change("DELETE", P + "/events/" + id, null, name + " foi cancelado.", "eventos")));
+                Row(id, cells.ToArray());
+            }
+            if (events.Count == 0) Line("Nenhum evento marcado.", "lv-small", "lv-muted");
+            if (!Can(GroupPermissions.ManageEvents)) return;
+            Title("Marcar um evento"); var eventName = Field("Nome do evento", "", 80); var about = Field("Descrição", "", 1000); var island = Field("Ilha (identificador; vazio = a ilha onde você está)", "", 40);
+            var start = Field("Começa (dd/mm/aaaa hh:mm)", DateTime.Now.AddDays(1).ToString("dd/MM/yyyy 20:00"), 20); var end = Field("Termina (dd/mm/aaaa hh:mm)", DateTime.Now.AddDays(1).ToString("dd/MM/yyyy 22:00"), 20); var capacity = Field("Vagas (vazio = sem limite)", "", 5);
+            Buttons(Btn("Marcar", () =>
+            {
+                var at = ParseWhen(start.value); var until = ParseWhen(end.value); var where = Guid.TryParse(island.value.Trim(), out var g) ? g : _c.CurrentIsland();
+                if (eventName.value.Trim().Length < 3) { Say("Dê um nome ao evento (3 letras ou mais).", true); return; } if (at == null || until == null || until <= at) { Say("Datas: dd/mm/aaaa hh:mm, e o fim depois do começo.", true); return; }
+                if (where == Guid.Empty) { Say("Diga a ilha do evento.", true); return; }
+                int? cap = int.TryParse(capacity.value.Trim(), out var c) && c > 0 ? c : (int?)null;
+                Change("POST", P + "/events", new { name = eventName.value.Trim(), description = about.value, islandId = where, startsAt = at, endsAt = until, capacity = cap }, "Evento marcado.", "eventos");
+            }, "lv-btn-primary"));
+        });
+
+        // ---- Loja: os produtos do grupo e onde estão à venda ----
+
+        private void Store() => Get(P + "/products", productList => Get(P + "/stores", storeList =>
+        {
+            var products = Items(productList); var stores = Items(storeList); var manage = Can(GroupPermissions.ManageStore);
+            Title("Produtos (" + products.Count + ")");
+            foreach (var x in products)
+            {
+                var id = G(x, "id"); var name = S(x, "name");
+                var cells = new List<VisualElement> { UiKit.Text(name, "lv-bold"), UiKit.Text(I(x, "priceCoins").ToString("N0", new System.Globalization.CultureInfo("pt-BR")) + " VC · " + S(x, "category") + " · " + I(x, "sold") + " vendido(s) · " + (S(x, "status") == "active" ? "à venda" : S(x, "status")), "lv-small", "lv-muted"), UiKit.Spacer() };
+                if (manage) cells.Add(Sure("Tirar", () => "Tirar " + name + " da loja do grupo?", () => Change("DELETE", P + "/products/" + id, null, name + " saiu da loja.", "loja")));
+                Row(id, cells.ToArray());
+            }
+            if (products.Count == 0) Line("O grupo ainda não vende nada.", "lv-small", "lv-muted");
+            Title("Lojas no mundo (" + stores.Count + ")");
+            foreach (var x in stores)
+            {
+                var id = G(x, "id"); var island = G(x, "islandId");
+                var cells = new List<VisualElement> { UiKit.Text(S(x, "displayName").Length > 0 ? S(x, "displayName") : S(x, "productName"), "lv-bold"), UiKit.Text(S(x, "productName") + " · em " + S(x, "islandName"), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Visitar", () => _c.EnterIsland(island)) };
+                if (manage) cells.Add(Sure("Fechar", () => "Fechar esta loja?", () => Change("DELETE", P + "/stores/" + id, null, "Loja fechada.", "loja")));
+                Row(id, cells.ToArray());
+            }
+            if (stores.Count == 0) Line("Nenhuma loja posta no mundo.", "lv-small", "lv-muted");
+            if (!manage) return;
+            Title("Pôr um produto à venda"); var asset = Field("Item do inventário (identificador)", "", 40); var pname = Field("Nome do produto", "", 80); var pabout = Field("Descrição", "", 1000); var category = Field("Categoria", "outros", 40); var price = Field("Preço (VC)", "0", 9);
+            Buttons(Btn("Escolher no inventário…", () => new InventoryPickWindow(_c, (assetId, label) => { asset.value = assetId.ToString(); if (pname.value.Trim().Length == 0) pname.value = label; }).Open()),
+                Btn("Pôr à venda", () =>
+                {
+                    if (!Guid.TryParse(asset.value.Trim(), out var a)) { Say("Escolha o item do inventário.", true); return; } if (!long.TryParse(price.value.Trim(), out var coins) || coins < 0) { Say("Preço: um número de moedas (0 ou mais).", true); return; }
+                    Change("POST", P + "/products", new { assetId = a, name = pname.value.Trim(), description = pabout.value, category = category.value.Trim(), priceCoins = coins }, "Produto posto à venda.", "loja");
+                }, "lv-btn-primary"));
+            if (products.Count == 0) return;
+            Title("Abrir uma loja no mundo"); var product = Choice("Produto", products.Select(x => (S(x, "id"), S(x, "name"))).ToList(), S(products[0], "id")); var where = Field("Ilha (identificador; vazio = a ilha onde você está)", "", 40); var shelf = Field("Objeto que vira a vitrine (identificador)", "", 40); var label2 = Field("Nome da loja", "", 60);
+            Buttons(Btn("Abrir a loja", () =>
+            {
+                var island = Guid.TryParse(where.value.Trim(), out var g) ? g : _c.CurrentIsland(); if (island == Guid.Empty) { Say("Diga a ilha da loja.", true); return; }
+                Guid? obj = Guid.TryParse(shelf.value.Trim(), out var o) ? o : (Guid?)null;
+                Change("POST", P + "/stores", new { islandId = island, productId = Guid.Parse(IdOf(product)), objectId = obj, displayName = label2.value.Trim() }, "Loja aberta.", "loja");
+            }, "lv-btn-primary"));
+        }));
+
         private void Economy() => Get(P + "/treasury", t =>
         {
             Title("Baú do grupo");
@@ -194,7 +272,7 @@ namespace LifeVerse.Unity.UI
             if (Flag(t, "canFreeze")) Buttons(Sure(Flag(t, "frozen") ? "Descongelar o baú" : "Congelar o baú", () => "Confirmar?", () => Change("PUT", P + "/treasury/frozen", new { frozen = !Flag(t, "frozen") }, Flag(t, "frozen") ? "Baú descongelado." : "Baú congelado.", "economia")));
             if (Flag(t, "canView")) Get(P + "/treasury/ledger?take=30", ledger =>
             {
-                Title("Extrato"); foreach (var e in Items(ledger)) Row(G(e, "id"), UiKit.Text(When(Date(e, "at")), "lv-small", "lv-muted"), UiKit.Text((I(e, "amount") >= 0 ? "+" : "") + Coins(I(e, "amount")), "lv-bold"), UiKit.Text(S(e, "type") + " · " + S(e, "actor") + (S(e, "target").Length > 0 ? " → " + S(e, "target") : "") + (S(e, "note").Length > 0 ? " · " + S(e, "note") : "") + " · saldo " + Coins(I(e, "balanceAfter")), "lv-small"));
+                Title("Extrato"); foreach (var e in Items(ledger)) Row(G(e, "id"), new Icon(LedgerIcon(S(e, "type"), I(e, "amount")), 18) { name = "ledger-icon" }, UiKit.Text(When(Date(e, "at")), "lv-small", "lv-muted"), UiKit.Text((I(e, "amount") >= 0 ? "+" : "") + Coins(I(e, "amount")), "lv-bold"), UiKit.Text(S(e, "type") + " · " + S(e, "actor") + (S(e, "target").Length > 0 ? " → " + S(e, "target") : "") + (S(e, "note").Length > 0 ? " · " + S(e, "note") : "") + " · saldo " + Coins(I(e, "balanceAfter")), "lv-small"));
                 if (Items(ledger).Count == 0) Line("Nada no extrato ainda.", "lv-small", "lv-muted");
             });
         });

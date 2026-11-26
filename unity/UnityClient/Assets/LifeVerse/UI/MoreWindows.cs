@@ -186,8 +186,14 @@ namespace LifeVerse.Unity.UI
             MarkDirtyRepaint();
         }
 
+        /// <summary>When set, a click picks a cell (the map of parcels: clicking a parcel opens it) instead of painting; true means it was used.</summary>
+        public Func<(int X, int Z), bool> Picked;
+
+        /// <summary>The cell under a point of the grid (for the tests and the click).</summary>
+        public (int X, int Z)? CellAtPoint(Vector2 local) => CellAt(local);
+
         public CellGrid() { name = "cell-grid"; style.marginTop = 4; style.marginBottom = 4; pickingMode = PickingMode.Position; generateVisualContent += Draw;
-            RegisterCallback<PointerDownEvent>(e => { if (e.button != 0) return; var cell = CellAt(e.localPosition); if (cell == null) return; _painting = true; _paintValue = !_chosen.Contains(cell.Value); Set(cell.Value, _paintValue); this.CapturePointer(e.pointerId); });
+            RegisterCallback<PointerDownEvent>(e => { if (e.button != 0) return; var cell = CellAt(e.localPosition); if (cell == null) return; if (Picked != null) { Picked(cell.Value); return; } _painting = true; _paintValue = !_chosen.Contains(cell.Value); Set(cell.Value, _paintValue); this.CapturePointer(e.pointerId); });
             RegisterCallback<PointerMoveEvent>(e => { if (!_painting) return; var cell = CellAt(e.localPosition); if (cell != null) Set(cell.Value, _paintValue); });
             RegisterCallback<PointerUpEvent>(e => { if (!_painting) return; _painting = false; this.ReleasePointer(e.pointerId); }); }
 

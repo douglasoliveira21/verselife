@@ -371,13 +371,22 @@ namespace LifeVerse.Unity.UI
 
         private Vector2 ToPanel(Vector3 world) { var screen = _camera().WorldToScreenPoint(world); var scale = _c.Ui.Panel.scale <= 0f ? 1f : _c.Ui.Panel.scale; return new Vector2(screen.x / scale, (Screen.height - screen.y) / scale); }
         private static readonly Vector3[] AxesUnity = { new Vector3(1, 0, 0), new Vector3(0, 1, 0), new Vector3(0, 0, -1) };   // game x, y, z in Unity space
+        /// <summary>"Eixos" (Configurações › Construção): false, the arrows follow the world; true, they follow the sides of the (first) selected object while moving.</summary>
+        public bool LocalAxes;
+        /// <summary>The direction (Unity space) of a handle of the move gizmo.</summary>
+        public Vector3 AxisOf(int axis)
+        {
+            if (!LocalAxes || Mode != GizmoMode.Move || _selected.Count == 0 || Objects == null) return AxesUnity[axis];
+            var view = Objects.ViewOf(_selected[0]); return view != null ? (view.transform.rotation * AxesUnity[axis]).normalized : AxesUnity[axis];
+        }
+
         private static readonly Color[] AxisColours = { new Color(.95f, .3f, .3f), new Color(.35f, .9f, .4f), new Color(.35f, .55f, 1f) };
 
         private void BuildHandles()
         {
             _handles.Clear(); var camera = _camera(); if (_selected.Count == 0 || camera == null) return; var box = SelectionBounds(); var centre = box.center; var distance = Vector3.Distance(camera.transform.position, centre); var length = Mathf.Clamp(distance * .18f, .8f, 12f);
             if (Vector3.Dot(camera.transform.forward, centre - camera.transform.position) <= 0f) return;
-            for (var axis = 0; axis < 3; axis++) _handles.Add(new Handle { Axis = axis, From = ToPanel(centre), To = ToPanel(centre + AxesUnity[axis] * length), Colour = AxisColours[axis] });
+            for (var axis = 0; axis < 3; axis++) _handles.Add(new Handle { Axis = axis, From = ToPanel(centre), To = ToPanel(centre + AxisOf(axis) * length), Colour = AxisColours[axis] });
         }
 
         // ---- every frame ----
@@ -465,11 +474,11 @@ namespace LifeVerse.Unity.UI
         {
             var handle = _handles.FirstOrDefault(h => h.Axis == _dragAxis); if (handle == null) return; var screenAxis = handle.To - handle.From; var length = screenAxis.magnitude; if (length < 1f) return;
             var pixels = Vector2.Dot(panel - _dragFrom, screenAxis / length); var metres = pixels / (length / Mathf.Max(.1f, GizmoLength())); _snapTarget = null; _dragAmount = AmountFor(metres, pixels, free);
-            if (Mode == GizmoMode.Move && !free && SnapMagnet) { var near = SnapAmount(_dragAxis, metres); if (near.HasValue) _dragAmount = near.Value; }
+            if (Mode == GizmoMode.Move && !free && SnapMagnet && !LocalAxes) { var near = SnapAmount(_dragAxis, metres); if (near.HasValue) _dragAmount = near.Value; }
             foreach (var pair in _dragStart)
             {
                 var go = Objects.ViewOf(pair.Key); if (go == null) continue;
-                if (Mode == GizmoMode.Move) go.transform.position = pair.Value + AxesUnity[_dragAxis] * _dragAmount;
+                if (Mode == GizmoMode.Move) go.transform.position = pair.Value + AxisOf(_dragAxis) * _dragAmount;
                 else if (Mode == GizmoMode.Rotate) { var r = _dragRotation[pair.Key]; r[_dragAxis] += _dragAmount; go.transform.rotation = GameSpace.RotationToUnity(r.x, r.y, r.z); }
                 else { var sc = _dragScale[pair.Key]; sc[_dragAxis] = Mathf.Clamp(sc[_dragAxis] + _dragAmount, .01f, 64f); go.transform.localScale = new Vector3(sc.x, sc.y, sc.z); }
             }
@@ -480,11 +489,11 @@ namespace LifeVerse.Unity.UI
 
         private void EndDrag()
         {
-            var axis = _dragAxis; var amount = _dragAmount; _dragAxis = -1; var mode = Mode; _snapTarget = null;
+            var axis = _dragAxis; var amount = _dragAmount; var direction = axis >= 0 ? AxisOf(axis) : Vector3.zero; _dragAxis = -1; var mode = Mode; _snapTarget = null;
             foreach (var pair in _dragStart) { var go = Objects.ViewOf(pair.Key); var s = StateOf(pair.Key); if (go != null && s != null) { go.transform.position = pair.Value; go.transform.rotation = GameSpace.RotationToUnity(s.RotationX, s.RotationY, s.RotationZ); go.transform.localScale = new Vector3(Mathf.Max(s.ScaleX, .001f), Mathf.Max(s.ScaleY, .001f), Mathf.Max(s.ScaleZ, .001f)); } }   // back to what the island last confirmed; the answer moves it
             _dragStart.Clear();
             if (Mathf.Abs(amount) < .0005f) return;
-            if (mode == GizmoMode.Move) Move(new Vector3(axis == 0 ? amount : 0f, axis == 1 ? amount : 0f, axis == 2 ? amount : 0f));
+            if (mode == GizmoMode.Move) Move(GameSpace.ToGame(direction * amount));
             else if (mode == GizmoMode.Rotate) Edit(_selected.ToList(), s => { if (axis == 0) s.RotationX = Wrap(s.RotationX + amount); else if (axis == 1) s.RotationY = Wrap(s.RotationY + amount); else s.RotationZ = Wrap(s.RotationZ + amount); }, "girar");
             else Edit(_selected.ToList(), s => { if (axis == 0) s.ScaleX = Mathf.Clamp(s.ScaleX + amount, .01f, 64f); else if (axis == 1) s.ScaleY = Mathf.Clamp(s.ScaleY + amount, .01f, 64f); else s.ScaleZ = Mathf.Clamp(s.ScaleZ + amount, .01f, 64f); }, "tamanho");
         }

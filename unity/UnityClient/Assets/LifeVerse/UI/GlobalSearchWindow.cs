@@ -39,6 +39,58 @@ namespace LifeVerse.Unity.UI
         public GlobalSearchWindow(ApiContext context, UserSettings settings, Action save = null, Action<Guid, float?, float?> go = null) : base(context, "global-search", "Busca", Sections, 820f, 560f, new Vector2(220, 70), 150f)
         {
             _settings = settings ?? new UserSettings(); _save = save; _go = go; Show("paravoce");
+            // the arrows walk the results, Enter opens the one marked
+            RegisterCallback<KeyDownEvent>(e =>
+            {
+                if (_rows.Count == 0 || Opened != Guid.Empty) return;
+                if (e.keyCode == KeyCode.DownArrow) { Mark(Marked + 1); e.StopPropagation(); }
+                else if (e.keyCode == KeyCode.UpArrow) { Mark(Marked - 1); e.StopPropagation(); }
+                else if ((e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) && Marked >= 0 && !(e.target is TextField || (e.target as VisualElement)?.parent is TextField)) { var row = _rows[Marked]; Detail(row.Item, row.Back); e.StopPropagation(); }
+            }, TrickleDown.TrickleDown);
+        }
+
+        private readonly List<(VisualElement Row, JsonElement Item, Action Back)> _rows = new List<(VisualElement, JsonElement, Action)>();
+        /// <summary>The result marked by the arrows (-1 none).</summary>
+        public int Marked { get; private set; } = -1;
+        public int ResultRows => _rows.Count;
+
+        /// <summary>Marks a result (kept inside the list) and brings it into view.</summary>
+        public void Mark(int index)
+        {
+            if (_rows.Count == 0) { Marked = -1; return; } if (Marked >= 0 && Marked < _rows.Count) _rows[Marked].Row.style.backgroundColor = StyleKeyword.Null;
+            Marked = Mathf.Clamp(index, 0, _rows.Count - 1); var row = _rows[Marked].Row; row.style.backgroundColor = new Color(.07f, .6f, .56f, .25f); _page.ScrollTo(row);
+        }
+
+        // ---- the small pictures of the results: an image of the API or an asset; otherwise the icon of the kind ----
+        private static readonly Dictionary<string, Texture2D> Thumbs = new Dictionary<string, Texture2D>();
+        public int ThumbnailsShown { get; private set; }
+
+        public static string IconOfKind(string kind) => kind switch { "person" => "user", "island" => "globe", "parcel" => "pin", "event" => "calendar", "group" => "people", "product" or "item" => "bag", "store" => "home", _ => "search" };
+
+        /// <summary>Where the picture of a result is fetched from (null when it is not one this game fetches: only this API's images and assets, never another site).</summary>
+        public static string ThumbPath(string reference, Guid island)
+        {
+            if (string.IsNullOrEmpty(reference)) return null;
+            if (reference.StartsWith("asset:", StringComparison.Ordinal) && Guid.TryParse(reference.Substring(6), out var asset)) return island != Guid.Empty ? "/api/v1/worlds/islands/" + island + "/assets/" + asset + "/file" : "/api/v1/assets/" + asset + "/download";
+            return reference.StartsWith("/api/v1/", StringComparison.Ordinal) && !reference.Contains("..") ? reference : null;
+        }
+
+        private VisualElement Thumb(JsonElement item)
+        {
+            var box = new VisualElement { pickingMode = PickingMode.Ignore }; box.style.width = 40; box.style.height = 40; box.style.flexShrink = 0; box.style.marginRight = 8; box.style.backgroundColor = new Color(1f, 1f, 1f, .06f);
+            box.style.borderTopLeftRadius = box.style.borderTopRightRadius = box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 8; box.style.alignItems = Align.Center; box.style.justifyContent = Justify.Center;
+            var icon = new Icon(IconOfKind(S(item, "kind")), 22); box.Add(icon);
+            var island = G(item, "islandId"); var path = ThumbPath(S(item, "thumbnailUrl"), island != Guid.Empty ? island : S(item, "kind") == "island" ? G(item, "id") : Guid.Empty);
+            if (path == null) return box;
+            void Put(Texture2D t) { box.style.backgroundImage = new StyleBackground(t); box.style.unityBackgroundScaleMode = ScaleMode.ScaleAndCrop; icon.style.display = DisplayStyle.None; ThumbnailsShown++; }
+            if (Thumbs.TryGetValue(path, out var have)) { if (have != null) Put(have); return box; }
+            this.Then(_c.Api.GetBytesAsync(path), r =>
+            {
+                Texture2D texture = null; if (r.Status == 200 && r.Bytes != null && r.Bytes.Length > 8) { texture = new Texture2D(2, 2); if (!texture.LoadImage(r.Bytes)) { UnityEngine.Object.Destroy(texture); texture = null; } }
+                if (Thumbs.Count > 120) { foreach (var t in Thumbs.Values) if (t != null) UnityEngine.Object.Destroy(t); Thumbs.Clear(); }
+                Thumbs[path] = texture; if (texture != null) Put(texture);
+            });
+            return box;
         }
 
         protected override void Fill(string section)
@@ -162,10 +214,12 @@ namespace LifeVerse.Unity.UI
 
         private void Draw(List<JsonElement> items, Action back)
         {
+            _rows.Clear(); Marked = -1; ThumbnailsShown = 0;
             foreach (var item in items)
             {
                 var id = G(item, "id"); var it = item; _shown[id] = (item, back);
-                Row(id, UiKit.Text((Flag(item, "favorite") ? "★ " : "") + S(item, "title"), "lv-bold"), UiKit.Text(Describe(item), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Detalhes", () => Detail(it, back)));
+                var row = Row(id, Thumb(item), UiKit.Text((Flag(item, "favorite") ? "★ " : "") + S(item, "title"), "lv-bold"), UiKit.Text(Describe(item), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Detalhes", () => Detail(it, back)));
+                _rows.Add((row, item, back));
             }
         }
 

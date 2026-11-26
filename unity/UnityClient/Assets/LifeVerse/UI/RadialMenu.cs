@@ -6,7 +6,8 @@ using UnityEngine.UIElements;
 
 namespace LifeVerse.Unity.UI
 {
-    public sealed record RadialItem(string Label, Action Run, bool Enabled = true);
+    /// <summary>One action of the ring; <paramref name="Hint"/> is the explanation shown when the cursor rests on it (why it is unavailable, when it is).</summary>
+    public sealed record RadialItem(string Label, Action Run, bool Enabled = true, string Hint = null);
 
     /// <summary>
     /// The radial menu: a ring of up to eight actions around the pointer (more are split in pages of eight with a "Próxima" in the middle), chosen by moving to a slice and clicking, by
@@ -17,6 +18,12 @@ namespace LifeVerse.Unity.UI
     {
         /// <summary>The size of the ring (1 = 300 px across at Full HD), how opaque its slices are and how much the slice under the cursor glows (Configurações › Interface).</summary>
         public static float Scale = 1f, Opacity = .88f, Glow = .6f;
+        /// <summary>How quickly the ring opens (1 = 0.16 s; 0 opens at once, as with "Reduzir movimento") and whether resting on a slice explains it.</summary>
+        public static float Speed = 1f; public static bool Tooltips = true, ReduceMotion;
+        public static float OpenSeconds => ReduceMotion || Speed <= .01f ? 0f : .16f / Mathf.Clamp(Speed, .25f, 3f);
+        /// <summary>The words of the tip of a slice: its hint, or why it cannot be used.</summary>
+        public static string TipOf(RadialItem item) => item == null ? "" : !string.IsNullOrEmpty(item.Hint) ? item.Hint : item.Enabled ? item.Label : item.Label + ": indisponível agora.";
+        private Label _tip; public string TipText => _tip != null && _tip.style.display == DisplayStyle.Flex ? _tip.text : "";
         public static float Inner => 46f * Scale;
         public static float Outer => 150f * Scale;
         private readonly List<List<RadialItem>> _pages = new List<List<RadialItem>>(); private int _page; private Vector2 _centre; private int _hover = -1;
@@ -48,9 +55,12 @@ namespace LifeVerse.Unity.UI
 
         public void Open(UiRoot ui, IReadOnlyList<RadialItem> items, Vector2 where)
         {
-            _pages.Clear(); foreach (var page in RadialMath.Pages(items)) _pages.Add(page); _page = 0; _hover = -1;
+            _pages.Clear(); foreach (var page in RadialMath.Pages(items)) _pages.Add(page); _page = 0; _hover = -1; if (_tip != null) _tip.style.display = DisplayStyle.None;
             var screen = new Vector2(Mathf.Max(ui.Root.layout.width, 640f), Mathf.Max(ui.Root.layout.height, 480f)); var kept = RadialMath.KeepOnScreen(new System.Numerics.Vector2(where.x, where.y), Outer, new System.Numerics.Vector2(screen.x, screen.y)); _centre = new Vector2(kept.X, kept.Y);
             if (parent == null) ui.WindowLayer.Add(this); Rebuild(); MarkDirtyRepaint(); Focus();
+            var seconds = OpenSeconds; style.transformOrigin = new TransformOrigin(_centre.x, _centre.y);
+            if (seconds > 0f) { style.opacity = 0f; style.scale = new Scale(new Vector3(.85f, .85f, 1f)); experimental.animation.Start(0f, 1f, Mathf.RoundToInt(seconds * 1000f), (e, v) => { e.style.opacity = v; var k = .85f + .15f * v; e.style.scale = new Scale(new Vector3(k, k, 1f)); }); }
+            else { style.opacity = 1f; style.scale = new Scale(Vector3.one); }
         }
 
         public void Close() { RemoveFromHierarchy(); }
@@ -67,7 +77,14 @@ namespace LifeVerse.Unity.UI
             if (_pages.Count > 1) { var more = new Label("Próxima ▸ (" + (_page + 1) + "/" + _pages.Count + ")"); more.pickingMode = PickingMode.Ignore; more.style.position = Position.Absolute; more.style.left = _centre.x - 40; more.style.top = _centre.y - 10; more.style.fontSize = 11; more.style.width = 80; more.style.unityTextAlign = TextAnchor.MiddleCenter; more.style.color = new Color(.66f, .7f, .74f); Add(more); _labels.Add(more); }
         }
 
-        private void SetHover(int index) { if (index == _hover) return; _hover = index; MarkDirtyRepaint(); }
+        private void SetHover(int index)
+        {
+            if (index == _hover) return; _hover = index; MarkDirtyRepaint();
+            if (_tip == null) { _tip = new Label { pickingMode = PickingMode.Ignore }; _tip.AddToClassList("lv-glass"); _tip.AddToClassList("lv-small"); _tip.style.position = Position.Absolute; _tip.style.maxWidth = 260; _tip.style.whiteSpace = WhiteSpace.Normal; _tip.style.unityTextAlign = TextAnchor.MiddleCenter; }
+            if (_tip.parent != this) Add(_tip);
+            var show = Tooltips && index >= 0 && index < Slices.Count; _tip.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+            if (show) { _tip.text = TipOf(Slices[index]); _tip.style.left = _centre.x - 130; _tip.style.width = 260; _tip.style.top = _centre.y + Outer + 8; }
+        }
 
         /// <summary>Runs a slice (or, in the middle of a ring with pages, goes to the next page). Returns whether something was run.</summary>
         public bool Choose(int index, Vector2? at = null)

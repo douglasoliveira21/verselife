@@ -39,9 +39,21 @@ namespace LifeVerse.Unity.Avatar
         public void Follow(Vector3 gamePosition, float speed = 0f, bool grounded = true, float strafe = 0f) { Place(gamePosition, speed, grounded, false, strafe); }
 
         /// <summary>Switches between first and third person (the cursor is locked in first person while the camera is interactive).</summary>
+        /// <summary>"Colisão em primeira pessoa": a solid thing between the neck and the eyes (a little beyond them) pulls the eyes back, so the camera does not look through a wall.</summary>
+        public static Vector3 KeepEyesOutOfWalls(Vector3 neck, Vector3 eyes, Quaternion look)
+        {
+            var ahead = eyes + look * Vector3.forward * .08f; var along = ahead - neck; var length = along.magnitude; if (length < 1e-4f) return eyes;
+            if (!Physics.Raycast(neck, along / length, out var hit, length, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore)) return eyes;
+            var clipped = LifeVerse.Shared.Camera.EyeCollision.Clip(new System.Numerics.Vector3(neck.x, neck.y, neck.z), new System.Numerics.Vector3(eyes.x, eyes.y, eyes.z), hit.distance);
+            return new Vector3(clipped.X, clipped.Y, clipped.Z);
+        }
+
+        private float _viewYaw, _viewPitch; private bool _viewStarted;
+
         public void SetFirstPerson(bool on)
         {
             if (FirstPerson == on) return;
+            _viewStarted = false;
             FirstPerson = on; _bob.Reset(); _sway.Reset(); _eyes.Reset();
             if (Interactive) { Cursor.lockState = on ? CursorLockMode.Locked : CursorLockMode.None; }
             if (on) Pitch = Mathf.Clamp(Pitch, -80f, 80f);
@@ -49,10 +61,59 @@ namespace LifeVerse.Unity.Avatar
 
         public void Toggle() => SetFirstPerson(!FirstPerson);
 
+        // ---- the detached camera (ALT + V) and the focus by double click ----
+
+        /// <summary>The camera left the avatar (ALT + V): the walking keys move it through the world, the avatar stands still; Esc or ALT + V brings it back.</summary>
+        public bool Detached { get; private set; }
+        /// <summary>Where the avatar was when the camera left (the detached camera stays within <c>DetachedRange</c> of it).</summary>
+        public Vector3 DetachedAnchor { get; private set; }
+        private Vector3 _detachedAt;
+        /// <summary>What a double click focuses on: a person or an object under the ray (never the ground). Set by the game.</summary>
+        public System.Func<Ray, Vector3?> PickFocus;
+        private float _lastClick = -10f; private Vector2 _lastClickAt;
+
+        public void SetDetached(bool on)
+        {
+            if (on == Detached) return; if (on && !FreeOptions.AllowDetached) return;
+            Detached = on; var camera = Camera != null ? Camera : UnityEngine.Camera.main;
+            if (on) { _detachedAt = camera != null ? camera.transform.position : Focus; DetachedAnchor = Focus; if (FirstPerson) SetFirstPerson(false); }
+        }
+
+        /// <summary>One step of the detached camera: the keys move it (Shift three times faster) along where it looks, up with jump and down with descend, kept within the range of the avatar.</summary>
+        public Vector3 MoveDetached(Vector3 input, bool fast, float dt)
+        {
+            var rotation = Quaternion.Euler(Pitch, Yaw, 0f); var move = rotation * new Vector3(input.x, 0f, input.z) + Vector3.up * input.y; if (move.sqrMagnitude > 1f) move.Normalize();
+            var next = _detachedAt + move * FreeOptions.DetachedSpeed * (fast ? 3f : 1f) * dt; var offset = next - DetachedAnchor;
+            if (offset.magnitude > FreeOptions.DetachedRange) next = DetachedAnchor + offset.normalized * FreeOptions.DetachedRange;
+            return _detachedAt = next;
+        }
+
+        private void DetachedUpdate(Mouse mouse, Keyboard keyboard)
+        {
+            if (mouse.rightButton.isPressed) { var delta = mouse.delta.ReadValue(); Yaw += delta.x * Sensitivity; Pitch = Mathf.Clamp(Pitch - delta.y * Sensitivity * (InvertY ? -1f : 1f), -85f, 85f); }
+            var input = new Vector3((KeyBindings.Held(GameAction.Right) ? 1f : 0f) - (KeyBindings.Held(GameAction.Left) ? 1f : 0f), (KeyBindings.Held(GameAction.Jump) ? 1f : 0f) - (KeyBindings.Held(GameAction.Descend) ? 1f : 0f), (KeyBindings.Held(GameAction.Forward) ? 1f : 0f) - (KeyBindings.Held(GameAction.Back) ? 1f : 0f));
+            var at = MoveDetached(input, keyboard != null && keyboard.shiftKey.isPressed, Time.deltaTime);
+            var camera = Camera != null ? Camera : UnityEngine.Camera.main; if (camera != null) { camera.transform.position = at; camera.transform.rotation = Quaternion.Euler(Pitch, Yaw, 0f); }
+        }
+
+        /// <summary>Whether a click is the second of a double click (within 0.35 s and 6 pixels of the first).</summary>
+        public bool IsDoubleClick(float now, Vector2 at)
+        {
+            var twice = now - _lastClick <= .35f && (at - _lastClickAt).sqrMagnitude <= 36f; _lastClick = twice ? -10f : now; _lastClickAt = at; return twice;
+        }
+
         private void LateUpdate()
         {
             if (!Interactive) return;
-            var mouse = Mouse.current; if (mouse == null) return;
+            var mouse = Mouse.current; if (mouse == null) return; var keys = Keyboard.current;
+            if (keys != null && FreeOptions.AllowDetached && keys.altKey.isPressed && keys.vKey.wasPressedThisFrame) SetDetached(!Detached);
+            if (Detached && keys != null && keys.escapeKey.wasPressedThisFrame) SetDetached(false);
+            if (Detached) { DetachedUpdate(mouse, keys); return; }
+            if (FreeOptions.FocusOnDoubleClick && mouse.leftButton.wasPressedThisFrame && Camera != null && !(keys != null && (keys.ctrlKey.isPressed || keys.altKey.isPressed || keys.shiftKey.isPressed)))
+            {
+                var at = mouse.position.ReadValue();
+                if (IsDoubleClick(Time.unscaledTime, at) && !(OverInterface?.Invoke(at) ?? false) && PickFocus?.Invoke(Camera.ScreenPointToRay(at)) is { } target) { FocusAt(Camera.ScreenPointToRay(at)); ZoomTarget = target; ZoomDistance = Mathf.Clamp(Vector3.Distance(Camera.transform.position, target), 2.5f, 8f); return; }
+            }
             if (!FirstPerson && FreeCamera(mouse)) return;
             var looking = FirstPerson ? Cursor.lockState == CursorLockMode.Locked : mouse.rightButton.isPressed;
             if (looking) { var delta = mouse.delta.ReadValue(); Yaw += delta.x * Sensitivity; Pitch = Mathf.Clamp(Pitch - delta.y * Sensitivity * (InvertY ? -1f : 1f), FirstPerson ? -85f : -60f, FirstPerson ? 85f : 80f); }
@@ -116,6 +177,8 @@ namespace LifeVerse.Unity.Avatar
         private void Place(Vector3 gamePosition, float speed, bool grounded, bool snap, float strafe = 0f)
         {
             var camera = Camera != null ? Camera : UnityEngine.Camera.main; if (camera == null) return;
+            if (Detached && !snap) return;   // the detached camera moves by itself
+            if (snap) Detached = false;
             var dt = snap ? 0f : Time.deltaTime;
             camera.fieldOfView = Mathf.Clamp(FirstPerson ? FirstPersonFieldOfView : FieldOfView, 30f, 120f);
             if (FirstPerson)
@@ -123,8 +186,12 @@ namespace LifeVerse.Unity.Avatar
                 _bob.Step(dt, speed, grounded, Options); var yawRate = dt > 0f ? Mathf.DeltaAngle(_lastYaw, Yaw) * Mathf.Deg2Rad / dt : 0f; _lastYaw = Yaw;
                 _sway.Step(dt, -yawRate, strafe, Options); Roll = _sway.Roll;
                 var head = GameSpace.ToUnity(gamePosition) + Vector3.up * EyeHeight; var steady = _eyes.Step(new System.Numerics.Vector3(head.x, head.y, head.z), dt, Options.StabilizeSeconds, Options.StabilizeVerticalSeconds);
-                var eye = new Vector3(steady.X, steady.Y, steady.Z); var rotation = Quaternion.Euler(Pitch, Yaw, 0f);
+                // "Suavização do olhar": the view catches up with the mouse at the shared rate (instant at 0)
+                var follow = dt <= 0f || !_viewStarted ? 1f : 1f - Mathf.Exp(-Options.LookRate * dt); _viewStarted = true;
+                _viewYaw = Mathf.LerpAngle(_viewYaw, Yaw, follow); _viewPitch = Mathf.Lerp(_viewPitch, Pitch, follow);
+                var eye = new Vector3(steady.X, steady.Y, steady.Z); var rotation = Quaternion.Euler(_viewPitch, _viewYaw, 0f);
                 eye += rotation * Vector3.right * _bob.Offset.X + Vector3.up * _bob.Offset.Y; Focus = head;
+                if (Options.Collision && Collide) eye = KeepEyesOutOfWalls(head - Vector3.up * .3f, eye, rotation);
                 _position = eye; camera.transform.position = eye; camera.transform.rotation = rotation * Quaternion.Euler(0f, 0f, Mathf.Rad2Deg * Roll); return;
             }
             Focus = ZoomTarget ?? GameSpace.ToUnity(gamePosition) + Vector3.up * (HeadHeight + HeightOffset) + Quaternion.Euler(0f, Yaw, 0f) * Vector3.right * Shoulder; Roll = 0f;

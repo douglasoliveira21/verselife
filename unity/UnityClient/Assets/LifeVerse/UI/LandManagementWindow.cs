@@ -111,6 +111,9 @@ namespace LifeVerse.Unity.UI
         {
             Grid = new CellGrid(); Grid.Build((int)Math.Max(1, I(land, "size") > 0 ? I(land, "size") : I(Obj(root, "island"), "size")), (int)(I(land, "cellSize") > 0 ? I(land, "cellSize") : 4));
             var parcels = Arr(root, "parcels"); Grid.SetRegions(parcels.Select(p => (CellGrid.RunsOf(p), KindColor(S(p, "kind"))))); _page.Add(Grid);
+            var owners = new Dictionary<(int, int), Guid>(); foreach (var p in parcels) { var id = G(p, "id"); var runs = CellGrid.RunsOf(p); if (runs != null) foreach (var run in runs) for (var x = run[1]; x <= run[2] && x - run[1] < 4096; x++) owners[(x, run[0])] = id; }
+            Grid.Picked = cell => { if (!owners.TryGetValue(cell, out var id)) { Say("Nenhum terreno neste ponto.", false); return false; } About(id); return true; };
+            Line("Clique num terreno do mapa para abrir o que se sabe dele.", "lv-small", "lv-muted");
             Buttons(Kinds.Skip(1).Select(k => (VisualElement)Legend(k.Text, KindColor(k.Id))).ToArray());
             foreach (var p in parcels) { var id = G(p, "id"); Row(id, UiKit.Text(S(p, "code") + " · " + S(p, "name"), "lv-bold"), UiKit.Text(KindWords(S(p, "kind")) + " · " + S(p, "owner"), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Sobre", () => About(id))); }
             if (parcels.Count == 0) Line("Ainda não há terrenos: use Demarcação.", "lv-small", "lv-muted");

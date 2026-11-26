@@ -115,9 +115,24 @@ namespace LifeVerse.Unity.UI
             Title("Pessoas liberadas (" + I(root, "total") + ")"); var who = Field("Nome da pessoa", "", 64); var days = Field("Por quantos dias (vazio = sempre)", "", 4);
             _page.Add(Btn("Liberar", () => { var until = ExpiryIn(days.value, DateTimeOffset.UtcNow, out var ok); if (!ok) { Say("Dias: um número de 1 a 3650, ou vazio.", true); return; } if (who.value.Trim().Length == 0) { Say("Digite o nome da pessoa.", true); return; } Send("POST", Base + "/access/allow", new { name = who.value.Trim(), expiresAt = until }, who.value.Trim() + " foi liberada.", () => Access()); }));
             var search = Field("Buscar pessoa", "", 40); search.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return) Access(); }, TrickleDown.TrickleDown);
-            foreach (var p in Arr(root, "items")) { var id = G(p, "permissionId"); Row(id, UiKit.Text(S(p, "name") + " (" + S(p, "username") + ")", "lv-bold"), UiKit.Spacer(), UiKit.Text(Date(p, "expiresAt") is { } e ? "até " + When(e) : "sem prazo", "lv-small", "lv-muted"), Sure("Tirar", () => "Confirmar", () => Send("DELETE", Base + "/access/allow/" + id, null, "Liberação retirada.", () => Access()))); }
+            var newDays = Field("Novo prazo para «Mudar prazo» (dias, vazio = sempre)", "", 4);
+            foreach (var p in Arr(root, "items")) { var id = G(p, "permissionId"); Row(id, UiKit.Text(S(p, "name") + " (" + S(p, "username") + ")", "lv-bold"), UiKit.Spacer(), UiKit.Text(Date(p, "expiresAt") is { } e ? "até " + When(e) : "sem prazo", "lv-small", "lv-muted"), Btn("Mudar prazo", () => ChangeAllow(id, newDays.value, page)), Sure("Tirar", () => "Confirmar", () => Send("DELETE", Base + "/access/allow/" + id, null, "Liberação retirada.", () => Access()))); }
             if (Arr(root, "items").Count == 0) Line("Ninguém liberado ainda.", "lv-small", "lv-muted"); Pager(root, Access);
         });
+
+        /// <summary>Changes how long a person stays let in (empty = for good).</summary>
+        public void ChangeAllow(Guid permission, string days, int page = 1)
+        {
+            var until = ExpiryIn(days, DateTimeOffset.UtcNow, out var ok); if (!ok) { Say("Dias: um número de 1 a 3650, ou vazio.", true); return; }
+            Send("PUT", Base + "/access/allow/" + permission, new { expiresAt = until }, until == null ? "Liberação sem prazo." : "Novo prazo: até " + When(until.Value) + ".", () => Access(page));
+        }
+
+        /// <summary>Changes how long a ban lasts (empty = for good).</summary>
+        public void ChangeBan(Guid ban, string days, int page = 1, string status = "active")
+        {
+            var until = ExpiryIn(days, DateTimeOffset.UtcNow, out var ok); if (!ok) { Say("Dias: um número de 1 a 3650, ou vazio.", true); return; }
+            Send("PUT", Base + "/bans/" + ban, new { expiresAt = until }, until == null ? "O banimento agora é para sempre." : "Novo prazo do banimento: até " + When(until.Value) + ".", () => Bans(page, status));
+        }
 
         // ---- Banimentos ----
 
@@ -128,10 +143,11 @@ namespace LifeVerse.Unity.UI
             _page.Add(UiKit.Row(Btn("Ativos", () => Bans(1, "active")), Btn("Vencidos", () => Bans(1, "expired")), Btn("Retirados", () => Bans(1, "lifted")), Btn("Todos", () => Bans(1, "all"))));
             Title("Banir alguém"); var who = Field("Nome da pessoa", "", 64); var why = Field("Motivo", "", 300); var days = Field("Por quantos dias (vazio = para sempre)", "", 4);
             _page.Add(Sure("Banir", () => "Confirmar o banimento", () => Ban(who.value, why.value, days.value), "lv-btn-primary"));
-            Title("Banimentos");
+            Title("Banimentos"); var banDays = Field("Novo prazo para «Mudar prazo» (dias, vazio = para sempre)", "", 4);
             foreach (var b in Arr(root, "items"))
             {
                 var id = G(b, "banId"); var active = S(b, "status") == "active"; var cells = new List<VisualElement> { UiKit.Text(S(b, "name"), "lv-bold"), UiKit.Text(S(b, "reason"), "lv-small"), UiKit.Spacer(), UiKit.Text((active ? "ativo" : S(b, "status") == "expired" ? "vencido" : "retirado") + " · " + (Date(b, "expiresAt") is { } e ? "até " + When(e) : "para sempre") + " · por " + S(b, "bannedBy"), "lv-small", "lv-muted") };
+                if (active) cells.Add(Btn("Mudar prazo", () => ChangeBan(id, banDays.value, page, status)));
                 if (active) cells.Add(Sure("Retirar", () => "Confirmar", () => Send("DELETE", Base + "/bans/" + id, null, "Banimento retirado.", () => Bans(page, status))));
                 Row(id, cells.ToArray());
             }
@@ -157,7 +173,7 @@ namespace LifeVerse.Unity.UI
             foreach (var p in Arr(root, "items"))
             {
                 var user = G(p, "userId"); var has = Arr(p, "permissions").Select(x => x.GetString()).ToList(); var names = defs.Where(d => has.Contains(d.Key)).Select(d => d.Title).ToList();
-                Row(user, UiKit.Text(S(p, "name") + (S(p, "role").Length > 0 ? " · " + S(p, "role") : ""), "lv-bold"), UiKit.Text(names.Count > 0 ? string.Join(", ", names) : string.Join(", ", has), "lv-small"), UiKit.Spacer(), Sure("Tirar tudo", () => "Confirmar", () => Send("DELETE", Base + "/permissions/" + user, null, "Permissões retiradas.", () => Permissions())));
+                Row(user, UiKit.Text(S(p, "name") + (S(p, "role").Length > 0 ? " · " + S(p, "role") : ""), "lv-bold"), UiKit.Text(names.Count > 0 ? string.Join(", ", names) : string.Join(", ", has), "lv-small"), UiKit.Spacer(), Btn("Trocar pelas marcadas", () => { var chosen = picks.Where(x => x.Box.value).Select(x => x.Key).ToArray(); if (chosen.Length == 0) { Say("Marque acima as permissões que a pessoa deve ter (para tirar todas, use Tirar tudo).", true); return; } Send("PUT", Base + "/permissions/" + user, new { permissions = chosen }, "Permissões trocadas.", () => Permissions()); }), Sure("Tirar tudo", () => "Confirmar", () => Send("DELETE", Base + "/permissions/" + user, null, "Permissões retiradas.", () => Permissions())));
             }
             Pager(root, Permissions);
         });
@@ -199,11 +215,25 @@ namespace LifeVerse.Unity.UI
             foreach (var x in Arr(root, "items"))
             {
                 var id = G(x, "id"); var box = new Toggle(); picked.Add((id, box)); Toggles["obj:" + id] = box;
-                Row(id, box, UiKit.Text(S(x, "name"), "lv-bold"), UiKit.Text(S(x, "type") + " · " + S(x, "ownerName") + " · " + I(x, "cost") + " prims" + (I(x, "scripts") > 0 ? " · " + I(x, "scripts") + " script(s)" : "") + (Flag(x, "physics") ? " · físico" : "") + (Flag(x, "locked") ? " · travado" : ""), "lv-small", "lv-muted"));
+                Row(id, box, UiKit.Text(S(x, "name"), "lv-bold"), UiKit.Text(S(x, "type") + " · " + S(x, "ownerName") + " · " + I(x, "cost") + " prims" + (I(x, "scripts") > 0 ? " · " + I(x, "scripts") + " script(s)" : "") + (Flag(x, "physics") ? " · físico" : "") + (Flag(x, "locked") ? " · travado" : ""), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Detalhe", () => ObjectDetail(id)));
             }
             if (picked.Count > 0) _page.Add(Sure("Devolver os marcados aos donos", () => "Confirmar a devolução", () => { var ids = picked.Where(p => p.Box.value).Select(p => p.Id).ToArray(); if (ids.Length == 0) { Say("Marque os objetos.", true); return; } Send("POST", Base + "/objects/return", new { objectIds = ids }, ids.Length + " objeto(s) devolvido(s).", () => Objects(page, sort, owner)); }));
             else Line("Nenhum objeto.", "lv-small", "lv-muted");
             Pager(root, p => Objects(p, sort, owner));
+        });
+
+        /// <summary>One object in full: owner, creator and the owner before, what it costs, scripts, physics, where it is, its size and turn, lock and expiry, and its permissions.</summary>
+        public void ObjectDetail(Guid id) => Get(Base + "/objects/" + id, x =>
+        {
+            Reset(); _page.Add(Btn("‹ Voltar aos objetos", () => Objects()));
+            Title(S(x, "name")); if (S(x, "description").Length > 0) Line(S(x, "description"), "lv-small");
+            string V3(string key) { var v = Obj(x, key); return v.ValueKind == JsonValueKind.Object ? D(v, "x").ToString("0.##", Pt) + "  " + D(v, "y").ToString("0.##", Pt) + "  " + D(v, "z").ToString("0.##", Pt) : "—"; }
+            Line("Tipo: " + S(x, "type") + "  ·  " + I(x, "cost") + " prims  ·  " + I(x, "scripts") + " script(s) ativo(s)  ·  física: " + (S(x, "physics") == "physical" ? "física" : S(x, "physics") == "none" ? "sem colisão" : "parado"));
+            Line("Dono: " + S(x, "ownerName") + "  ·  criado por " + S(x, "creatorName") + (S(x, "lastOwnerName").Length > 0 ? "  ·  dono anterior: " + S(x, "lastOwnerName") : ""));
+            Line("Posição: " + V3("position") + "   ·   giro: " + V3("rotation") + "   ·   tamanho: " + V3("scale"), "lv-small");
+            Line((Flag(x, "locked") ? "Travado para edição" : "Livre para edição") + (Date(x, "temporaryUntil") is { } t ? "  ·  temporário até " + When(t) : "") + (Date(x, "createdAt") is { } c ? "  ·  criado em " + When(c) : "") + (Date(x, "updatedAt") is { } u ? "  ·  mudado em " + When(u) : ""), "lv-small", "lv-muted");
+            var perms = Obj(x, "permissions"); if (perms.ValueKind == JsonValueKind.Object) { Title("Permissões do objeto"); foreach (var p in perms.EnumerateObject()) Line(p.Name + ": " + (p.Value.ValueKind == JsonValueKind.String ? p.Value.GetString() : p.Value.ToString()), "lv-small"); }
+            _page.Add(Sure("Devolver ao dono", () => "Confirmar a devolução", () => Send("POST", Base + "/objects/return", new { objectIds = new[] { id } }, "Objeto devolvido ao dono.", () => Objects())));
         });
 
         private void ObjectOwners() => Get(Base + "/objects/owners", root =>
@@ -243,6 +273,12 @@ namespace LifeVerse.Unity.UI
             var summary = Obj(root, "summary"); var series = Arr(root, "series");
             if (series.Count == 0) Line("Sem medidas neste período.", "lv-small", "lv-muted");
             else foreach (var key in new[] { ("fps", "quadros/s"), ("processMs", "ms por quadro"), ("memoryMb", "MB"), ("players", "pessoas") }) { var s = Obj(summary, key.Item1); if (s.ValueKind == JsonValueKind.Object) Line(key.Item2 + ": mín " + D(s, "min").ToString("0.#", Pt) + " · média " + D(s, "avg").ToString("0.#", Pt) + " · máx " + D(s, "max").ToString("0.#", Pt) + " (" + series.Count + " medidas)", "lv-small"); }
+            if (series.Count > 1)
+                foreach (var key in new[] { ("fps", "Quadros por segundo", new Color(.3f, .9f, .6f)), ("processMs", "Milissegundos por quadro", new Color(1f, .7f, .3f)), ("memoryMb", "Memória (MB)", new Color(.5f, .7f, 1f)), ("players", "Pessoas", new Color(.9f, .5f, .9f)) })
+                {
+                    var values = series.Select(x => (float)D(x, key.Item1)).ToList(); if (values.All(v => v == 0f)) continue;
+                    Line(key.Item2, "lv-small", "lv-muted"); _page.Add(new Sparkline(values, key.Item3) { name = "graph-" + key.Item1 });
+                }
             Title("Scripts que mais pesam");
             var diag = Obj(root, "diagnostics"); foreach (var s in Arr(diag, "scripts").Take(20)) Line(S(s, "name") + " · " + S(s, "script") + " · " + I(s, "runs") + " execuções · " + I(s, "instructions").ToString("N0", Pt) + " instruções" + (I(s, "errors") > 0 ? " · " + I(s, "errors") + " erro(s)" : ""), "lv-small");
             if (Arr(diag, "scripts").Count == 0) Line("Nenhum script rodou neste período.", "lv-small", "lv-muted");
@@ -313,6 +349,7 @@ namespace LifeVerse.Unity.UI
         {
             Reset(); var current = Obj(root, "current"); var stats = Obj(current, "stats");
             if (current.ValueKind == JsonValueKind.Object) Line("Versão " + I(current, "version") + " salva " + When(Date(current, "savedAt")) + "  ·  " + D(stats, "sizeMeters").ToString("0", Pt) + " m  ·  altura de " + D(stats, "minHeight").ToString("0.#", Pt) + " a " + D(stats, "maxHeight").ToString("0.#", Pt) + " m (média " + D(stats, "avgHeight").ToString("0.#", Pt) + ")  ·  mar a " + D(stats, "seaLevel").ToString("0.#", Pt) + " m", "lv-bold");
+            if (TerrainPicture(Obj(current, "preview")) is { } picture) { var image = new Image { image = picture, scaleMode = ScaleMode.ScaleToFit, name = "terrain-preview" }; image.style.width = 180; image.style.height = 180; image.style.marginTop = 4; image.style.marginBottom = 6; _page.Add(image); TerrainPreviewShown = true; }
             var restoring = Obj(root, "restoring"); if (restoring.ValueKind == JsonValueKind.Object) Line(S(restoring, "status") == "running" ? "Restauração em andamento: a ilha está reiniciando com o terreno do backup." : "Restauração agendada para " + When(Date(restoring, "scheduledFor")) + ".", "lv-bad");
             var backups = Arr(root, "backups"); var max = I(Obj(root, "limits"), "maxBackups"); if (max <= 0) max = 10;
             Title("Backups (" + backups.Count + " de " + max + ")"); var name = Field("Nome do backup", "", 60);
@@ -325,6 +362,19 @@ namespace LifeVerse.Unity.UI
             }
             if (backups.Count == 0) Line("Nenhum backup ainda.", "lv-small", "lv-muted");
         });
+
+        public bool TerrainPreviewShown { get; private set; }
+
+        /// <summary>The small picture of the saved terrain (the grid of heights the API sends): water by depth, sand, grass, rock and snow by height, north at the top. Null without a preview.</summary>
+        public static Texture2D TerrainPicture(JsonElement preview)
+        {
+            if (preview.ValueKind != JsonValueKind.Object || !preview.TryGetProperty("heights", out var heights) || heights.ValueKind != JsonValueKind.Array) return null;
+            var n = preview.TryGetProperty("size", out var size) && size.TryGetInt32(out var count) ? count : 0; var sea = preview.TryGetProperty("seaLevel", out var level) && level.TryGetSingle(out var sl) ? sl : 0f;
+            var values = heights.EnumerateArray().Select(h => h.TryGetSingle(out var v) ? v : 0f).ToArray(); if (n < 2 || n > 512 || values.Length < n * n) return null;
+            var texture = new Texture2D(n, n, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp }; var pixels = new Color32[n * n];
+            for (var z = 0; z < n; z++) for (var x = 0; x < n; x++) pixels[(n - 1 - z) * n + x] = Minimap.ColourOf(values[z * n + x], sea);
+            texture.SetPixels32(pixels); texture.Apply(); return texture;
+        }
 
         // ---- Reinicialização ----
 
@@ -394,6 +444,35 @@ namespace LifeVerse.Unity.UI
             var name = S(_general, "name"); _page.Add(UiKit.Row(Btn("Anunciar a venda…", () => new ListingOfferWindow(_c, false, true, _island, Guid.Empty, name, null).Open(), "lv-btn-primary"), Btn("Anunciar o aluguel…", () => new ListingOfferWindow(_c, true, true, _island, Guid.Empty, name, null).Open())));
             var estate = "/api/v1/worlds/islands/" + _island + "/real-estate";
             _page.Add(UiKit.Row(Sure("Tirar da venda", () => "Confirmar", () => Send("DELETE", estate + "/sale", null, "Anúncio de venda retirado.")), Sure("Tirar do aluguel", () => "Confirmar", () => Send("DELETE", estate + "/rental-offer", null, "Anúncio de aluguel retirado."))));
+        }
+    }
+
+    /// <summary>A small line graph of a series (the performance of the island over the hours chosen), with its lowest and highest values written at the side.</summary>
+    public sealed class Sparkline : VisualElement
+    {
+        public readonly IReadOnlyList<float> Values; private readonly Color _colour;
+        public Sparkline(IReadOnlyList<float> values, Color colour)
+        {
+            Values = values ?? new List<float>(); _colour = colour; style.height = 54; style.marginBottom = 6; style.backgroundColor = new Color(0f, 0f, 0f, .25f);
+            style.borderTopLeftRadius = style.borderTopRightRadius = style.borderBottomLeftRadius = style.borderBottomRightRadius = 6; generateVisualContent += Draw;
+            var low = Values.Count > 0 ? Values.Min() : 0f; var high = Values.Count > 0 ? Values.Max() : 0f;
+            var scale = UiKit.Text(high.ToString("0.#") + "\n" + low.ToString("0.#"), "lv-small", "lv-muted"); scale.style.position = Position.Absolute; scale.style.right = 6; scale.style.top = 4; scale.style.whiteSpace = WhiteSpace.Pre; scale.style.unityTextAlign = TextAnchor.UpperRight; Add(scale);
+        }
+
+        /// <summary>Where each value goes in a box (x from left to right, y with the highest at the top).</summary>
+        public static List<Vector2> Points(IReadOnlyList<float> values, float width, float height, float pad = 6f)
+        {
+            var list = new List<Vector2>(); if (values == null || values.Count == 0 || width <= 0f) return list;
+            var low = values.Min(); var high = values.Max(); var span = Mathf.Max(1e-4f, high - low);
+            for (var i = 0; i < values.Count; i++) { var x = pad + (values.Count == 1 ? 0f : i / (float)(values.Count - 1)) * (width - pad * 2f - 40f); var y = pad + (1f - (values[i] - low) / span) * (height - pad * 2f); list.Add(new Vector2(x, y)); }
+            return list;
+        }
+
+        private void Draw(MeshGenerationContext context)
+        {
+            var points = Points(Values, contentRect.width, contentRect.height); if (points.Count < 2) return;
+            var p = context.painter2D; p.strokeColor = _colour; p.lineWidth = 2f; p.lineJoin = LineJoin.Round; p.BeginPath(); p.MoveTo(points[0]); for (var i = 1; i < points.Count; i++) p.LineTo(points[i]); p.Stroke();
+            p.fillColor = new Color(_colour.r, _colour.g, _colour.b, .15f); p.BeginPath(); p.MoveTo(new Vector2(points[0].x, contentRect.height)); foreach (var q in points) p.LineTo(q); p.LineTo(new Vector2(points[points.Count - 1].x, contentRect.height)); p.ClosePath(); p.Fill();
         }
     }
 }

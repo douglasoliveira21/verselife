@@ -42,6 +42,10 @@ namespace LifeVerse.Unity.UI
             });
         }
 
+        /// <summary>Fills who receives (from "Pagar…" on a person) and puts the keyboard on the amount.</summary>
+        public void PayTo(Guid user, string name) { _to.value = user.ToString(); _status.text = "Pagar a " + name + ": digite a quantidade e confirme."; _status.RemoveFromClassList("lv-bad"); _amount.Focus(); }
+        public string Recipient => _to.value;
+
         /// <summary>The check before a transfer is asked for. Null when it is fine.</summary>
         public static string Validate(string to, string amount, long balance, out Guid recipient, out long coins)
         {

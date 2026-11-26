@@ -48,6 +48,8 @@ namespace LifeVerse.Unity.Avatar
         public float HeadingDegrees { get; private set; }
         public Vector3 GamePosition => new Vector3(State.X, State.Y, State.Z);
 
+        /// <summary>Double tap forward to run, hold jump to fly.</summary>
+        public readonly MoveGestures Gestures = new MoveGestures();
         private float _accumulator, _flightAsked; private bool _flyEdge, _sitEdge, _flightWanted;
         private readonly Dictionary<uint, Vector3> _history = new Dictionary<uint, Vector3>();
 
@@ -69,16 +71,17 @@ namespace LifeVerse.Unity.Avatar
 
         private PlayerInputSample ReadKeyboard()
         {
-            var sample = new PlayerInputSample(); var keyboard = Keyboard.current; if (keyboard == null) return sample;
+            var sample = new PlayerInputSample(); var keyboard = Keyboard.current; if (keyboard == null || (Follow != null && Follow.Detached)) return sample;   // the detached camera takes the walking keys
             sample.Forward = (KeyBindings.Held(GameAction.Forward) ? 1f : 0f) - (KeyBindings.Held(GameAction.Back) ? 1f : 0f);
             sample.Right = (KeyBindings.Held(GameAction.Right) ? 1f : 0f) - (KeyBindings.Held(GameAction.Left) ? 1f : 0f);
-            sample.Run = KeyBindings.Held(GameAction.Run) ^ AlwaysRun; sample.Jump = KeyBindings.Held(GameAction.Jump); sample.Descend = KeyBindings.Held(GameAction.Descend);
+            sample.Run = (KeyBindings.Held(GameAction.Run) ^ AlwaysRun) || Gestures.Running; sample.Jump = KeyBindings.Held(GameAction.Jump); sample.Descend = KeyBindings.Held(GameAction.Descend);
             return sample;
         }
 
         private void Update()
         {
             if (!Typing) { if (KeyBindings.Pressed(GameAction.Fly)) _flyEdge = true; if (KeyBindings.Pressed(GameAction.Sit)) _sitEdge = true; if (KeyBindings.Pressed(GameAction.Vehicle)) ToggleVehicle(); if (ObjectSeat.HasValue && (ServerSeated || State.Seated) && (KeyBindings.Pressed(GameAction.Forward) || KeyBindings.Pressed(GameAction.Back) || KeyBindings.Pressed(GameAction.Left) || KeyBindings.Pressed(GameAction.Right) || KeyBindings.Pressed(GameAction.Jump))) StandUp(); }
+            if (Gestures.Tick(Time.deltaTime, Time.unscaledTime, KeyBindings.Held(GameAction.Forward), KeyBindings.Held(GameAction.Jump), Typing || (Follow != null && Follow.Detached), Spawned && !State.Flying && !State.Swimming && !State.Seated && !ObjectSeat.HasValue && Driving == null)) _flyEdge = true;
             GestureKeys();
             Advance(Time.deltaTime);
         }

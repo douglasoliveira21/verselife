@@ -13,7 +13,7 @@ namespace LifeVerse.Unity.Tests.EditMode
             var d = new GroupsHubWindow.Draft { Name = "ab" }; Assert.IsNotNull(GroupsHubWindow.StepProblem(0, d)); d.Name = "Construtores"; d.Tag = "x"; Assert.IsNotNull(GroupsHubWindow.StepProblem(0, d)); d.Tag = "cons"; Assert.IsNull(GroupsHubWindow.StepProblem(0, d));
             d.Privacy = "private"; d.Policy = "open"; Assert.IsNotNull(GroupsHubWindow.StepProblem(1, d)); d.Policy = "invite"; Assert.IsNull(GroupsHubWindow.StepProblem(1, d)); d.Privacy = "public"; d.Policy = "request"; d.Fee = 10; Assert.IsNotNull(GroupsHubWindow.StepProblem(1, d)); d.Policy = "open"; Assert.IsNull(GroupsHubWindow.StepProblem(1, d));
             d.Limit = 1; Assert.IsNotNull(GroupsHubWindow.StepProblem(2, d)); d.Limit = 50; d.Cover = "http://x"; Assert.IsNotNull(GroupsHubWindow.StepProblem(2, d)); d.Cover = ""; Assert.IsNull(GroupsHubWindow.StepProblem(2, d));
-            Assert.AreEqual(4, GroupsHubWindow.Steps.Length); Assert.AreEqual(10, GroupProfileWindow.Sections.Length);
+            Assert.AreEqual(4, GroupsHubWindow.Steps.Length); Assert.AreEqual(12, GroupProfileWindow.Sections.Length);
         }
 
         [Test]

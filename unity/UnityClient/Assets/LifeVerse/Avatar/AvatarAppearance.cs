@@ -21,6 +21,8 @@ namespace LifeVerse.Unity.Avatar
         public string AttachmentsJson = "[]";
         public Guid? CustomModelId; public float CustomModelScale = 1f; public string CustomModelBonesJson = "{}";
         public int CustomModelTriangles;
+        /// <summary>The title of the group the person shows ("[CLV] Mestre"), drawn under the name when "Mostrar títulos" is on.</summary>
+        public string GroupLabel = "";
         /// <summary>The animations the person chose for some states ("custom:{file}#{name}" or "builtin:{name}"), and the clothes they brought (the JSON list the platform sends: id, slot, kind, bone, offset…).</summary>
         public Dictionary<string, string> AnimationOverrides = new Dictionary<string, string>(); public string CustomWearablesJson = "[]";
 
@@ -40,7 +42,7 @@ namespace LifeVerse.Unity.Avatar
             {
                 using var document = JsonDocument.Parse(json); var root = document.RootElement; if (root.ValueKind != JsonValueKind.Object) return result;
                 string Text(string name, string fallback) => root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? fallback : fallback;
-                result.DisplayName = Text("displayName", result.DisplayName); result.BaseModel = Text("baseModel", result.BaseModel); result.HairStyle = Text("hairStyle", result.HairStyle); result.BeardStyle = Text("beardStyle", result.BeardStyle);
+                result.DisplayName = Text("displayName", result.DisplayName); result.GroupLabel = Text("groupLabel", result.GroupLabel).Trim(); result.BaseModel = Text("baseModel", result.BaseModel); result.HairStyle = Text("hairStyle", result.HairStyle); result.BeardStyle = Text("beardStyle", result.BeardStyle);
                 result.Skin = Hex(Text("skinColor", ""), result.Skin); result.Hair = Hex(Text("hairColor", ""), result.Hair); result.Eyes = Hex(Text("eyeColor", ""), result.Eyes);
                 result.Body = AvatarRules.ReadSettings(Text("bodySettingsJson", "{}"), AvatarRules.BodyRanges); result.Face = AvatarRules.ReadSettings(Text("faceSettingsJson", "{}"), AvatarRules.FaceRanges);
                 if (root.TryGetProperty("equippedItems", out var items) && items.ValueKind == JsonValueKind.Array)

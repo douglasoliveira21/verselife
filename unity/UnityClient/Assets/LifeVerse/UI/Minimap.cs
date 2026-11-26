@@ -61,6 +61,15 @@ namespace LifeVerse.Unity.UI
 
         /// <summary>How many metres the mini-map shows from edge to edge (the whole island when it is smaller), the coordinates under it and the dots of the other avatars.</summary>
         public float ZoomMetres = 300f; public bool ShowCoords = true, ShowAvatars = true;
+        /// <summary>"Mini-mapa gira com a câmera" (the way one looks is up; the map turns into a disc), "Nomes no mini-mapa" and "Construções no mini-mapa".</summary>
+        public bool Rotate, ShowNames = true, ShowBuildings = true;
+        /// <summary>Where the camera looks, in degrees (Unity yaw: 0 is north, 90 east).</summary>
+        public float Heading;
+        /// <summary>The outlines of the buildings, as squares of the ground in game metres (x, z, width, depth), set by the game.</summary>
+        public readonly List<Rect> Buildings = new List<Rect>();
+        public int BuildingsDrawn { get; private set; }
+        public int NamesShown { get; private set; }
+        private VisualElement _buildingLayer; private readonly List<Label> _names = new List<Label>();
         private Label _coords; private float _span = 1f; private Vector2 _origin;
         public string CoordsText => _coords?.text ?? "";
         public float SpanMetres => _span;
@@ -76,8 +85,31 @@ namespace LifeVerse.Unity.UI
 
         private Vector2? InFrame(Vector3 game) { var u = (game.x - _origin.x) / _span; var v = (game.z - _origin.y) / _span; return u < 0f || u > 1f || v < 0f || v > 1f ? (Vector2?)null : new Vector2(u * Size, v * Size); }
 
-        public void Place(Vector3 self, IReadOnlyList<Vector3> others)
+        /// <summary>Turns the map to where the camera looks (every frame, so it turns smoothly).</summary>
+        public void Turn(float heading)
         {
+            Heading = heading; _picture.style.rotate = new Rotate(Rotate ? -heading : 0f);
+            foreach (var tag in _names) tag.style.rotate = new Rotate(Rotate ? heading : 0f);
+        }
+
+        private void DrawBuildings(MeshGenerationContext context)
+        {
+            var drawn = 0; if (!ShowBuildings || _map == null) { BuildingsDrawn = 0; return; }
+            var p = context.painter2D; p.fillColor = new Color(.92f, .9f, .86f, .55f); p.strokeColor = new Color(.15f, .13f, .12f, .8f); p.lineWidth = 1f;
+            foreach (var b in Buildings)
+            {
+                var a = InFrame(new Vector3(b.xMin, 0f, b.yMin)); var c = InFrame(new Vector3(b.xMax, 0f, b.yMax)); if (a == null && c == null) continue;
+                var u0 = ((b.xMin - _origin.x) / _span) * Size; var v0 = ((b.yMin - _origin.y) / _span) * Size; var w = Mathf.Max(2f, b.width / _span * Size); var h = Mathf.Max(2f, b.height / _span * Size);
+                p.BeginPath(); p.MoveTo(new Vector2(u0, v0)); p.LineTo(new Vector2(u0 + w, v0)); p.LineTo(new Vector2(u0 + w, v0 + h)); p.LineTo(new Vector2(u0, v0 + h)); p.ClosePath(); p.Fill(); p.Stroke(); drawn++;
+            }
+            BuildingsDrawn = drawn;
+        }
+
+        public void Place(Vector3 self, IReadOnlyList<Vector3> others, IReadOnlyList<string> names = null)
+        {
+            if (_buildingLayer == null) { _buildingLayer = new VisualElement { pickingMode = PickingMode.Ignore }; _buildingLayer.style.position = Position.Absolute; _buildingLayer.style.left = 0; _buildingLayer.style.top = 0; _buildingLayer.style.width = Size; _buildingLayer.style.height = Size; _buildingLayer.generateVisualContent += DrawBuildings; _picture.Insert(0, _buildingLayer); }
+            var radius = Rotate ? Size / 2f : 9f; _picture.style.borderTopLeftRadius = _picture.style.borderTopRightRadius = _picture.style.borderBottomLeftRadius = _picture.style.borderBottomRightRadius = radius;
+            Turn(Heading); _buildingLayer.MarkDirtyRepaint();
             Frame(self);
             if (_coords == null) { _coords = new Label { pickingMode = PickingMode.Ignore }; _coords.AddToClassList("lv-small"); _coords.style.position = Position.Absolute; _coords.style.left = 8; _coords.style.bottom = 6; _coords.style.color = Color.white; _coords.style.unityTextOutlineColor = Color.black; _coords.style.unityTextOutlineWidth = .3f; Add(_coords); }
             _coords.style.display = ShowCoords ? DisplayStyle.Flex : DisplayStyle.None; _coords.text = Mathf.RoundToInt(self.x) + ", " + Mathf.RoundToInt(self.y) + ", " + Mathf.RoundToInt(self.z);
@@ -91,6 +123,15 @@ namespace LifeVerse.Unity.UI
                 var element = _others[shown++]; element.style.display = DisplayStyle.Flex; element.style.left = q.x - 3.5f; element.style.top = q.y - 3.5f;
             }
             for (var i = shown; i < _others.Count; i++) _others[i].style.display = DisplayStyle.None; OtherDots = shown;
+            var named = 0;
+            if (ShowNames && ShowAvatars && names != null)
+                for (var i = 0; i < others.Count && i < names.Count; i++)
+                {
+                    if (string.IsNullOrEmpty(names[i]) || (_map != null ? InFrame(others[i]) : PointOf(others[i])) is not { } q) continue;
+                    if (named >= _names.Count) { var label = new Label { pickingMode = PickingMode.Ignore }; label.AddToClassList("lv-small"); label.style.position = Position.Absolute; label.style.color = Color.white; label.style.fontSize = 10; label.style.unityTextOutlineColor = Color.black; label.style.unityTextOutlineWidth = .6f; _picture.Add(label); _names.Add(label); }
+                    var tag = _names[named++]; tag.text = names[i]; tag.style.display = DisplayStyle.Flex; tag.style.left = q.x + 5; tag.style.top = q.y - 7; tag.style.rotate = new Rotate(Rotate ? Heading : 0f);
+                }
+            for (var i = named; i < _names.Count; i++) _names[i].style.display = DisplayStyle.None; NamesShown = named;
         }
     }
 

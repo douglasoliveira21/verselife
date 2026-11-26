@@ -40,7 +40,9 @@ namespace LifeVerse.Unity.Audio
 
         public void Attach(WorldClient client) { _client = client; }
 
-        private bool Wanted => !Muted && (TalkHeld || Locked);
+        /// <summary>"Ativar voz" off: nothing is sent and the microphone stays closed.</summary>
+        public bool Off { get; set; }
+        private bool Wanted => !Off && !Muted && (TalkHeld || Locked);
 
         private void Update()
         {
@@ -107,7 +109,7 @@ namespace LifeVerse.Unity.Audio
         public int Corrupt { get; private set; }
         public int Concealed { get; private set; }
         public int Speakers => _speakers.Count;
-        public const float SpeakingSeconds = .35f;
+        public const float SpeakingSeconds = .35f; private AudioListener _ear;
 
         public void Attach(WorldClient client) { if (_client != null) _client.VoiceReceived -= OnVoice; _client = client; if (client != null) client.VoiceReceived += OnVoice; }
         private void OnDestroy() { if (_client != null) _client.VoiceReceived -= OnVoice; }
@@ -119,7 +121,14 @@ namespace LifeVerse.Unity.Audio
 
         public void Forget(int peer) { if (_speakers.TryGetValue(peer, out var s)) { if (s.Host != null) Destroy(s.Host); _speakers.Remove(peer); } }
 
-        private void OnVoice(ReceiveVoiceMessage message) => Hear(message.SpeakerPeer, message.Sequence, message.Data);
+        /// <summary>"Ativar voz" off: nobody is heard.</summary>
+        public bool Off { get; set; }
+        /// <summary>"Distância de audição" (metres, at most the 25 m the island sends).</summary>
+        public float HearingDistance { get; set; } = VoiceSettings.HearingRange;
+        /// <summary>"Voz espacial": the voice comes from where the speaker is; off, everybody is heard the same in both ears.</summary>
+        public bool Spatial { get; set; } = true;
+
+        private void OnVoice(ReceiveVoiceMessage message) { if (!Off) Hear(message.SpeakerPeer, message.Sequence, message.Data); }
 
         /// <summary>One packet from one speaker (public so tests feed packets).</summary>
         public void Hear(int peer, uint sequence, byte[] data)
@@ -137,9 +146,13 @@ namespace LifeVerse.Unity.Audio
 
         private void Update()
         {
+            if (_ear == null || !_ear.isActiveAndEnabled) _ear = FindAnyObjectByType<AudioListener>(); var listener = _ear != null ? _ear.transform : null;
             foreach (var pair in _speakers)
             {
                 var at = PositionOf?.Invoke(pair.Key); if (at.HasValue) pair.Value.Host.transform.position = GameSpace.ToUnity(at.Value);
+                var source = pair.Value.Bus != null ? pair.Value.Bus.Source : null; if (source == null) continue;
+                var range = Mathf.Clamp(HearingDistance, 1f, VoiceSettings.HearingRange); source.spatialBlend = Spatial ? 1f : 0f; source.maxDistance = range; source.minDistance = Mathf.Min(source.minDistance, range);
+                source.mute = Off || (listener != null && Vector3.Distance(listener.position, pair.Value.Host.transform.position) > range);
             }
         }
     }

@@ -44,6 +44,10 @@ namespace LifeVerse.Unity.UI
             new SettingDef("audio.parcel_music", "Audio", "Volumes", "Tocar a música dos terrenos", "Toca a música que o dono do terreno (ou da ilha) escolheu enquanto você está nele.", "Bool", "true") { Group = "Música", Keywords = new[] { "música", "terreno" } },
             new SettingDef("audio.ui_sounds", "Audio", "Volumes", "Sons da interface", "Pequenos sons ao clicar, avisar e errar.", "Bool", "true") { Group = "Música", Keywords = new[] { "cliques", "interface", "sons" } },
             new SettingDef("accessibility.large_text", "Accessibility", "Leitura", "Texto maior", "Aumenta as letras da interface.", "Bool", "false") { Group = "Leitura", Keywords = new[] { "texto", "letras", "fonte" } },
+            new SettingDef("camera.focus_double_click", "Camera", "Câmera livre", "Duplo clique foca em pessoas e objetos", "Um duplo clique em uma pessoa ou objeto põe a câmera nele. No chão, o duplo clique continua levando o avatar até o ponto.", "Bool", "false") { Group = "Câmera livre", Keywords = new[] { "duplo clique", "foco", "câmera" } },
+            new SettingDef("camera.allow_detached", "Camera", "Câmera livre", "Permitir a câmera desacoplada", "ALT + V solta a câmera do avatar: as teclas de andar a movem pelo mundo e o avatar fica parado. Ela não passa do alcance abaixo. Esc ou ALT + V de novo a devolvem.", "Bool", "false") { Group = "Câmera livre", Keywords = new[] { "desacoplada", "solta", "câmera" } },
+            new SettingDef("camera.detached_range", "Camera", "Câmera livre", "Alcance da câmera desacoplada", "A que distância do avatar a câmera desacoplada pode ir (metros).", "Int", "60") { Min = 5, Max = 200, Step = 5, Group = "Câmera livre", Keywords = new[] { "desacoplada", "alcance" } },
+            new SettingDef("camera.detached_speed", "Camera", "Câmera livre", "Velocidade da câmera desacoplada", "Quantos metros por segundo ela anda (Shift anda três vezes mais).", "Float", "8") { Min = 1, Max = 60, Step = 1, Group = "Câmera livre", Keywords = new[] { "desacoplada", "velocidade" } },
             new SettingDef("account.sync", "General", "Conta", "Guardar as configurações na conta", "Leva as configurações e as teclas para outros computadores em que você entrar.", "Bool", "false") { Group = "Conta", Keywords = new[] { "sincronizar", "nuvem", "conta" } },
         };
 
@@ -67,6 +71,19 @@ namespace LifeVerse.Unity.UI
             "general.updates", "account.user", "account.server", "account.connection", "account.session", "account.leave_island", "account.quit", "advanced.version", "advanced.godot", "advanced.system", "advanced.gpu", "advanced.renderer",
             "advanced.profile", "advanced.data_folder", "advanced.open_data", "advanced.open_logs", "advanced.export_diagnostics", "advanced.restore_all", "interface.restore_layout", "interface.restore_all", "interface.restore_toolbar", "interface.mode", "graphics.fog", "graphics.volumetric", "graphics.glow", "graphics.color_adjust", "graphics.ssao", "graphics.ssao_quality", "graphics.ssr", "graphics.shadow_cascades", "graphics.shadow_quality", "graphics.msaa", "graphics.render_scale", "graphics.dynamic_resolution", "chat.show_time", "chat.visible_seconds", "avatar.show_names", "avatar.show_own_name", "world.show_coords", "world.minimap_zoom", "world.minimap_avatars", "interface.window_opacity", "interface.map_opacity", "interface.radial_size", "interface.radial_opacity", "interface.radial_glow", "scripts.font_size", "scripts.indent", "scripts.autocomplete", "build.rotate_step", "build.scale_step", "advanced.clear_cache", "network.auto_reconnect", "interface.compact_toolbar", "camera.photo_format", "camera.photo_include_ui", "avatar.open_editor", "chat.open_people",
             "network.state", "network.protocol", "network.avatars",
+            // the rest of the Godot settings, done in this client too
+            "avatars.max_full", "avatars.max_reduced", "avatars.visibility_distance", "avatars.triangle_budget", "avatars.lod", "avatars.simplify_distant", "avatars.animation_quality", "world.object_distance", "perf.auto_quality", "graphics.water_waves",
+            "voice.enabled", "voice.open_mic", "voice.hearing_distance", "voice.spatial", "voice.indicators", "controls.double_tap_run", "controls.hold_to_fly", "camera.fp_look_smoothing", "camera.fp_collision",
+            "world.minimap_open", "world.minimap_rotate", "world.minimap_names", "world.minimap_buildings", "world.map_parcels", "world.map_friends", "world.map_names", "world.map_events", "world.map_favorites", "world.map_featured",
+            "interface.radial_speed", "interface.radial_tooltips", "general.keep_on_top", "general.download_update", "avatar.show_titles", "avatar.default_animations", "avatar.open_mirror", "privacy.external_media", "build.space", "build.import_collision",
+            "accessibility.keyboard", "camera.focus_double_click", "camera.allow_detached", "camera.detached_range", "camera.detached_speed",
+        };
+
+        /// <summary>Settings this client cannot honour, with the reason shown instead of the control.</summary>
+        public static readonly Dictionary<string, string> UnityCannot = new Dictionary<string, string>
+        {
+            ["audio.output_device"] = "Neste cliente o som sai sempre pelo dispositivo padrão do Windows: o motor não deixa escolher outro. Troque a saída nas configurações de som do Windows.",
+            ["interface.side_bar"] = "Este cliente não tem a barra lateral: os mesmos atalhos ficam na barra de ferramentas e nos menus do topo (Eu, Comunicar, Mundo, Conteúdo).",
         };
 
         private static List<SettingDef> _all;
@@ -81,6 +98,7 @@ namespace LifeVerse.Unity.UI
                 foreach (var d in Raw)
                 {
                     if (UnityHas.Contains(d.Id)) d.Unavailable = null;
+                    else if (UnityCannot.TryGetValue(d.Id, out var why)) d.Unavailable = why;
                     else if (d.Unavailable == null && !InUnity.Contains(d.Id)) d.Unavailable = NotYet;
                     if (d.Id == "advanced.godot") { d.Label = "Versão do Unity"; d.Help = "A versão do motor gráfico deste cliente."; }
                     if (d.Id == "graphics.msaa") d.Help = "Suaviza o serrilhado das bordas. Neste cliente: 2x usa FXAA, 4x usa SMAA e 8x a suavização temporal (TAA), feitas depois de desenhar.";

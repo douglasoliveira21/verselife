@@ -107,7 +107,7 @@ namespace LifeVerse.Unity.UI
         protected static string IdOf(DropdownField d) => d.userData is List<(string Id, string Text)> options && d.index >= 0 && d.index < options.Count ? options[d.index].Id : d.value;
         protected void Title(string text) { var t = UiKit.Text(text, "lv-bold", "lv-accent"); t.style.marginTop = 8; _page.Add(t); }
         protected void Line(string text, params string[] classes) { var t = UiKit.Text(text, classes.Length == 0 ? new[] { "lv-small" } : classes); t.style.whiteSpace = WhiteSpace.Normal; _page.Add(t); }
-        protected void Row(Guid id, params VisualElement[] cells) { foreach (var c in cells) { c.style.marginRight = 8; if (c is Button) c.style.flexShrink = 0; else if (c is Label) { c.style.flexShrink = 1; c.style.minWidth = 40; c.style.whiteSpace = WhiteSpace.Normal; } } var r = UiKit.Row(cells); r.style.flexWrap = Wrap.Wrap; r.style.alignItems = Align.Center; r.AddToClassList("lv-row"); _page.Add(r); if (id != Guid.Empty) RowIds.Add(id); }
+        protected VisualElement Row(Guid id, params VisualElement[] cells) { foreach (var c in cells) { c.style.marginRight = 8; if (c is Button) c.style.flexShrink = 0; else if (c is Label) { c.style.flexShrink = 1; c.style.minWidth = 40; c.style.whiteSpace = WhiteSpace.Normal; } } var r = UiKit.Row(cells); r.style.flexWrap = Wrap.Wrap; r.style.alignItems = Align.Center; r.AddToClassList("lv-row"); _page.Add(r); if (id != Guid.Empty) RowIds.Add(id); return r; }
         protected void Buttons(params VisualElement[] buttons) { var r = new VisualElement(); r.style.flexDirection = FlexDirection.Row; r.style.flexWrap = Wrap.Wrap; foreach (var b in buttons) r.Add(b); _page.Add(r); }
         protected void Pager(JsonElement root, Action<int> go)
         {

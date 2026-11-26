@@ -94,6 +94,33 @@ namespace LifeVerse.Unity.Avatar
             return true;
         }
 
+        /// <summary>How much the legs grew (metres) after <see cref="ApplyShape"/>, the body lifted by the same so the feet stay on the ground.</summary>
+        public float LegExtra { get; private set; }
+
+        /// <summary>
+        /// The body sliders of the editor on a body of its own, as the Godot client does: the legs and arms stretch along the limb, the torso widens, the head grows evenly, and height and shoulders scale the
+        /// whole body. Slider values are factors around 1 (the shared ranges of <c>AvatarRules</c>).
+        /// </summary>
+        public void ApplyShape(IReadOnlyDictionary<string, float> body)
+        {
+            float Get(string key) => body != null && body.TryGetValue(key, out var v) && v > 0f ? v : 1f;
+            float legs = Get("legs"), arms = Get("arms"), torso = Get("torso"), head = Get("head"), height = Get("height"), shoulder = Get("shoulder");
+            foreach (var bone in _bones) bone.T.localScale = Vector3.one;
+            transform.localScale = Vector3.one * _unit; transform.localPosition = Vector3.zero;
+            var legLength = _byName.TryGetValue("upper_leg_l", out var hip) && _byName.TryGetValue("foot_l", out var foot) ? Mathf.Max(0f, hip.T.position.y - foot.T.position.y) : 0f;
+            void Limb(string bone, string child, float along, float across)
+            {
+                if (!_byName.TryGetValue(bone, out var b) || !_byName.TryGetValue(child, out var c)) return;
+                var o = c.RestLocal; var a = new Vector3(Mathf.Abs(o.x), Mathf.Abs(o.y), Mathf.Abs(o.z)); var axis = a.x >= a.y && a.x >= a.z ? 0 : a.y >= a.z ? 1 : 2;
+                b.T.localScale = new Vector3(axis == 0 ? along : across, axis == 1 ? along : across, axis == 2 ? along : across);
+            }
+            foreach (var side in new[] { "l", "r" }) { Limb("upper_leg_" + side, "lower_leg_" + side, legs, 1f); Limb("upper_arm_" + side, "lower_arm_" + side, arms, 1f); }
+            var above = _byName.ContainsKey("chest") ? "chest" : _byName.ContainsKey("neck") ? "neck" : null; if (above != null) Limb("spine", above, 1f, torso);
+            if (_byName.TryGetValue("head", out var h)) h.T.localScale = Vector3.one * head;
+            transform.localScale = new Vector3(_unit * shoulder, _unit * height, _unit * shoulder);
+            LegExtra = (legs - 1f) * legLength * height; transform.localPosition = new Vector3(0f, LegExtra, 0f);
+        }
+
         /// <summary>Shows or hides every part of the body.</summary>
         public void SetShown(bool shown) { foreach (var renderer in _renderers) if (renderer != null) renderer.enabled = shown; }
 

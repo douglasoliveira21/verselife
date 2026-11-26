@@ -27,7 +27,17 @@ namespace LifeVerse.Unity.UI
             : base(context, "settings-catalog", "Configurações", Menu, 900f, 580f, new Vector2(190, 50), 210f)
         {
             _store = store; _applied = applied; _info = info ?? (_ => ""); _actions = actions ?? new Dictionary<string, Action>(); _classic = classic; Show("Graphics");
+            // "Navegação por teclado": Tab and the arrows move the focus (the toolkit does), Enter activates, Esc closes, Ctrl + F goes to the search
+            focusable = true; RegisterCallback<KeyDownEvent>(e =>
+            {
+                if (e.keyCode == KeyCode.Escape) { Close(); e.StopPropagation(); }
+                else if (e.keyCode == KeyCode.F && (e.ctrlKey || e.commandKey)) { FocusSearch(); e.StopPropagation(); }
+            }, TrickleDown.TrickleDown);
         }
+
+        /// <summary>Puts the keyboard in the search field (Ctrl + F).</summary>
+        public void FocusSearch() { _searchField?.Focus(); }
+        private TextField _searchField;
 
         protected override void Fill(string section)
         {
@@ -43,7 +53,7 @@ namespace LifeVerse.Unity.UI
 
         private void SearchBar()
         {
-            var field = Field("Buscar nas configurações", _search, 60);
+            var field = Field("Buscar nas configurações", _search, 60); _searchField = field;
             field.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) Find(field.value); }, TrickleDown.TrickleDown);
             Buttons(Btn("Buscar", () => Find(field.value)));
         }

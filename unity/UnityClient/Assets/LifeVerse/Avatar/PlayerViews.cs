@@ -82,7 +82,7 @@ namespace LifeVerse.Unity.Avatar
                 _ = DefaultClips.Preload(); var import = await BuiltInBodies.ImportAsync(); if (import == null || view == null || _bodyGeneration[view.PeerId] != generation) return;
                 var skeleton = await SkeletalBody.CreateAsync(view.transform, import); if (skeleton == null) return;
                 if (view == null || _bodyGeneration[view.PeerId] != generation) { Destroy(skeleton.gameObject); return; }
-                skeleton.TintSkin(appearance.Skin); appearance.CustomModelTriangles = skeleton.Triangles;
+                skeleton.TintSkin(appearance.Skin); skeleton.ApplyShape(appearance.Body); appearance.CustomModelTriangles = skeleton.Triangles;
                 if (view.Skeleton != null) Destroy(view.Skeleton.gameObject); view.UseSkeleton(skeleton); CustomBodiesLoaded++; Dress(view, appearance);
             }
             catch (Exception exception) { Debug.LogWarning("[LifeVerse] corpo do jogo: " + exception.Message); }
@@ -98,7 +98,7 @@ namespace LifeVerse.Unity.Avatar
                 if (skeleton == null) return;
                 if (view == null || _bodyGeneration[view.PeerId] != generation) { Destroy(skeleton.gameObject); return; }
                 if (view.Skeleton != null) Destroy(view.Skeleton.gameObject);
-                view.UseSkeleton(skeleton); CustomBodiesLoaded++; Dress(view, appearance);
+                skeleton.ApplyShape(appearance.Body); view.UseSkeleton(skeleton); CustomBodiesLoaded++; Dress(view, appearance);
             }
             catch (Exception exception) { Debug.LogWarning("[LifeVerse] corpo personalizado: " + exception.Message); }
         }
