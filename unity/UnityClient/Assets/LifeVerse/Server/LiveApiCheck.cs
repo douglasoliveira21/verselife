@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using LifeVerse.Shared.Avatar;
 using LifeVerse.Unity.Avatar;
 using LifeVerse.Unity.UI;
 using LifeVerse.Unity.World;
@@ -96,15 +97,25 @@ namespace LifeVerse.Unity.Server
             yield return Step("social: friends, private messages, presence, block, report", Social());
             yield return Step("groups: create, invite, chat, requests", Groups());
             yield return Step("files: upload, inventory, rights, versions", Files());
+            yield return Step("inventory (full): folders, move, rename, bin, restore, space, check, pack", InventoryFull());
             yield return Step("economy: wallet, market, orders, stores, rental plans", Economy());
             yield return Step("offers: give an item, accept it", Offers());
             yield return Step("profile: edit, post, gallery, cover, marriage", Profile());
             yield return Step("discovery: events, landmarks, photos, search", Discovery());
             yield return Step("island management: general, permissions, rules", Manage());
+            yield return Step("island management (full): summary, general, bans, permissions, look, media, audit, every section", ManageFull());
             yield return Step("land: parcels, cells, split, expand, merge, media", Land());
+            yield return Step("land management and about this land: overview, claim, sections, rename, options, list, groups", LandFull());
             yield return Step("scripts: list, save, syntax", Scripts());
+            yield return Step("build resources: script templates and the names of people", BuildExtras());
             yield return Step("build: limits, objects, audit, saved constructions", Build());
         yield return Step("avatar: attachments (wear, move, change, take off)", Attachments());
+        yield return Step("search (full): for you, tabs, suggestions, details, favorite, report, interests", SearchFull());
+        yield return Step("groups (full): create in 4 steps, invite, accept, roles, permissions, notices, chat, chest, votes, active group", GroupsFull());
+        yield return Step("wallet and profile (full): summary, statement, coins, fees, bio, post, feed, someone else's profile", WalletAndProfile());
+        yield return Step("avatar studio: own body, clothes and animations sent, worn, chosen; looks saved, shared and brought by code", AvatarStudio());
+        yield return Step("entry: servers healthy, the start place chosen by the server, the island's asset list; script editor: server check, runtime, pause, permission, completion", EntryAndScripts());
+        yield return Step("live: notification channel (message pushed by the API)", Live());
         }
 
         // ---- the steps ----
@@ -195,6 +206,33 @@ namespace LifeVerse.Unity.Server
             string versions = null; yield return Call(_a, "GET", "/api/v1/assets/" + _asset + "/versions", null, b => versions = b); Check(Json.Rows(versions).Count >= 2, "o histórico tem duas versões: " + Snip(versions)); System.IO.File.Delete(v2);
         }
 
+        private IEnumerator InventoryFull()
+        {
+            var inv = "/api/v1/inventory"; string body = null;
+            var iv = new InventoryManagerWindow(_ca); iv.Open(); yield return Until(() => iv.SummaryText.Contains("itens") && iv.RowIds.Count >= 1, "o inventário completo abre com os itens de A: " + iv.Status);
+            var folderName = "Pasta " + Guid.NewGuid().ToString("N").Substring(0, 6);
+            iv.Show("pastas"); yield return Until(() => iv.Actions.ContainsKey("Criar pasta"), "a vista de pastas: " + iv.Status); yield return new WaitForSeconds(.3f);
+            iv.Fields["Nome (para criar ou renomear)"].value = folderName; iv.Press("Criar pasta"); yield return Until(() => iv.Status.Length > 0, "criar a pasta");
+            yield return Call(_a, "GET", inv + "/folders", null, b => body = b); Check(body.Contains(folderName), "a pasta criada pela janela está na API: " + iv.Status + " " + Snip(body));
+            Guid folder; using (var d = JsonDocument.Parse(body)) folder = Guid.Parse(d.RootElement.EnumerateArray().First(f => f.GetProperty("name").GetString() == folderName).GetProperty("id").GetString());
+            iv.Show("tudo"); yield return Until(() => iv.RowIds.Count >= 1 && iv.Choices.ContainsKey("Mover para"), "a lista de itens"); yield return new WaitForSeconds(.4f);
+            var item = iv.RowIds.Last(); iv.Toggles["item:" + item].value = true; iv.MoveTicked(folder.ToString(), () => { }); yield return Until(() => iv.Status.Contains("movido"), "mover o item: " + iv.Status);
+            yield return Call(_a, "GET", inv + "/items?view=all&folderId=" + folder, null, b => body = b); Check(body.Contains(item.ToString()), "o item está dentro da pasta na API: " + Snip(body));
+            iv.Show("tudo"); yield return Until(() => iv.RowIds.Contains(item) && iv.Actions.ContainsKey("Detalhes"), "a lista de novo"); yield return new WaitForSeconds(.4f);
+            var detailed = iv.RowIds.Last(); iv.Press("Detalhes"); yield return Until(() => iv.Fields.ContainsKey("Nome no inventário"), "os detalhes do item");
+            iv.Fields["Nome no inventário"].value = "Item do Unity"; iv.Press("Renomear"); yield return Until(() => iv.Status.Length > 0, "renomear o item");
+            yield return Call(_a, "GET", inv + "/items?view=all&search=Unity", null, b => body = b); Check(body.Contains(detailed.ToString()), "o nome novo do item na API: " + iv.Status + " " + Snip(body));
+            yield return new WaitForSeconds(.4f); iv.Press("Detalhes"); yield return Until(() => iv.Actions.ContainsKey("Mandar para a lixeira"), "os detalhes de novo"); iv.Press("Mandar para a lixeira"); yield return Until(() => iv.Status.Contains("lixeira"), "mandar para a lixeira: " + iv.Status);
+            iv.Show("lixeira"); yield return Until(() => iv.RowIds.Contains(detailed), "o item aparece na lixeira: " + iv.Status); yield return new WaitForSeconds(.4f);
+            Check(iv.RowIds.Last() == detailed, "o item mandado é o último da lixeira"); iv.Press("Restaurar"); yield return Until(() => iv.Status.Contains("voltou"), "restaurar o item: " + iv.Status);
+            yield return Call(_a, "GET", inv + "/items?view=all", null, b => body = b); Check(body.Contains(detailed.ToString()), "o item restaurado está de volta na API: " + Snip(body));
+            iv.Show("espaco"); yield return Until(() => iv.Lines >= 4 && iv.Loads >= 2, "o espaço e a verificação: " + iv.Status); Check(iv.Status.Length == 0, "o espaço e a verificação abrem sem erro: " + iv.Status);
+            var zip = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lv-pack-" + Guid.NewGuid().ToString("N").Substring(0, 6) + ".zip");
+            using (var file = System.IO.File.Create(zip)) using (var archive = new System.IO.Compression.ZipArchive(file, System.IO.Compression.ZipArchiveMode.Create)) foreach (var n in new[] { "a", "b" }) { var e = archive.CreateEntry(n + ".png"); using var stream = e.Open(); var png = TestAssets.Png(Unique(30, 200, 90), 16); stream.Write(png, 0, png.Length); }
+            iv.Show("pacote"); iv.Unpack(zip); yield return Until(() => iv.LastPack.Length > 0, "abrir o pacote", 30f); Check(iv.LastPack.StartsWith("2 item(ns) na pasta"), "o pacote vira uma pasta com 2 itens: " + iv.LastPack);
+            iv.Close();
+        }
+
         private IEnumerator Economy()
         {
             var wallet = new WalletWindow(_ca); wallet.Open(); yield return Until(() => wallet.Balance >= 0, "o saldo da carteira"); Check(wallet.Balance == 0, "uma conta nova começa sem moedas: " + wallet.Balance);
@@ -250,6 +288,57 @@ namespace LifeVerse.Unity.Server
             manage.Show("Permissões"); yield return Until(() => manage.PermissionCount >= 1, "a permissão aparece na lista"); manage.Close();
         }
 
+        private IEnumerator ManageFull()
+        {
+            var mg = "/api/v1/worlds/islands/" + _island + "/management";
+            var gm = new IslandManagementWindow(_ca, _island); gm.Open(); yield return Until(() => gm.SummaryText.Contains("Ilha de Alice") && gm.Fields.TryGetValue("Nome", out var n) && n.value == "Ilha de Alice", "o resumo e a seção Geral: " + gm.SummaryText + " " + gm.Status);
+            gm.Fields["Descrição"].value = "Descrita pelo Unity"; gm.SaveGeneral(); yield return Until(() => gm.Status.Length > 0, "a resposta de salvar os dados gerais");
+            string body = null; yield return Call(_a, "GET", mg, null, b => body = b); Check(Json.One(body).Text("description") == "Descrita pelo Unity" && Json.One(body).Text("name") == "Ilha de Alice", "os dados gerais salvos pela janela: " + gm.Status + " " + Snip(body));
+            gm.Show("banimentos"); yield return Until(() => gm.Actions.ContainsKey("Banir"), "a seção de banimentos: " + gm.Status);
+            gm.Ban(_bName, "teste do Unity", "2"); yield return Until(() => gm.RowIds.Count >= 1, "o banimento aparece na lista: " + gm.Status);
+            yield return Call(_a, "GET", mg + "/bans?status=active", null, b => body = b); Check(body.Contains("teste do Unity"), "o banimento chegou à API: " + Snip(body));
+            gm.Press("Retirar"); yield return Until(() => gm.RowIds.Count == 0 && gm.Status.Contains("retirado"), "retirar o banimento: " + gm.Status);
+            gm.Show("permissoes"); yield return Until(() => gm.Toggles.Count >= 1, "as definições de permissão: " + gm.Status);
+            gm.Fields["Nome da pessoa"].value = _bName; gm.Toggles.Values.First().value = true; gm.Press("Dar"); yield return Until(() => gm.RowIds.Contains(_bId), "B aparece com permissões: " + gm.Status);
+            gm.Show("ambiente"); yield return Until(() => gm.Fields.ContainsKey("Hora (0 a 24)"), "a aparência da ilha: " + gm.Status);
+            gm.Fields["Hora (0 a 24)"].value = "17"; gm.Press("Salvar a aparência"); yield return Until(() => gm.Status.Length > 0 && gm.Fields.ContainsKey("Hora (0 a 24)") && gm.Fields["Hora (0 a 24)"].value == "17", "salvar a aparência: " + gm.Status);
+            yield return Call(_a, "GET", mg + "/environment", null, b => body = b); using (var d = JsonDocument.Parse(body)) Check(d.RootElement.GetProperty("look").GetProperty("hour").GetDouble() == 17, "a hora salva na API: " + Snip(body));
+            gm.Show("midia"); yield return Until(() => gm.Fields.ContainsKey("Endereço (https)"), "a música da ilha: " + gm.Status);
+            gm.Fields["Endereço (https)"].value = "https://cdn.example.com/tema.mp3"; gm.Press("Salvar a música"); yield return Until(() => gm.Status.Length > 0, "salvar a música", 30f);
+            yield return Call(_a, "GET", mg + "/media", null, b => body = b); Check(body.Contains("tema.mp3"), "a música salva na API: " + gm.Status + " " + Snip(body));
+            gm.Show("auditoria"); yield return Until(() => gm.RowIds.Count >= 3, "o histórico mostra as mudanças: " + gm.Status);
+            foreach (var section in new[] { "acesso", "administracao", "objetos", "fisica", "desempenho", "terreno", "reinicio" })
+            { var before = gm.Loads; gm.Show(section); yield return Until(() => gm.Loads > before, "a seção " + section + " responder"); Check(gm.Status.Length == 0, "a seção " + section + " abre sem erro: " + gm.Status); }
+            gm.Close();
+        }
+
+        private IEnumerator LandFull()
+        {
+            var land = "/api/v1/worlds/islands/" + _island + "/land";
+            var lm = new LandManagementWindow(_ca, _island); lm.Open(); yield return Until(() => lm.SummaryText.Contains("terrenos") && lm.Lines >= 10, "a visão geral dos terrenos: " + lm.Status);
+            foreach (var section in new[] { "mapa", "lista", "vendas", "alugueis", "contratos", "prims", "historico" })
+            { var before = lm.Loads; lm.Show(section); yield return Until(() => lm.Loads > before, "a seção " + section + " responder"); Check(lm.Status.Length == 0, "a seção " + section + " abre sem erro: " + lm.Status); }
+            lm.Show("demarcacao"); yield return Until(() => lm.Actions.ContainsKey("Demarcar") && lm.Grid != null && lm.Grid.Size > 0, "a demarcação: " + lm.Status);
+            lm.Fields["Nome do terreno"].value = "Lote do Unity"; var edge = lm.Grid.Origin + lm.Grid.Size - 2; lm.Grid.Toggle((edge, edge)); lm.Grid.Toggle((edge + 1, edge)); lm.Press("Demarcar");
+            yield return Until(() => lm.Section == "lista" || lm.Status.Length > 0 && !lm.Status.Contains("demarcado"), "a resposta da demarcação: " + lm.Status);
+            string body = null; yield return Call(_a, "GET", land + "/overview", null, b => body = b); Check(body.Contains("Lote do Unity"), "o terreno demarcado pela janela está no resumo: " + lm.Status + " " + Snip(body));
+            Guid parcel; using (var d = JsonDocument.Parse(body)) parcel = Guid.Parse(d.RootElement.GetProperty("parcels").EnumerateArray().First(p => p.GetProperty("name").GetString() == "Lote do Unity").GetProperty("id").GetString());
+            lm.Show("permissoes"); yield return Until(() => lm.Choices.ContainsKey("Terreno") && (lm.Actions.ContainsKey("Dar acesso ao grupo") || lm.Lines >= 3), "o acesso de grupo: " + lm.Status);
+            lm.Close();
+            var pi = new ParcelInfoWindow(_ca, _island, parcel, () => new Vector3(0, 0, 0)); pi.Open(); yield return Until(() => pi.Fields.ContainsKey("Nome") && pi.SummaryText.Contains("Lote do Unity"), "Sobre este Terreno abre o terreno novo: " + pi.Status);
+            pi.Fields["Nome"].value = "Lote Unity Dois"; pi.Press("Salvar nome e descrição"); yield return Until(() => pi.Status.Length > 0, "salvar o nome do terreno");
+            yield return Call(_a, "GET", land + "/parcels/" + parcel + "/about", null, b => body = b); Check(body.Contains("Lote Unity Dois"), "o nome novo do terreno na API: " + pi.Status + " " + Snip(body));
+            pi.Show("opcoes"); yield return Until(() => pi.Choices.ContainsKey("Quem constrói"), "as opções: " + pi.Status); pi.Choices["Quem constrói"].index = 1; pi.Press("Salvar as opções"); yield return Until(() => pi.Status.Length > 0, "salvar as opções");
+            yield return Call(_a, "GET", land + "/parcels/" + parcel + "/about", null, b => body = b); Check(body.Contains("\"buildMode\":\"list\""), "quem constrói salvo na API: " + pi.Status + " " + Snip(body));
+            pi.Show("acesso"); yield return Until(() => pi.Choices.ContainsKey("Modo"), "o acesso do terreno: " + pi.Status); pi.AddPerson(_bName, "allow", ""); yield return Until(() => pi.RowIds.Count >= 1 || pi.Status.Length > 0 && !pi.Status.Contains("está na lista"), "pôr B na lista: " + pi.Status);
+            yield return Call(_a, "GET", land + "/parcels/" + parcel + "/access", null, b => body = b); Check(body.Contains(_bId.ToString()), "B está na lista do terreno: " + pi.Status + " " + Snip(body));
+            foreach (var section in new[] { "propriedade", "objetos", "midia", "historico", "auditoria" })
+            { var before = pi.Loads; pi.Show(section); yield return Until(() => pi.Loads > before, "a aba " + section + " responder"); Check(pi.Status.Length == 0, "a aba " + section + " abre sem erro: " + pi.Status); }
+            pi.Close();
+            var theirs = new ParcelInfoWindow(_cb, _island, parcel); theirs.Open(); yield return Until(() => theirs.Lines >= 1 && theirs.Loads >= 1, "B abre Sobre este Terreno: " + theirs.Status);
+            Check(!theirs.Fields.ContainsKey("Nome"), "quem não é dono vê o terreno sem poder mudar: " + theirs.Status); theirs.Close();
+        }
+
         private IEnumerator Land()
         {
             string overview = null; yield return Call(_a, "GET", "/api/v1/worlds/islands/" + _island + "/land", null, b => overview = b); var root = Json.One(overview); Check(root.Number("cellSize") == 4 && root.Number("size") == 256, "a visão do terreno traz size e cellSize: " + Snip(overview));
@@ -264,6 +353,149 @@ namespace LifeVerse.Unity.Server
             var audit = _a.ApiAsync("GET", "/api/v1/worlds/islands/" + _island + "/land/parcels/" + id + "/audit", null); yield return Wait(audit); Check(audit.Result.Status == 200, "auditoria: " + audit.Result.Status); manage.Close();
         }
 
+
+        private IEnumerator SearchFull()
+        {
+            var settings = new UserSettings(); (Guid Island, float? X, float? Z) went = default; string body = null;
+            var gs = new GlobalSearchWindow(_ca, settings, null, (i, x, z) => went = (i, x, z)); gs.Open();
+            yield return Until(() => gs.Loads >= 4, "Para você responder (interesses, recomendados, populares, recentes): " + gs.Status); Check(gs.Status.Length == 0, "Para você abre sem erro: " + gs.Status);
+            gs.Fields["Interesses (separados por vírgula)"].value = "praia, música"; gs.Press("Salvar os interesses"); yield return Until(() => gs.Status.Length > 0, "salvar os interesses");
+            yield return Call(_a, "GET", "/api/v1/search/interests", null, b => body = b); Check(body.Contains("praia"), "os interesses salvos na API: " + gs.Status + " " + Snip(body));
+            // the index is filled by the API in the background (every 30 s): wait for Alice's island to be findable
+            var found = false; for (var attempt = 0; attempt < 8 && !found; attempt++)
+            {
+                gs.Show("lugares"); yield return Until(() => gs.Fields.ContainsKey("Buscar"), "a aba Lugares"); gs.Fields["Buscar"].value = "Alice"; var before = gs.Loads; gs.Press("Buscar"); yield return Until(() => gs.Loads > before, "a busca responder: " + gs.Status);
+                Check(gs.Status.Length == 0, "a busca da API responde sem erro: " + gs.Status); found = gs.RowIds.Contains(_island); if (!found) yield return new WaitForSeconds(5f);
+            }
+            Check(found, "a ilha de Alice aparece na busca de lugares: " + gs.SummaryText);
+            Check(settings.RecentSearches.Count == 1 && settings.RecentSearches[0] == "Alice", "a busca entra no histórico local");
+            gs.Suggest("Alic"); yield return new WaitForSeconds(1.5f); Check(gs.Status.Length == 0, "as sugestões respondem sem erro: " + gs.Status + " (" + gs.Suggested.Count + ")");
+            yield return new WaitForSeconds(.3f); 
+            Check(gs.OpenResult(_island), "abrir o resultado da ilha de Alice"); yield return Until(() => gs.Opened == _island && gs.Actions.ContainsKey("Favoritar"), "os detalhes da ilha");
+            gs.Press("Favoritar"); yield return Until(() => gs.Status.Length > 0, "favoritar"); yield return Call(_a, "GET", "/api/v1/search/favorites", null, b => body = b); Check(body.Contains(_island.ToString()), "a ilha está nos favoritos da busca: " + gs.Status + " " + Snip(body));
+            var shown = gs.Status; gs.Fields["Motivo"].value = "teste de denúncia do Unity"; gs.Press("Enviar denúncia"); yield return Until(() => gs.Status != shown, "denunciar"); Check(gs.Status == "Você não pode denunciar o que é seu.", "a API recusa denunciar a própria ilha, em palavras: " + gs.Status);
+            var theirs = new GlobalSearchWindow(_cb, new UserSettings()); theirs.Open(); theirs.Show("lugares"); yield return Until(() => theirs.Fields.ContainsKey("Buscar"), "a busca de B"); theirs.Fields["Buscar"].value = "Alice"; theirs.Press("Buscar"); yield return Until(() => theirs.RowIds.Contains(_island), "B acha a ilha de Alice: " + theirs.Status);
+            Check(theirs.OpenResult(_island), "B abre a ilha de Alice"); yield return Until(() => theirs.Fields.ContainsKey("Motivo"), "os detalhes para B"); theirs.Fields["Motivo"].value = "teste de denúncia do Unity"; theirs.Press("Enviar denúncia");
+            yield return Until(() => theirs.Status.Length > 0, "a denúncia de B"); Check(theirs.Status.Contains("Denúncia enviada"), "a denúncia de B é aceita: " + theirs.Status); theirs.Close();
+            gs.Press("Ir até lá"); Check(went.Island == _island, "ir até a ilha do resultado");
+            foreach (var tab in new[] { "tudo", "pessoas", "eventos", "grupos", "itens", "lojas", "favoritos" }) { var before = gs.Loads; gs.Show(tab); yield return Until(() => gs.Loads > before, "a aba " + tab + " responder"); Check(gs.Status.Length == 0, "a aba " + tab + " abre sem erro: " + gs.Status); }
+            gs.Close();
+        }
+
+        private IEnumerator GroupsFull()
+        {
+            string body = null; var name = "Grupo Unity " + Guid.NewGuid().ToString("N").Substring(0, 4);
+            var hub = new GroupsHubWindow(_ca); hub.Open(); hub.Show("criar"); yield return Until(() => hub.Actions.ContainsKey("Continuar"), "o primeiro passo de criar grupo");
+            hub.Creating.Name = name; hub.Creating.Description = "Criado pelo teste do Unity"; hub.Creating.Policy = "request"; hub.CreateNow(); yield return Until(() => hub.Created != Guid.Empty || hub.Status.Length > 0 && !hub.Status.Contains("criado"), "criar o grupo: " + hub.Status);
+            Check(hub.Created != Guid.Empty, "o grupo criado pelos 4 passos: " + hub.Status); var group = hub.Created; var path = "/api/v1/groups/" + group;
+            var gp = new GroupProfileWindow(_ca, group); gp.Open(); yield return Until(() => gp.SummaryText.Contains(name), "o perfil do grupo: " + gp.Status);
+            foreach (var tab in new[] { "membros", "cargos", "permissoes", "avisos", "chat", "terrenos", "economia", "propostas", "configuracoes" }) { var before = gp.Loads; gp.Show(tab); yield return Until(() => gp.Loads > before + 1, "a aba " + tab + " responder"); Check(gp.Status.Length == 0, "a aba " + tab + " do grupo abre sem erro: " + gp.Status); }
+            gp.Show("membros"); yield return Until(() => gp.Fields.ContainsKey("Convidar pelo nome"), "o convite pelo nome"); gp.Fields["Convidar pelo nome"].value = _bName; gp.Press("Convidar"); yield return Until(() => gp.Status.Length > 0, "convidar B");
+            Check(gp.Status.Contains("Convite enviado"), "o convite a B é aceito pela API: " + gp.Status);
+            var theirs = new GroupsHubWindow(_cb); theirs.Open(); theirs.Show("convites"); yield return Until(() => theirs.Actions.ContainsKey("Aceitar " + name), "o convite aparece para B: " + theirs.Status); theirs.Press("Aceitar " + name);
+            yield return Until(() => theirs.Status.Length > 0, "B aceitar o convite"); Check(theirs.Status.Contains("entrou"), "B entra no grupo: " + theirs.Status);
+            yield return Call(_a, "GET", path + "/members", null, b => body = b); Check(body.Contains(_bId.ToString()), "B está entre os membros: " + Snip(body));
+            gp.Show("cargos"); yield return Until(() => gp.Fields.ContainsKey("Nome do cargo"), "o formulário de cargo"); yield return new WaitForSeconds(.3f); gp.Fields["Nome do cargo"].value = "Construtor"; gp.Press("Criar o cargo"); yield return Until(() => gp.Status.Contains("Cargo criado") || gp.Status.Length > 0 && !gp.Status.Contains("Cargo"), "criar o cargo: " + gp.Status);
+            gp.Show("permissoes"); yield return Until(() => gp.Toggles.ContainsKey("Construtor:invite"), "as permissões do cargo novo: " + gp.Status); yield return new WaitForSeconds(.3f); gp.Toggles["Construtor:invite"].value = true; gp.Press("Salvar as permissões de Construtor"); yield return Until(() => gp.Status.Length > 0, "salvar as permissões");
+            yield return Call(_a, "GET", path + "/roles", null, b => body = b); Check(body.Contains("Construtor") && body.Contains("\"invite\""), "o cargo com a permissão de convidar na API: " + gp.Status + " " + Snip(body));
+            gp.Show("avisos"); yield return Until(() => gp.Fields.ContainsKey("Título do aviso"), "o formulário de aviso"); yield return new WaitForSeconds(.3f); gp.Fields["Título do aviso"].value = "Reunião"; gp.Fields["Texto"].value = "Sábado às 20h"; gp.Press("Publicar o aviso"); yield return Until(() => gp.Status.Length > 0, "publicar o aviso");
+            yield return Call(_b, "GET", path + "/announcements", null, b => body = b); Check(body.Contains("Reunião"), "B vê o aviso: " + gp.Status + " " + Snip(body));
+            gp.Show("chat"); yield return Until(() => gp.Fields.ContainsKey("Mensagem"), "o chat do grupo"); yield return new WaitForSeconds(.3f); gp.Fields["Mensagem"].value = "olá grupo"; gp.Press("Enviar"); yield return new WaitForSeconds(1f);
+            yield return Call(_b, "GET", path + "/chat?take=10", null, b => body = b); Check(body.Contains("olá grupo") || body.Contains("ol\\u00E1 grupo"), "a mensagem no chat do grupo: " + Snip(body));
+            gp.Show("economia"); yield return Until(() => gp.Fields.ContainsKey("Quanto dar (VC)"), "o baú"); yield return new WaitForSeconds(.3f); gp.Fields["Quanto dar (VC)"].value = "5"; gp.Press("Dar ao baú"); yield return Until(() => gp.Status.Length > 0, "dar ao baú");
+            Check(gp.Status == "Saldo insuficiente.", "sem moedas a API recusa, em palavras: " + gp.Status);
+            gp.Show("propostas"); yield return Until(() => gp.Fields.ContainsKey("Título"), "a nova proposta"); yield return new WaitForSeconds(.3f); gp.Fields["Título"].value = "Festa no sábado?"; gp.Press("Abrir a votação"); yield return Until(() => gp.Status.Length > 0, "abrir a votação");
+            Check(gp.Status.Contains("Votação aberta"), "a votação abre: " + gp.Status);
+            var bp = new GroupProfileWindow(_cb, group); bp.Open(); bp.Show("propostas"); yield return Until(() => bp.Actions.ContainsKey("Votar: Sim"), "B pode votar: " + bp.Status); bp.Press("Votar: Sim"); yield return Until(() => bp.Status.Length > 0, "B votar");
+            Check(bp.Status.Contains("Voto dado"), "o voto de B: " + bp.Status); bp.Close();
+            hub.Show("meus"); yield return Until(() => hub.Actions.ContainsKey("Usar como ativo: " + name), "o grupo em Meus grupos"); hub.Press("Usar como ativo: " + name); yield return Until(() => hub.Status.Length > 0, "usar como ativo");
+            yield return Call(_a, "GET", "/api/v1/groups/active", null, b => body = b); Check(body.Contains(name), "o grupo ativo na API: " + hub.Status + " " + Snip(body));
+            hub.Show("descobrir"); yield return Until(() => hub.Loads >= 1 && hub.Actions.ContainsKey("Buscar"), "descobrir grupos"); Check(hub.Status.Length == 0, "descobrir grupos sem erro: " + hub.Status);
+            gp.Close(); hub.Close(); theirs.Close();
+        }
+
+        private IEnumerator WalletAndProfile()
+        {
+            string body = null;
+            var wallet = new WalletHubWindow(_ca); wallet.Open(); yield return Until(() => wallet.Balance >= 0 && wallet.Loads >= 2, "a carteira: " + wallet.Status);
+            foreach (var tab in new[] { "extrato", "comprar", "taxas" }) { var before = wallet.Loads; wallet.Show(tab); yield return Until(() => wallet.Loads > before + 1, "a aba " + tab); Check(wallet.Status.Length == 0, "a aba " + tab + " da carteira abre sem erro: " + wallet.Status); }
+            wallet.Order("starter", "pix"); yield return Until(() => wallet.Status.Length > 0, "pedir moedas"); Check(wallet.Status.Contains("ainda não está ligada") || wallet.Status.Contains("Pedido feito") || wallet.Status.Contains("não existe"), "pedir moedas responde em palavras: " + wallet.Status); wallet.Close();
+            var mine = new ProfileHubWindow(_ca, _aId); mine.Open(); yield return Until(() => mine.Fields.ContainsKey("Sobre você"), "o próprio perfil: " + mine.Status); yield return new WaitForSeconds(.3f);
+            mine.Fields["Sobre você"].value = "Bio escrita pelo Unity"; mine.Press("Salvar o perfil"); yield return Until(() => mine.Status.Length > 0, "salvar o perfil");
+            yield return Call(_a, "GET", "/api/v1/users/" + _aId + "/profile/full", null, b => body = b); Check(body.Contains("Bio escrita pelo Unity"), "a bio salva: " + mine.Status + " " + Snip(body));
+            mine.Show("feed"); yield return Until(() => mine.Fields.ContainsKey("O que você quer contar?"), "publicar no feed: " + mine.Status); yield return new WaitForSeconds(.3f); mine.Fields["O que você quer contar?"].value = "Primeira publicação do Unity"; mine.Press("Publicar"); yield return Until(() => mine.RowIds.Count >= 1, "a publicação no feed: " + mine.Status);
+            foreach (var tab in new[] { "galeria", "conquistas", "estatisticas", "favoritos", "grupos" }) { var before = mine.Loads; mine.Show(tab); yield return Until(() => mine.Loads > before, "a aba " + tab); Check(mine.Status.Length == 0, "a aba " + tab + " do perfil abre sem erro: " + mine.Status); }
+            mine.Close();
+            var other = new ProfileHubWindow(_cb, _aId); other.Open(); yield return Until(() => other.Loads >= 1, "B abre o perfil de A"); other.Show("feed"); yield return Until(() => other.RowIds.Count >= 1, "B vê a publicação de A: " + other.Status);
+            other.Show("acoes"); yield return Until(() => other.Actions.ContainsKey("Mandar mensagem"), "as ações no perfil de outra pessoa"); Check(!other.Fields.ContainsKey("Sobre você"), "B não edita o perfil de A"); other.Close();
+        }
+
+        private IEnumerator EntryAndScripts()
+        {
+            var health = _a.GetBytesAsync("/health"); yield return Wait(health); var login = new LoginView(new UserSettings(), ""); login.SetServers(health.Result.Status);
+            Check(health.Result.Status == 200 && login.ServersNow == LoginView.Servers.Online || health.Result.Status == 503 && login.ServersNow == LoginView.Servers.Offline, "/health responde e a tela de entrada mostra o que ele disse: " + health.Result.Status + " " + login.ServerState.text);
+            string start = null; yield return Call(_a, "GET", "/api/v1/worlds/me/start", null, b => start = b); var place = Json.One(start); Check(place.Id("islandId") != Guid.Empty && place.Text("reason").Length > 0, "o servidor escolhe onde a pessoa começa: " + Snip(start));
+            string manifest = null; yield return Call(_a, "GET", LifeVerse.Unity.World.AssetPreloader.ManifestPath(_island, null, null), null, b => manifest = b); var assets = LifeVerse.Unity.World.AssetPreloader.ParseManifest(manifest); Check(assets != null, "a lista de recursos da ilha: " + Snip(manifest));
+            var create = _a.ApiAsync("POST", "/api/v1/worlds/islands/" + _island + "/objects", JsonSerializer.Serialize(new { primitiveType = "cube", name = "Contador", positionX = 2, positionY = 1, positionZ = 2, rotationX = 0, rotationY = 0, rotationZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1 })); yield return Wait(create);
+            var obj = Json.One(create.Result.Body); var objectId = obj.Id("id", "objectId"); if (objectId == Guid.Empty && obj.Has("object")) objectId = new Row(obj.Element.GetProperty("object")).Id(); Check(objectId != Guid.Empty, "o objeto do script: " + Snip(create.Result.Body));
+            var lua = new LuaEditorWindow(_ca, _island, objectId); lua.Open(); yield return Until(() => lua.StatusText.Length == 0 || lua.StatusText.Length > 0, "o editor abrir");
+            lua.NewScript(); lua.Source = "local contador = 0\nfunction on_touch(e)\n  contador = contador + 1\n  object.say(tostring(contador))\nend\nfunction on_toque(e)\nend\n"; lua.Save(); yield return Until(() => lua.OpenScript != Guid.Empty && !lua.Dirty, "salvar o script: " + lua.StatusText, 10f);
+            lua.Validate(); yield return Until(() => lua.StatusText.StartsWith("Sem erros") || lua.StatusText.StartsWith("Erro"), "a verificação do servidor: " + lua.StatusText, 10f); Check(lua.StatusText.StartsWith("Sem erros"), "o servidor aceita o script: " + lua.StatusText + " / " + lua.ProblemsText);
+            lua.RefreshRuntime(); yield return Until(() => lua.Runtime != null, "como o script está na ilha", 10f); Check(lua.PerformanceText.Length > 0 && lua.ConsoleText.Length > 0, "o desempenho e o console do script: " + lua.PerformanceText);
+            lua.Pause(); yield return Until(() => lua.PauseText == "Continuar", "pausar o script: " + lua.StatusText, 10f); lua.Pause(); yield return Until(() => lua.PauseText == "Pausar", "continuar o script: " + lua.StatusText, 10f);
+            lua.Grant("HTTP_REQUESTS", true); yield return Until(() => lua.StatusText.Contains("concedida") || lua.StatusText.Contains("Não") || lua.StatusText.Contains("não"), "dar uma permissão ao script", 10f); Check(lua.StatusText.Contains("concedida"), "a permissão foi dada: " + lua.StatusText);
+            lua.RefreshRuntime(); yield return Until(() => lua.OwnerPermissions["HTTP_REQUESTS"].value && lua.Runtime != null && lua.Runtime.Grants.Exists(g => g.Permission == "HTTP_REQUESTS"), "a permissão aparecer no script", 10f);
+            lua.Source = "object."; lua.PlaceCursor(7); yield return new WaitForSeconds(1f); lua.Complete(); Check(lua.Suggestions.Count >= 3 && lua.Suggestions.Exists(x => x.Insert == "getName("), "completar com a referência real: " + lua.Suggestions.Count);
+            lua.Close();
+        }
+
+        private IEnumerator AvatarStudio()
+        {
+            string body = null; var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lv-avatar-" + Guid.NewGuid().ToString("N").Substring(0, 6)); System.IO.Directory.CreateDirectory(folder);
+            string Save(string name, byte[] bytes) { var path = System.IO.Path.Combine(folder, name); System.IO.File.WriteAllBytes(path, bytes); return path; }
+            var bodyFile = Save("corpo.glb", HumanoidTemplate.Build(new TemplateOptions()));
+            var shirtFile = Save("camiseta.glb", WearableTemplate.Clothing("top", WearableTemplate.ShirtBones));
+            var hatFile = Save("chapeu.glb", WearableTemplate.Attachment("{\"lifeverse\":{\"slot\":\"hat\",\"bone\":\"head\"}}"));
+            var danceFile = Save("aceno.glb", HumanoidTemplate.Build(new TemplateOptions { Animations = new[] { new AnimationSpec("Aceno", 1f, new[] { ("upper_arm_r", 2, 1.2f), ("lower_arm_r", 0, .6f), ("hand_r", 2, .4f), ("upper_arm_l", 2, -.2f), ("spine", 1, .1f), ("chest", 1, .1f), ("neck", 1, .2f), ("head", 0, .15f), ("upper_leg_l", 0, .05f), ("upper_leg_r", 0, -.05f) }) } }));
+            var st = new AvatarStudioWindow(_ca); st.Open(); yield return Until(() => st.Loads >= 1, "o estúdio do avatar: " + st.Status);
+            st.Show("corpo"); yield return Until(() => st.Loads >= 2, "a aba do corpo"); st.Upload("models", bodyFile); yield return Until(() => st.Status.Contains("enviado") || st.Status.Length > 0 && !st.Status.StartsWith("Enviando"), "enviar o corpo", 30f);
+            Check(st.Status.Contains("enviado"), "o corpo próprio passa nas checagens do servidor: " + st.Status);
+            yield return Call(_a, "GET", "/api/v1/users/me/avatar/models", null, b => body = b); Guid model; using (var d = JsonDocument.Parse(body)) model = Guid.Parse(d.RootElement.EnumerateArray().First().GetProperty("id").GetString());
+            yield return new WaitForSeconds(.4f); st.Press(st.Actions.Keys.First(k => k.StartsWith("Usar "))); yield return Until(() => st.Status.Contains("em uso"), "usar o corpo: " + st.Status);
+            yield return Call(_a, "GET", "/api/v1/users/me/avatar", null, b => body = b); Check(body.Contains(model.ToString()), "o avatar usa o corpo próprio: " + Snip(body));
+            st.Show("roupas"); yield return Until(() => st.Actions.ContainsKey("Enviar uma roupa ou acessório (.glb)…"), "a aba das roupas"); st.Upload("wearables", shirtFile); yield return Until(() => st.Status.Length > 0 && !st.Status.StartsWith("Enviando"), "enviar a camiseta", 30f);
+            Check(st.Status.Contains("enviado"), "a camiseta passa nas checagens: " + st.Status); yield return new WaitForSeconds(.4f);
+            st.Upload("wearables", hatFile); yield return Until(() => st.Status.Length > 0 && !st.Status.StartsWith("Enviando") && st.Status.Contains("chapeu"), "enviar o chapéu", 30f); Check(st.Status.Contains("enviado"), "o chapéu passa nas checagens: " + st.Status);
+            yield return Until(() => st.Actions.Keys.Any(k => k.StartsWith("Vestir ")), "as roupas para vestir"); yield return new WaitForSeconds(.4f);
+            var wear = st.Actions.Keys.First(k => k.StartsWith("Vestir ") && k.Contains("chapeu")); var beforeWear = st.Status; st.Press(wear); yield return Until(() => st.Status != beforeWear, "vestir o chapéu: " + st.Status, 20f);
+            Check(st.Status.Contains("vestido"), "vestir o chapéu salva o avatar: " + st.Status);
+            yield return Call(_a, "GET", "/api/v1/users/me/avatar", null, b => body = b); Check(body.Contains("custom:"), "o avatar leva o item próprio: " + Snip(body));
+            st.Show("animacoes"); yield return Until(() => st.Actions.ContainsKey("Enviar animações (.glb)…"), "a aba das animações"); st.Upload("animations", danceFile); yield return Until(() => st.Status.Length > 0 && !st.Status.StartsWith("Enviando"), "enviar a animação", 30f);
+            Check(st.Status.Contains("enviado"), "a animação passa nas checagens: " + st.Status);
+            yield return Until(() => st.Choices.ContainsKey("Parado"), "a escolha de animação por estado"); yield return new WaitForSeconds(.4f);
+            var idle = st.Choices["Parado"]; var options = (List<(string Id, string Text)>)idle.userData; var aceno = options.FindIndex(o => o.Text.EndsWith(": Aceno")); Check(aceno > 0, "o clipe Aceno está entre as escolhas do estado Parado");
+            var beforeSave = st.Status; idle.index = aceno; st.Press("Salvar as animações"); yield return Until(() => st.Status != beforeSave, "salvar as animações");
+            yield return Call(_a, "GET", "/api/v1/users/me/avatar", null, b => body = b); Check(body.Contains("#Aceno"), "o estado Parado usa a animação própria: " + st.Status + " " + Snip(body));
+            st.Show("roupas"); yield return Until(() => st.Actions.Keys.Any(k => k.StartsWith("Tirar ")), "o chapéu vestido"); yield return new WaitForSeconds(.3f); var beforeOff = st.Status; st.Press(st.Actions.Keys.First(k => k.StartsWith("Tirar "))); yield return Until(() => st.Status != beforeOff, "tirar o chapéu", 20f);
+            Check(st.Status.Contains("tirado"), "tirar o chapéu: " + st.Status);
+            st.Show("visuais"); yield return Until(() => st.Fields.ContainsKey("Nome do visual"), "os visuais"); yield return new WaitForSeconds(.3f); st.Fields["Nome do visual"].value = "Visual Unity"; st.Press("Salvar o avatar de agora como visual"); yield return Until(() => st.Actions.ContainsKey("Compartilhar Visual Unity"), "o visual salvo: " + st.Status);
+            st.Press("Compartilhar Visual Unity"); yield return Until(() => st.LastCode.Length > 0, "o código do visual: " + st.Status);
+            var bst = new AvatarStudioWindow(_cb); bst.Open(); yield return Until(() => bst.Fields.ContainsKey("Código de um visual compartilhado"), "os visuais de B"); yield return new WaitForSeconds(.3f);
+            bst.Fields["Código de um visual compartilhado"].value = st.LastCode; bst.Press("Trazer pelo código"); yield return Until(() => bst.Status.Length > 0, "B trazer pelo código"); Check(bst.Status.Contains("trazido"), "B traz o visual pelo código: " + bst.Status);
+            st.Show("corpo"); yield return Until(() => st.Actions.ContainsKey("Voltar ao corpo do jogo"), "a aba do corpo de novo"); yield return new WaitForSeconds(.3f); st.Press("Voltar ao corpo do jogo"); yield return Until(() => st.Status.Contains("Corpo do jogo"), "voltar ao corpo do jogo");
+            st.Close(); bst.Close(); try { System.IO.Directory.Delete(folder, true); } catch (System.IO.IOException) { }
+        }
+
+        private IEnumerator Live()
+        {
+            var host = new GameObject("live channel"); var live = host.AddComponent<LiveChannel>(); var got = new List<string>(); live.Received += got.Add; live.Begin(Url, () => _a.AccessToken);
+            yield return Until(() => live.Connected, "o canal ao vivo abrir na API de verdade: " + live.LastError, 15f);
+            var text = "ao vivo " + Guid.NewGuid().ToString("N").Substring(0, 6); yield return Call(_b, "POST", "/api/v1/social/messages", JsonSerializer.Serialize(new { content = text, recipientUserId = _aId }), null);
+            yield return Until(() => got.Any(j => j.Contains("\"message\"") && j.Contains(text)), "a mensagem chegar pelo canal", 10f);
+            Check(LifeVerse.Shared.Networking.NotificationFormatter.Describe(got.First(j => j.Contains(text))) is { } line && line.Contains(text), "o aviso da mensagem é montado como no Godot");
+            var bad = host.AddComponent<LiveChannel>(); bad.Begin(Url, () => "token-falso"); yield return new WaitForSeconds(3f); Check(!bad.Connected && bad.Connects == 0, "sem um token válido o canal não abre: " + bad.LastError);
+            live.End(); bad.End(); UnityEngine.Object.Destroy(host);
+        }
 
         private IEnumerator Attachments()
         {
@@ -297,6 +529,13 @@ namespace LifeVerse.Unity.Server
             var kind = itemRow.First("content", "category", "kind").ToLowerInvariant(); Check(kind.Contains("build") || kind.Contains("package") || kind.Contains("object"), "o inventário diz que é uma construção (a lista do painel usa isso): " + kind);
             window.Close();
         }
+        private IEnumerator BuildExtras()
+        {
+            var lua = new LuaEditorWindow(_ca, _island, Guid.Empty); lua.Open(); lua.OpenTemplates(); yield return Until(() => lua.Templates > 0, "os modelos de script"); Check(lua.Templates >= 2, "a API dá os modelos de script: " + lua.Templates); lua.Close();
+            string body = null; yield return Call(_a, "GET", "/api/v1/users/" + _bId + "/profile", null, b => body = b);
+            using (var d = JsonDocument.Parse(body)) Check(d.RootElement.TryGetProperty("displayName", out var shown) && shown.GetString() is { Length: > 0 }, "o perfil público dá o nome que o editor mostra como criador e dono: " + Snip(body));
+        }
+
         private IEnumerator Scripts()
         {
             var create = _a.ApiAsync("POST", "/api/v1/worlds/islands/" + _island + "/objects", JsonSerializer.Serialize(new { primitiveType = "cube", name = "Caixa", positionX = 0, positionY = 1, positionZ = 0, rotationX = 0, rotationY = 0, rotationZ = 0, scaleX = 1, scaleY = 1, scaleZ = 1, materialJson = "{}", geometryJson = "{}", physicsJson = "{}", contentJson = "[]" })); yield return Wait(create);

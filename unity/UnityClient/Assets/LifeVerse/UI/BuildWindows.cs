@@ -32,7 +32,7 @@ namespace LifeVerse.Unity.UI
         public BuildWindow(ApiContext context, BuildEditor editor) : base(context.Ui, "build", "Construir", 440f, 590f, new Vector2(20, 80))
         {
             _c = context; _b = editor; var bar = UiKit.Row(); bar.style.flexWrap = Wrap.Wrap; bar.style.flexShrink = 0; _selection = UiKit.Text("Nada selecionado.", "lv-small", "lv-muted"); _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal;
-            foreach (var tab in new[] { "Criar", "Objeto", "Forma", "Aparência", "Física", "Dados", "Conteúdo", "Alinhar", "Geral", "Auditoria", "Limites" }) { var captured = tab; bar.Add(UiKit.Button(tab, () => Show(captured))); var panel = new ScrollView(); panel.style.flexGrow = 1; panel.style.flexShrink = 1; panel.style.minHeight = 0; panel.style.display = DisplayStyle.None; _tabs[tab] = panel; }
+            foreach (var tab in new[] { "Criar", "Objeto", "Forma", "Aparência", "Recursos", "Física", "Dados", "Conteúdo", "Alinhar", "Geral", "Auditoria", "Limites" }) { var captured = tab; bar.Add(UiKit.Button(tab, () => Show(captured))); var panel = new ScrollView(); panel.style.flexGrow = 1; panel.style.flexShrink = 1; panel.style.minHeight = 0; panel.style.display = DisplayStyle.None; _tabs[tab] = panel; }
             Body.style.flexGrow = 1; Body.style.minHeight = 0; style.overflow = Overflow.Hidden; _selection.style.flexShrink = 0; _status.style.flexShrink = 0;
             _tutorial = UiKit.Text("", "lv-small", "lv-accent"); _tutorial.style.whiteSpace = WhiteSpace.Normal; _tutorial.style.flexShrink = 1; _tutorialBox = UiKit.Row(_tutorial); _tutorialBox.style.flexShrink = 0; _tutorialBox.style.flexWrap = Wrap.Wrap;
             Body.Add(_tutorialBox); Body.Add(bar); Body.Add(_selection);
@@ -61,11 +61,13 @@ namespace LifeVerse.Unity.UI
             _glow = UiKit.Slide("Força do brilho", 0f, 8f, 1f, v => EditMaterial(m => m["emissionStrength"] = Math.Round(v, 2)));
             _double = UiKit.Check("Dois lados", false, v => EditMaterial(m => m["doubleSided"] = v)); _fullBright = UiKit.Check("Luz total (não escurece)", false, v => EditMaterial(m => m["fullBright"] = v));
             _textureId = UiKit.Field("Textura (identificador do arquivo)", false, 40); _tabs["Aparência"].Add(_opacity); _tabs["Aparência"].Add(_rough); _tabs["Aparência"].Add(_metal); _tabs["Aparência"].Add(_emission); _tabs["Aparência"].Add(_glow); _tabs["Aparência"].Add(_double); _tabs["Aparência"].Add(_fullBright); _tabs["Aparência"].Add(_textureId);
-            _tabs["Aparência"].Add(UiKit.Row(UiKit.Button("Usar textura", ApplyTexture, "lv-btn-primary"), UiKit.Button("Escolher do inventário…", PickTexture), UiKit.Button("Tirar textura", () => EditMaterial(m => m.Remove("texture")))));
+            _tabs["Aparência"].Add(UiKit.Row(UiKit.Button("Usar textura", ApplyTexture, "lv-btn-primary"), UiKit.Button("Escolher textura…", () => new TexturePickerWindow(_c, SetTexture).Open()), UiKit.Button("Tirar textura", () => EditMaterial(m => { m.Remove("texture"); m.Remove("builtin"); }))));
+
+            BuildResources();
 
             // Geral
             _name = UiKit.Field("Nome", false, 160); _about = UiKit.Field("Descrição", false, 400); _tabs["Geral"].Add(_name); _tabs["Geral"].Add(_about); _tabs["Geral"].Add(UiKit.Button("Salvar nome e descrição", () => { var n = _name.value.Trim(); var d = _about.value; if (n.Length == 0) { Say("O nome não pode ficar vazio.", true); return; } _b.Edit(_b.Selection.ToList(), s => { s.Name = n; s.Description = d; }, "renomear"); }));
-            _protect = UiKit.Check("Proteger contra edição acidental", false, v => { if (!_filling) _b.Protect(v); }); _tabs["Geral"].Add(_protect);
+            _protect = UiKit.Check("Proteger contra edição acidental", false, v => { if (!_filling) _b.Protect(v); }); _tabs["Geral"].Add(_protect); _people = UiKit.Text("", "lv-small", "lv-muted"); _people.style.whiteSpace = WhiteSpace.Normal; _tabs["Geral"].Add(_people);
             _tabs["Geral"].Add(UiKit.Row(UiKit.Button("Vincular (o 1º é o pai)", () => { if (!_b.Link(true)) Say("Selecione pelo menos dois objetos (o primeiro é o pai).", true); }), UiKit.Button("Desvincular", () => _b.Link(false))));
             _tabs["Geral"].Add(UiKit.Row(UiKit.Button("Copiar", () => _b.Duplicate()), UiKit.Button("Desfazer", () => { if (!_b.Undo()) Say("Nada para desfazer.", false); }), UiKit.Button("Refazer", () => { if (!_b.Redo()) Say("Nada para refazer.", false); }), Controls.Confirm("Apagar", () => "Confirmar", () => _b.Delete(_b.Selection.ToList()), "lv-btn-secondary")));
             _tabs["Geral"].Add(UiKit.Divider()); _tabs["Geral"].Add(UiKit.Text("Guardar como construção", "lv-bold")); _packageName = UiKit.Field("Nome da construção", false, 160);

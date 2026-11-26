@@ -15,6 +15,24 @@ namespace LifeVerse.Unity.UI
         /// <summary>Travels to a spot of an island (meters from its centre; null: where the island spawns people).</summary>
         public Action<Guid, float?, float?> TravelTo;
         public Action<Guid> EnterIsland = _ => { };
+        /// <summary>Sends a message to the island the person is in (false without a connection); what the scripts of the island send back comes through <see cref="IslandScript"/>.</summary>
+        public Func<string, bool> SendToIsland;
+        public event Action<string> IslandScript;
+        public void RaiseIslandScript(string json) => IslandScript?.Invoke(json);
+        /// <summary>An event of the live channel (type, data and the raw JSON), for windows that update themselves (group chat, private messages, the wallet).</summary>
+        public event Action<string, JsonElement, string> Live;
+        public void RaiseLive(string type, JsonElement data, string json) => Live?.Invoke(type, data, json);
+
+        /// <summary>Listens to the live channel only while <paramref name="host"/> is on screen (a closed window stops listening).</summary>
+        public void FollowWhileShown(VisualElement host, Action<string, JsonElement> handler)
+        {
+            Action<string, JsonElement, string> relay = (type, data, _) => handler(type, data); var on = false;
+            void Start() { if (!on) { Live += relay; on = true; } } void Stop() { if (on) { Live -= relay; on = false; } }
+            host.RegisterCallback<AttachToPanelEvent>(_ => Start()); host.RegisterCallback<DetachFromPanelEvent>(_ => Stop()); if (host.panel != null) Start();
+        }
+
+        /// <summary>A text field of a live event's data ("" when it is not there).</summary>
+        public static string Field(JsonElement data, string name) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
     }
 
     /// <summary>One element of a JSON list the API sent, with tolerant readers (the API is camelCase; a field that is not there gives the fallback).</summary>

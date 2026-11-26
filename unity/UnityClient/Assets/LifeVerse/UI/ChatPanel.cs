@@ -23,11 +23,16 @@ namespace LifeVerse.Unity.UI
         public bool Typing { get; private set; }
         public IReadOnlyList<ChatLine> Lines => _lines;
         public TextField Input => _input;
+        private readonly Button _minimize;
+        /// <summary>Minimized, the chat keeps only the line to write in (the messages stay and come back).</summary>
+        public bool Minimized { get; private set; }
+        public void SetMinimized(bool minimized) { Minimized = minimized; _log.style.display = minimized ? DisplayStyle.None : DisplayStyle.Flex; style.height = minimized ? 62 : 230; _minimize.text = minimized ? "+" : "–"; _minimize.tooltip = minimized ? "Mostrar as mensagens" : "Minimizar o chat"; }
 
         public ChatPanel(UserSettings settings)
         {
             _settings = settings; name = "chat"; AddToClassList("lv-glass"); style.width = 420; style.height = 230; style.paddingBottom = 6; pickingMode = PickingMode.Position;
-            _log = new ScrollView(ScrollViewMode.Vertical); _log.style.flexGrow = 1; _log.verticalScrollerVisibility = ScrollerVisibility.Auto; Add(_log);
+            _minimize = UiKit.Button("–", () => SetMinimized(!Minimized), "lv-btn-flat"); _minimize.tooltip = "Minimizar o chat"; _minimize.style.position = Position.Absolute; _minimize.style.right = 4; _minimize.style.top = 2; _minimize.style.width = 26; _minimize.style.height = 22;
+            _log = new ScrollView(ScrollViewMode.Vertical); _log.style.flexGrow = 1; _log.verticalScrollerVisibility = ScrollerVisibility.Auto; Add(_log); Add(_minimize);
             _input = UiKit.Field("", false, MaxLength); _input.style.marginTop = 4; Add(_input);
             _input.RegisterCallback<FocusInEvent>(e => SetTyping(true)); _input.RegisterCallback<FocusOutEvent>(e => SetTyping(false));
             _input.RegisterCallback<KeyDownEvent>(OnKey, TrickleDown.TrickleDown);

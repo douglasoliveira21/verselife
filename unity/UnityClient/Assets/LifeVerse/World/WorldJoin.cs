@@ -49,7 +49,14 @@ namespace LifeVerse.Unity.World
             var snapshot = api.GetSnapshotAsync(islandId); var objects = api.GetObjectsAsync(islandId);
             while (!snapshot.IsCompleted || !objects.IsCompleted) yield return null;
             if (snapshot.Result.Ok && Client.Terrain != null) { Client.Terrain.Apply(TerrainMap.FromJson(snapshot.Result.TerrainJson)); if (Client.Ocean != null) Client.Ocean.SeaLevel = Client.Terrain.Map.SeaLevel; SnapshotApplied = true; }
-            Client.AssetLoader = asset => api.GetAssetAsync(islandId, asset);
+            // the files near the arrival point come first (kept on disk by hash); the far ones keep coming after the entry
+            Status = "loading_assets"; if (!_pruned) { _pruned = true; AssetPreloader.Prune(CacheFolder); }
+            Preload = new AssetPreloader(CacheFolder, asset => api.GetAssetAsync(islandId, asset));
+            var manifest = api.ApiAsync("GET", AssetPreloader.ManifestPath(islandId, null, null)); while (!manifest.IsCompleted) yield return null;
+            var essentials = Preload.Essentials(manifest.Result.Status, manifest.Result.Body);
+            while (!essentials.IsCompleted) { Detail = AssetPreloader.Describe(Preload.DoneBytes, Preload.TotalBytes); yield return null; }
+            Detail = null; if (!essentials.Result) { Fail(Preload.LastError); yield break; }
+            var preload = Preload; Client.AssetLoader = asset => preload.Load(asset);
             if (Client.Objects != null) Client.Objects.AssetLoader = Client.AssetLoader;   // pictures and models come from the API on demand
             if (objects.Result != null && Client.Objects != null) ObjectsLoaded = Client.Objects.Load(objects.Result);
             if (Client.Environment != null)
@@ -66,8 +73,15 @@ namespace LifeVerse.Unity.World
             while (!Client.Authenticated && Client.RejectCode == null && Client.ProtocolMismatch == 0 && Time.realtimeSinceStartup < limit) yield return null;
             if (Client.ProtocolMismatch != 0) { Fail("Versão do protocolo incompatível."); yield break; }
             if (!Client.Authenticated) { Fail(Client.RejectCode != null ? "A ilha recusou a entrada: " + Client.RejectCode : "A ilha não respondeu a tempo."); yield break; }
-            Status = "in_island"; Done = true;
+            Status = "in_island"; Done = true; _ = Preload?.Rest();
         }
+
+        /// <summary>The files of the island, near ones before the entry, the rest after it.</summary>
+        public AssetPreloader Preload { get; private set; }
+        /// <summary>What the current step is doing in words (the bytes of the files), or null.</summary>
+        public string Detail { get; private set; }
+        public static string CacheFolder => System.IO.Path.Combine(Application.persistentDataPath, "assets");
+        private static bool _pruned;
 
         private void Fail(string message) { Failure = message; Status = "failed"; Done = true; }
     }

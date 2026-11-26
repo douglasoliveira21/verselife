@@ -64,7 +64,7 @@ namespace LifeVerse.Unity.UI
             Body.Add(UiKit.Text("Pedidos para entrar", "lv-bold", "lv-accent"));
             _requests = new ApiList(context, () => "/api/v1/groups/" + group + "/requests", row => { var id = row.Id("id", "requestId"); return UiKit.Row(UiKit.Text(row.First("username", "displayName", "userId"), "lv-bold"), UiKit.Spacer(), UiKit.Button("Aprovar", () => Act("POST", "/api/v1/groups/" + group + "/requests/" + id + "/approve", null, () => { _requests.Reload(); _members.Reload(); }), "lv-btn-primary"), UiKit.Button("Negar", () => Act("POST", "/api/v1/groups/" + group + "/requests/" + id + "/deny", null, () => _requests.Reload()))); }, "Nenhum pedido.");
             _requests.style.maxHeight = 110; Body.Add(_requests);
-            Body.Add(UiKit.Text("Conversa do grupo", "lv-bold", "lv-accent")); Chat = new ConversationPane(context, () => "/api/v1/social/messages?groupId=" + group + "&page=1&pageSize=50", text => JsonSerializer.Serialize(new { content = text, groupId = group, clientMessageId = Guid.NewGuid().ToString("N") })); Chat.style.minHeight = 150; Body.Add(Chat);
+            Body.Add(UiKit.Text("Conversa do grupo", "lv-bold", "lv-accent")); Chat = new ConversationPane(context, () => "/api/v1/social/messages?groupId=" + group + "&page=1&pageSize=50", text => JsonSerializer.Serialize(new { content = text, groupId = group, clientMessageId = Guid.NewGuid().ToString("N") })); Chat.style.minHeight = 150; Body.Add(Chat); Chat.FollowLive((type, data) => type == "group_message" && ApiContext.Field(data, "groupId") == group.ToString());
             var invite = UiKit.Field("Convidar (identificador da pessoa)", false, 40); Body.Add(invite);
             Body.Add(UiKit.Button("Convidar", () => { if (!Guid.TryParse(invite.value.Trim(), out var id)) { Say("Digite o identificador da pessoa.", true); return; } Act("POST", "/api/v1/groups/" + group + "/invites", JsonSerializer.Serialize(new { userId = id }), () => { invite.value = ""; _c.Notices.Show("Convite enviado.", NoticeKind.Good); }); }));
         }
@@ -84,6 +84,7 @@ namespace LifeVerse.Unity.UI
             _c = context; User = user; _presence = UiKit.Text("…", "lv-muted"); Body.Add(_presence); _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
             this.Then(context.Api.ApiAsync("GET", "/api/v1/social/presence/" + user), r => _presence.text = r.Status == 200 ? "Está " + PresenceWords(Json.One(r.Body).First("status")) : "Presença desconhecida");
             Body.Add(UiKit.Button("Ver o perfil", () => openProfile?.Invoke(user))); Body.Add(UiKit.Button("Escrever", () => openChat?.Invoke(user, name)));
+            Body.Add(UiKit.Row(UiKit.Button("Trazer para cá", () => Invite("offer")), UiKit.Button("Pedir para ir até", () => Invite("request"))));
             Body.Add(UiKit.Button("Pedir amizade", () => Act("POST", "/api/v1/social/friends/requests", JsonSerializer.Serialize(new { userId = user }), "Pedido de amizade enviado.")));
             Body.Add(Controls.Confirm("Bloquear", () => "Confirmar o bloqueio", () => Act("POST", "/api/v1/social/blocks/" + user, null, "Pessoa bloqueada.")));
             Body.Add(UiKit.Button("Desbloquear", () => Act("DELETE", "/api/v1/social/blocks/" + user, null, "Pessoa desbloqueada.")));
@@ -103,6 +104,14 @@ namespace LifeVerse.Unity.UI
         }
 
         private void Act(string method, string path, string json, string done) => this.Then(_c.Api.ApiAsync(method, path, json), r => { if (r.Status >= 200 && r.Status < 300) { _c.Notices.Show(done, NoticeKind.Good); _status.text = ""; } else { _status.text = UiTasks.Explain(r.Status); _status.AddToClassList("lv-bad"); } });
+
+        /// <summary>Invites the person to be brought here ("offer") or asks to go to them ("request"); both must be on the same island. The answer comes back through the live channel.</summary>
+        public void Invite(string kind) => this.Then(_c.Api.ApiAsync("POST", "/api/v1/social/teleports", JsonSerializer.Serialize(new { targetUserId = User, kind, islandId = _c.CurrentIsland() })), r =>
+        {
+            if (r.Status >= 200 && r.Status < 300) { _c.Notices.Show(kind == "offer" ? "Convite enviado: esperando a resposta." : "Pedido enviado: esperando a resposta.", NoticeKind.Good); _status.text = ""; }
+            else { _status.text = LiveEvents.InviteError(r.Status, r.Body); _status.AddToClassList("lv-bad"); }
+        });
+        public string Notice => _status.text;
     }
 
     /// <summary>A person's profile: the name and the short text; for one's own, the text can be edited and a post written; the feed of posts below.</summary>

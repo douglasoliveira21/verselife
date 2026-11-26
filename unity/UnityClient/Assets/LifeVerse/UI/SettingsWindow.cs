@@ -167,6 +167,8 @@ namespace LifeVerse.Unity.UI
             Section(tab, "Chat");
             tab.Add(UiKit.Slide("Opacidade do chat", .3f, 1f, _s.ChatOpacity, v => { _s.ChatOpacity = v; Touch(); }));
             tab.Add(UiKit.Slide("Tamanho do texto do chat", 10f, 28f, _s.ChatFontSize, v => { _s.ChatFontSize = Mathf.RoundToInt(v); Touch(); }));
+            Section(tab, "Avisos na tela"); var toastInfo = UiKit.Text("O sino guarda todas as notificações; aqui você escolhe quais também aparecem como aviso na tela.", "lv-small", "lv-muted"); toastInfo.style.whiteSpace = WhiteSpace.Normal; tab.Add(toastInfo);
+            tab.Add(UiKit.Check("Grupos (cargos, avisos, pedidos)", _s.ToastGroups, v => { _s.ToastGroups = v; Touch(); })); tab.Add(UiKit.Check("Convites", _s.ToastInvites, v => { _s.ToastInvites = v; Touch(); })); tab.Add(UiKit.Check("Sistema, amigos e mensagens", _s.ToastSystem, v => { _s.ToastSystem = v; Touch(); }));
         }
 
         private void BuildAccessibility(VisualElement tab)

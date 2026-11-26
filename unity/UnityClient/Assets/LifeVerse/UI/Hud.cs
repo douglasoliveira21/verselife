@@ -21,7 +21,8 @@ namespace LifeVerse.Unity.UI
         {
             Ui = ui; Notices = notices; Chat = new ChatPanel(ui.Settings);
             TopBar = new VisualElement(); TopBar.AddToClassList("lv-bar"); TopBar.name = "topbar"; TopBar.style.position = Position.Absolute; TopBar.style.top = 14; TopBar.style.left = 18; TopBar.style.right = 18; TopBar.pickingMode = PickingMode.Position;
-            TopBar.Add(UiKit.Text("LifeVerse", "lv-title-text", "lv-accent")); _island = UiKit.Text("", "lv-muted"); _island.style.marginLeft = 14; TopBar.Add(_island); TopBar.Add(UiKit.Spacer());
+            TopBar.Add(UiKit.Text("LifeVerse", "lv-title-text", "lv-accent")); IslandBack = UiKit.Button("‹", () => Travel?.Invoke(-1), "lv-btn-flat"); IslandBack.name = "island-back"; IslandBack.tooltip = "Voltar à ilha anterior"; IslandForward = UiKit.Button("›", () => Travel?.Invoke(1), "lv-btn-flat"); IslandForward.name = "island-forward"; IslandForward.tooltip = "Avançar para a próxima ilha"; IslandBack.style.marginLeft = 10; TopBar.Add(IslandBack); TopBar.Add(IslandForward); SetTravel(false, false); _island = UiKit.Text("", "lv-muted"); _island.style.marginLeft = 14; TopBar.Add(_island); TopBar.Add(UiKit.Spacer());
+            _balance = UiKit.Text("", "lv-accent"); _balance.style.marginRight = 18; TopBar.Add(_balance);
             _people = UiKit.Text("0 pessoas", "lv-muted"); _people.style.marginRight = 18; TopBar.Add(_people); Presence.style.width = 110; Presence.style.marginRight = 10; TopBar.Add(Presence); _connection = UiKit.Text("● desconectado", "lv-bad"); TopBar.Add(_connection);
             BottomBar = new VisualElement(); BottomBar.AddToClassList("lv-bar"); BottomBar.name = "bottombar"; BottomBar.style.position = Position.Absolute; BottomBar.style.bottom = 14; BottomBar.style.left = 18; BottomBar.style.right = 18; BottomBar.style.justifyContent = Justify.Center; BottomBar.pickingMode = PickingMode.Position;
             Chat.style.position = Position.Absolute; Chat.style.left = 18; Chat.style.bottom = 76;
@@ -30,7 +31,7 @@ namespace LifeVerse.Unity.UI
 
         public void Show()
         {
-            if (Visible) return; Visible = true; Ui.HudLayer.Add(TopBar); Ui.HudLayer.Add(Map); Ui.HudLayer.Add(Perf); Ui.HudLayer.Add(Chat); Ui.HudLayer.Add(BottomBar);
+            if (Visible) return; Visible = true; Ui.HudLayer.Add(TopBar); Ui.HudLayer.Add(Map); Ui.HudLayer.Add(Perf); Ui.HudLayer.Add(Chat); Ui.HudLayer.Add(BottomBar); Refresh();
         }
 
         public void Hide() { Visible = false; TopBar.RemoveFromHierarchy(); Map.RemoveFromHierarchy(); Perf.RemoveFromHierarchy(); Radial.Close(); Chat.RemoveFromHierarchy(); BottomBar.RemoveFromHierarchy(); foreach (var window in _windows.Values) window.Close(); }
@@ -40,6 +41,13 @@ namespace LifeVerse.Unity.UI
         public bool PerformanceVisible => Perf.style.display != DisplayStyle.None;
 
         public void SetIsland(string text) => _island.text = text;
+        /// <summary>The back and forward buttons of the islands visited (-1 back, +1 forward).</summary>
+        public readonly Button IslandBack, IslandForward; public Action<int> Travel;
+        public void SetTravel(bool back, bool forward) { IslandBack.SetEnabled(back); IslandForward.SetEnabled(forward); }
+        private Label _balance;
+        /// <summary>The balance of the wallet on the top bar (kept up to date by the live channel); null hides it.</summary>
+        public void SetBalance(long? coins) => _balance.text = coins is { } c ? SectionWindow.Coins(c) : "";
+        public string BalanceText => _balance.text;
 
         public void SetConnection(bool connected, int nearby)
         {
@@ -47,10 +55,34 @@ namespace LifeVerse.Unity.UI
             _people.text = nearby == 1 ? "1 pessoa" : nearby + " pessoas";
         }
 
+        /// <summary>The ids of the bottom bar's buttons in the order they were registered (the default order).</summary>
+        public readonly List<string> ToolbarDefaults = new List<string>();
+        public string Mode { get; private set; } = "full";
+        /// <summary>In the immersive mode the interface hides; F10 shows it until F10 again.</summary>
+        public bool Revealed { get; private set; }
+
+        /// <summary>Puts the interface in a mode ("full": everything; "compact": the bars only, a smaller toolbar, no map or chat; "immersive": only the world), with the toolbar in the person's order and without the buttons they hid.</summary>
+        public void ApplyLayout(string mode, bool compactToolbar, IReadOnlyList<string> order, IReadOnlyCollection<string> hidden)
+        {
+            Mode = mode is "compact" or "immersive" ? mode : "full"; if (Mode != "immersive") Revealed = false;
+            var ids = ToolbarLayout.Order(ToolbarDefaults, order ?? new List<string>()); var buttons = ids.Select(id => BottomBar.Q<Button>("btn-" + id)).Where(b => b != null).ToList();
+            foreach (var b in buttons) { b.RemoveFromHierarchy(); BottomBar.Add(b); var id = b.name.Substring(4); b.style.display = hidden != null && hidden.Contains(id) ? DisplayStyle.None : DisplayStyle.Flex; b.style.fontSize = compactToolbar || Mode == "compact" ? 11 : StyleKeyword.Null; b.style.paddingLeft = b.style.paddingRight = compactToolbar || Mode == "compact" ? 4 : StyleKeyword.Null; }
+            Refresh();
+        }
+
+        public void ToggleReveal() { if (Mode != "immersive") return; Revealed = !Revealed; Refresh(); }
+
+        private void Refresh()
+        {
+            var shown = Visible && (Mode != "immersive" || Revealed); var full = Mode == "full" || Revealed;
+            TopBar.style.display = shown ? DisplayStyle.Flex : DisplayStyle.None; BottomBar.style.display = shown ? DisplayStyle.Flex : DisplayStyle.None;
+            Map.style.display = shown && full ? DisplayStyle.Flex : DisplayStyle.None; Chat.style.display = shown && full ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
         /// <summary>Adds a button to the bottom bar that opens (or closes) a window.</summary>
         public Button Register(string label, string id, Func<FloatingWindow> create)
         {
-            var button = UiKit.Button(label, () => Toggle(id, create)); button.name = "btn-" + id; BottomBar.Add(button); return button;
+            var button = UiKit.Button(label, () => Toggle(id, create)); button.name = "btn-" + id; BottomBar.Add(button); if (!ToolbarDefaults.Contains(id)) ToolbarDefaults.Add(id); return button;
         }
 
         public FloatingWindow Toggle(string id, Func<FloatingWindow> create)

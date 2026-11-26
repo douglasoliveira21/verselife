@@ -69,7 +69,7 @@ namespace LifeVerse.Unity.Avatar
             if (!_views.TryGetValue(peerId, out var view)) return;
             var appearance = AvatarAppearance.Parse(json); view.ApplyAppearance(appearance);
             var generation = _bodyGeneration.TryGetValue(peerId, out var g) ? g + 1 : 1; _bodyGeneration[peerId] = generation;
-            if (appearance.CustomModelId is { } model && (AssetLoader ?? Client?.AssetLoader) != null) _ = LoadBodyAsync(view, model, generation);
+            if (appearance.CustomModelId is { } model && (AssetLoader ?? Client?.AssetLoader) != null) _ = LoadBodyAsync(view, model, generation, appearance);
             else if (appearance.BaseModel == LifeVerse.Shared.Avatar.AvatarRules.DefaultMan && BuiltInBodies.Available) _ = LoadBuiltInAsync(view, appearance, generation);
             else if (view.Skeleton != null) { Destroy(view.Skeleton.gameObject); view.UseSkeleton(null); }
         }
@@ -83,12 +83,12 @@ namespace LifeVerse.Unity.Avatar
                 var skeleton = await SkeletalBody.CreateAsync(view.transform, import); if (skeleton == null) return;
                 if (view == null || _bodyGeneration[view.PeerId] != generation) { Destroy(skeleton.gameObject); return; }
                 skeleton.TintSkin(appearance.Skin); appearance.CustomModelTriangles = skeleton.Triangles;
-                if (view.Skeleton != null) Destroy(view.Skeleton.gameObject); view.UseSkeleton(skeleton); CustomBodiesLoaded++;
+                if (view.Skeleton != null) Destroy(view.Skeleton.gameObject); view.UseSkeleton(skeleton); CustomBodiesLoaded++; Dress(view, appearance);
             }
             catch (Exception exception) { Debug.LogWarning("[LifeVerse] corpo do jogo: " + exception.Message); }
         }
 
-        private async Task LoadBodyAsync(AvatarView view, Guid model, int generation)
+        private async Task LoadBodyAsync(AvatarView view, Guid model, int generation, AvatarAppearance appearance)
         {
             try
             {
@@ -98,10 +98,19 @@ namespace LifeVerse.Unity.Avatar
                 if (skeleton == null) return;
                 if (view == null || _bodyGeneration[view.PeerId] != generation) { Destroy(skeleton.gameObject); return; }
                 if (view.Skeleton != null) Destroy(view.Skeleton.gameObject);
-                view.UseSkeleton(skeleton); CustomBodiesLoaded++;
+                view.UseSkeleton(skeleton); CustomBodiesLoaded++; Dress(view, appearance);
             }
             catch (Exception exception) { Debug.LogWarning("[LifeVerse] corpo personalizado: " + exception.Message); }
         }
+
+        /// <summary>The person's own clothes and animations, on their skeletal body.</summary>
+        private static void Dress(AvatarView view, AvatarAppearance appearance)
+        {
+            if (view == null || view.Skeleton == null) return; var wardrobe = view.GetComponent<AvatarWardrobe>() ?? view.gameObject.AddComponent<AvatarWardrobe>(); wardrobe.Dress(view.Skeleton, appearance);
+        }
+
+        /// <summary>The wardrobe of a person (for the tests).</summary>
+        public AvatarWardrobe WardrobeOf(int peerId) => _views.TryGetValue(peerId, out var view) ? view.GetComponent<AvatarWardrobe>() : null;
 
         private void OnDespawn(DespawnPlayerMessage gone)
         {

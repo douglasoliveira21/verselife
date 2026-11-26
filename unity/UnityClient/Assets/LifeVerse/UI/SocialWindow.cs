@@ -20,6 +20,7 @@ namespace LifeVerse.Unity.UI
         public string CurrentTab { get; private set; }
         public ConversationPane IslandChat { get; }
         public Guid Conversation => _with;
+        public int LiveMessages { get; private set; }
         public int FriendCount => _friends.contentContainer.childCount;
         public int MessageCount => _log.contentContainer.childCount;
 
@@ -37,6 +38,8 @@ namespace LifeVerse.Unity.UI
             _tabs["Ilha"].Add(UiKit.Text("As mensagens da ilha na plataforma (o histórico fica guardado; o chat ao vivo é o da barra de baixo).", "lv-muted", "lv-small")); _tabs["Ilha"].Add(IslandChat);
             foreach (var tab in _tabs.Values) Body.Add(tab);
             Show("Amigos");
+            // live: a message from the person on screen shows at once; a new or accepted friendship refreshes the lists
+            _c.FollowWhileShown(this, (type, data) => { if (type == "message" && _with != Guid.Empty && ApiContext.Field(data, "from") == _with.ToString()) { LiveMessages++; LoadMessages(); } else if (type == "friend_request") LoadRequests(); else if (type == "friend_accepted") LoadFriends(); });
         }
 
         public void Show(string tab)

@@ -20,6 +20,8 @@ namespace LifeVerse.Unity.Server
         public int StartingAnswers = 1;           // the first entry requests answer 503 "starting", like an island whose server is booting
         public string EntryToken = "", Host = "127.0.0.1", TerrainJson = "{}", EnvironmentJson = "{}", ObjectsJson = "[]";
         public string LookJson = "{\"look\":{}}";
+        /// <summary>What /health answers (the login screen shows it).</summary>
+        public bool Healthy = true;
         public readonly Dictionary<string, byte[]> Assets = new Dictionary<string, byte[]>();   // asset id (lower-case, with hyphens) -> bytes
         public int Port, ProtocolVersion = 11;
         public string ValidLogin = "dono", ValidPassword = "segredo";
@@ -59,6 +61,15 @@ namespace LifeVerse.Unity.Server
             }
         }
 
+        // ---- the live channel: a WebSocket server of its own (see StubLiveServer), checking the same token ----
+        private StubLiveServer _liveServer;
+        public StubLiveServer Live => _liveServer ??= new StubLiveServer(() => AccessToken);
+        public int LiveConnections => Live.Connections;
+        public int LiveRefused => Live.Refused;
+        public string LiveRefusedWhy => Live.RefusedWhy;
+        public int Push(string json) => Live.Push(json);
+        public void DropLive() => Live.Drop();
+
         private void Handle(HttpListenerContext context)
         {
             var request = context.Request; var path = request.Url.AbsolutePath; var body = new StreamReader(request.InputStream, Encoding.UTF8).ReadToEnd();
@@ -80,6 +91,7 @@ namespace LifeVerse.Unity.Server
             }
             else if (request.HttpMethod == "GET" && path == "/api/v1/worlds/islands" && Routes.TryGetValue("GET /api/v1/worlds/islands", out var publicIslands)) json = publicIslands;   // public: no sign-in needed
             else if (request.HttpMethod == "GET" && path == "/api/v1/client/release" && Routes.TryGetValue("GET /api/v1/client/release", out var releaseInfo)) json = releaseInfo;   // public too
+            else if (request.HttpMethod == "GET" && path == "/health") { status = Healthy ? 200 : 503; json = Healthy ? "Healthy" : "Unhealthy"; }   // public, like the API's health check
             else if (!authorized) status = 401;
             else if (request.HttpMethod == "PUT" && path == "/api/v1/users/me/avatar") { AvatarSaved = true; lock (Bodies) Bodies.Add(("PUT " + path, body)); json = "{}"; }
             else if (Routes.TryGetValue(request.HttpMethod + " " + path, out var canned)) { json = canned; if (body.Length > 0) lock (Bodies) Bodies.Add((request.HttpMethod + " " + path, body)); }
@@ -104,6 +116,6 @@ namespace LifeVerse.Unity.Server
             context.Response.OutputStream.Write(bytes, 0, bytes.Length); context.Response.Close();
         }
 
-        public void Dispose() { try { _listener.Stop(); _listener.Close(); } catch { } }
+        public void Dispose() { _liveServer?.Dispose(); try { _listener.Stop(); _listener.Close(); } catch { } }
     }
 }

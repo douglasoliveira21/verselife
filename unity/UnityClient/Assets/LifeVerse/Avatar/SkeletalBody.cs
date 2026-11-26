@@ -38,6 +38,8 @@ namespace LifeVerse.Unity.Avatar
         /// <summary>The loader's own animation clip (glTFast legacy clips), kept only so tests can compare the two ways of moving the bones.</summary>
         public AnimationClip[] LoaderClips { get; private set; }
         public Transform Content => _content;
+        /// <summary>The person's own animations for some states (Idle, Walk…), in place of the game's (the platform's "animation override").</summary>
+        public readonly Dictionary<string, SkeletonClip> Overrides = new Dictionary<string, SkeletonClip>();
 
         /// <summary>Loads a binary glTF as the body under <paramref name="parent"/>. Null when it cannot be read or has no humanoid skeleton.</summary>
         public static async Task<SkeletalBody> CreateAsync(Transform parent, byte[] glb, bool keepLoaderClips = false)
@@ -126,7 +128,7 @@ namespace LifeVerse.Unity.Avatar
         public void Tick(float delta, NetworkMotionState motion, AvatarView.Gesture gesture, float speed, float phase, PoseValues pose, float headPitch, bool fullClips)
         {
             if (_content == null) return;
-            var wanted = DefaultClips.For(DefaultClips.StateOf(motion, speed, gesture != AvatarView.Gesture.None));   // Reduced and Full both use the game's clips; custom clips come later
+            var state = DefaultClips.StateOf(motion, speed, gesture != AvatarView.Gesture.None); var wanted = state != null && Overrides.TryGetValue(state, out var own) && own != null ? own : DefaultClips.For(state);   // the person's own clip for this state, else the game's
             if (wanted != _current) { _previous = _current; _previousTime = _time; _current = wanted; _time = 0f; _blend = _previous == null && _current == null ? 1f : 0f; }
             _time += delta; _previousTime += delta; _blend = Mathf.Min(1f, _blend + delta / BlendSeconds);
             Dictionary<string, Quaternion> deltas;

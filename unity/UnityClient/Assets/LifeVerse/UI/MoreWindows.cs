@@ -27,6 +27,10 @@ namespace LifeVerse.Unity.UI
         public int LineCount => _log.contentContainer.childCount;
         public TextField Input => _input;
 
+        /// <summary>Reloads by itself when a live event matches (a message of this conversation arrived).</summary>
+        public ConversationPane FollowLive(Func<string, System.Text.Json.JsonElement, bool> matches) { _c.FollowWhileShown(this, (type, data) => { if (matches(type, data)) { LiveReloads++; Reload(); } }); return this; }
+        public int LiveReloads { get; private set; }
+
         public ConversationPane(ApiContext context, Func<string> listPath, Func<string, string> body)
         {
             _c = context; _listPath = listPath; _body = body; style.flexGrow = 1; _log.style.flexGrow = 1; _log.style.minHeight = 120; Add(_status); Add(_log);
@@ -171,6 +175,16 @@ namespace LifeVerse.Unity.UI
         public float CellPixels { get; private set; } = 6f;
         public int Chosen => _chosen.Count;
         public int Owned => _owned.Count;
+        private readonly Dictionary<(int X, int Z), Color> _regions = new Dictionary<(int, int), Color>();
+        /// <summary>How many cells are painted by <see cref="SetRegions"/> (the territory map).</summary>
+        public int Painted => _regions.Count;
+
+        /// <summary>Paints whole parcels under the chosen one, each in its colour (the territory map of the land management): runs as the API gives them.</summary>
+        public void SetRegions(IEnumerable<(int[][] Runs, Color Color)> regions)
+        {
+            _regions.Clear(); if (regions != null) foreach (var (runs, color) in regions) if (runs != null) foreach (var run in runs) if (run != null && run.Length == 3 && run[2] - run[1] < 4096) for (var x = run[1]; x <= run[2]; x++) _regions[(x, run[0])] = color;
+            MarkDirtyRepaint();
+        }
 
         public CellGrid() { name = "cell-grid"; style.marginTop = 4; style.marginBottom = 4; pickingMode = PickingMode.Position; generateVisualContent += Draw;
             RegisterCallback<PointerDownEvent>(e => { if (e.button != 0) return; var cell = CellAt(e.localPosition); if (cell == null) return; _painting = true; _paintValue = !_chosen.Contains(cell.Value); Set(cell.Value, _paintValue); this.CapturePointer(e.pointerId); });
@@ -217,6 +231,7 @@ namespace LifeVerse.Unity.UI
                 painter.fillColor = color;
                 foreach (var c in cells) { var x = (c.X - Origin) * CellPixels; var y = (c.Z - Origin) * CellPixels; painter.BeginPath(); painter.MoveTo(new Vector2(x, y)); painter.LineTo(new Vector2(x + CellPixels, y)); painter.LineTo(new Vector2(x + CellPixels, y + CellPixels)); painter.LineTo(new Vector2(x, y + CellPixels)); painter.ClosePath(); painter.Fill(); }
             }
+            foreach (var group in _regions.GroupBy(r => r.Value)) Fill(group.Select(g => g.Key), group.Key);
             Fill(_owned, new Color(.07f, .6f, .56f)); Fill(_chosen, new Color(.96f, .64f, .25f));
             painter.strokeColor = new Color(1f, 1f, 1f, .10f); painter.lineWidth = 1f;
             for (var i = 0; i <= Size; i += 8) { var p = i * CellPixels; painter.BeginPath(); painter.MoveTo(new Vector2(p, 0)); painter.LineTo(new Vector2(p, full)); painter.Stroke(); painter.BeginPath(); painter.MoveTo(new Vector2(0, p)); painter.LineTo(new Vector2(full, p)); painter.Stroke(); }

@@ -39,34 +39,65 @@ namespace LifeVerse.Unity.UI
 
         public LoginView(UserSettings settings, string versionText = "")
         {
-            name = "login"; style.flexGrow = 1; style.alignItems = Align.Center; style.justifyContent = Justify.Center; style.backgroundColor = new Color(.03f, .06f, .08f, .96f); pickingMode = PickingMode.Position;
+            name = "login"; style.flexGrow = 1; style.alignItems = Align.Center; style.justifyContent = Justify.Center; style.backgroundColor = new Color(.03f, .06f, .08f, 1f); pickingMode = PickingMode.Position;
+            // the panoramic picture of the Godot client, covering the window without stretching, under a dark veil that keeps the form readable
+            Background = Resources.Load<Texture2D>("LifeVerse/Login/background");
+            if (Background != null) { style.backgroundImage = Background; style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover); style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center); style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center); }
+            var veil = new VisualElement { name = "veil", pickingMode = PickingMode.Ignore }; veil.style.position = Position.Absolute; veil.style.left = veil.style.top = veil.style.right = veil.style.bottom = 0; veil.style.backgroundColor = new Color(.03f, .05f, .09f, .42f); Add(veil);
             var logo = UiKit.Text("LifeVerse", "lv-title-text", "lv-accent"); logo.style.fontSize = 56; logo.style.marginBottom = 4; Add(logo);
-            Add(UiKit.Text("Um mundo para viver, criar e se encontrar", "lv-muted")); Children().Last().style.marginBottom = 26;
+            Add(UiKit.Text("Um mundo para viver, criar e se encontrar", "lv-muted")); Children().Last().style.marginBottom = 12;
             _card = UiKit.Glass(); _card.style.width = 400; _card.style.paddingLeft = _card.style.paddingRight = 22; _card.style.paddingTop = _card.style.paddingBottom = 20; Add(_card);
             _title = UiKit.Text("Entrar", "lv-title-text"); _title.style.marginBottom = 8; _card.Add(_title);
             User = UiKit.Field("Usuário ou e-mail", false, 64, settings.LastLogin); User.name = "user"; _card.Add(User);
             _emailRow = new VisualElement(); Email = UiKit.Field("E-mail", false, 128); Email.name = "email"; _emailRow.Add(Email); _emailRow.style.display = DisplayStyle.None; _card.Add(_emailRow);
             Password = UiKit.Field("Senha", true, 128); Password.name = "password"; _card.Add(Password);
-            Islands = new DropdownField("Ilha", new System.Collections.Generic.List<string> { "Carregando as ilhas…" }, 0) { name = "islands" }; Islands.RegisterValueChangedCallback(e => { if (Islands.index >= 0 && Islands.index < _islandIds.Count) Island.value = _islandIds[Islands.index].ToString(); }); _card.Add(Islands);
-            Island = UiKit.Field("Ilha (código)", false, 64, settings.LastIsland); Island.name = "island"; _card.Add(Island);
+            Islands = new DropdownField("Ilha", new System.Collections.Generic.List<string> { "Carregando as ilhas…" }, 0) { name = "islands" }; Islands.RegisterValueChangedCallback(e => { if (Islands.index >= 0 && Islands.index < _islandIds.Count) Island.value = _islandIds[Islands.index] == Guid.Empty ? "" : _islandIds[Islands.index].ToString(); }); _card.Add(Islands);
+            Island = UiKit.Field("Ilha (código; em branco o servidor escolhe)", false, 64, settings.LastIsland); Island.name = "island"; _card.Add(Island);
             Remember = UiKit.Check("Lembrar usuário", settings.LastLogin.Length > 0, _ => { }); Remember.name = "remember"; _card.Add(Remember);
-            Status = UiKit.Text("", "lv-small"); Status.name = "status"; Status.style.minHeight = 34; Status.style.whiteSpace = WhiteSpace.Normal; Status.style.marginTop = 6; _card.Add(Status);
+            Status = UiKit.Text("", "lv-small"); Status.name = "status"; Status.style.minHeight = 20; Status.style.whiteSpace = WhiteSpace.Normal; Status.style.marginTop = 6; _card.Add(Status);
             Enter = UiKit.Button("Entrar", Submit, "lv-btn-primary"); Enter.name = "enter"; Enter.style.marginTop = 6; _card.Add(Enter);
-            Switch = UiKit.Button("Criar uma conta", ToggleMode, "lv-btn-flat"); Switch.name = "switch"; _card.Add(Switch);
-            Version = UiKit.Text(versionText, "lv-dim", "lv-small"); Version.style.position = Position.Absolute; Version.style.bottom = 14; Version.style.right = 20; Add(Version);
+            Switch = UiKit.Button("Criar uma conta", ToggleMode, "lv-btn-flat"); Switch.name = "switch";
+            Forgot = UiKit.Button("Esqueceu sua senha?", ShowRecovery, "lv-btn-flat"); Forgot.name = "forgot"; var links = UiKit.Row(Switch, UiKit.Spacer(), Forgot); _card.Add(links);
+            // the bottom bar: the state of the servers (the API's /health, every 20 seconds), the news and the music, and the version
+            var bottom = new VisualElement { name = "login-bar", pickingMode = PickingMode.Ignore }; bottom.style.position = Position.Absolute; bottom.style.left = 20; bottom.style.right = 20; bottom.style.bottom = 12; bottom.style.flexDirection = FlexDirection.Row; bottom.style.alignItems = Align.Center; Add(bottom);
+            ServerState = UiKit.Text("● Verificando servidores…", "lv-small", "lv-muted"); ServerState.name = "servers"; bottom.Add(ServerState);
+            News = UiKit.Text(NoNews, "lv-small", "lv-muted"); News.name = "news"; News.style.flexGrow = 1; News.style.unityTextAlign = TextAnchor.MiddleCenter; bottom.Add(News);
+            Music = UiKit.Button(settings.LoginMusicMuted ? "♪ Música: desligada" : "♪ Música: ligada", () => MusicToggled?.Invoke(), "lv-btn-flat"); Music.name = "music"; Music.pickingMode = PickingMode.Position; bottom.Add(Music);
+            Version = UiKit.Text(versionText, "lv-dim", "lv-small"); Version.style.marginLeft = 14; bottom.Add(Version);
             foreach (var field in new[] { User, Password, Email, Island }) field.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) Submit(); });
         }
 
         private readonly System.Collections.Generic.List<Guid> _islandIds = new System.Collections.Generic.List<Guid>();
-        public int IslandCount => _islandIds.Count;
+        /// <summary>The public islands listed (the first choice, "where I stopped", is not one).</summary>
+        public int IslandCount => Math.Max(0, _islandIds.Count - 1);
+        public const string AutoIsland = "Onde parei (último lugar ou a ilha de boas-vindas)";
+        public const string NoNews = "Sem novidades no momento.";
+        public readonly Texture2D Background; public readonly Label ServerState, News; public readonly Button Forgot, Music; public event Action MusicToggled;
+        public enum Servers { Checking, Online, Offline }
+        public Servers ServersNow { get; private set; }
+
+        /// <summary>"Servidores Online / Indisponíveis" from the answer of /health (0 when it could not be reached); never a made-up state.</summary>
+        public void SetServers(int status)
+        {
+            ServersNow = status >= 200 && status < 300 ? Servers.Online : Servers.Offline;
+            ServerState.text = ServersNow == Servers.Online ? "● Servidores Online" : "● Servidores Indisponíveis"; ServerState.EnableInClassList("lv-good", ServersNow == Servers.Online); ServerState.EnableInClassList("lv-bad", ServersNow == Servers.Offline); ServerState.EnableInClassList("lv-muted", false);
+        }
+
+        /// <summary>What the client really knows to tell (a new version…); several rotate every few seconds, none says so.</summary>
+        public void SetNews(System.Collections.Generic.IReadOnlyList<string> items) { _news.Clear(); if (items != null) foreach (var i in items) if (!string.IsNullOrWhiteSpace(i)) _news.Add(i); _newsAt = 0; News.text = _news.Count > 0 ? _news[0] : NoNews; News.EnableInClassList("lv-muted", _news.Count == 0); }
+        public void NextNews() { if (_news.Count < 2) return; _newsAt = (_newsAt + 1) % _news.Count; News.text = _news[_newsAt]; }
+        private readonly System.Collections.Generic.List<string> _news = new System.Collections.Generic.List<string>(); private int _newsAt;
+        public void SetMusic(bool muted) => Music.text = muted ? "♪ Música: desligada" : "♪ Música: ligada";
+
+        /// <summary>The server has no password reset (it needs an e-mail provider): this says so plainly instead of pretending to send something.</summary>
+        public void ShowRecovery() => Say("A recuperação de senha por e-mail ainda não está disponível neste servidor. Se você perdeu o acesso, fale com a administração do LifeVerse informando o seu nome de usuário.", false);
 
         /// <summary>Fills the list of islands (name and category of each public island) and picks the one used last time.</summary>
         public void SetIslands(System.Collections.Generic.IReadOnlyList<(Guid Id, string Name, string Category)> islands, string last)
         {
-            _islandIds.Clear(); var names = new System.Collections.Generic.List<string>(); var pick = 0;
-            foreach (var island in islands) { if (island.Id.ToString() == last) pick = names.Count; _islandIds.Add(island.Id); names.Add(island.Name + (string.IsNullOrEmpty(island.Category) ? "" : "  ·  " + island.Category)); }
-            if (names.Count == 0) { names.Add("Nenhuma ilha pública. Digite o código abaixo."); }
-            Islands.choices = names; Islands.index = pick; if (_islandIds.Count > 0 && Island.value.Trim().Length == 0) Island.value = _islandIds[pick].ToString();
+            _islandIds.Clear(); var names = new System.Collections.Generic.List<string> { AutoIsland }; _islandIds.Add(Guid.Empty); var pick = 0;
+            foreach (var island in islands) { if (island.Id.ToString() == (string.IsNullOrWhiteSpace(last) ? Island.value.Trim() : last.Trim())) { pick = names.Count; Island.value = island.Id.ToString(); } _islandIds.Add(island.Id); names.Add(island.Name + (string.IsNullOrEmpty(island.Category) ? "" : "  ·  " + island.Category)); }
+            Islands.choices = names; Islands.index = pick;
         }
 
         public void ToggleMode()
@@ -84,7 +115,8 @@ namespace LifeVerse.Unity.UI
             if (registering && (email == null || !email.Contains("@") || email.Trim().Length < 5)) return "Digite um e-mail válido.";
             if (string.IsNullOrEmpty(password)) return "Digite a senha.";
             if (registering && !StrongPassword(password)) return "A senha precisa ter de 6 a 128 caracteres, com maiúscula, minúscula e número.";
-            if (!Guid.TryParse((island ?? "").Trim(), out islandId)) return "Digite o código da ilha (um identificador como 3f2b…).";
+            if ((island ?? "").Trim().Length == 0) return null;   // the server chooses: the island where the person stopped, or the welcome island
+            if (!Guid.TryParse(island.Trim(), out islandId)) return "Digite o código da ilha (um identificador como 3f2b…) ou deixe em branco para o servidor escolher.";
             return null;
         }
 
@@ -106,7 +138,7 @@ namespace LifeVerse.Unity.UI
 
         public void Say(string text, bool error) { Status.text = text; Status.EnableInClassList("lv-bad", error); Status.EnableInClassList("lv-muted", !error); }
 
-        public void SetBusy(bool busy) { Busy = busy; Enter.SetEnabled(!busy); Switch.SetEnabled(!busy); User.SetEnabled(!busy); Password.SetEnabled(!busy); Email.SetEnabled(!busy); Island.SetEnabled(!busy); }
+        public void SetBusy(bool busy) { Busy = busy; Enter.SetEnabled(!busy); Switch.SetEnabled(!busy); Forgot.SetEnabled(!busy); User.SetEnabled(!busy); Password.SetEnabled(!busy); Email.SetEnabled(!busy); Island.SetEnabled(!busy); }
 
         public void Fail(string message) { SetBusy(false); Say(message, true); }
 

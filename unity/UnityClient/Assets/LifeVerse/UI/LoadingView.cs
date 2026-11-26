@@ -37,7 +37,8 @@ namespace LifeVerse.Unity.UI
             switch (status)
             {
                 case "requesting_ticket": return ("Pedindo a entrada na ilha…", .12f);
-                case "loading_world": return ("Carregando o mundo…", .55f);
+                case "loading_world": return ("Carregando o mundo…", .45f);
+                case "loading_assets": return ("Baixando os recursos da ilha…", .6f);
                 case "connecting": return ("Conectando à ilha…", .8f);
                 case "ready": return ("Pronto", 1f);
                 case "in_island": return ("Entrando…", 1f);
@@ -46,10 +47,10 @@ namespace LifeVerse.Unity.UI
             }
         }
 
-        public void SetStatus(string status, string failure = null)
+        public void SetStatus(string status, string failure = null, string detail = null)
         {
             var (text, progress) = Describe(status); Failed = status == "failed";
-            _status.text = Failed && !string.IsNullOrEmpty(failure) ? failure : text; _status.EnableInClassList("lv-bad", Failed); Progress = progress;
+            _status.text = Failed && !string.IsNullOrEmpty(failure) ? failure : !string.IsNullOrEmpty(detail) ? detail : text; _status.EnableInClassList("lv-bad", Failed); Progress = progress;
             _fill.style.width = Length.Percent(progress * 100f); Back.style.display = Failed ? DisplayStyle.Flex : DisplayStyle.None;
         }
     }

@@ -42,7 +42,7 @@ namespace LifeVerse.Unity.World
     /// past 120 m, a 10 m wall past 600 m, as in Godot). Positions and rotations go through <see cref="GameSpace"/>. Not yet: planar mapping, a rotation and separate repeat for
     /// each map (HDRP shares the base map's), the Blinn-Phong shading model, model animations, the pivot, collision and mesh simplification for far models.
     /// </summary>
-    public sealed class WorldObjects : MonoBehaviour
+    public sealed partial class WorldObjects : MonoBehaviour
     {
         public const string DefaultColor = "#A8C7D8";
         public const float RangePerMetre = 120f, MinRange = 40f, MaxRange = 600f;
@@ -51,7 +51,7 @@ namespace LifeVerse.Unity.World
         private sealed class Entry
         {
             public GameObject Object; public WorldObjectState State; public string ShapeKey = "", MaterialKey = ""; public int Generation;
-            public Renderer[] Renderers = Array.Empty<Renderer>(); public float Range = MaxRange; public bool Culled; public GameObject Proxy, Model; public string ClipPlaying = ""; public List<(MeshFilter Filter, Mesh Full, Mesh Low)> Lods; public bool LowShown; public UnityEngine.Video.VideoPlayer Video; public RenderTexture VideoTarget; public Material[] MediaMaterials;
+            public Renderer[] Renderers = Array.Empty<Renderer>(); public float Range = MaxRange; public bool Culled; public GameObject Proxy, Model, Lamp, Probe; public string ClipPlaying = ""; public List<(MeshFilter Filter, Mesh Full, Mesh Low)> Lods; public bool LowShown; public UnityEngine.Video.VideoPlayer Video; public RenderTexture VideoTarget; public Material[] MediaMaterials;
         }
 
         private readonly Dictionary<Guid, Entry> _objects = new Dictionary<Guid, Entry>();
@@ -148,7 +148,7 @@ namespace LifeVerse.Unity.World
                 ? LifeVerse.Shared.Networking.ObstacleField.For(s.PrimitiveType, new System.Numerics.Vector3(s.PositionX, s.PositionY, s.PositionZ), new System.Numerics.Vector3(s.RotationX, s.RotationY, s.RotationZ), new System.Numerics.Vector3(s.ScaleX, s.ScaleY, s.ScaleZ)) : null);
         }
 
-        public void Remove(Guid id) { Obstacles.Remove(id); if (_objects.TryGetValue(id, out var entry)) { DropMedia(entry); Destroy(entry.Object); _objects.Remove(id); } }
+        public void Remove(Guid id) { Obstacles.Remove(id); if (_objects.TryGetValue(id, out var entry)) { DropMedia(entry); DropResources(entry); Destroy(entry.Object); _objects.Remove(id); } }
 
         /// <summary>The ids of the faces of an object that has them (a box has 6, a round one fewer); empty for a model or a plant.</summary>
         public int[] FacesOf(Guid id) => _objects.TryGetValue(id, out var entry) && entry.State != null && entry.Object.GetComponent<MeshFilter>()?.sharedMesh is { } mesh && mesh.subMeshCount > 1 ? FaceIdsOf(entry.State) : Array.Empty<int>();
@@ -218,7 +218,7 @@ namespace LifeVerse.Unity.World
             else if (type == "tree" || type == "grass") { filter.sharedMesh = NatureMesh(type); renderer.sharedMaterials = NatureMaterials(type, state); }
             else { filter.sharedMesh = MeshFor(state, type); renderer.sharedMaterials = MaterialsFor(state, filter.sharedMesh); }
             entry.Renderers = go.GetComponentsInChildren<Renderer>(true);
-            ApplyMedia(entry, state);
+            ApplyMedia(entry, state); ApplyResources(entry, state);
         }
 
         // ---- what plays on the surface: a picture from the internet, or a video, as the object's material says ("media": type, url, playing, loop, glow) ----
@@ -479,6 +479,9 @@ namespace LifeVerse.Unity.World
             }
             if (Flag(layer, over, "fullBright")) material.SetColor("_EmissiveColor", color * 40f);
             if (!Flag(layer, over, "noTexture") && AssetLoader != null) ApplyPictures(material, layer, over, color, glow != null);
+            // a pattern of the system ("texturas do sistema") where no picture of the inventory is chosen
+            if (!Flag(layer, over, "noTexture") && AssetOf(layer, over, "texture") == null && BuiltInTextures.Get(Text(layer, over, "builtin")) is { } pattern)
+            { material.SetTexture("_BaseColorMap", pattern); material.SetTextureScale("_BaseColorMap", new Vector2(Number(layer, over, "uvRepeatX", 1f), Number(layer, over, "uvRepeatY", 1f))); material.SetTextureOffset("_BaseColorMap", new Vector2(Number(layer, over, "uvOffsetX", 0f), Number(layer, over, "uvOffsetY", 0f))); }
             MaterialCache[cacheKey] = material; return material;
         }
 

@@ -101,6 +101,8 @@ namespace LifeVerse.Unity.UI
         public LifeVerse.Shared.Building.BuildTutorial Tutorial { get; } = new LifeVerse.Shared.Building.BuildTutorial();
         public void Did(LifeVerse.Shared.Building.TutorialStep step) { if (Tutorial.Notify(step)) Changed?.Invoke(); }
         public float Grid { get; set; } = .25f;
+        /// <summary>Dragging lands on multiples of <see cref="Grid"/> ("Encaixar na grade"); off, it follows the mouse freely (the arrow keys still move by the grid step).</summary>
+        public bool SnapToGrid { get; set; } = true;
         public IReadOnlyList<Guid> Selection => _selected;
         public int[] FacesOfSelection() => _selected.Count > 0 && Objects != null ? Objects.FacesOf(_selected[0]) : new int[0];
         public int UndoCount => _undo.Count;
@@ -453,7 +455,7 @@ namespace LifeVerse.Unity.UI
         public float AmountFor(float screenMetres, float screenPixels, bool free)
         {
             if (Mode == GizmoMode.Rotate) { var degrees = screenPixels * .5f; return free ? degrees : Mathf.Round(degrees / 15f) * 15f; }
-            return free || Grid <= 0f ? screenMetres : Mathf.Round(screenMetres / Grid) * Grid;
+            return free || !SnapToGrid || Grid <= 0f ? screenMetres : Mathf.Round(screenMetres / Grid) * Grid;
         }
 
         private void DragTo(Vector2 panel, bool free)

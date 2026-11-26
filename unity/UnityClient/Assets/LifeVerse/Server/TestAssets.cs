@@ -41,6 +41,16 @@ namespace LifeVerse.Unity.Server
             using var file = new MemoryStream(); using var output = new BinaryWriter(file); output.Write(0x46546C67u); output.Write(2u); output.Write((uint)(12 + 8 + newJson.Length + rest.Length)); output.Write((uint)newJson.Length); output.Write(0x4E4F534Au); output.Write(newJson); output.Write(rest); return file.ToArray();
         }
 
+        /// <summary>A GLB with extras put in its asset (where worn items say their slot: {"lifeverse":{"slot":"hat","bone":"head"}}).</summary>
+        public static byte[] WithAssetExtras(byte[] glb, string extrasJson)
+        {
+            var jsonLength = (int)BitConverter.ToUInt32(glb, 12); var root = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Encoding.UTF8.GetString(glb, 20, jsonLength).TrimEnd(' ', (char)0)).AsObject();
+            var asset = root["asset"] as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject { ["version"] = "2.0" }; asset["extras"] = System.Text.Json.Nodes.JsonNode.Parse(extrasJson); root["asset"] = asset;
+            var text = root.ToJsonString(); var newJson = System.Text.Encoding.UTF8.GetBytes(text); var padded = (newJson.Length + 3) / 4 * 4; var json = new byte[padded]; Array.Copy(newJson, json, newJson.Length); for (var i = newJson.Length; i < padded; i++) json[i] = 0x20;
+            var rest = new byte[glb.Length - (20 + jsonLength)]; Array.Copy(glb, 20 + jsonLength, rest, 0, rest.Length);
+            using var file = new System.IO.MemoryStream(); using var output = new System.IO.BinaryWriter(file); output.Write(0x46546C67u); output.Write(2u); output.Write((uint)(12 + 8 + json.Length + rest.Length)); output.Write((uint)json.Length); output.Write(0x4E4F534Au); output.Write(json); output.Write(rest); return file.ToArray();
+        }
+
         /// <summary>The same box with one clip, "Spin": two seconds turning a quarter about the vertical.</summary>
         public static byte[] AnimatedGlb() => Glb(true);
 

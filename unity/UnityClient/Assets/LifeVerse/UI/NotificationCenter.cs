@@ -20,6 +20,9 @@ namespace LifeVerse.Unity.UI
         private string _lastText; private DateTimeOffset _lastTime;
         public IReadOnlyList<Notice> History => _history;
         public int Unread { get; private set; }
+        /// <summary>The settings of the toasts: how many at once, for how long (0 = what each notice asks), and "não perturbe" (only problems still show; everything goes to the history).</summary>
+        public int MaxShown = MaxVisible; public float Seconds; public bool DoNotDisturb;
+        public int Suppressed { get; private set; }
         public event Action Changed;
 
         public NotificationCenter(UiRoot ui) { _ui = ui; var corner = _ui.ToastLayer; corner.style.alignItems = Align.FlexEnd; corner.style.justifyContent = Justify.FlexStart; corner.style.paddingTop = 70; corner.style.paddingRight = 18; }
@@ -30,11 +33,12 @@ namespace LifeVerse.Unity.UI
             var now = DateTimeOffset.Now; var notice = new Notice(text, kind, now);
             if (text == _lastText && (now - _lastTime).TotalSeconds < 2) return notice;
             _lastText = text; _lastTime = now; _history.Add(notice); if (_history.Count > MaxHistory) _history.RemoveAt(0); Unread++;
+            if (DoNotDisturb && kind != NoticeKind.Bad) { Suppressed++; Changed?.Invoke(); return notice; }
             var toast = new VisualElement(); toast.AddToClassList("lv-toast"); toast.AddToClassList(kind == NoticeKind.Good ? "lv-toast-good" : kind == NoticeKind.Warn ? "lv-toast-warn" : kind == NoticeKind.Bad ? "lv-toast-bad" : "lv-toast-info");
             var label = UiKit.Text(text); label.style.whiteSpace = WhiteSpace.Normal; toast.Add(label); toast.pickingMode = PickingMode.Ignore;
             _ui.ToastLayer.Add(toast); _visible.Enqueue(toast);
-            while (_visible.Count > MaxVisible) _visible.Dequeue().RemoveFromHierarchy();
-            toast.schedule.Execute(() => toast.RemoveFromHierarchy()).StartingIn((long)(Mathf.Max(1f, seconds) * 1000f));
+            while (_visible.Count > Mathf.Clamp(MaxShown, 1, 8)) _visible.Dequeue().RemoveFromHierarchy();
+            toast.schedule.Execute(() => toast.RemoveFromHierarchy()).StartingIn((long)(Mathf.Max(1f, Seconds > 0f ? Seconds : seconds) * 1000f));
             Changed?.Invoke(); return notice;
         }
 

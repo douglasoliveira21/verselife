@@ -21,6 +21,8 @@ namespace LifeVerse.Unity.Avatar
         public string AttachmentsJson = "[]";
         public Guid? CustomModelId; public float CustomModelScale = 1f; public string CustomModelBonesJson = "{}";
         public int CustomModelTriangles;
+        /// <summary>The animations the person chose for some states ("custom:{file}#{name}" or "builtin:{name}"), and the clothes they brought (the JSON list the platform sends: id, slot, kind, bone, offset…).</summary>
+        public Dictionary<string, string> AnimationOverrides = new Dictionary<string, string>(); public string CustomWearablesJson = "[]";
 
         public static Color Hex(string text, Color fallback) => text != null && text.Length == 7 && text[0] == '#' && ColorUtility.TryParseHtmlString(text, out var color) ? color : fallback;
 
@@ -51,6 +53,8 @@ namespace LifeVerse.Unity.Avatar
                     }
                 if (root.TryGetProperty("customModelId", out var model) && model.ValueKind == JsonValueKind.String && Guid.TryParse(model.GetString(), out var id)) result.CustomModelId = id;
                 if (root.TryGetProperty("customModelScale", out var scale) && scale.ValueKind == JsonValueKind.Number && scale.TryGetSingle(out var factor) && factor > 0f && float.IsFinite(factor)) result.CustomModelScale = factor;
+                result.CustomWearablesJson = Text("customWearablesJson", "[]");
+                try { using var o = JsonDocument.Parse(Text("animationOverridesJson", "{}")); if (o.RootElement.ValueKind == JsonValueKind.Object) foreach (var p in o.RootElement.EnumerateObject()) if (p.Value.ValueKind == JsonValueKind.String && result.AnimationOverrides.Count < 24) result.AnimationOverrides[p.Name] = p.Value.GetString(); } catch (JsonException) { }
                 result.CustomModelBonesJson = Text("customModelBonesJson", "{}"); result.AttachmentsJson = Text("bodyAttachmentsJson", "[]");
                 if (root.TryGetProperty("customModelTriangles", out var triangles) && triangles.TryGetInt32(out var count)) result.CustomModelTriangles = count;
             }

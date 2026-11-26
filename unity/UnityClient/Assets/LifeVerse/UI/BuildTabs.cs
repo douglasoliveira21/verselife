@@ -131,7 +131,7 @@ namespace LifeVerse.Unity.UI
             dados.Add(UiKit.Divider()); dados.Add(Controls.Confirm("Devolver ao dono (inventário)", () => "Confirmar", () => { if (!_b.Return(_b.Selection.ToList())) Say("Selecione o que devolver.", true); }, "lv-btn-secondary"));
 
             // Conteúdo: references the object carries (sounds, textures, animations, objects…) and its scripts
-            var conteudo = _tabs["Conteúdo"]; _contentList = UiKit.Text("", "lv-body"); _contentList.style.whiteSpace = WhiteSpace.Normal; conteudo.Add(_contentList);
+            var conteudo = _tabs["Conteúdo"]; _contentList = UiKit.Text("", "lv-body"); _contentList.style.whiteSpace = WhiteSpace.Normal; _contentList.style.display = DisplayStyle.None; conteudo.Add(_contentList); _contentTree = new VisualElement(); conteudo.Add(_contentTree);
             _contentAsset = UiKit.Field("Identificador do item do inventário", false, 40); conteudo.Add(_contentAsset);
             conteudo.Add(UiKit.Row(UiKit.Button("Pôr no objeto", () => AddContent(), "lv-btn-primary"), UiKit.Button("Escolher do inventário…", PickContent), UiKit.Button("Tirar", RemoveContent)));
             conteudo.Add(UiKit.Divider()); conteudo.Add(UiKit.Button("Scripts do objeto…", () => { if (_b.Selection.Count == 1) new LuaEditorWindow(_c, _c.CurrentIsland(), _b.Selection[0]).Open(); else Say("Selecione um só objeto.", true); }));
@@ -165,6 +165,7 @@ namespace LifeVerse.Unity.UI
         {
             if (first == null) { if (_contentList != null) _contentList.text = ""; return; }
             var ids = _b.FacesOfSelection(); if (!ids.SequenceEqual(_faceIds)) { _faceIds = ids; if (ids.Length > 0) _face.choices = ids.Select(i => FaceName(i)).ToList(); }
+            RefreshResources(first);
             if (_b.PickedFace >= 0) { var at = Array.IndexOf(_faceIds, _b.PickedFace); if (at >= 0 && _face.index != at) _face.SetValueWithoutNotify(_face.choices.ElementAt(at)); }
             var g = PrimParams.Parse(first.GeometryJson); var values = new Dictionary<string, float> { ["hollow"] = g.Hollow, ["taperX"] = g.TaperX, ["taperY"] = g.TaperY, ["twist"] = g.Twist, ["cutStart"] = g.CutStart, ["cutEnd"] = g.CutEnd, ["pathBegin"] = g.PathBegin, ["pathEnd"] = g.PathEnd, ["shearX"] = g.ShearX, ["shearZ"] = g.ShearZ, ["skew"] = g.Skew, ["revolutions"] = g.Revolutions };
             foreach (var pair in values) _shape[pair.Key].SetValueWithoutNotify(pair.Value);
@@ -175,7 +176,7 @@ namespace LifeVerse.Unity.UI
             { JsonObject mm = null; try { mm = JsonNode.Parse(string.IsNullOrWhiteSpace(first.MaterialJson) ? "{}" : first.MaterialJson) as JsonObject; } catch (JsonException) { }
               foreach (var pair in _mapFields) if (pair.Value.focusController?.focusedElement != pair.Value) pair.Value.SetValueWithoutNotify(mm?[pair.Key]?.ToString() ?? "");
               float Num(string k, float d) => mm != null && mm[k] is JsonValue v && v.TryGetValue<double>(out var n) ? (float)n : d; _normalStrength.SetValueWithoutNotify(Num("normalStrength", 1f)); _aoStrength.SetValueWithoutNotify(Num("aoStrength", 1f)); _offsetX.SetValueWithoutNotify(Num("uvOffsetX", 0f)); _offsetY.SetValueWithoutNotify(Num("uvOffsetY", 0f)); }
-            var entries = ContentOf(first); _contentList.text = entries.Count == 0 ? "O objeto não leva nada." : string.Join("\n", entries.Select(e => "• " + e.Name + "  (" + e.Category + ")"));
+            var entries = ContentOf(first); _contentList.text = entries.Count == 0 ? "O objeto não leva nada." : string.Join("\n", entries.Select(e => "• " + e.Name + "  (" + e.Category + ")")); DrawContentTree(entries.Select(e => (e.Name, e.Category)).ToList()); RefreshPeople(first);
         }
 
         private sealed class ContentEntry { public Guid Asset; public string Name, Category; }

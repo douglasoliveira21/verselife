@@ -49,6 +49,11 @@ namespace LifeVerse.Unity.World
         public event Action<ReceiveChatMessage> ChatReceived;
         public event Action<string> DisconnectedBy;
         public bool SendChat(string text) => Send(new SendChatMessage(text));
+        /// <summary>Asks the island to move the avatar inside it: to a parcel (its arrival point) or to a spot (x, z). The island applies the parcel's rules and answers with <see cref="TeleportResult"/>.</summary>
+        public bool RequestTeleport(string parcelId, float x, float z) => Send(new RequestTeleportMessage(parcelId ?? "", x, z));
+        /// <summary>The island's answer to a teleport inside it (refused with a code, or where the avatar now stands).</summary>
+        public event Action<TeleportResultMessage> TeleportResult;
+        public TeleportResultMessage LastTeleport { get; private set; }
         public event Action<HeadLookChangedMessage> HeadLookChanged;
         /// <summary>A packet of somebody's voice (Opus, 20 ms) the island passed on because they are within hearing range.</summary>
         public event Action<ReceiveVoiceMessage> VoiceReceived;
@@ -108,6 +113,7 @@ namespace LifeVerse.Unity.World
                 case AppearanceChangedMessage changed: AppearanceChanged?.Invoke(changed); break;
                 case GestureChangedMessage gesture: GestureChanged?.Invoke(gesture); break;
                 case ReceiveChatMessage chat: ChatReceived?.Invoke(chat); break;
+                case TeleportResultMessage teleported: LastTeleport = teleported; TeleportResult?.Invoke(teleported); break;
                 case ReceiveVoiceMessage voice: VoiceReceived?.Invoke(voice); break;
                 case HeadLookChangedMessage look: HeadLookChanged?.Invoke(look); break;
                 case VehicleSpawnedMessage car: VehicleSpawned?.Invoke(car); break;
@@ -130,7 +136,7 @@ namespace LifeVerse.Unity.World
                     break;
                 case BuildOperationAppliedMessage applied:
                     // what a script asks of the person (a dialog, a panel) is for the interface, not for the objects of the world
-                    if (applied.OperationJson.Contains("\"script_dialog\"") || applied.OperationJson.Contains("\"script_hud\"")) ScriptOperation?.Invoke(applied.OperationJson); else { Objects?.ApplyOperation(applied.OperationJson); BuildOperation?.Invoke(applied.OperationJson); }   // the world has the object by the time the editor hears of it
+                    if (applied.OperationJson.Contains("\"script_dialog\"") || applied.OperationJson.Contains("\"script_hud\"") || applied.OperationJson.Contains("\"script_debug\"")) ScriptOperation?.Invoke(applied.OperationJson); else { Objects?.ApplyOperation(applied.OperationJson); BuildOperation?.Invoke(applied.OperationJson); }   // the world has the object by the time the editor hears of it
                     break;
                 case BuildOperationRejectedMessage refused: LastBuildRejection = refused.Code; BuildRejected?.Invoke(refused.Code); break;
                 case TerrainEditRejectedMessage rejection: LastTerrainRejection = rejection.Code; break;
