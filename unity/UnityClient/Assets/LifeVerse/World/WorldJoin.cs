@@ -29,7 +29,7 @@ namespace LifeVerse.Unity.World
         public int FailureStatus { get; private set; }
 
         /// <summary>Enters the island. With a <paramref name="ticket"/> (a trip between islands got it from the API already) the request for one is skipped.</summary>
-        public IEnumerator Join(IslandEntryClient api, Guid islandId, bool connect = true, EntryResult ticket = null)
+        public IEnumerator Join(IslandEntryClient api, Guid islandId, bool connect = true, EntryResult ticket = null, Vector2? arrival = null)
         {
             Done = false; Failure = null; StartAttempts = 0; FailureStatus = 0;
             EntryResult entry = ticket;
@@ -52,7 +52,7 @@ namespace LifeVerse.Unity.World
             // the files near the arrival point come first (kept on disk by hash); the far ones keep coming after the entry
             Status = "loading_assets"; if (!_pruned) { _pruned = true; AssetPreloader.Prune(CacheFolder); }
             Preload = new AssetPreloader(CacheFolder, asset => api.GetAssetAsync(islandId, asset));
-            var manifest = api.ApiAsync("GET", AssetPreloader.ManifestPath(islandId, null, null)); while (!manifest.IsCompleted) yield return null;
+            var manifest = api.ApiAsync("GET", AssetPreloader.ManifestPath(islandId, arrival?.x, arrival?.y)); while (!manifest.IsCompleted) yield return null;
             var essentials = Preload.Essentials(manifest.Result.Status, manifest.Result.Body);
             while (!essentials.IsCompleted) { Detail = AssetPreloader.Describe(Preload.DoneBytes, Preload.TotalBytes); yield return null; }
             Detail = null; if (!essentials.Result) { Fail(Preload.LastError); yield break; }

@@ -62,6 +62,7 @@ namespace LifeVerse.Unity.UI
             RegisterWindows(); Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             Hud.Chat.TypingChanged += typing => { if (Player != null) Player.Typing = typing; };
             Hud.Perf.Extra = () => (Store != null && Store.Bool("metrics.memory") ? "memória " + (UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576L) + " MB   " : "") + (Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots);
+            if (SavedLogin.Load(SavedLoginPath) is { } saved) Login.FillSaved(saved.Login, saved.Password);
             ApplyAudio(); StartCoroutine(StartSounds()); StartCoroutine(LoadIslands()); StartCoroutine(WatchServers()); Login.MusicToggled += () => { Settings.LoginMusicMuted = !Settings.LoginMusicMuted; Login.SetMusic(Settings.LoginMusicMuted); Settings.Save(SettingsPath); };
             Sync = new AccountSync(Settings, (m, p, b) => _api.ApiAsync(m, p, b), () => _api.UserId, () => Settings.Save(SettingsPath)); UpdateInfo = new UpdateCheck(Application.version); Ui.Root.Then(_api.ApiAsync("GET", UpdateCheck.Route), r => { UpdateInfo.Apply(r.Status, r.Body); ShowUpdate(); });
         }
@@ -246,12 +247,16 @@ namespace LifeVerse.Unity.UI
                 if (island == Guid.Empty) { Login.Fail(start.Result.Status == 200 ? "O servidor não indicou uma ilha. Escolha uma na lista." : UiTasks.Explain(start.Result.Status, start.Result.Body)); yield break; }
                 _island = island;
             }
+            if (Login.RememberPassword.value && SavedLogin.Save(user, password, SavedLoginPath)) SavedPassword = true; else { SavedLogin.Clear(SavedLoginPath); SavedPassword = false; }
             Settings.LastLogin = Login.UserToRemember; Settings.LastIsland = leftToServer ? "" : island.ToString(); Settings.Save(SettingsPath); Login.Succeed(); StartLive();   // "onde parei" stays the choice next time
             yield return EnterWorld();
         }
 
         /// <summary>Why the server chose the island when the person left it to the server ("last" or "welcome"), or "".</summary>
         public string StartReason { get; private set; } = "";
+        /// <summary>Where "Lembrar senha" keeps the sealed login (the checks point it elsewhere).</summary>
+        public string SavedLoginPath { get; set; } = SavedLogin.DefaultPath;
+        public bool SavedPassword { get; private set; }
 
         /// <summary>The health of the API on the login screen, every 20 seconds while it is open.</summary>
         private IEnumerator WatchServers()
@@ -278,12 +283,15 @@ namespace LifeVerse.Unity.UI
 
         // ---- opening the island ----
 
-        private IEnumerator EnterWorld(EntryResult ticket = null)
+        /// <summary>Where the person will arrive (a trip to a spot), so the files near it load first; null: where the island spawns people.</summary>
+        public Vector2? Arrival { get; private set; }
+
+        private IEnumerator EnterWorld(EntryResult ticket = null, Vector2? arrival = null)
         {
             Show(Phase.Loading); Loading.SetStatus("requesting_ticket");
             BuildWorld();
             var join = Client.gameObject.AddComponent<WorldJoin>(); join.Client = Client;
-            var running = join.Join(_api, _island, true, ticket);
+            Arrival = arrival; var running = join.Join(_api, _island, true, ticket, arrival);
             while (running.MoveNext()) { Loading.SetStatus(join.Status, join.Failure, join.Detail); yield return running.Current; }
             Loading.SetStatus(join.Status, join.Failure);
             if (join.Status != "in_island")
@@ -333,7 +341,7 @@ namespace LifeVerse.Unity.UI
             var source = _island;
             if (Client != null) { Client.DisconnectedBy -= OnDisconnected; Client.ChatReceived -= OnChat; Client.PlayerSpawned -= OnSpawned; Client.PlayerDespawned -= OnDespawned; }
             TearDownWorld(); _island = trip.Destination; Settings.LastIsland = _island.ToString(); Settings.Save(SettingsPath);
-            yield return EnterWorld(trip.Ticket);
+            yield return EnterWorld(trip.Ticket, trip.X is { } tx && trip.Z is { } tz ? new Vector2(tx, tz) : (Vector2?)null);
             if (Current != Phase.Playing)
             {
                 // the destination did not take the person: the reservation is released and the island they left is entered again

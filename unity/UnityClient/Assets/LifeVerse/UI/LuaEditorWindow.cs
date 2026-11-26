@@ -48,8 +48,15 @@ namespace LifeVerse.Unity.UI
             _c = context; _island = island; _object = obj;
             _scripts = new ScrollView(); _scripts.style.maxHeight = 64; _scripts.style.minHeight = 30; Body.Add(_scripts);
             var head = UiKit.Row(); _name = UiKit.Field("Nome", false, 60, "script"); _eventName = UiKit.Field("Evento", false, 40, "on_start"); _name.style.flexGrow = 1; _eventName.style.width = 150; _state = UiKit.Text("", "lv-small", "lv-muted"); _state.tooltip = "Como o script está na ilha"; head.Add(_name); head.Add(_eventName); head.Add(_state); Body.Add(head);
-            _source = UiKit.Field("", false, MaxSourceLength); _source.multiline = true; _source.style.height = 170; _source.style.flexShrink = 0; _source.AddToClassList("lv-mono"); Body.Add(_source);
-            _source.RegisterValueChangedCallback(_ => { _dirty = true; ShowCursor(); }); _source.RegisterCallback<KeyUpEvent>(_ => ShowCursor()); _source.RegisterCallback<PointerUpEvent>(_ => ShowCursor());
+            // the code: the numbers of the lines on the left (a click puts or takes a line of parada), the text field, and under its text the same code in colours; all scroll together
+            _code = new ScrollView(ScrollViewMode.VerticalAndHorizontal) { name = "code" }; _code.style.height = 190; _code.style.flexShrink = 0; _code.AddToClassList("lv-mono"); _code.style.whiteSpace = WhiteSpace.NoWrap; Body.Add(_code);
+            var codeRow = new VisualElement(); codeRow.style.flexDirection = FlexDirection.Row; codeRow.style.alignItems = Align.FlexStart; _code.Add(codeRow);
+            _gutter = new VisualElement { name = "gutter" }; _gutter.style.width = 46; _gutter.style.flexShrink = 0; codeRow.Add(_gutter);
+            _source = UiKit.Field("", false, MaxSourceLength); _source.multiline = true; _source.style.flexGrow = 1; _source.style.minHeight = 180; _source.style.whiteSpace = WhiteSpace.NoWrap; _source.verticalScrollerVisibility = ScrollerVisibility.Hidden; codeRow.Add(_source);
+            _source.textSelection.cursorColor = Color.white; _source.textSelection.selectionColor = new Color(.25f, .55f, 1f, .45f);
+            _colours = new Label { name = "colours", enableRichText = true, pickingMode = PickingMode.Ignore }; _colours.style.position = Position.Absolute; _colours.style.whiteSpace = WhiteSpace.NoWrap; _colours.style.paddingLeft = _colours.style.paddingRight = _colours.style.paddingTop = _colours.style.paddingBottom = 0; _colours.style.marginLeft = _colours.style.marginTop = 0;
+            _source.RegisterCallback<GeometryChangedEvent>(_ => PlaceColours());
+            _source.RegisterValueChangedCallback(_ => { _dirty = true; ShowCursor(); Paint(); }); _source.RegisterCallback<KeyUpEvent>(_ => ShowCursor()); _source.RegisterCallback<PointerUpEvent>(_ => ShowCursor());
             _source.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Space && (e.ctrlKey || e.commandKey)) { Complete(); e.StopImmediatePropagation(); } else if (e.keyCode == KeyCode.Escape) HideSuggestions(); }, TrickleDown.TrickleDown);
             _suggest = new VisualElement { name = "suggestions" }; _suggest.style.flexDirection = FlexDirection.Row; _suggest.style.flexWrap = Wrap.Wrap; _suggest.style.display = DisplayStyle.None; Body.Add(_suggest);
             var line = UiKit.Row(); _cursor = UiKit.Text("Linha 1", "lv-small", "lv-muted"); _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; _status.style.flexGrow = 1; _status.style.flexShrink = 1; line.Add(_status); line.Add(_cursor); Body.Add(line);
@@ -68,7 +75,7 @@ namespace LifeVerse.Unity.UI
             foreach (var (perm, text) in LuaEditorRules.OwnerPermissions) { var p = perm; var box = UiKit.Check(text, false, on => { if (!_syncing) SetOwnerPermission(p, on); }); _owner[p] = box; permissions.Add(box); }
             _grants = UiKit.Text("Este script não recebeu nenhuma permissão de avatar.", "lv-small"); _grants.style.whiteSpace = WhiteSpace.Normal; permissions.Add(_grants); _revokes = new VisualElement(); permissions.Add(_revokes);
             var debugTab = AddTab("Depuração");
-            _breakpoints = UiKit.Field("Linhas de parada (ex.: 3, 7)", false, 200); _breakpoints.RegisterValueChangedCallback(_ => { if (Debugging) SendDebug("breakpoints"); });
+            _breakpoints = UiKit.Field("Linhas de parada (ex.: 3, 7)", false, 200); _breakpoints.RegisterValueChangedCallback(_ => { PaintGutter(); if (Debugging) SendDebug("breakpoints"); });
             debugTab.Add(UiKit.Row(_breakpoints, UiKit.Button("Marcar a linha do cursor", ToggleCursorLine)));
             var steps = UiKit.Row(); void Step(string text, string tip, string action) { var b = UiKit.Button(text, () => SendDebug(action)); b.tooltip = tip; b.SetEnabled(false); _steps.Add(b); steps.Add(b); }
             Step("Continuar", "Deixa o script seguir até o próximo ponto de parada", "continue"); Step("Passo", "Vai para a próxima linha, entrando nas funções chamadas", "stepin"); Step("Por cima", "Vai para a próxima linha sem entrar nas funções chamadas", "stepover"); Step("Sair", "Segue até a função atual terminar", "stepout");
@@ -77,7 +84,7 @@ namespace LifeVerse.Unity.UI
             _c.IslandScript += OnIslandScript; Closed += () => { _c.IslandScript -= OnIslandScript; if (Debugging) SendDebug("stop"); };
             Body.schedule.Execute(() => { if (_open != Guid.Empty && Body.panel != null) RefreshRuntime(); }).Every(5000);
             this.Then(_c.Api.ApiAsync("GET", "/api/v1/scripting/reference"), r => { if (r.Status == 200) _reference = LuaEditorRules.ReadReference(r.Body); });
-            LoadList();
+            Paint(); LoadList();
         }
 
         /// <summary>A row of tools that wraps instead of squeezing the words of its buttons.</summary>
@@ -90,6 +97,46 @@ namespace LifeVerse.Unity.UI
             if (!_tabs.ContainsKey(title)) return; Tab = title; _tabBody.Clear(); _tabBody.Add(_tabs[title]);
             foreach (var pair in _tabButtons) pair.Value.EnableInClassList("lv-btn-primary", pair.Key == title);
         }
+
+        private readonly ScrollView _code; private readonly VisualElement _gutter; private readonly Label _colours; private TextElement _text; private float _lineHeight = 17f;
+        /// <summary>The code as drawn in colours (rich text), and how many line numbers the margin shows.</summary>
+        public string Colours => _colours.text;
+        public int GutterLines => _gutter.childCount;
+
+        /// <summary>Puts the coloured copy of the code exactly under the text of the field (inside its input, so it takes the same font), and hides the plain text.</summary>
+        private void PlaceColours()
+        {
+            if (_text == null)
+            {
+                _text = _source.Q<TextElement>(className: "unity-text-element"); if (_text == null) return;
+                _text.parent.Insert(0, _colours); _text.style.color = new Color(0f, 0f, 0f, 0f);
+            }
+            _colours.style.left = _text.layout.x; _colours.style.top = _text.layout.y;
+            var lines = LuaEditorRules.LineCount(_source.value); if (_text.layout.height > 1f && lines > 0) { var h = _text.layout.height / lines; if (Mathf.Abs(h - _lineHeight) > .1f && h > 6f && h < 60f) { _lineHeight = h; PaintGutter(); } }
+            _gutter.style.paddingTop = _text.worldBound.y - _source.worldBound.y + _source.resolvedStyle.marginTop;
+        }
+
+        private void Paint() { _colours.text = LuaHighlight.Rich(_source.value); PaintGutter(); }
+
+        /// <summary>The numbers of the lines; a red dot on the lines of parada and a yellow mark where the debugger stopped. A click puts or takes the line.</summary>
+        private void PaintGutter()
+        {
+            var lines = LuaEditorRules.LineCount(_source.value); var marks = new HashSet<int>(Breakpoints);
+            while (_gutter.childCount > lines) _gutter.RemoveAt(_gutter.childCount - 1);
+            while (_gutter.childCount < lines) { var number = _gutter.childCount + 1; var cell = new Label(); cell.style.unityTextAlign = TextAnchor.MiddleRight; cell.style.paddingRight = 6; cell.style.marginTop = cell.style.marginBottom = 0; cell.style.paddingTop = cell.style.paddingBottom = 0; cell.tooltip = "Clique para marcar ou tirar a linha de parada"; cell.RegisterCallback<ClickEvent>(_ => ToggleLine(number)); _gutter.Add(cell); }
+            for (var i = 0; i < lines; i++)
+            {
+                var cell = (Label)_gutter[i]; var line = i + 1; var on = marks.Contains(line); cell.text = (on ? "● " : "") + line; cell.style.height = _lineHeight;
+                cell.style.color = on ? new Color(1f, .35f, .35f) : new Color(.55f, .6f, .65f); cell.style.backgroundColor = Stopped && StoppedLine == line ? new Color(1f, .8f, .2f, .35f) : new Color(0f, 0f, 0f, 0f);
+            }
+        }
+
+        /// <summary>Puts or takes a line of parada (the same as clicking its number).</summary>
+        public void ToggleLine(int line) { if (line < 1 || line > LuaEditorRules.LineCount(_source.value)) return; SetLines(LuaEditorRules.Toggle(Breakpoints, line)); }
+
+        /// <summary>Changes the lines of parada (the field may be in a tab not on screen, where it hears no change): the margin and the island are told here.</summary>
+        private void SetLines(System.Collections.Generic.IEnumerable<int> lines) { _breakpoints.SetValueWithoutNotify(LuaEditorRules.LinesText(lines)); PaintGutter(); if (Debugging) SendDebug("breakpoints"); }
+        public bool GutterMarked(int line) => line >= 1 && line <= _gutter.childCount && ((Label)_gutter[line - 1]).text.StartsWith("●");
 
         private void ShowCursor() => _cursor.text = "Linha " + LuaEditorRules.LineOf(_source.value, _source.cursorIndex) + " de " + LuaEditorRules.LineCount(_source.value);
 
@@ -216,7 +263,7 @@ end
 
         public int Problems { get; private set; }
 
-        public void GoToLine(int line) { var (start, end) = LuaEditorRules.LineRange(_source.value, line); if (start < 0) return; _source.Focus(); _source.SelectRange(start, end); ShowCursor(); }
+        public void GoToLine(int line) { var (start, end) = LuaEditorRules.LineRange(_source.value, line); if (start < 0) return; _code.scrollOffset = new Vector2(0f, Mathf.Max(0f, (line - 4) * _lineHeight)); _source.Focus(); _source.SelectRange(start, end); ShowCursor(); }
 
         public void Save()
         {
@@ -302,8 +349,8 @@ end
         // ---- the debugger (through the connection to the island; only the owner of the script may use it) ----
 
         /// <summary>Puts or takes the line of the cursor from the lines of parada.</summary>
-        public void ToggleCursorLine() => _breakpoints.value = LuaEditorRules.LinesText(LuaEditorRules.Toggle(Breakpoints, LuaEditorRules.LineOf(_source.value, _source.cursorIndex)));
-        public void SetBreakpoints(params int[] lines) => _breakpoints.value = LuaEditorRules.LinesText(lines);
+        public void ToggleCursorLine() => ToggleLine(LuaEditorRules.LineOf(_source.value, _source.cursorIndex));
+        public void SetBreakpoints(params int[] lines) => SetLines(lines);
 
         /// <summary>"Depurar" / "Parar depuração".</summary>
         public void ToggleDebugging()
@@ -330,14 +377,14 @@ end
             var e = LuaEditorRules.ReadDebug(json, _open); if (e == null) return;
             if (e.Kind == "refused") { EndDebug("A ilha já depura outros scripts: termine um deles primeiro."); return; }
             if (e.Kind == "ended") { EndDebug(e.Reason == "timeout" ? "A depuração terminou: o script ficou parado por mais de 2 minutos e foi solto." : "Depuração encerrada."); return; }
-            Debugging = e.Debugging; _debug.text = Debugging ? "Parar depuração" : "Depurar"; Stopped = e.Stopped; StoppedLine = e.Stopped ? e.Line : 0;
+            Debugging = e.Debugging; _debug.text = Debugging ? "Parar depuração" : "Depurar"; Stopped = e.Stopped; StoppedLine = e.Stopped ? e.Line : 0; PaintGutter();
             if (Stopped) { _debugText.text = e.Text; ShowTab("Depuração"); GoToLine(e.Line); Say("Parado na linha " + e.Line + ".", false); }
             else _debugText.text = e.Kind == "running" ? "O script está rodando (ele para de novo no próximo ponto de parada)." : Debugging ? "Depurando: aguardando o script chegar a uma linha de parada. Toque no objeto ou espere o evento." : DebugHelp;
             foreach (var b in _steps) b.SetEnabled(Stopped);
             if (e.Kind == "started") Say("Depurando: o script foi carregado de novo (on_start rodou).", false);
         }
 
-        private void EndDebug(string message) { Debugging = false; Stopped = false; StoppedLine = 0; _debug.text = "Depurar"; foreach (var b in _steps) b.SetEnabled(false); _debugText.text = DebugHelp; Say(message, false); }
+        private void EndDebug(string message) { Debugging = false; Stopped = false; StoppedLine = 0; PaintGutter(); _debug.text = "Depurar"; foreach (var b in _steps) b.SetEnabled(false); _debugText.text = DebugHelp; Say(message, false); }
 
         private void Say(string text, bool error) { _status.text = text; _status.EnableInClassList("lv-bad", error); _status.EnableInClassList("lv-muted", !error); }
     }

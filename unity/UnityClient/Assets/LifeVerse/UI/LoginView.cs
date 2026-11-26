@@ -32,7 +32,7 @@ namespace LifeVerse.Unity.UI
             if (_updateBanner == null)
             {
                 _updateBanner = UiKit.Glass(); _updateBanner.name = "update"; _updateBanner.style.width = 400; _updateBanner.style.marginBottom = 10; _updateText = UiKit.Text("", "lv-small"); _updateText.style.whiteSpace = WhiteSpace.Normal; _updateBanner.Add(_updateText);
-                _updateButton = UiKit.Button("Baixar a nova versão", () => download?.Invoke(), "lv-btn-primary"); _updateBanner.Add(_updateButton); _installButton = UiKit.Button("Baixar e instalar", () => InstallRequested?.Invoke()); _installButton.style.display = DisplayStyle.None; _updateBanner.Add(_installButton); Insert(2, _updateBanner);
+                _updateButton = UiKit.Button("Baixar a nova versão", () => download?.Invoke(), "lv-btn-primary"); _updateBanner.Add(_updateButton); _installButton = UiKit.Button("Baixar e instalar", () => InstallRequested?.Invoke()); _installButton.style.display = DisplayStyle.None; _updateBanner.Add(_installButton); Insert(IndexOf(_logo) + 1, _updateBanner);
             }
             _updateBanner.style.display = DisplayStyle.Flex; _updateText.text = text; _updateText.EnableInClassList("lv-bad", required); _updateButton.style.display = canDownload ? DisplayStyle.Flex : DisplayStyle.None; _updateButton.clickable = new Clickable(() => download?.Invoke());
         }
@@ -44,7 +44,8 @@ namespace LifeVerse.Unity.UI
             Background = Resources.Load<Texture2D>("LifeVerse/Login/background");
             if (Background != null) { style.backgroundImage = Background; style.backgroundSize = new BackgroundSize(BackgroundSizeType.Cover); style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Center); style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Center); }
             var veil = new VisualElement { name = "veil", pickingMode = PickingMode.Ignore }; veil.style.position = Position.Absolute; veil.style.left = veil.style.top = veil.style.right = veil.style.bottom = 0; veil.style.backgroundColor = new Color(.03f, .05f, .09f, .42f); Add(veil);
-            var logo = UiKit.Text("LifeVerse", "lv-title-text", "lv-accent"); logo.style.fontSize = 56; logo.style.marginBottom = 4; Add(logo);
+            Lights = new LoginLightShow { Still = settings.ReduceMotion }; Add(Lights);
+            var logo = _logo = UiKit.Text("LifeVerse", "lv-title-text", "lv-accent"); logo.style.fontSize = 56; logo.style.marginBottom = 4; Add(logo);
             Add(UiKit.Text("Um mundo para viver, criar e se encontrar", "lv-muted")); Children().Last().style.marginBottom = 12;
             _card = UiKit.Glass(); _card.style.width = 400; _card.style.paddingLeft = _card.style.paddingRight = 22; _card.style.paddingTop = _card.style.paddingBottom = 20; Add(_card);
             _title = UiKit.Text("Entrar", "lv-title-text"); _title.style.marginBottom = 8; _card.Add(_title);
@@ -53,7 +54,9 @@ namespace LifeVerse.Unity.UI
             Password = UiKit.Field("Senha", true, 128); Password.name = "password"; _card.Add(Password);
             Islands = new DropdownField("Ilha", new System.Collections.Generic.List<string> { "Carregando as ilhas…" }, 0) { name = "islands" }; Islands.RegisterValueChangedCallback(e => { if (Islands.index >= 0 && Islands.index < _islandIds.Count) Island.value = _islandIds[Islands.index] == Guid.Empty ? "" : _islandIds[Islands.index].ToString(); }); _card.Add(Islands);
             Island = UiKit.Field("Ilha (código; em branco o servidor escolhe)", false, 64, settings.LastIsland); Island.name = "island"; _card.Add(Island);
-            Remember = UiKit.Check("Lembrar usuário", settings.LastLogin.Length > 0, _ => { }); Remember.name = "remember"; _card.Add(Remember);
+            Remember = UiKit.Check("Lembrar usuário", settings.LastLogin.Length > 0, _ => { }); Remember.name = "remember";
+            RememberPassword = UiKit.Check("Lembrar senha neste computador", false, on => { if (on) Remember.value = true; }); RememberPassword.name = "remember-password"; RememberPassword.tooltip = "A senha fica guardada pelo Windows, só para a sua conta deste computador. Desmarque para esquecer.";
+            var remembers = UiKit.Row(Remember, RememberPassword); remembers.style.justifyContent = Justify.SpaceBetween; _card.Add(remembers); RememberPassword.style.display = SavedLogin.Available ? DisplayStyle.Flex : DisplayStyle.None;
             Status = UiKit.Text("", "lv-small"); Status.name = "status"; Status.style.minHeight = 20; Status.style.whiteSpace = WhiteSpace.Normal; Status.style.marginTop = 6; _card.Add(Status);
             Enter = UiKit.Button("Entrar", Submit, "lv-btn-primary"); Enter.name = "enter"; Enter.style.marginTop = 6; _card.Add(Enter);
             Switch = UiKit.Button("Criar uma conta", ToggleMode, "lv-btn-flat"); Switch.name = "switch";
@@ -72,6 +75,10 @@ namespace LifeVerse.Unity.UI
         public int IslandCount => Math.Max(0, _islandIds.Count - 1);
         public const string AutoIsland = "Onde parei (último lugar ou a ilha de boas-vindas)";
         public const string NoNews = "Sem novidades no momento.";
+        private readonly Label _logo;
+        public readonly Toggle RememberPassword; public readonly LoginLightShow Lights;
+        /// <summary>Fills the form with what "Lembrar senha" kept.</summary>
+        public void FillSaved(string login, string password) { User.value = login; Password.value = password; Remember.value = true; RememberPassword.value = true; }
         public readonly Texture2D Background; public readonly Label ServerState, News; public readonly Button Forgot, Music; public event Action MusicToggled;
         public enum Servers { Checking, Online, Offline }
         public Servers ServersNow { get; private set; }

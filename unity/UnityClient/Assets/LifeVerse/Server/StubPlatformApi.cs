@@ -15,6 +15,8 @@ namespace LifeVerse.Unity.Server
         private readonly HttpListener _listener = new HttpListener();
         public readonly string Url;
         public readonly List<string> Requests = new List<string>();
+        /// <summary>The same requests with their query (?x=…&z=…).</summary>
+        public readonly List<string> WithQuery = new List<string>();
         /// <summary>Binary answers by path (pictures of the map).</summary>
         public readonly Dictionary<string, byte[]> Binary = new Dictionary<string, byte[]>();
         public int StartingAnswers = 1;           // the first entry requests answer 503 "starting", like an island whose server is booting
@@ -73,7 +75,7 @@ namespace LifeVerse.Unity.Server
         private void Handle(HttpListenerContext context)
         {
             var request = context.Request; var path = request.Url.AbsolutePath; var body = new StreamReader(request.InputStream, Encoding.UTF8).ReadToEnd();
-            lock (Requests) Requests.Add(request.HttpMethod + " " + path);
+            lock (Requests) { Requests.Add(request.HttpMethod + " " + path); WithQuery.Add(request.HttpMethod + " " + request.Url.PathAndQuery); }
             int status = 200; string json = "{}";
             var authorized = request.Headers["Authorization"] == "Bearer " + AccessToken;
             if (request.HttpMethod == "POST" && path == "/api/v1/auth/login")

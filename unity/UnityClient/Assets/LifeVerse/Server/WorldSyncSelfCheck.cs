@@ -465,7 +465,7 @@ namespace LifeVerse.Unity.Server
             var settingsFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "lv-app-settings-" + Guid.NewGuid() + ".json");
             var oneIsland = Guid.NewGuid(); stub.Routes["GET /api/v1/worlds/islands"] = "[{\"id\":\"" + oneIsland + "\",\"name\":\"Ilha do Sol\",\"category\":\"praia\"},{\"id\":\"" + island + "\",\"name\":\"Ilha de Teste\",\"category\":\"teste\"}]";
             stub.Routes["GET /api/v1/client/release"] = "{\"latest\":\"0.9.0\",\"minimum\":\"0.8.0\",\"downloadUrl\":\"https://example.com/get\",\"notes\":\"x\"}";
-            var app = new GameObject("App").AddComponent<LifeVerse.Unity.UI.GameApp>(); app.SettingsPath = settingsFile; app.LiveAddress = stub.Live.Url; app.Begin(stub.Url, new LifeVerse.Unity.UI.UserSettings { AutoScale = false });
+            var app = new GameObject("App").AddComponent<LifeVerse.Unity.UI.GameApp>(); app.SettingsPath = settingsFile; var savedLoginFile = settingsFile + ".login"; LifeVerse.Unity.UI.SavedLogin.Clear(savedLoginFile); app.SavedLoginPath = savedLoginFile; app.LiveAddress = stub.Live.Url; app.Begin(stub.Url, new LifeVerse.Unity.UI.UserSettings { AutoScale = false });
             yield return null; yield return null;
             yield return Until(() => app.Login.IslandCount == 2, "a lista de ilhas chegar à tela de entrada"); _checks++;
             // the login screen of the Godot client: the picture, the state of the servers, the news, the music, "esqueci a senha" and the island chosen by the server
@@ -473,6 +473,7 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => app.Login.ServersNow == LifeVerse.Unity.UI.LoginView.Servers.Online && app.Login.ServerState.text.Contains("Online"), "o estado dos servidores (/health)"); _checks++;
             app.Login.ShowRecovery(); Expect(app.Login.Status.text.Contains("recuperação de senha"), "esqueci a senha explica o que fazer"); app.Login.Say("", false);
             yield return Until(() => app.LoginMusic != null && app.LoginMusic.isPlaying, "a música da tela de entrada"); _checks++;
+            var beamBefore = app.Login.Lights.FirstBeamAngle; yield return new WaitForSeconds(.6f); Expect(Mathf.Abs(app.Login.Lights.FirstBeamAngle - beamBefore) > 1e-4f, "as luzes da entrada se movem"); _checks++;
             yield return Snap("ui-login");
             // a build below the minimum of the platform is told to update and does not even try to sign in
             yield return Until(() => app.UpdateInfo.Required && app.Login.UpdateNotice.Contains("obrigatória") && app.Login.UpdateDownloadShown, "o aviso de atualização obrigatória na tela de entrada");
@@ -487,9 +488,11 @@ namespace LifeVerse.Unity.Server
             var preAsset = Guid.NewGuid(); var preBytes = TestAssets.Png(new Color32(200, 90, 40, 255), 8); stub.Assets[preAsset.ToString()] = preBytes; string preHash; using (var sha = System.Security.Cryptography.SHA256.Create()) preHash = BitConverter.ToString(sha.ComputeHash(preBytes)).Replace("-", "").ToLowerInvariant();
             var prePath = System.IO.Path.Combine(LifeVerse.Unity.World.WorldJoin.CacheFolder, preHash + ".bin"); if (System.IO.File.Exists(prePath)) System.IO.File.Delete(prePath);
             stub.Routes["GET /api/v1/worlds/islands/" + island + "/assets/manifest"] = "{\"assets\":[{\"assetId\":\"" + preAsset + "\",\"kind\":\"texture\",\"hash\":\"" + preHash + "\",\"size\":" + preBytes.Length + ",\"mime\":\"image/png\",\"distance\":3}]}";
-            app.Login.Island.value = ""; app.Login.Password.value = "segredo"; app.Login.Remember.value = true; app.Login.Submit();
+            app.Login.Island.value = ""; app.Login.Password.value = "segredo"; app.Login.Remember.value = true; app.Login.RememberPassword.value = true; app.Login.Submit();
             yield return Until(() => app.Current == LifeVerse.Unity.UI.GameApp.Phase.Playing, "entrar no jogo pela tela de entrada", 25f);
             Expect(app.StartReason == "last" && app.Islands.Current == island, "o servidor escolheu a ilha onde a pessoa parou"); _checks++;
+            var sealedLogin = LifeVerse.Unity.UI.SavedLogin.Load(savedLoginFile); Expect(app.SavedPassword && sealedLogin is { } sealedPair && sealedPair.Login == "dono" && sealedPair.Password == "segredo" && !System.Text.Encoding.UTF8.GetString(System.IO.File.ReadAllBytes(savedLoginFile)).Contains("segredo") && !System.IO.File.ReadAllText(settingsFile).Contains("segredo"), "lembrar a senha guarda selado pelo Windows, nunca em texto"); _checks++;
+            Expect(app.Login.Lights.BeamCount == 6 && app.Login.Lights.MoteCount == 46, "o show de luzes da entrada");
             Expect(System.IO.File.Exists(prePath) && stub.Requests.Contains("GET /api/v1/worlds/islands/" + island + "/assets/manifest"), "os recursos da ilha baixados antes da entrada e guardados pelo hash"); _checks++;
             yield return Until(() => !app.LoginMusic.isPlaying, "a música da entrada sumir ao entrar no mundo", 5f); _checks++;
             Expect(app.Client.Authenticated && app.Hud.Visible && app.Settings.LastLogin == "dono" && System.IO.File.ReadAllText(settingsFile).Contains("\"LastLogin\": \"dono\""), "entrou pela tela: HUD aberto, usuário lembrado e salvo"); _checks++;
@@ -501,6 +504,7 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => app.Trip.Ticket != null, "o bilhete da viagem chegar", 20f); Expect(stub.ReceivedAny(b => b.Route == "POST /api/v1/worlds/teleports/prepare" && b.Body.Contains(tripIsland.ToString()) && b.Body.Contains("\"x\":12") && b.Body.Contains("idempotencyKey")), "o pedido leva o destino, o ponto e a chave");
             yield return Until(() => app.Client != null && app.Client != oldClient && app.Current == LifeVerse.Unity.UI.GameApp.Phase.Playing && app.Client.Authenticated, "chegar à ilha de destino com o bilhete", 30f);
             yield return Until(() => app.Trip.Arrived, "a API confirmar a chegada"); Expect(!app.Travelling && app.Island == tripIsland, "a viagem termina e a ilha atual é a de destino"); _checks++;
+            Expect(app.Arrival == new Vector2(12f, -30f) && stub.WithQuery.Contains("GET /api/v1/worlds/islands/" + tripIsland + "/assets/manifest?x=12&z=-30"), "os recursos da ilha de destino vêm a partir do ponto de chegada da viagem"); _checks++;
             yield return Until(() => app.Player != null && app.Player.Spawned, "o jogador nascer na ilha de destino");
             // the live channel of the platform: opened at sign-in with the token, events become notices, the bell, teleport invites and the balance; it comes back after a drop
             yield return Until(() => stub.LiveConnections == 1 && app.Live.Connected, "o canal ao vivo abrir com o token: " + app.Live.LastError + " recusados " + stub.LiveRefused + " (" + stub.LiveRefusedWhy + ")" + " ligados " + stub.LiveConnections, 15f);
@@ -924,7 +928,9 @@ namespace LifeVerse.Unity.Server
             dbg.Pause(); yield return Until(() => dbg.PauseText == "Continuar" && stub.ReceivedAny(b => b.Route == "POST " + dbgPath + "/pause"), "pausar o script"); dbg.Grant("CREATE_NPCS", true);
             yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT " + dbgPath + "/permissions/CREATE_NPCS" && b.Body.Contains("true")), "dar uma permissão ao script"); _checks++;
             var debugSent = new List<string>(); dbg.DebugSender = debugSent.Add; dbg.Save(); yield return Until(() => !dbg.Dirty, "salvar antes de depurar");
-            dbg.SetBreakpoints(3); dbg.ToggleDebugging(); Expect(debugSent.Count == 1 && debugSent[0].Contains("\"action\":\"start\"") && debugSent[0].Contains("[3]") && debugSent[0].Contains(dbgScript.ToString()), "depurar manda à ilha as linhas de parada");
+            dbg.SetBreakpoints(3); yield return null; Expect(dbg.GutterLines == 6 && dbg.GutterMarked(3) && !dbg.GutterMarked(2) && dbg.Colours.Contains(LifeVerse.Unity.UI.LuaHighlight.KeywordColour + "><noparse>local") && dbg.Colours.Contains(LifeVerse.Unity.UI.LuaHighlight.NamespaceColour + "><noparse>object"), "a margem com os números e a linha de parada, e o código em cores: " + dbg.GutterLines);
+            dbg.ToggleLine(5); Expect(dbg.Breakpoints.SequenceEqual(new[] { 3, 5 }) && dbg.GutterMarked(5), "clicar no número marca a linha"); dbg.ToggleLine(5); Expect(dbg.Breakpoints.SequenceEqual(new[] { 3 }), "clicar de novo tira a linha"); _checks++;
+            dbg.ToggleDebugging(); Expect(debugSent.Count == 1 && debugSent[0].Contains("\"action\":\"start\"") && debugSent[0].Contains("[3]") && debugSent[0].Contains(dbgScript.ToString()), "depurar manda à ilha as linhas de parada");
             dbg.ReceiveDebug("{\"operation\":\"script_debug\",\"script\":\"" + dbgScript + "\",\"event\":\"started\",\"debugging\":true,\"stopped\":false}"); Expect(dbg.Debugging && !dbg.Stopped && !dbg.StepsEnabled, "a ilha começou a depurar");
             dbg.ReceiveDebug("{\"operation\":\"script_debug\",\"script\":\"" + dbgScript + "\",\"event\":\"stopped\",\"debugging\":true,\"stopped\":true,\"line\":3,\"reason\":\"breakpoint\",\"handler\":\"on_touch\",\"locals\":[{\"name\":\"e\",\"value\":\"table\",\"type\":\"table\"}],\"globals\":[{\"name\":\"contador\",\"value\":\"1\",\"type\":\"number\"}]}");
             Expect(dbg.Stopped && dbg.StoppedLine == 3 && dbg.StepsEnabled && dbg.Tab == "Depuração" && dbg.DebugText.Contains("contador = 1"), "parado na linha 3 com o que o script guarda"); _checks++; yield return Snap("ui-script-debug");
@@ -1315,7 +1321,8 @@ namespace LifeVerse.Unity.Server
             UnityEngine.Object.Destroy(app.gameObject); if (System.IO.File.Exists(settingsFile)) System.IO.File.Delete(settingsFile);
             // 6) a new account: the API refuses the entry (409) until the character exists, so the creator opens by itself, and saving it enters the island
             stub.RequireAvatar = true; stub.AvatarSaved = false; api.Issue("appuser2", false); stub.EntryToken = "appuser2"; yield return new WaitForSeconds(.3f);
-            var app2 = new GameObject("App2").AddComponent<LifeVerse.Unity.UI.GameApp>(); app2.SettingsPath = settingsFile; app2.Begin(stub.Url, new LifeVerse.Unity.UI.UserSettings { AutoScale = false }); yield return null; yield return null;
+            var app2 = new GameObject("App2").AddComponent<LifeVerse.Unity.UI.GameApp>(); app2.SettingsPath = settingsFile; app2.SavedLoginPath = savedLoginFile; app2.Begin(stub.Url, new LifeVerse.Unity.UI.UserSettings { AutoScale = false }); yield return null; yield return null;
+            Expect(app2.Login.Password.value == "segredo" && app2.Login.User.value == "dono" && app2.Login.RememberPassword.value, "a senha lembrada volta na próxima abertura"); _checks++;
             app2.Login.User.value = "dono"; app2.Login.Password.value = "segredo"; app2.Login.Island.value = island.ToString(); app2.Login.Submit();
             LifeVerse.Unity.UI.CharacterWindow firstTime = null;
             yield return Until(() => { foreach (var child in app2.Ui.WindowLayer.Children()) if (child is LifeVerse.Unity.UI.CharacterWindow cw) firstTime = cw; return firstTime != null; }, "o criador de personagem abrir sozinho quando a API pede o avatar", 25f);
