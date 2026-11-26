@@ -141,6 +141,43 @@ namespace LifeVerse.Unity.UI
             Hud.Register("Mais", "more", MoreWindow);
             Hud.Register("Configurações", "settings", () => new SettingsCatalogWindow(Context, Store, SettingsApplied, id => SettingsEffects.Info(id, this), SettingActions(), () => OpenClassicSettings().Open()));
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui)); Hud.Travel = TravelIslands;
+            Hud.Register("Gestos", "gestures", () => { OpenRadial(new Vector2(Screen.width / 2f, Screen.height / 2f) / Mathf.Max(.01f, Ui.Panel.scale)); return null; }); Hud.Register("Foto", "photo", () => { TakePhoto(); return null; });
+            Hud.Register("Mini-mapa", "minimap", () => { MinimapShown = !MinimapShown; Hud.Map.style.visibility = MinimapShown ? Visibility.Visible : Visibility.Hidden; return null; });
+            Hud.SetDefaultOrder("voice", "gestures", "photo", "build", "people", "map", "inventory", "minimap", "search", "wallet", "notifications");
+            Hud.BuyCoinsPressed = () => Hud.Toggle("wallet", () => new WalletHubWindow(Context));
+            // the menus of the top bar, as in the Godot client
+            FloatingWindow Open(FloatingWindow w) { w?.Open(); return w; }
+            Hud.AddMenu("Eu", new (string, string, Action)[]
+            {
+                ("Meu perfil", "user", () => Open(new ProfileHubWindow(Context, _api.UserId))), ("Avatar: visuais, corpo, roupas e animações", "avatar", () => Open(OpenAvatarStudio())), ("Meu personagem", "user", () => OpenCharacter()?.Open()),
+                ("Anexos do corpo", "pin", () => Open(new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment))), ("Inventário", "bag", () => Hud.Toggle("inventory", () => new InventoryManagerWindow(Context, Store))),
+                ("Carteira", "coin", () => Hud.Toggle("wallet", () => new WalletHubWindow(Context))), ("Minhas propriedades", "home", () => Open(new MyPropertiesWindow(Context))),
+                ("Configurações", "settings", () => Hud.Toggle("settings", () => new SettingsCatalogWindow(Context, Store, SettingsApplied, id => SettingsEffects.Info(id, this), SettingActions(), () => OpenClassicSettings().Open()))),
+                ("Barra de ferramentas", "layers", () => Open(ToolbarWindow())), ("Sair da ilha", "power", BackToLogin),
+            });
+            Hud.AddMenu("Comunicar", new (string, string, Action)[]
+            {
+                ("Conversa local", "chat", () => Hud.Chat.Focus()), ("Pessoas", "people", () => Hud.Toggle("people", () => new PeopleHubWindow(Context, NearbyPeople, RecentPeople, OpenPersonActions, name => GoToPerson(name)))),
+                ("Mensagens e amigos", "chat-dots", () => Hud.Toggle("social", () => new SocialWindow(Context))), ("Grupos", "people", () => Open(new GroupsHubWindow(Context))),
+                ("Avisos", "bell", () => Hud.Toggle("notifications", () => new NotificationCenterWindow(Context, SetBell))), ("Gestos", "hand", () => OpenRadial(new Vector2(Screen.width / 2f, Screen.height / 2f) / Mathf.Max(.01f, Ui.Panel.scale))),
+            });
+            Hud.AddMenu("Mundo", new (string, string, Action)[]
+            {
+                ("Mapa do mundo", "map", () => Hud.Toggle("map", () => new WorldMapWindow(Context, () => Player != null ? Player.GamePosition : (Vector3?)null))), ("Buscar no LifeVerse", "search", () => Hud.Toggle("search", () => new GlobalSearchWindow(Context, Settings, () => Settings.Save(SettingsPath), (island, x, z) => { if (x is { } px && z is { } pz) MoveToSpot(island, px, pz); else Context.EnterIsland(island); }))),
+                ("Eventos, marcos e fotos", "calendar", () => Open(new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f))),
+                ("Sobre a ilha", "info", () => Open(new IslandInfoWindow(Context, _island))), ("Gerenciar esta ilha", "settings", () => Open(new IslandManagementWindow(Context, _island))), ("Gerenciar terrenos", "grid", () => Open(new LandManagementWindow(Context, _island, Here))),
+                ("Sobre este terreno", "pin", () => OpenParcelHere()), ("Mercado imobiliário", "home", () => Open(new RealEstateMarketWindow(Context))), ("Editar terreno   T", "mountain", ToggleTerrain), ("Tirar foto   F12", "photo", TakePhoto),
+                ("Ilha anterior", "chevron-left", () => TravelIslands(-1)), ("Próxima ilha", "chevron-right", () => TravelIslands(1)),
+            });
+            Hud.AddMenu("Conteúdo", new (string, string, Action)[]
+            {
+                ("Construir   B", "hammer", ToggleBuild), ("Mercado", "bag", () => Open(new MarketWindow(Context))), ("Ofertas de itens", "download", () => Open(new OffersWindow(Context))), ("Script de um objeto", "code", () => ScriptOpener()?.Open()),
+            });
+            Hud.AddMenu("Ajuda", new (string, string, Action)[] { ("Atalhos e controles", "help", () => Hud.Toggle("help", () => Hud.HelpWindow(Ui))), ("Manual dos scripts", "doc", () => Open(new ScriptDocsWindow(Context, _ => { }))) });
+            Hud.AddMenu("Desenvolver", new (string, string, Action)[]
+            {
+                ("Desempenho   F3", "chart", () => Hud.TogglePerformance()), ("Exportar diagnóstico", "download", () => { var path = SettingsEffects.WriteDiagnostics(Store, this); Notices.Show("Diagnóstico salvo em " + path, NoticeKind.Good); }),
+            });
             Hud.Presence.RegisterValueChangedCallback(e => { if (Current == Phase.Playing) Api.ApiAsync("PUT", "/api/v1/social/presence", System.Text.Json.JsonSerializer.Serialize(new { status = e.newValue, privacyJson = (string)null })); });
         }
 
@@ -266,6 +303,8 @@ namespace LifeVerse.Unity.UI
 
         /// <summary>Why the server chose the island when the person left it to the server ("last" or "welcome"), or "".</summary>
         public string StartReason { get; private set; } = "";
+        /// <summary>Whether the mini-map shows (the "Mini-mapa" button hides and shows it).</summary>
+        public bool MinimapShown { get; private set; } = true;
         /// <summary>Where "Lembrar senha" keeps the sealed login (the checks point it elsewhere).</summary>
         public string SavedLoginPath { get; set; } = SavedLogin.DefaultPath;
         public bool SavedPassword { get; private set; }
@@ -388,7 +427,7 @@ namespace LifeVerse.Unity.UI
             var views = new GameObject("People").AddComponent<PlayerViews>(); views.transform.SetParent(_world.transform); views.Camera = cam; views.Attach(Client);
             var cars = new GameObject("Vehicles").AddComponent<VehicleViews>(); cars.transform.SetParent(_world.transform); cars.Attach(Client);
             Follow = _world.AddComponent<FollowCamera>(); Follow.Camera = cam; Follow.Terrain = terrain; Follow.Distance = Store.Float("camera.default_distance"); SettingsEffects.Camera(Store, Follow, Settings.ReduceMotion); Player = _world.AddComponent<LocalPlayer>();
-            Follow.PickPoint = PickPoint; Follow.OverInterface = point => UiKit.IsOver(Ui.Root, point);
+            Plates = new NamePlates(Ui); Follow.PickPoint = PickPoint; Follow.OverInterface = point => UiKit.IsOver(Ui.Root, point);
             Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             // what scripts of objects ask of the person: dialogs, permission requests and panels (the island checks every answer)
             ScriptDialogs = new ScriptDialogs(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } }; ScriptPanels = new ScriptHud(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } };
@@ -472,7 +511,7 @@ namespace LifeVerse.Unity.UI
             Builder.SetActive(false); BuildPanel?.Close(); BuildPanel = null; TerrainTools.SetActive(true); TerrainPanel = new TerrainWindow(Context, TerrainTools); TerrainPanel.Open();
         }
 
-        private void TearDownWorld() { if (Follow != null && _island != Guid.Empty) Settings.IslandYaw[_island.ToString("N")] = Follow.Yaw; Effects = null; Texts = null; HudWorn?.Clear(); HudWorn = null; Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
+        private void TearDownWorld() { Plates?.Clear(); Plates = null; if (Follow != null && _island != Guid.Empty) Settings.IslandYaw[_island.ToString("N")] = Follow.Yaw; Effects = null; Texts = null; HudWorn?.Clear(); HudWorn = null; Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
 
         // ---- while playing ----
 
@@ -523,6 +562,10 @@ namespace LifeVerse.Unity.UI
             var list = RecentPeople(); var updated = PeopleHubWindow.Remember(list, NearbyPeople().OrderBy(p => p.Distance).Select(p => p.Name));
             if (updated.SequenceEqual(list)) return; list.Clear(); list.AddRange(updated); Settings.Save(SettingsPath);
         }
+
+        /// <summary>The name plates over the avatars.</summary>
+        public NamePlates Plates { get; private set; }
+        private void LateUpdate() { if (Current == Phase.Playing && Plates != null && Follow != null) Plates.Tick(PeopleViews, Follow.Camera, Client != null ? Client.SelfPeerId : -1, Hud.Presence.value); }
 
         private void Update()
         {
@@ -719,7 +762,7 @@ namespace LifeVerse.Unity.UI
         private FloatingWindow OpenAvatarStudio() => new AvatarStudioWindow(Context, () => OpenCharacter()?.Open(), on => { if (Follow != null) Follow.Mirror = on; }, RefreshOwnAvatar);
 
         /// <summary>The interface mode (full, compact, immersive) and the toolbar (order, hidden buttons, small) from the settings.</summary>
-        public void ApplyInterface() => Hud.ApplyLayout(Store.Get("interface.mode"), Store.Bool("interface.compact_toolbar"), Settings.ToolbarOrder, Settings.ToolbarHidden);
+        public void ApplyInterface() => Hud.ApplyLayout(Store.Get("interface.mode"), Store.Bool("interface.compact_toolbar"), Settings.ToolbarOrder, Settings.ToolbarCustomized ? Settings.ToolbarHidden : (IReadOnlyCollection<string>)Hud.DefaultHidden);
 
         /// <summary>Back (-1) or forward (+1) among the islands visited in this session.</summary>
         public void TravelIslands(int step)
@@ -734,6 +777,7 @@ namespace LifeVerse.Unity.UI
             var window = new FloatingWindow(Ui, "toolbar-layout", "Barra de ferramentas", 340f, 460f, new Vector2(420, 120)); var list = new ScrollView(); list.style.flexGrow = 1; list.style.flexShrink = 1; list.style.maxHeight = 340; list.style.overflow = Overflow.Hidden; list.contentViewport.style.overflow = Overflow.Hidden; window.Body.Add(list);
             void Fill()
             {
+                if (!Settings.ToolbarCustomized) { Settings.ToolbarHidden = new List<string>(Hud.DefaultHidden); Settings.ToolbarCustomized = true; }   // from the first change on, the bar is the person's
                 list.Clear(); var order = ToolbarLayout.Order(Hud.ToolbarDefaults, Settings.ToolbarOrder);
                 foreach (var id in order)
                 {
@@ -745,7 +789,7 @@ namespace LifeVerse.Unity.UI
             Fill(); window.Body.Add(UiKit.Button("Restaurar a barra", () => { RestoreToolbar(); Fill(); })); return window;
         }
 
-        public void RestoreToolbar() { Settings.ToolbarOrder.Clear(); Settings.ToolbarHidden.Clear(); Store.Set("interface.compact_toolbar", "false"); Settings.Save(SettingsPath); ApplyInterface(); }
+        public void RestoreToolbar() { Settings.ToolbarOrder.Clear(); Settings.ToolbarHidden.Clear(); Settings.ToolbarCustomized = false; Store.Set("interface.compact_toolbar", "false"); Settings.Save(SettingsPath); ApplyInterface(); }
 
         /// <summary>The last picture taken (its file), for the checks.</summary>
         public string LastPhoto { get; private set; }

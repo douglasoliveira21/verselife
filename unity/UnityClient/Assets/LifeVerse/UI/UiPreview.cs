@@ -63,13 +63,19 @@ namespace LifeVerse.Unity.UI
 
             // HUD
             hud.Show(); hud.SetIsland("Ilha 3f2b1c9a"); hud.SetConnection(true, 3);
-            hud.Register("Chat", "chat", () => null); hud.Register("Pessoas", "people", () => null); hud.Register("Configurações", "settings", () => new SettingsWindow(ui, path)); hud.Register("Ajuda", "help", () => Hud.HelpWindow(ui));
+            hud.Register("Chat", "chat", () => null); hud.Register("Pessoas", "people", () => null); foreach (var (label, id) in new[] { ("Social", "social"), ("Inventário", "inventory"), ("Carteira", "wallet"), ("Buscar", "search"), ("Construir", "build"), ("Voz", "voice"), ("Avisos", "notifications"), ("Mapa", "map"), ("Mais", "more") }) hud.Register(label, id, () => null); hud.Register("Configurações", "settings", () => new SettingsWindow(ui, path)); hud.Register("Ajuda", "help", () => Hud.HelpWindow(ui));
             hud.Chat.Add(7, "Ana", "Oi, tudo bem?", DateTimeOffset.Now.AddMinutes(-2)); hud.Chat.Add(9, "Beto", "Cheguei agora, que ilha linda!", DateTimeOffset.Now.AddMinutes(-1)); hud.Chat.AddSystem("Você entrou na ilha."); hud.Chat.Add(7, "Ana", "Vem ver a casa que eu construí perto do lago <3", DateTimeOffset.Now);
             notices.Show("Beto chegou.", NoticeKind.Info); notices.Show("Conexão estável.", NoticeKind.Good); notices.Show("Sua mensagem não foi enviada.", NoticeKind.Warn);
             var sent = ""; hud.Chat.Send = text => { sent = text; return true; }; hud.Chat.Input.value = "  Olá \u0007 mundo  "; Expect(hud.Chat.Submit() && sent == "Olá  mundo", "o chat limpa e envia o texto: [" + sent + "]"); _checks++;
             hud.Toggle("settings", () => new SettingsWindow(ui, path)); hud.Toggle("help", () => Hud.HelpWindow(ui)); yield return null; yield return null;
             var window = hud.WindowOf("settings"); Expect(window != null && window.IsOpen && window.resolvedStyle.width > 100f, "a janela de configurações abre e desenha"); _checks++;
             yield return Shot("hud");
+            // the icons of the Godot client, all of them, drawn by the interface
+            var bad = UiIconData.Icons.Keys.Where(k => IconShapes.Of(k).Count == 0).ToList(); Expect(bad.Count == 0, "todos os ícones viram desenho: " + string.Join(", ", bad)); _checks++;
+            var sheet = new FloatingWindow(ui, "icons", "Ícones (" + UiIconData.Icons.Count + ")", 1240f, 680f, new Vector2(20, 20)); var grid = new VisualElement(); grid.style.flexDirection = FlexDirection.Row; grid.style.flexWrap = Wrap.Wrap; sheet.Body.Add(grid);
+            foreach (var key in UiIconData.Icons.Keys) { var cell = new VisualElement(); cell.style.width = 108; cell.style.height = 52; cell.style.alignItems = Align.Center; cell.Add(new Icon(key, 26)); var name = UiKit.Text(key, "lv-small", "lv-muted"); name.style.fontSize = 10; cell.Add(name); grid.Add(cell); }
+            sheet.Open(); yield return Shot("icons"); sheet.Close();
+            UiKit.IconOnly(hud.BottomBar.Q<Button>("btn-chat"), true); Expect(UiKit.IconOf(hud.BottomBar.Q<Button>("btn-chat")) == "chat" && hud.BottomBar.Q<Button>("btn-chat").text == "Chat", "o botão tem ícone e continua dizendo o nome"); UiKit.IconOnly(hud.BottomBar.Q<Button>("btn-chat"), false); _checks++;
             // the settings window changes things for real
             ((SettingsWindow)window).Show("Interface"); yield return Shot("settings-interface");
             window = hud.WindowOf("settings"); window.Close(); Expect(hud.WindowOf("settings") == null, "fechar a janela a tira"); _checks++;

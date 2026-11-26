@@ -21,8 +21,9 @@ namespace LifeVerse.Unity.UI
         {
             Ui = ui; Notices = notices; Chat = new ChatPanel(ui.Settings);
             TopBar = new VisualElement(); TopBar.AddToClassList("lv-bar"); TopBar.name = "topbar"; TopBar.style.position = Position.Absolute; TopBar.style.top = 14; TopBar.style.left = 18; TopBar.style.right = 18; TopBar.pickingMode = PickingMode.Position;
-            TopBar.Add(UiKit.Text("LifeVerse", "lv-title-text", "lv-accent")); IslandBack = UiKit.Button("‹", () => Travel?.Invoke(-1), "lv-btn-flat"); IslandBack.name = "island-back"; IslandBack.tooltip = "Voltar à ilha anterior"; IslandForward = UiKit.Button("›", () => Travel?.Invoke(1), "lv-btn-flat"); IslandForward.name = "island-forward"; IslandForward.tooltip = "Avançar para a próxima ilha"; IslandBack.style.marginLeft = 10; TopBar.Add(IslandBack); TopBar.Add(IslandForward); SetTravel(false, false); _island = UiKit.Text("", "lv-muted"); _island.style.marginLeft = 14; TopBar.Add(_island); TopBar.Add(UiKit.Spacer());
-            _balance = UiKit.Text("", "lv-accent"); _balance.style.marginRight = 18; TopBar.Add(_balance);
+            var logo = new Icon("cube", 28, new Color(.07f, .95f, .88f)) { name = "logo", tooltip = "LifeVerse" }; logo.style.marginRight = 6; TopBar.Add(logo); _menus = new VisualElement { name = "menus" }; _menus.style.flexDirection = FlexDirection.Row; TopBar.Add(_menus); IslandBack = UiKit.Button("‹", () => Travel?.Invoke(-1), "lv-btn-flat"); IslandBack.name = "island-back"; IslandBack.tooltip = "Voltar à ilha anterior"; IslandForward = UiKit.Button("›", () => Travel?.Invoke(1), "lv-btn-flat"); IslandForward.name = "island-forward"; IslandForward.tooltip = "Avançar para a próxima ilha"; IslandBack.style.marginLeft = 10; TopBar.Add(IslandBack); TopBar.Add(IslandForward); SetTravel(false, false); _island = UiKit.Text("", "lv-muted"); _island.style.marginLeft = 4; var pin = new Icon("pin", 18, new Color(.07f, .95f, .88f)); pin.style.marginLeft = 10; TopBar.Add(pin); TopBar.Add(_island); TopBar.Add(UiKit.Spacer());
+            var coin = new Icon("coin", 20, new Color(.96f, .64f, .25f)) { name = "coin" }; coin.style.marginRight = 6; TopBar.Add(coin); _balance = UiKit.Text("", "lv-bold"); _balance.style.marginRight = 6; TopBar.Add(_balance);
+            BuyCoins = UiKit.WithIcon(UiKit.Button("", () => BuyCoinsPressed?.Invoke(), "lv-btn-primary"), "plus", 16); BuyCoins.name = "buy-coins"; BuyCoins.tooltip = "Carteira: comprar VerseCoin"; BuyCoins.style.width = 32; BuyCoins.style.paddingLeft = 0; BuyCoins.style.marginRight = 18; ((UiKit.ButtonIcon)BuyCoins.userData).Only = true; TopBar.Add(BuyCoins);
             _people = UiKit.Text("0 pessoas", "lv-muted"); _people.style.marginRight = 18; TopBar.Add(_people); Presence.style.width = 110; Presence.style.marginRight = 10; TopBar.Add(Presence); _connection = UiKit.Text("● desconectado", "lv-bad"); TopBar.Add(_connection);
             BottomBar = new VisualElement(); BottomBar.AddToClassList("lv-bar"); BottomBar.name = "bottombar"; BottomBar.style.position = Position.Absolute; BottomBar.style.bottom = 14; BottomBar.style.left = 18; BottomBar.style.right = 18; BottomBar.style.justifyContent = Justify.Center; BottomBar.pickingMode = PickingMode.Position;
             Chat.style.position = Position.Absolute; Chat.style.left = 18; Chat.style.bottom = 76;
@@ -46,6 +47,31 @@ namespace LifeVerse.Unity.UI
         public void SetTravel(bool back, bool forward) { IslandBack.SetEnabled(back); IslandForward.SetEnabled(forward); }
         private Label _balance;
         /// <summary>The balance of the wallet on the top bar (kept up to date by the live channel); null hides it.</summary>
+        public readonly Button BuyCoins; public Action BuyCoinsPressed;
+        private readonly VisualElement _menus; private VisualElement _openMenu;
+        public IReadOnlyList<string> MenuTitles => _menus.Children().OfType<Button>().Select(b => b.text).ToList();
+        public VisualElement OpenMenu => _openMenu != null && _openMenu.parent != null ? _openMenu : null;
+
+        /// <summary>A menu of the top bar, as the Godot client's (Eu, Comunicar, Mundo, Conteúdo, Ajuda, Desenvolver): a title with a caret that opens a list of actions with icons under it.</summary>
+        public Button AddMenu(string title, IReadOnlyList<(string Label, string Icon, Action Run)> items)
+        {
+            Button button = null; button = UiKit.Button(title, () => ToggleMenu(button, items), "lv-btn-flat"); button.name = "menu-" + title; UiKit.WithTrailingIcon(button, "caret-down", 12); _menus.Add(button); return button;
+        }
+
+        /// <summary>Opens (or closes) the list of a menu under its title.</summary>
+        public void ToggleMenu(Button title, IReadOnlyList<(string Label, string Icon, Action Run)> items)
+        {
+            var wasThis = _openMenu != null && _openMenu.parent != null && _openMenu.userData == title; CloseMenu(); if (wasThis) return;
+            var list = new VisualElement { name = "menu-list", userData = title }; list.AddToClassList("lv-glass"); list.style.position = Position.Absolute; list.style.paddingTop = list.style.paddingBottom = 6; list.style.minWidth = 230;
+            var scale = Mathf.Max(.01f, Ui.Panel.scale); var at = title.worldBound; list.style.left = at.xMin; list.style.top = at.yMax + 6;
+            foreach (var (label, icon, run) in items) { var go = run; var entry = UiKit.WithIcon(UiKit.Button(label, () => { CloseMenu(); go?.Invoke(); }, "lv-btn-flat"), string.IsNullOrEmpty(icon) ? "dots" : icon); entry.style.unityTextAlign = TextAnchor.MiddleLeft; entry.style.marginBottom = 1; list.Add(entry); }
+            Ui.WindowLayer.Add(list); _openMenu = list; list.BringToFront();
+            Ui.Root.RegisterCallback<PointerDownEvent>(OutsideMenu, TrickleDown.TrickleDown);
+        }
+
+        private void OutsideMenu(PointerDownEvent e) { if (_openMenu == null || _openMenu.parent == null) return; if (_openMenu.worldBound.Contains((Vector2)e.position) || ((VisualElement)_openMenu.userData).worldBound.Contains((Vector2)e.position)) return; CloseMenu(); }
+        public void CloseMenu() { _openMenu?.RemoveFromHierarchy(); _openMenu = null; Ui.Root.UnregisterCallback<PointerDownEvent>(OutsideMenu, TrickleDown.TrickleDown); }
+
         public void SetBalance(long? coins) => _balance.text = coins is { } c ? SectionWindow.Coins(c) : "";
         public string BalanceText => _balance.text;
 
@@ -66,7 +92,7 @@ namespace LifeVerse.Unity.UI
         {
             Mode = mode is "compact" or "immersive" ? mode : "full"; if (Mode != "immersive") Revealed = false;
             var ids = ToolbarLayout.Order(ToolbarDefaults, order ?? new List<string>()); var buttons = ids.Select(id => BottomBar.Q<Button>("btn-" + id)).Where(b => b != null).ToList();
-            foreach (var b in buttons) { b.RemoveFromHierarchy(); BottomBar.Add(b); var id = b.name.Substring(4); b.style.display = hidden != null && hidden.Contains(id) ? DisplayStyle.None : DisplayStyle.Flex; b.style.fontSize = compactToolbar || Mode == "compact" ? 11 : StyleKeyword.Null; b.style.paddingLeft = b.style.paddingRight = compactToolbar || Mode == "compact" ? 4 : StyleKeyword.Null; }
+            foreach (var b in buttons) { b.RemoveFromHierarchy(); BottomBar.Add(b); var id = b.name.Substring(4); b.style.display = hidden != null && hidden.Contains(id) ? DisplayStyle.None : DisplayStyle.Flex; UiKit.IconOnly(b, compactToolbar || Mode == "compact"); }
             Refresh();
         }
 
@@ -80,15 +106,33 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>Adds a button to the bottom bar that opens (or closes) a window.</summary>
+        /// <summary>The icon of each button of the bar, as in the Godot client's toolbar (the window it opens shows it in its title too).</summary>
+        /// <summary>The buttons that start hidden (they are in the menus of the top bar), until the person arranges the bar.</summary>
+        public static readonly string[] DefaultHidden = { "chat", "social", "more", "settings", "help" };
+
+        /// <summary>The order the bar starts with (the Godot client's: speak, gestures, photo, build, people, map, inventory, mini-map…); ids not named keep their place after these.</summary>
+        public void SetDefaultOrder(params string[] ids) { var rest = ToolbarDefaults.Where(id => !ids.Contains(id)).ToList(); ToolbarDefaults.Clear(); ToolbarDefaults.AddRange(ids.Where(id => rest.Contains(id) || BottomBar.Q<Button>("btn-" + id) != null)); ToolbarDefaults.AddRange(rest); }
+
+        public static readonly Dictionary<string, string> Icons = new Dictionary<string, string>
+        {
+            ["chat"] = "chat", ["people"] = "people", ["social"] = "user", ["inventory"] = "bag", ["wallet"] = "coin", ["search"] = "search", ["build"] = "hammer", ["voice"] = "mic",
+            ["notifications"] = "bell", ["map"] = "pin", ["more"] = "dots", ["settings"] = "settings", ["help"] = "help", ["gestures"] = "hand", ["photo"] = "photo", ["minimap"] = "map",
+        };
+
         public Button Register(string label, string id, Func<FloatingWindow> create)
         {
-            var button = UiKit.Button(label, () => Toggle(id, create)); button.name = "btn-" + id; BottomBar.Add(button); if (!ToolbarDefaults.Contains(id)) ToolbarDefaults.Add(id); return button;
+            var button = UiKit.Button(label, () => Toggle(id, create)); button.name = "btn-" + id; button.tooltip = label;
+            if (Icons.TryGetValue(id, out var icon)) UiKit.WithIcon(button, icon);
+            BottomBar.Add(button); if (!ToolbarDefaults.Contains(id)) ToolbarDefaults.Add(id); return button;
         }
 
         public FloatingWindow Toggle(string id, Func<FloatingWindow> create)
         {
             if (_windows.TryGetValue(id, out var open) && open.IsOpen) { open.Close(); return null; }
-            var window = create(); if (window == null) return null; _windows[id] = window; window.Open(); return window;
+            var window = create(); if (window == null) return null; if (Icons.TryGetValue(id, out var icon)) window.SetIcon(icon); _windows[id] = window; window.Open();
+            // the button of an open window looks selected (teal, or orange for the inventory), as in the Godot client
+            if (BottomBar.Q<Button>("btn-" + id) is { } button) { var look = id == "inventory" ? "lv-btn-open-orange" : "lv-btn-open"; button.AddToClassList(look); window.Closed += () => button.RemoveFromClassList(look); }
+            return window;
         }
 
         public FloatingWindow WindowOf(string id) => _windows.TryGetValue(id, out var window) && window.IsOpen ? window : null;

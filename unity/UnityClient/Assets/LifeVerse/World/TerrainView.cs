@@ -20,6 +20,8 @@ namespace LifeVerse.Unity.World
         };
 
         public const float TilesPerMeter = .2f;
+        /// <summary>How bright the ground is drawn: the HDRP sun and sky light it brighter than the Godot renderer does, so the baked colours are toned down to look the same.</summary>
+        public const float GroundTone = .68f;
         private static Color32[][] _layerPixels;
         private static float[] _macro;
         private const int LayerSize = 256;
@@ -63,9 +65,9 @@ namespace LifeVerse.Unity.World
 
         private void ApplyMaterial()
         {
-            _material.SetTexture("_BaseColorMap", _albedo); _material.SetColor("_BaseColor", Color.white);
+            _material.SetTexture("_BaseColorMap", _albedo); _material.SetColor("_BaseColor", new Color(GroundTone, GroundTone, GroundTone, 1f));
             // the detail map repeats every metre over the whole island
-            _material.SetTextureScale("_DetailMap", new Vector2(_map.Cells * _map.CellSize, _map.Cells * _map.CellSize));
+            _material.SetTextureScale("_DetailMap", new Vector2(_map.Cells * _map.CellSize, _map.Cells * _map.CellSize)); _material.SetFloat("_DetailAlbedoScale", 0f);   // no grain: the Godot ground has none
         }
 
         private void RebuildMesh()
@@ -148,18 +150,38 @@ namespace LifeVerse.Unity.World
                     for (var layer = 0; layer < 8; layer++)
                     {
                         if (weights[layer] <= .004f) continue;
-                        var sample = Sample(layers[layer], u, v); var large = Sample(layers[layer], u2, v2).r / 255f; var factor = (.78f + .44f * large) * patch * weights[layer];
+                        var sample = Smooth(layer, u, v); var large = Sample(layers[layer], u2, v2).r / 255f; var factor = (.78f + .44f * large) * patch * weights[layer];
                         r += sample.r * factor; g += sample.g * factor; b += sample.b * factor;
                     }
                     // the shore: where the ground is within a metre of the sea level, a band of foam (the Godot ocean draws it from the depth under the water)
                     var heightHere = _map.SampleHeight(worldX, worldZ); var offset = heightHere - _map.SeaLevel;
-                    var foam = (1f - Mathf.SmoothStep(0f, 1f, Mathf.Abs(offset + .2f) / .55f)) * Mathf.SmoothStep(.25f, .75f, MacroAt(worldX * 3f, worldZ * 3f, 5) + .2f);
+                    var foam = (1f - Mathf.SmoothStep(0f, 1f, Mathf.Abs(offset + .08f) / .22f)) * Mathf.SmoothStep(.25f, .75f, MacroAt(worldX * 3f, worldZ * 3f, 5) + .2f);
                     if (foam > 0f) { r = Mathf.Lerp(r / total, 240f, foam * .7f) * total; g = Mathf.Lerp(g / total, 245f, foam * .7f) * total; b = Mathf.Lerp(b / total, 250f, foam * .7f) * total; }
                     pixels[(j - j0) * width + (i - i0)] = new Color32((byte)Mathf.Clamp(r / total, 0, 255), (byte)Mathf.Clamp(g / total, 0, 255), (byte)Mathf.Clamp(b / total, 0, 255), 255);
                 }
             }
             if (_albedo == null || _albedo.width != side) { if (_albedo != null) Destroy(_albedo); _albedo = new Texture2D(side, side, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 8 }; }
             _albedo.SetPixels32(i0, j0, width, height, pixels); _albedo.Apply(true);
+        }
+
+        private static Color[][] _layerSmooth; private const int SmoothSize = 64;
+        /// <summary>A layer averaged down to what one texel of the baked ground covers (the Godot shader reads the texture with mipmaps; reading single texels here showed as grain).</summary>
+        private static Color Smooth(int layer, float u, float v)
+        {
+            if (_layerSmooth == null)
+            {
+                var layers = LayerPixels(); _layerSmooth = new Color[layers.Length][]; var step = LayerSize / SmoothSize;
+                for (var l = 0; l < layers.Length; l++)
+                {
+                    var small = new Color[SmoothSize * SmoothSize];
+                    for (var y = 0; y < SmoothSize; y++) for (var x = 0; x < SmoothSize; x++) { var sum = Color.clear; for (var dy = 0; dy < step; dy++) for (var dx = 0; dx < step; dx++) sum += (Color)layers[l][(y * step + dy) * LayerSize + x * step + dx]; small[y * SmoothSize + x] = sum / (step * step); }
+                    _layerSmooth[l] = small;
+                }
+            }
+            var t = _layerSmooth[layer]; var fu = (u - Mathf.Floor(u)) * SmoothSize - .5f; var fv = (v - Mathf.Floor(v)) * SmoothSize - .5f; var x0 = Mathf.FloorToInt(fu); var y0 = Mathf.FloorToInt(fv); var tx = fu - x0; var ty = fv - y0;
+            int W(int i) => (i % SmoothSize + SmoothSize) % SmoothSize;
+            var c = Color.Lerp(Color.Lerp(t[W(y0) * SmoothSize + W(x0)], t[W(y0) * SmoothSize + W(x0 + 1)], tx), Color.Lerp(t[W(y0 + 1) * SmoothSize + W(x0)], t[W(y0 + 1) * SmoothSize + W(x0 + 1)], tx), ty);
+            return c * 255f;
         }
 
         private static Color32 Sample(Color32[] texture, float u, float v)

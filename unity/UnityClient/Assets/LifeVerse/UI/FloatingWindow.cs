@@ -13,6 +13,10 @@ namespace LifeVerse.Unity.UI
         public string Id { get; }
         public VisualElement Body { get; }
         public Label Title { get; }
+        private readonly VisualElement _bar; private Icon _icon;
+        /// <summary>An icon before the title (the one of the toolbar button that opened it).</summary>
+        public void SetIcon(string name) { if (_icon == null) { _icon = new Icon(name, 18) { name = "title-icon" }; _icon.style.marginRight = 8; _icon.style.alignSelf = Align.Center; _bar.Insert(0, _icon); } else _icon.Name = name; }
+        public string IconName => _icon?.Name;
         public event Action Closed;
         protected readonly UiRoot Ui; private Vector2 _grab; private bool _dragging;
 
@@ -20,7 +24,7 @@ namespace LifeVerse.Unity.UI
         {
             Ui = ui; Id = id; AddToClassList("lv-window"); style.width = width; if (height > 0) style.height = height; pickingMode = PickingMode.Position;
             var bar = new VisualElement(); bar.AddToClassList("lv-window-title"); Title = UiKit.Text(title, "lv-title-text"); bar.Add(Title);
-            var close = UiKit.Button("✕", Close, "lv-close"); bar.Add(close); Add(bar);
+            var close = UiKit.Button("", Close, "lv-close"); close.tooltip = "Fechar"; var x = new Icon("close", 16) { name = "close-icon" }; close.Add(x); close.style.justifyContent = Justify.Center; close.style.alignItems = Align.Center; bar.Add(close); Add(bar); _bar = bar;
             Body = new VisualElement(); Body.AddToClassList("lv-window-body"); Add(Body);
             var start = ui.Settings.Windows.TryGetValue(id, out var saved) ? new Vector2(saved[0], saved[1]) : defaultPosition ?? new Vector2(80, 80);
             style.left = start.x; style.top = start.y;

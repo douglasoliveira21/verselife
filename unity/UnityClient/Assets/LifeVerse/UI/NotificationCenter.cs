@@ -35,7 +35,8 @@ namespace LifeVerse.Unity.UI
             _lastText = text; _lastTime = now; _history.Add(notice); if (_history.Count > MaxHistory) _history.RemoveAt(0); Unread++;
             if (DoNotDisturb && kind != NoticeKind.Bad) { Suppressed++; Changed?.Invoke(); return notice; }
             var toast = new VisualElement(); toast.AddToClassList("lv-toast"); toast.AddToClassList(kind == NoticeKind.Good ? "lv-toast-good" : kind == NoticeKind.Warn ? "lv-toast-warn" : kind == NoticeKind.Bad ? "lv-toast-bad" : "lv-toast-info");
-            var label = UiKit.Text(text); label.style.whiteSpace = WhiteSpace.Normal; toast.Add(label); toast.pickingMode = PickingMode.Ignore;
+            toast.style.flexDirection = FlexDirection.Row; toast.style.alignItems = Align.Center; var mark = new Icon(kind == NoticeKind.Good ? "check" : kind == NoticeKind.Warn ? "alert" : kind == NoticeKind.Bad ? "error" : "info", 18); mark.style.marginRight = 8; toast.Add(mark);
+            var label = UiKit.Text(text); label.style.whiteSpace = WhiteSpace.Normal; label.style.flexShrink = 1; toast.Add(label); toast.pickingMode = PickingMode.Ignore;
             _ui.ToastLayer.Add(toast); _visible.Enqueue(toast);
             while (_visible.Count > Mathf.Clamp(MaxShown, 1, 8)) _visible.Dequeue().RemoveFromHierarchy();
             toast.schedule.Execute(() => toast.RemoveFromHierarchy()).StartingIn((long)(Mathf.Max(1f, Seconds > 0f ? Seconds : seconds) * 1000f));

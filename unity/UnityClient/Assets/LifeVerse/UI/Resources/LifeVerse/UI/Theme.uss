@@ -139,4 +139,9 @@ Slider.lv-slider { margin: 4px 0; }
 /* itens de uma lista rolável não encolhem (senão se sobrepõem) */
 .unity-scroll-view__content-container > * { flex-shrink: 0; }
 .unity-scroll-view__content-container { flex-shrink: 0; }
-
+/* the button of an open window, as in the Godot client: teal, and orange for the inventory */
+.lv-btn-open { background-color: #0A3A3C; border-color: #12F2E0; }
+.lv-btn-open-orange { background-color: #4B3D30; border-color: #F4A340; }
+/* name plates over the avatars (client/Assets/ui/09_placas_nome.png) */
+.lv-plate { background-color: rgba(19, 35, 47, 0.86); border-width: 1px; border-color: #A9BCC3; border-radius: 14px; padding: 3px 12px 3px 10px; }
+.lv-plate-name { color: #FFFFFF; font-size: 14px; -unity-font-style: bold; padding: 0; margin: 0; }

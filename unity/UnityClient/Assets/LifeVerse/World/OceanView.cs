@@ -20,6 +20,8 @@ namespace LifeVerse.Unity.World
         public bool Waves = true;
         private Transform _plane;
         private Material _material;
+        /// <summary>The colour and opacity of the sea: between the Godot shallow (0.05, 0.50, 0.58) and deep (0.005, 0.07, 0.22) colours, nearly opaque, so the sand under deep water does not shine through.</summary>
+        public static readonly Color WaterColour = new Color(.02f, .2f, .34f, .9f);
         private Mesh _mesh;
         private Vector3[] _local, _world;
         private bool _animate = true;
@@ -35,6 +37,7 @@ namespace LifeVerse.Unity.World
         {
             var prototype = Resources.Load<Material>("LifeVerse/OceanMaterial");
             _material = prototype != null ? new Material(prototype) : new Material(Shader.Find("HDRP/Lit"));
+            _material.SetColor("_BaseColor", WaterColour);   // the deep blue of the Godot sea (its colour goes from turquoise in the shallows to this deep blue, almost opaque)
             var plane = new GameObject("OceanPlane"); plane.transform.SetParent(transform, false); _plane = plane.transform;
             plane.AddComponent<MeshFilter>().sharedMesh = BuildMesh();
             var renderer = plane.AddComponent<MeshRenderer>(); renderer.sharedMaterial = _material;

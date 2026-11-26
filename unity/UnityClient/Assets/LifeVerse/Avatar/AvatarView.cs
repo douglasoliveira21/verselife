@@ -40,6 +40,8 @@ namespace LifeVerse.Unity.Avatar
         public Transform NameTag => _tag != null ? _tag.transform : null;
         /// <summary>The names over the other avatars and over one's own (Configurações › Avatar).</summary>
         public static bool ShowNames = true, ShowOwnName = true;
+        /// <summary>The interface draws the name plates (UI.NamePlates), so the plain 3D name stays hidden; it still says where and whether a name shows.</summary>
+        public static bool PlatesDrawn;
         public bool NameShown => _tag != null && _tag.gameObject.activeSelf;
         public bool Speaking { get; private set; }
         /// <summary>Somebody is talking: their name is lit green while their voice is heard (or sent, for oneself).</summary>
@@ -239,7 +241,7 @@ namespace LifeVerse.Unity.Avatar
             if (_tag == null) return;
             var camera = Camera.main; var show = Visible && (External ? ShowOwnName : ShowNames) && camera != null && Detail != AvatarDetail.Hidden && (camera.transform.position - _tag.transform.position).sqrMagnitude > .8f;
             if (show) { var away = camera.transform.position - _tag.transform.position; show = away.sqrMagnitude < 45f * 45f; if (show) _tag.transform.rotation = Quaternion.LookRotation(away.normalized, Vector3.up); } // TextMesh is read from its back, so it looks at the camera, not away from it
-            _tag.gameObject.SetActive(show);
+            _tag.gameObject.SetActive(show); if (show) _tag.GetComponent<MeshRenderer>().enabled = !PlatesDrawn;   // the interface draws the plate over it
         }
 
         private void Update() => Tick(Time.deltaTime);

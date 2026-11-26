@@ -428,3 +428,27 @@ O Unity tem o editor com 11 abas e as operações principais. Faltam ou estão m
   - ondas da água e qualidade automática.
 
   Outras 33 trazem o mesmo motivo do Godot para não agir (por exemplo, privacidade que depende de uma preferência de conta que o servidor ainda não guarda). Também faltam os títulos de grupo sobre o nome (o mundo não recebe esse dado).
+
+### Visual do Godot: ícones, barras, menus, placas de nome e o mundo lado a lado (26/11/2026)
+- **Ícones** (`UI/UiIconData.cs`, `UI/Icon.cs`): os 111 ícones do Godot (Tabler, MIT), com os mesmos dados, desenhados pelo próprio Unity a partir do SVG (linhas, arcos, círculos e retângulos viram curvas do pincel vetorial). Ficam nítidos em qualquer tamanho e cor. Aparecem:
+  - nos botões da barra, com ícone e nome; a barra compacta mostra só o ícone, com o nome na dica;
+  - no título das janelas e no botão de fechar;
+  - nos avisos (info, ok, alerta, erro);
+  - nos menus do alto.
+- **Barra de cima, como `01_barra_superior.png`:**
+  - o logo em cubo;
+  - os menus Eu, Comunicar, Mundo, Conteúdo, Ajuda e Desenvolver, com seta, que abrem listas com ícones (as mesmas janelas do "Mais", agrupadas como no Godot);
+  - o pino antes da ilha;
+  - a moeda com o saldo e o "+" que abre a carteira.
+- **Barra de baixo, como `02_barra_inferior.png`:**
+  - a ordem do Godot (Voz, Gestos, Foto, Construir, Pessoas, Mapa, Inventário, Mini-mapa, Buscar, Carteira, Avisos), com Gestos, Foto e Mini-mapa novos;
+  - o botão de uma janela aberta fica verde-água, e o do inventário fica laranja;
+  - Chat, Social, Mais, Configurações e Ajuda começam escondidos porque estão nos menus; quem arrumar a barra mantém a própria escolha.
+- **Paleta:** conferida com o `UiStyle` do Godot, que é o código que vai para o jogo. As cores do tema do Unity já eram as mesmas. A imagem `13_paleta_tipografia.png` é um rascunho anterior com tons um pouco diferentes.
+- **Placas de nome, como `09_placas_nome.png`** (`UI/NamePlates.cs`): uma pílula de vidro escuro com contorno claro, o ponto de status (verde online, cinza ausente, vermelho ocupado, para o próprio avatar), o nome e as ondas da voz enquanto a pessoa fala. Quando e onde a placa aparece continua sendo a regra do avatar (distância, opção de mostrar nomes).
+- **O mundo lado a lado** (`client/Tests/WorldCompareCapture.tscn` no Godot e `-lifeverse-world-preview` no Unity): a mesma ilha esculpida, as mesmas 9 câmeras, horas e climas, fotografadas nos dois motores. As fotos estão em `img/compare/` (`godot-*.png` e `unity-*.png`; `unity-island-antes.png` é o Unity antes dos ajustes). A geometria bate exatamente. Ajustes feitos a partir da comparação:
+  - **céu:** as nuvens do céu do Godot (o mesmo ruído e a mesma projeção na cúpula, pela camada de nuvens do HDRP; havia uma camada de nuvens no Unity que nunca aparecia por faltar ligar o tipo de nuvem), e o azul do alto mais forte;
+  - **chão:** sem a granulação que se repetia a cada metro (o Godot não tem), cozinhado de uma versão filtrada de cada camada (antes saía chiado) e no mesmo tom de verde;
+  - **mar:** azul fundo e mais opaco, para a areia do fundo não aparecer.
+- **Ainda diferente do Godot:** a água não muda de cor com a profundidade (turquesa no raso, escura no fundo), os morros saem um pouco mais escuros, a repetição da textura do chão aparece um pouco mais e a espuma da beira é mais irregular.
+- Verificado: EditMode 191/191 (2 testes novos: os 111 ícones viram desenho, caminhos e arcos chegam ao ponto certo); auto-teste com os menus, os ícones da barra, o estado aberto do inventário e as placas de nome; fotos das interfaces com GPU: `img/ui-icons.png`, `img/ui-menu.png`, `img/ui-plates.png`.

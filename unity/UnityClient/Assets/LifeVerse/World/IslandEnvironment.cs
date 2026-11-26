@@ -27,7 +27,35 @@ namespace LifeVerse.Unity.World
         private Volume _volume, _underwater;
         private VolumeProfile _profile, _underwaterProfile;
         private Exposure _exposure;
-        private GradientSky _sky;
+        private GradientSky _sky; private CloudLayer _clouds;
+        private static Texture2D _cloudMap;
+        /// <summary>How much of the sky the clouds cover (the Godot sky's cloud_cover).</summary>
+        public const float CloudCover = .52f;
+
+        /// <summary>The cloud map of the upper half of the sky (lat-long: across is the direction around, up is the height above the horizon), with the Godot shader's projection and noise.</summary>
+        public static Texture2D CloudMap()
+        {
+            if (_cloudMap != null) return _cloudMap;
+            const int width = 1024, height = 256, noiseSize = 256; var noise = ProceduralTextures.Fbm(noiseSize, 6, 5, 5); var pixels = new Color32[width * height];
+            float N(float u, float v)
+            {
+                u = (u - Mathf.Floor(u)) * noiseSize; v = (v - Mathf.Floor(v)) * noiseSize; var x0 = (int)u % noiseSize; var y0 = (int)v % noiseSize; var x1 = (x0 + 1) % noiseSize; var y1 = (y0 + 1) % noiseSize; var tx = u - Mathf.Floor(u); var ty = v - Mathf.Floor(v);
+                return Mathf.Lerp(Mathf.Lerp(noise[y0 * noiseSize + x0], noise[y0 * noiseSize + x1], tx), Mathf.Lerp(noise[y1 * noiseSize + x0], noise[y1 * noiseSize + x1], tx), ty);
+            }
+            for (var j = 0; j < height; j++)
+            {
+                var elevation = (j + .5f) / height * Mathf.PI / 2f; var dy = Mathf.Sin(elevation); var flat = Mathf.Cos(elevation);
+                for (var i = 0; i < width; i++)
+                {
+                    var azimuth = (i + .5f) / width * Mathf.PI * 2f; var dx = flat * Mathf.Sin(azimuth); var dz = flat * Mathf.Cos(azimuth);
+                    var u = dx / (dy + .14f) * .32f; var v = dz / (dy + .14f) * .32f; var n = N(u, v) * .7f + N(u * 2.7f, v * 2.7f) * .3f;
+                    var c = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(1f - CloudCover, 1f - CloudCover + .24f, n)) * Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(.005f, .2f, dy));
+                    var value = (byte)Mathf.Clamp(c * 255f, 0f, 255f); pixels[j * width + i] = new Color32(value, value, value, 255);
+                }
+            }
+            _cloudMap = new Texture2D(width, height, TextureFormat.RGBA32, true, true) { wrapModeU = TextureWrapMode.Repeat, wrapModeV = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, name = "Clouds" };
+            _cloudMap.SetPixels32(pixels); _cloudMap.Apply(true); return _cloudMap;
+        }
         private ParticleSystem _rain;
         /// <summary>0 to 1: how much rain falls now (the player can turn weather effects down in the graphics settings).</summary>
         public float RainQuality = 1f;
@@ -56,8 +84,6 @@ namespace LifeVerse.Unity.World
         public const float SkyNits = 14000f;
         private static readonly Color ZenithDay = new Color(.17f, .42f, .84f), HorizonDay = new Color(.74f, .86f, .97f), ZenithNight = new Color(.004f, .01f, .045f), HorizonNight = new Color(.03f, .045f, .1f), Sunset = new Color(1f, .52f, .22f);
         private Fog _fog;
-        private CloudLayer _clouds;
-        private Texture2D _cloudMap;
         private float _fogDensity;
         private Camera _camera;
         private float _seaLevel = -.8f;
@@ -105,7 +131,10 @@ namespace LifeVerse.Unity.World
             var environment = _profile.Add<VisualEnvironment>(); // The physically based sky ignored the sun light in this setup (it stayed in full daylight at night and at sunset), so the sky is a gradient driven by the hour,
             // as the Godot client does with its own sky shader: zenith and horizon colours for day and night, an orange horizon when the sun is low.
             environment.skyType.Override((int)SkyType.Gradient); environment.skyAmbientMode.Override(SkyAmbientMode.Dynamic);
-            _sky = _profile.Add<GradientSky>(); _sky.skyIntensityMode.Override(SkyIntensityMode.Multiplier); _sky.multiplier.Override(SkyNits); _sky.gradientDiffusion.Override(1f); _sky.top.Override(Color.blue); _sky.middle.Override(Color.cyan); _sky.bottom.Override(Color.gray); // overridden here so the values set every frame count
+            _sky = _profile.Add<GradientSky>(); _sky.skyIntensityMode.Override(SkyIntensityMode.Multiplier); _sky.multiplier.Override(SkyNits); _sky.gradientDiffusion.Override(.22f); _sky.top.Override(Color.blue); _sky.middle.Override(Color.cyan); _sky.bottom.Override(Color.gray); // overridden here so the values set every frame count
+            // the clouds of the Godot sky shader: the same noise, projected on the dome the same way (uv = dir.xz / (dir.y + 0.14) * 0.32), drawn by the cloud layer of HDRP
+            environment.cloudType.Override((int)CloudType.CloudLayer); _clouds = _profile.Add<CloudLayer>(); _clouds.opacity.Override(.93f); _clouds.upperHemisphereOnly.Override(true);
+            _clouds.layerA.cloudMap.Override(CloudMap()); _clouds.layerA.opacityR.Override(1f); _clouds.layerA.lighting.Override(false); _clouds.layerA.tint.Override(Color.white); _clouds.layerA.exposure.Override(0f);
             _exposure = _profile.Add<Exposure>(); _exposure.mode.Override(ExposureMode.Fixed); _exposure.fixedExposure.Override(13.5f);
             BuildRain();
             _fog = _profile.Add<Fog>(); _fog.enabled.Override(true); _fog.meanFreePath.Override(6000f); _fog.baseHeight.Override(-50f); _fog.maximumHeight.Override(60f);
@@ -115,9 +144,7 @@ namespace LifeVerse.Unity.World
             _ssr = _profile.Add<ScreenSpaceReflection>(); _ssr.enabled.Override(false);
             var bloom = _bloom = _profile.Add<Bloom>(); bloom.intensity.Override(.2f); bloom.threshold.Override(1f); bloom.scatter.Override(.65f); // the sun disc and bright lamps glow
             BuildSunDisc();
-            _clouds = _profile.Add<CloudLayer>(); _clouds.opacity.Override(1f);
             _shadowSettings = _profile.Add<HDShadowSettings>(); _shadowSettings.maxShadowDistance.Override(120f);
-            _cloudMap = ProceduralTextures.Clouds(512, 5); _clouds.layerA.cloudMap.Override(_cloudMap); _clouds.layerA.opacityR.Override(1f); _clouds.layerA.opacityG.Override(0f); _clouds.layerA.opacityB.Override(0f); _clouds.layerA.opacityA.Override(0f);
             _volume = new GameObject("World Volume").AddComponent<Volume>(); _volume.transform.SetParent(transform, false); _volume.isGlobal = true; _volume.sharedProfile = _profile; _volume.priority = 0;
 
             // under the water: murky blue fog and a colour filter, blended in as the camera goes below the sea

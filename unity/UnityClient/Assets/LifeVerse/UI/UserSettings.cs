@@ -79,6 +79,8 @@ namespace LifeVerse.Unity.UI
         public Dictionary<string, List<string>> RecentPeople { get; set; } = new Dictionary<string, List<string>>();
         public List<string> ToolbarOrder { get; set; } = new List<string>();
         public List<string> ToolbarHidden { get; set; } = new List<string>();
+        /// <summary>Whether the person arranged the bar (otherwise it shows the default buttons in the default order).</summary>
+        public bool ToolbarCustomized { get; set; }
         /// <summary>Where the camera looked last in each island (the yaw, by island id).</summary>
         public Dictionary<string, float> IslandYaw { get; set; } = new Dictionary<string, float>();
 
