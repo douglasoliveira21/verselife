@@ -53,6 +53,57 @@ namespace LifeVerse.Unity.UI
             particles?.Invoke(ParticlesOf(store.Get("graphics.particles")));
         }
 
+        /// <summary>The effects of the picture on the island's volume and the camera: fog, volumetric light, glow, colour, ambient occlusion, reflections, shadow bands and sharpness, the smoothing of edges and the render scale.</summary>
+        public static void Effects(SettingsStore store, LifeVerse.Unity.World.IslandEnvironment environment, Camera camera)
+        {
+            environment?.SetEffects(store.Bool("graphics.fog"), store.Bool("graphics.volumetric"), store.Bool("graphics.glow"), store.Bool("graphics.color_adjust"), store.Bool("graphics.ssao"), store.Get("graphics.ssao_quality"), store.Bool("graphics.ssr"), (int)store.Float("graphics.shadow_cascades"), store.Get("graphics.shadow_quality"));
+            RenderScale.Target = Mathf.Clamp(store.Int("graphics.render_scale"), 50, 100); RenderScale.Dynamic = store.Bool("graphics.dynamic_resolution"); RenderScale.Install();
+            if (camera != null && camera.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>() is { } data)
+            {
+                data.antialiasing = AntialiasingOf(store.Get("graphics.msaa")); data.allowDynamicResolution = true;
+            }
+        }
+
+        /// <summary>The "MSAA" of the Godot client in this renderer: off, then edge smoothing done after drawing (FXAA for 2x, SMAA for 4x, temporal for 8x).</summary>
+        public static UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.AntialiasingMode AntialiasingOf(string msaa) => msaa switch
+        {
+            "2" => UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.AntialiasingMode.FastApproximateAntialiasing, "4" => UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.AntialiasingMode.SubpixelMorphologicalAntiAliasing,
+            "8" => UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.AntialiasingMode.TemporalAntialiasing, _ => UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.AntialiasingMode.None,
+        };
+
+        /// <summary>The resolution the 3D world is drawn at, as a percentage of the window; with the dynamic resolution on it goes down (to half) while the frames are slow and back up when they are quick.</summary>
+        public static class RenderScale
+        {
+            public static float Target = 100f; public static bool Dynamic; public static float Current { get; private set; } = 100f; private static bool _installed; private static float _frame = 1f / 60f;
+            public static void Install() { if (!_installed) { _installed = true; UnityEngine.Rendering.DynamicResolutionHandler.SetDynamicResScaler(() => Current, UnityEngine.Rendering.DynamicResScalePolicyType.ReturnsPercentage); } if (!Dynamic) Current = Target; }
+            /// <summary>Called each frame with its time.</summary>
+            public static void Tick(float dt)
+            {
+                if (!Dynamic) { Current = Target; return; }
+                _frame = Mathf.Lerp(_frame, Mathf.Max(.001f, dt), .05f);
+                if (_frame > 1f / 50f) Current = Mathf.Max(50f, Current - 1f); else if (_frame < 1f / 70f) Current = Mathf.Min(Target, Current + .5f);
+                Current = Mathf.Min(Current, Target);
+            }
+        }
+
+        /// <summary>The interface options of the catalog that are not about the picture: chat, names, mini-map, how opaque windows and the map are, the radial menu and the script editor.</summary>
+        public static void Interface(SettingsStore store, Hud hud, UiRoot ui)
+        {
+            if (hud != null) { hud.Chat.ShowTime = store.Bool("chat.show_time"); hud.Chat.VisibleSeconds = store.Int("chat.visible_seconds"); hud.Map.ZoomMetres = store.Int("world.minimap_zoom"); hud.Map.ShowCoords = store.Bool("world.show_coords"); hud.Map.ShowAvatars = store.Bool("world.minimap_avatars"); hud.Map.style.opacity = Mathf.Clamp(store.Int("interface.map_opacity"), 30, 100) / 100f; }
+            if (ui != null) ui.WindowLayer.style.opacity = Mathf.Clamp(store.Int("interface.window_opacity"), 30, 100) / 100f;
+            LifeVerse.Unity.Avatar.AvatarView.ShowNames = store.Bool("avatar.show_names"); LifeVerse.Unity.Avatar.AvatarView.ShowOwnName = store.Bool("avatar.show_own_name");
+            RadialMenu.Scale = Mathf.Clamp(store.Int("interface.radial_size"), 60, 150) / 100f; RadialMenu.Opacity = Mathf.Clamp(store.Int("interface.radial_opacity"), 50, 100) / 100f; RadialMenu.Glow = Mathf.Clamp(store.Int("interface.radial_glow"), 0, 100) / 100f;
+            LuaEditorWindow.FontSize = store.Int("scripts.font_size"); LuaEditorWindow.Indent = store.Int("scripts.indent"); LuaEditorWindow.AutoComplete = store.Bool("scripts.autocomplete");
+        }
+
+        /// <summary>Deletes the files of islands kept on disk (they come again when needed). How many were deleted.</summary>
+        public static int ClearCache()
+        {
+            var folder = LifeVerse.Unity.World.WorldJoin.CacheFolder; var removed = 0;
+            try { if (System.IO.Directory.Exists(folder)) foreach (var file in System.IO.Directory.GetFiles(folder)) { System.IO.File.Delete(file); removed++; } } catch (System.IO.IOException) { } catch (UnauthorizedAccessException) { }
+            return removed;
+        }
+
         /// <summary>The toasts: how many, how long, and "não perturbe".</summary>
         public static void Toasts(SettingsStore store, NotificationCenter notices)
         {
@@ -61,7 +112,7 @@ namespace LifeVerse.Unity.UI
 
         public static void Build(SettingsStore store, BuildEditor builder)
         {
-            if (builder == null) return; builder.SnapToGrid = store.Bool("build.snap"); builder.Grid = Mathf.Max(.05f, store.Float("build.move_step"));
+            if (builder == null) return; builder.SnapToGrid = store.Bool("build.snap"); builder.Grid = Mathf.Max(.05f, store.Float("build.move_step")); builder.RotateStep = Mathf.Max(1f, store.Float("build.rotate_step")); builder.ScaleStep = Mathf.Max(.01f, store.Float("build.scale_step"));
         }
 
         /// <summary>The performance numbers asked in the settings (FPS, frame time, memory): the overlay shows when any is on, with the memory line when asked.</summary>

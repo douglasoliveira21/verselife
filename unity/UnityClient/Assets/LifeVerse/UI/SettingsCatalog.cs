@@ -65,7 +65,7 @@ namespace LifeVerse.Unity.UI
             "world.max_lights", "world.max_light_shadows", "notifications.toast_seconds", "notifications.max_toasts", "notifications.dnd", "inventory.default_sort", "inventory.subfolders", "build.snap", "build.move_step", "avatar.footsteps",
             // shown and done here
             "general.updates", "account.user", "account.server", "account.connection", "account.session", "account.leave_island", "account.quit", "advanced.version", "advanced.godot", "advanced.system", "advanced.gpu", "advanced.renderer",
-            "advanced.profile", "advanced.data_folder", "advanced.open_data", "advanced.open_logs", "advanced.export_diagnostics", "advanced.restore_all", "interface.restore_layout", "interface.restore_all", "interface.restore_toolbar", "interface.mode", "interface.compact_toolbar", "camera.photo_format", "camera.photo_include_ui", "avatar.open_editor", "chat.open_people",
+            "advanced.profile", "advanced.data_folder", "advanced.open_data", "advanced.open_logs", "advanced.export_diagnostics", "advanced.restore_all", "interface.restore_layout", "interface.restore_all", "interface.restore_toolbar", "interface.mode", "graphics.fog", "graphics.volumetric", "graphics.glow", "graphics.color_adjust", "graphics.ssao", "graphics.ssao_quality", "graphics.ssr", "graphics.shadow_cascades", "graphics.shadow_quality", "graphics.msaa", "graphics.render_scale", "graphics.dynamic_resolution", "chat.show_time", "chat.visible_seconds", "avatar.show_names", "avatar.show_own_name", "world.show_coords", "world.minimap_zoom", "world.minimap_avatars", "interface.window_opacity", "interface.map_opacity", "interface.radial_size", "interface.radial_opacity", "interface.radial_glow", "scripts.font_size", "scripts.indent", "scripts.autocomplete", "build.rotate_step", "build.scale_step", "advanced.clear_cache", "network.auto_reconnect", "interface.compact_toolbar", "camera.photo_format", "camera.photo_include_ui", "avatar.open_editor", "chat.open_people",
             "network.state", "network.protocol", "network.avatars",
         };
 
@@ -83,6 +83,7 @@ namespace LifeVerse.Unity.UI
                     if (UnityHas.Contains(d.Id)) d.Unavailable = null;
                     else if (d.Unavailable == null && !InUnity.Contains(d.Id)) d.Unavailable = NotYet;
                     if (d.Id == "advanced.godot") { d.Label = "Versão do Unity"; d.Help = "A versão do motor gráfico deste cliente."; }
+                    if (d.Id == "graphics.msaa") d.Help = "Suaviza o serrilhado das bordas. Neste cliente: 2x usa FXAA, 4x usa SMAA e 8x a suavização temporal (TAA), feitas depois de desenhar.";
                     list.Add(d);
                 }
                 foreach (var e in Extra) { var at = list.FindLastIndex(d => d.Category == e.Category); list.Insert(at + 1, e); }

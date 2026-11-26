@@ -59,13 +59,34 @@ namespace LifeVerse.Unity.UI
             if (u < 0f || u > 1f || v < 0f || v > 1f) return null; return new Vector2(u * Size, v * Size);
         }
 
+        /// <summary>How many metres the mini-map shows from edge to edge (the whole island when it is smaller), the coordinates under it and the dots of the other avatars.</summary>
+        public float ZoomMetres = 300f; public bool ShowCoords = true, ShowAvatars = true;
+        private Label _coords; private float _span = 1f; private Vector2 _origin;
+        public string CoordsText => _coords?.text ?? "";
+        public float SpanMetres => _span;
+
+        /// <summary>The window of the island the map shows: a square of <see cref="ZoomMetres"/> around the person (kept inside the island), or the whole island.</summary>
+        private void Frame(Vector3 self)
+        {
+            if (_map == null) return; var whole = _map.HalfExtent * 2f; _span = Mathf.Clamp(ZoomMetres, 20f, whole); var half = _span / 2f;
+            var cx = Mathf.Clamp(self.x, -_map.HalfExtent + half, _map.HalfExtent - half); var cz = Mathf.Clamp(self.z, -_map.HalfExtent + half, _map.HalfExtent - half); _origin = new Vector2(cx - half, cz - half);
+            var k = whole / _span; _picture.style.backgroundSize = new BackgroundSize(Size * k, Size * k);
+            _picture.style.backgroundPositionX = new BackgroundPosition(BackgroundPositionKeyword.Left, -(_origin.x + _map.HalfExtent) / whole * Size * k); _picture.style.backgroundPositionY = new BackgroundPosition(BackgroundPositionKeyword.Top, -(_origin.y + _map.HalfExtent) / whole * Size * k);
+        }
+
+        private Vector2? InFrame(Vector3 game) { var u = (game.x - _origin.x) / _span; var v = (game.z - _origin.y) / _span; return u < 0f || u > 1f || v < 0f || v > 1f ? (Vector2?)null : new Vector2(u * Size, v * Size); }
+
         public void Place(Vector3 self, IReadOnlyList<Vector3> others)
         {
-            if (PointOf(self) is { } p) { _self.style.display = DisplayStyle.Flex; _self.style.left = p.x - 6; _self.style.top = p.y - 6; } else _self.style.display = DisplayStyle.None;
+            Frame(self);
+            if (_coords == null) { _coords = new Label { pickingMode = PickingMode.Ignore }; _coords.AddToClassList("lv-small"); _coords.style.position = Position.Absolute; _coords.style.left = 8; _coords.style.bottom = 6; _coords.style.color = Color.white; _coords.style.unityTextOutlineColor = Color.black; _coords.style.unityTextOutlineWidth = .3f; Add(_coords); }
+            _coords.style.display = ShowCoords ? DisplayStyle.Flex : DisplayStyle.None; _coords.text = Mathf.RoundToInt(self.x) + ", " + Mathf.RoundToInt(self.y) + ", " + Mathf.RoundToInt(self.z);
+            if (!ShowAvatars) others = new List<Vector3>();
+            if ((_map != null ? InFrame(self) : PointOf(self)) is { } p) { _self.style.display = DisplayStyle.Flex; _self.style.left = p.x - 6; _self.style.top = p.y - 6; } else _self.style.display = DisplayStyle.None;
             var shown = 0;
             foreach (var other in others)
             {
-                if (PointOf(other) is not { } q) continue;
+                if ((_map != null ? InFrame(other) : PointOf(other)) is not { } q) continue;
                 if (shown >= _others.Count) { var dot = new VisualElement { pickingMode = PickingMode.Ignore }; dot.style.position = Position.Absolute; dot.style.width = 7; dot.style.height = 7; dot.style.backgroundColor = new Color(.07f, .95f, .88f); dot.style.borderTopLeftRadius = dot.style.borderTopRightRadius = dot.style.borderBottomLeftRadius = dot.style.borderBottomRightRadius = 4; _picture.Add(dot); _others.Add(dot); }
                 var element = _others[shown++]; element.style.display = DisplayStyle.Flex; element.style.left = q.x - 3.5f; element.style.top = q.y - 3.5f;
             }

@@ -440,6 +440,8 @@ namespace LifeVerse.Unity.UI
         }
 
         public enum GizmoMode { Move, Rotate, Scale }
+        /// <summary>The steps of turning (degrees) and stretching (metres) with the handles (Configurações › Construção).</summary>
+        public float RotateStep = 15f, ScaleStep = .1f;
         /// <summary>What the coloured handles do: move along an axis, turn around it, or stretch along it.</summary>
         public GizmoMode Mode { get; set; } = GizmoMode.Move;
         private readonly Dictionary<Guid, Vector3> _dragRotation = new Dictionary<Guid, Vector3>(), _dragScale = new Dictionary<Guid, Vector3>();
@@ -454,7 +456,8 @@ namespace LifeVerse.Unity.UI
         /// <summary>The value a drag stands for: metres to move or stretch, degrees to turn.</summary>
         public float AmountFor(float screenMetres, float screenPixels, bool free)
         {
-            if (Mode == GizmoMode.Rotate) { var degrees = screenPixels * .5f; return free ? degrees : Mathf.Round(degrees / 15f) * 15f; }
+            if (Mode == GizmoMode.Rotate) { var degrees = screenPixels * .5f; return free || RotateStep <= 0f ? degrees : Mathf.Round(degrees / RotateStep) * RotateStep; }
+            if (Mode == GizmoMode.Scale) return free || ScaleStep <= 0f ? screenMetres : Mathf.Round(screenMetres / ScaleStep) * ScaleStep;
             return free || !SnapToGrid || Grid <= 0f ? screenMetres : Mathf.Round(screenMetres / Grid) * Grid;
         }
 

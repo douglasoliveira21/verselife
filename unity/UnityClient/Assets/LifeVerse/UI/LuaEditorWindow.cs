@@ -56,8 +56,9 @@ namespace LifeVerse.Unity.UI
             _source.textSelection.cursorColor = Color.white; _source.textSelection.selectionColor = new Color(.25f, .55f, 1f, .45f);
             _colours = new Label { name = "colours", enableRichText = true, pickingMode = PickingMode.Ignore }; _colours.style.position = Position.Absolute; _colours.style.whiteSpace = WhiteSpace.NoWrap; _colours.style.paddingLeft = _colours.style.paddingRight = _colours.style.paddingTop = _colours.style.paddingBottom = 0; _colours.style.marginLeft = _colours.style.marginTop = 0;
             _source.RegisterCallback<GeometryChangedEvent>(_ => PlaceColours());
-            _source.RegisterValueChangedCallback(_ => { _dirty = true; ShowCursor(); Paint(); }); _source.RegisterCallback<KeyUpEvent>(_ => ShowCursor()); _source.RegisterCallback<PointerUpEvent>(_ => ShowCursor());
-            _source.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Space && (e.ctrlKey || e.commandKey)) { Complete(); e.StopImmediatePropagation(); } else if (e.keyCode == KeyCode.Escape) HideSuggestions(); }, TrickleDown.TrickleDown);
+            _source.RegisterValueChangedCallback(e => { _dirty = true; ShowCursor(); Paint(); if (AutoComplete && e.newValue != null && e.previousValue != null && e.newValue.Length == e.previousValue.Length + 1) Body.schedule.Execute(AutoSuggest); });
+            _code.style.fontSize = Mathf.Clamp(FontSize, 10, 32); _source.RegisterCallback<KeyUpEvent>(_ => ShowCursor()); _source.RegisterCallback<PointerUpEvent>(_ => ShowCursor());
+            _source.RegisterCallback<KeyDownEvent>(e => { if (e.keyCode == KeyCode.Tab && !e.shiftKey) { InsertText(new string(' ', Mathf.Clamp(Indent, 1, 8))); e.StopImmediatePropagation(); _source.focusController?.IgnoreEvent(e); return; } if (e.keyCode == KeyCode.Space && (e.ctrlKey || e.commandKey)) { Complete(); e.StopImmediatePropagation(); } else if (e.keyCode == KeyCode.Escape) HideSuggestions(); }, TrickleDown.TrickleDown);
             _suggest = new VisualElement { name = "suggestions" }; _suggest.style.flexDirection = FlexDirection.Row; _suggest.style.flexWrap = Wrap.Wrap; _suggest.style.display = DisplayStyle.None; Body.Add(_suggest);
             var line = UiKit.Row(); _cursor = UiKit.Text("Linha 1", "lv-small", "lv-muted"); _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; _status.style.flexGrow = 1; _status.style.flexShrink = 1; line.Add(_status); line.Add(_cursor); Body.Add(line);
             Body.Add(Tools(UiKit.Button("Verificar", () => Validate()), UiKit.Button("Salvar", Save, "lv-btn-primary"), UiKit.Button("Novo", NewScript), UiKit.Button("Modelos…", OpenTemplates), UiKit.Button("Recarregar", LoadList), UiKit.Button("Histórico", OpenHistory), UiKit.Button("Documentação", OpenDocs)));
@@ -137,6 +138,19 @@ namespace LifeVerse.Unity.UI
         /// <summary>Changes the lines of parada (the field may be in a tab not on screen, where it hears no change): the margin and the island are told here.</summary>
         private void SetLines(System.Collections.Generic.IEnumerable<int> lines) { _breakpoints.SetValueWithoutNotify(LuaEditorRules.LinesText(lines)); PaintGutter(); if (Debugging) SendDebug("breakpoints"); }
         public bool GutterMarked(int line) => line >= 1 && line <= _gutter.childCount && ((Label)_gutter[line - 1]).text.StartsWith("●");
+
+        /// <summary>The size of the code's letters, how many spaces the Tab key puts and whether suggestions come while typing (Configurações › Scripts).</summary>
+        public static int FontSize = 16, Indent = 4; public static bool AutoComplete = true;
+
+        /// <summary>Puts text at the cursor.</summary>
+        public void InsertText(string text) { var value = _source.value ?? ""; var at = Mathf.Clamp(_source.cursorIndex, 0, value.Length); _source.value = value.Substring(0, at) + text + value.Substring(at); var after = at + text.Length; _source.SelectRange(after, after); }
+
+        /// <summary>While typing: after "nome." or three letters of a word, the suggestions show by themselves.</summary>
+        private void AutoSuggest()
+        {
+            var text = _source.value ?? ""; var cursor = Mathf.Clamp(_source.cursorIndex, 0, text.Length); if (cursor == 0) return; var lineStart = text.LastIndexOf('\n', cursor - 1) + 1; var before = text.Substring(lineStart, cursor - lineStart);
+            if (before.EndsWith(".") || LuaEditorRules.Typed(before).Length >= 3) { Suggestions = LuaEditorRules.CompletionFor(before, _reference, text); if (Suggestions.Count > 0 && Suggestions.Count <= 30) Complete(); else HideSuggestions(); } else HideSuggestions();
+        }
 
         private void ShowCursor() => _cursor.text = "Linha " + LuaEditorRules.LineOf(_source.value, _source.cursorIndex) + " de " + LuaEditorRules.LineCount(_source.value);
 

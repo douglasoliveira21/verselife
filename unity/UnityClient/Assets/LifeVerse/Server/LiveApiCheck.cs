@@ -114,6 +114,7 @@ namespace LifeVerse.Unity.Server
         yield return Step("groups (full): create in 4 steps, invite, accept, roles, permissions, notices, chat, chest, votes, active group", GroupsFull());
         yield return Step("wallet and profile (full): summary, statement, coins, fees, bio, post, feed, someone else's profile", WalletAndProfile());
         yield return Step("avatar studio: own body, clothes and animations sent, worn, chosen; looks saved, shared and brought by code", AvatarStudio());
+        yield return Step("people and discovery: relations, friends on the map, arrival check, island info, guest events, calendar, item detail", SocialDiscovery());
         yield return Step("entry: servers healthy, the start place chosen by the server, the island's asset list; script editor: server check, runtime, pause, permission, completion", EntryAndScripts());
         yield return Step("live: notification channel (message pushed by the API)", Live());
         }
@@ -428,6 +429,27 @@ namespace LifeVerse.Unity.Server
             mine.Close();
             var other = new ProfileHubWindow(_cb, _aId); other.Open(); yield return Until(() => other.Loads >= 1, "B abre o perfil de A"); other.Show("feed"); yield return Until(() => other.RowIds.Count >= 1, "B vê a publicação de A: " + other.Status);
             other.Show("acoes"); yield return Until(() => other.Actions.ContainsKey("Mandar mensagem"), "as ações no perfil de outra pessoa"); Check(!other.Fields.ContainsKey("Sobre você"), "B não edita o perfil de A"); other.Close();
+        }
+
+        private IEnumerator SocialDiscovery()
+        {
+            string rel = null; yield return Call(_a, "GET", "/api/v1/social/relations?ids=" + _bId, null, b => rel = b);
+            using (var d = JsonDocument.Parse(rel)) Check(d.RootElement.TryGetProperty(_bId.ToString(), out var r) && r.ValueKind == JsonValueKind.String, "a relação com B: " + Snip(rel));
+            string map = null; yield return Call(_a, "GET", "/api/v1/map/people", null, b => map = b); using (var d = JsonDocument.Parse(map)) Check(d.RootElement.ValueKind == JsonValueKind.Array, "os amigos no mapa: " + Snip(map));
+            string arrival = null; yield return Call(_a, "POST", "/api/v1/map/arrival", JsonSerializer.Serialize(new { islandId = _island, x = 1f, z = 1f }), b => arrival = b); var answer = Arrival.Read(arrival); Check(answer.Allowed || answer.Reason.Length > 0, "o servidor responde se pode chegar ao ponto: " + Snip(arrival));
+            string info = null; yield return Call(_a, "GET", "/api/v1/discovery/islands/" + _island + "/info", null, b => info = b); Check(Json.One(info).Text("access").Length > 0, "as informações da ilha dizem o acesso: " + Snip(info));
+            yield return Call(_a, "PUT", "/api/v1/discovery/islands/" + _island + "/event-policy", JsonSerializer.Serialize(new { allowGuests = true }), null);
+            string again = null; yield return Call(_a, "GET", "/api/v1/discovery/islands/" + _island + "/info", null, b => again = b); using (var d = JsonDocument.Parse(again)) Check(d.RootElement.TryGetProperty("allowsGuestEvents", out var g) && g.ValueKind == JsonValueKind.True, "o dono permitiu eventos de convidados: " + Snip(again));
+            string mine = null; yield return Call(_a, "GET", "/api/v1/discovery/events", null, b => mine = b); var ev = Json.Rows(mine).Where(r => r.First("name", "title") == "Festa na praia").Select(r => r.Id("id", "eventId")).FirstOrDefault(id => id != Guid.Empty);
+            if (ev != Guid.Empty)
+            {
+                yield return Call(_b, "PUT", "/api/v1/discovery/events/" + ev + "/calendar", JsonSerializer.Serialize(new { on = true }), null);
+                string detail = null; yield return Call(_b, "GET", "/api/v1/discovery/events/" + ev, null, b => detail = b); using (var d = JsonDocument.Parse(detail)) Check(d.RootElement.TryGetProperty("inCalendar", out var c) && c.ValueKind == JsonValueKind.True, "o evento ficou no calendário de B: " + Snip(detail));
+            }
+            else Check(false, "A deveria ter um evento criado no passo da descoberta: " + Snip(mine));
+            string products = null; yield return Call(_b, "GET", "/api/v1/economy/products?page=1&pageSize=24", null, b => products = b); var product = Json.Rows(products).Select(r => r.Id()).FirstOrDefault(id => id != Guid.Empty);
+            if (product != Guid.Empty) { string item = null; yield return Call(_b, "GET", "/api/v1/discovery/items/" + product, null, b => item = b); var row = Json.One(item); Check(row.Text("name").Length > 0 && item.Contains("\"rights\""), "o detalhe do item com os direitos: " + Snip(item)); }
+            var people = new PeopleHubWindow(_ca, () => new[] { ("Bruno", 4f) }, () => new List<string> { "Bruno" }, _ => { }, _ => { }); people.Open(); people.Show("amigos"); yield return Until(() => people.Lines > 0, "a aba Amigos agora carregar com a API real"); people.Close();
         }
 
         private IEnumerator EntryAndScripts()

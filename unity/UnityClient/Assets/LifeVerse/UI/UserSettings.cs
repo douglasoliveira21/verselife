@@ -75,6 +75,8 @@ namespace LifeVerse.Unity.UI
         /// <summary>The bottom toolbar: the order of its buttons and the ones hidden (ids).</summary>
         /// <summary>The music of the login screen is off.</summary>
         public bool LoginMusicMuted { get; set; }
+        /// <summary>The people seen lately, per account (user id).</summary>
+        public Dictionary<string, List<string>> RecentPeople { get; set; } = new Dictionary<string, List<string>>();
         public List<string> ToolbarOrder { get; set; } = new List<string>();
         public List<string> ToolbarHidden { get; set; } = new List<string>();
         /// <summary>Where the camera looked last in each island (the yaw, by island id).</summary>

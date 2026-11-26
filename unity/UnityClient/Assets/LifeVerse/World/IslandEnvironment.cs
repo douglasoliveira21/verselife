@@ -39,6 +39,19 @@ namespace LifeVerse.Unity.World
             Create(); ShadowsOn = on; _sunData.EnableShadows(on); if (_shadowSettings != null && distance > 0f) _shadowSettings.maxShadowDistance.value = distance;
         }
         public bool ShadowsOn { get; private set; } = true;
+        private Tonemapping _tonemapping; private Bloom _bloom; private ScreenSpaceAmbientOcclusion _ao; private ScreenSpaceReflection _ssr;
+
+        /// <summary>The effects of the picture chosen in Configurações › Gráficos: fog (and its volumetric light), glow, the colour treatment, ambient occlusion, reflections, and the shadows' bands and sharpness.</summary>
+        public void SetEffects(bool fog, bool volumetric, bool glow, bool colour, bool ambientOcclusion, string occlusionQuality, bool reflections, int cascades, string shadowQuality)
+        {
+            Create(); Effects = (fog, volumetric, glow, colour, ambientOcclusion, reflections, cascades, shadowQuality);
+            _fog.active = fog; _fog.enableVolumetricFog.Override(fog && volumetric); _bloom.active = glow; _tonemapping.active = colour;
+            _ao.active = ambientOcclusion; var (intensity, radius) = occlusionQuality switch { "low" => (.45f, .8f), "high" => (.8f, 1.6f), "ultra" => (.9f, 2f), _ => (.6f, 1.2f) }; _ao.intensity.value = intensity; _ao.radius.value = radius;
+            _ssr.enabled.value = reflections; _shadowSettings.cascadeShadowSplitCount.Override(Mathf.Clamp(cascades, 1, 4));
+            _sunData.SetShadowResolution(shadowQuality switch { "hard" or "low" => 512, "medium" => 1024, "ultra" => 4096, _ => 2048 });
+        }
+        /// <summary>The effects applied last (for the checks).</summary>
+        public (bool Fog, bool Volumetric, bool Glow, bool Colour, bool AmbientOcclusion, bool Reflections, int Cascades, string ShadowQuality) Effects { get; private set; } = (true, false, true, true, false, false, 4, "high");
         public float RainAmount { get; private set; }
         public const float SkyNits = 14000f;
         private static readonly Color ZenithDay = new Color(.17f, .42f, .84f), HorizonDay = new Color(.74f, .86f, .97f), ZenithNight = new Color(.004f, .01f, .045f), HorizonNight = new Color(.03f, .045f, .1f), Sunset = new Color(1f, .52f, .22f);
@@ -97,8 +110,10 @@ namespace LifeVerse.Unity.World
             BuildRain();
             _fog = _profile.Add<Fog>(); _fog.enabled.Override(true); _fog.meanFreePath.Override(6000f); _fog.baseHeight.Override(-50f); _fog.maximumHeight.Override(60f);
             _fog.enableVolumetricFog.Override(false); _fog.colorMode.Override(FogColorMode.SkyColor);
-            _profile.Add<Tonemapping>().mode.Override(TonemappingMode.ACES);
-            var bloom = _profile.Add<Bloom>(); bloom.intensity.Override(.2f); bloom.threshold.Override(1f); bloom.scatter.Override(.65f); // the sun disc and bright lamps glow
+            _tonemapping = _profile.Add<Tonemapping>(); _tonemapping.mode.Override(TonemappingMode.ACES);
+            _ao = _profile.Add<ScreenSpaceAmbientOcclusion>(); _ao.intensity.Override(.6f); _ao.radius.Override(1.2f); _ao.active = false;
+            _ssr = _profile.Add<ScreenSpaceReflection>(); _ssr.enabled.Override(false);
+            var bloom = _bloom = _profile.Add<Bloom>(); bloom.intensity.Override(.2f); bloom.threshold.Override(1f); bloom.scatter.Override(.65f); // the sun disc and bright lamps glow
             BuildSunDisc();
             _clouds = _profile.Add<CloudLayer>(); _clouds.opacity.Override(1f);
             _shadowSettings = _profile.Add<HDShadowSettings>(); _shadowSettings.maxShadowDistance.Override(120f);

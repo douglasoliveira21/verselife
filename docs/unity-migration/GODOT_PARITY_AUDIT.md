@@ -27,7 +27,7 @@ Em tamanho, o cliente Unity tem perto de **um quarto** do cliente Godot. O mundo
 |---|---|---|---|---|
 | Gestão da ilha | 13 seções, 355 KB | feita em 25/11: 16 seções (ver abaixo) | Quase equivalente | Baixa |
 | Gestão de terrenos e "Sobre este terreno" | 323 KB | feita em 25/11: 10 seções e 8 abas (ver abaixo) | Quase equivalente | Baixa |
-| Configurações | 18 categorias, 196 opções no catálogo, 272 KB | feito em 25/11: o mesmo catálogo, 82 das 196 agem no Unity (ver abaixo) | Parcial | Média |
+| Configurações | 18 categorias, 196 opções no catálogo, 272 KB | feito em 25 e 26/11: o mesmo catálogo; 128 das 196 agem no Unity, 33 têm o mesmo motivo do Godot para não agir e 43 ainda faltam (ver abaixo) | Quase equivalente | Baixa |
 | Notificações ao vivo (websocket) | sino, central, socket ao vivo | feito em 25/11 (ver abaixo) | Equivalente | — |
 | Busca global | 7 abas, 166 KB | feita em 25/11: 9 abas no serviço de busca (ver abaixo) | Quase equivalente | Baixa |
 | Inventário | 87 KB: pastas, lixeira, mover, copiar, pacotes | feito em 25/11: 10 vistas (ver abaixo) | Quase equivalente | Baixa |
@@ -35,7 +35,7 @@ Em tamanho, o cliente Unity tem perto de **um quarto** do cliente Godot. O mundo
 | Carteira e compra de VerseCoin | 545 linhas: comprar moedas, extrato, taxas | feito em 25/11: resumo, extrato com recibo, comprar, taxas, saldo na barra | Equivalente | — |
 | Perfil | 7 abas, feed, galeria, conquistas | feito em 25/11: 8 abas (ver abaixo) | Quase equivalente | Baixa |
 | Editor de avatar | corpo próprio, roupas próprias, animações próprias, visuais salvos, espelho no mundo | feito em 26/11: estúdio do avatar e o guarda-roupa no corpo (ver abaixo) | Quase equivalente | Baixa |
-| Editor de anexos | gizmo 3D, câmera no ponto do corpo | janela com campos | Parcial | Média |
+| Editor de anexos | gizmo 3D, câmera no ponto do corpo | feito em 26/11: editor no corpo com setas, anéis e caixas, imagens e construções vestidas, pontos por região (ver abaixo) | Equivalente | — |
 | Construção | 37 arquivos, 494 KB | editor com 12 abas; luzes, reflexos, texto flutuante e texturas do sistema feitos em 25/11 | Quase equivalente | Baixa |
 | Editor de scripts | completar, depurar com pontos de parada, modelos | feitos em 26/11: completar, verificação do servidor, console, desempenho, permissões, parar, pausar e depurar com linhas de parada (ver abaixo) | Quase equivalente | Baixa |
 | Tela de entrada | fundo, luzes, música, notícias, estado do servidor, "esqueci a senha" | feitos em 26/11: fundo, música, notícias, estado dos servidores, esqueci a senha, lugar escolhido pelo servidor e pré-carregamento da ilha (ver abaixo) | Quase equivalente | Baixa |
@@ -401,3 +401,30 @@ O Unity tem o editor com 11 abas e as operações principais. Faltam ou estão m
   - o código em cores (`UI/LuaHighlight.cs`): palavras do Lua, textos, comentários (também `--[[ ]]`), números, os nomes da plataforma (`object.`, `timer.`…) e as funções chamadas, desenhados por baixo do texto do campo com a mesma fonte, mantendo os espaços do começo das linhas. O código, os números e as cores rolam juntos.
 - Pré-carregar a partir do ponto de chegada: numa viagem para um lugar da ilha (busca, mapa, marco, convite), a lista de recursos é pedida com `?x=…&z=…`, então os arquivos perto de onde a pessoa vai chegar vêm primeiro.
 - Verificado: EditMode 181/181 (3 testes novos: as cores do Lua sem perder nem acrescentar texto, a senha selada pelo Windows e recusada quando o arquivo está estragado, as luzes que se movem e param com "Reduzir movimento"); auto-teste 314 checks (5 novos: as luzes se movem, a senha lembrada fica selada e nunca em texto, ela volta na próxima abertura, a margem com os números e as cores, clicar no número marca e desmarca, os recursos da ilha de destino pedidos a partir do ponto de chegada); API real 26/26 (a lista de recursos a partir de um ponto). Fotos com GPU: `img/ui-login.png`, `img/ui-script-debug.png`.
+
+### Pessoas, descoberta, anexos e mais configurações (26/11/2026)
+- Pessoas (`UI/PeopleHubWindow.cs`, no botão Pessoas): "Perto de você" (por distância, atualiza a cada 1,5 s, com Perfil e ações e Ir até, que leva para perto da pessoa na mesma ilha), "Vistos recentemente" (guardados por conta, os 20 mais novos, quem está aqui agora marcado) e "Amigos agora" (`/api/v1/map/people`: em que ilha e ponto cada amigo está, com Perfil e Ir até).
+- Antes de viajar para um ponto (amigos e mapa-múndi) o servidor confere a chegada (`/api/v1/map/arrival`): terreno restrito, banido, sem teletransporte, ilha cheia ou fechada viram uma frase, e um terreno que tem ponto de chegada próprio leva a pessoa para lá.
+- Busca: o detalhe de uma pessoa diz a relação (`/social/relations`: amigos, pedido enviado ou recebido, bloqueada); o de um lugar traz as informações da ilha (`/discovery/islands/{id}/info`: dono, categoria, classificação, idioma, visitantes agora, o acesso, com o botão de ir trocado por "Ilha cheia", "Ilha privada"…) e, para o dono, "Eventos de convidados: permitidos/bloqueados" (`event-policy`); o de um evento tem "Adicionar ao calendário" (`/calendar`); o de um item traz o detalhe do mercado (`/discovery/items/{id}`: preço, criador, vendedor, o que se poderá fazer, presente, tipo e tamanho, se já é seu) e compra ali mesmo.
+- Anexos:
+  - "Editar no corpo" (`UI/AttachmentEditor.cs`): a câmera chega perto do objeto, que ganha setas (mover), anéis (girar) e caixas (escalar) no espaço do ponto do corpo, com passos de posição e de rotação, manter proporções, desfazer e refazer, os números para digitar, Salvar (pede à plataforma) e Cancelar (tudo volta);
+  - imagens e construções vestidas: uma imagem vira uma placa com a imagem e uma construção do inventário aparece com as formas dela, desenhadas com o mesmo construtor do mundo;
+  - a lista de pontos do corpo agora é escolhida por região (cabeça, tronco, braços, pernas, especiais, tela).
+- Configurações que passaram a agir (31):
+  - imagem: neblina, luz volumétrica, brilho, tratamento de cor, oclusão ambiente e a qualidade dela, reflexos, faixas e qualidade das sombras, suavização de bordas (no HDRP: FXAA, SMAA e TAA no lugar do MSAA, dito na própria opção), escala de renderização e resolução dinâmica. O suporte a SSAO, SSR, volumétricos e resolução dinâmica foi ligado no pacote do HDRP;
+  - chat: a hora nas mensagens e o tempo visível;
+  - nomes sobre os outros e sobre o próprio avatar;
+  - mini-mapa: coordenadas, quantos metros mostra (também pela roda do mouse sobre ele) e os avatares;
+  - opacidade das janelas e do mini-mapa;
+  - menu radial: tamanho, opacidade e brilho;
+  - editor de scripts: tamanho da letra, espaços do Tab e sugestões ao digitar;
+  - passos de giro e de escala da construção, limpar o cache e reconectar sozinho (até três vezes) quando a conexão com a ilha cai.
+- Verificado: EditMode 188/188 (7 testes novos: recentes, chegada, palavras da busca, edição de posição por passos, tipos de arquivo vestido, pontos por região, efeitos e escala de renderização); auto-teste 323 checks (9 novos: pessoas perto, recentes e amigos, o servidor recusando a chegada, editor no corpo com cancelar e salvar, imagem vestida, efeitos de imagem, nomes, mini-mapa, chat sumindo e voltando, reconexão sozinha); API real 27/27 (passo novo: relação, amigos no mapa, chegada, informações da ilha, eventos de convidados, calendário de B, detalhe de item, aba Amigos agora). Foto com GPU: `img/ui-people.png`.
+- Ainda faltam 43 opções sem efeito no Unity, por exemplo:
+  - detalhes e distâncias dos avatares;
+  - as camadas do mapa-múndi e o mini-mapa girando;
+  - voz espacial e distância de audição;
+  - correr com toque duplo e segurar para voar;
+  - ondas da água e qualidade automática.
+
+  Outras 33 trazem o mesmo motivo do Godot para não agir (por exemplo, privacidade que depende de uma preferência de conta que o servidor ainda não guarda). Também faltam os títulos de grupo sobre o nome (o mundo não recebe esse dado).

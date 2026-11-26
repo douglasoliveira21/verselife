@@ -555,7 +555,9 @@ namespace LifeVerse.Unity.Server
             yield return Snap("ui-map");
             map.SetParcels(false); map.Canvas.Fit();
             map.Choose(map.Page.Items[1], true); Expect(!map.TravelButton.enabledSelf, "uma ilha privada não deixa viajar"); map.Choose(map.Page.Items[0], true); Expect(map.TravelButton.enabledSelf && map.Chosen.Name == "Praia", "uma ilha aberta deixa viajar");
-            map.SpotField.value = "60 -25"; map.Travel(); Expect(traveled is { } trip && trip.Island == beachId && Math.Abs(trip.X.Value - 60) < .01 && Math.Abs(trip.Z.Value + 25) < .01, "viajar leva ao ponto escolhido da ilha");
+            stub.Routes["POST /api/v1/map/arrival"] = System.Text.Json.JsonSerializer.Serialize(new { allowed = true, x = 60, z = -25, forced = false });
+            map.SpotField.value = "60 -25"; map.Travel(); yield return Until(() => traveled != null, "o servidor liberar a chegada no ponto");
+            Expect(traveled is { } trip && trip.Island == beachId && Math.Abs(trip.X.Value - 60) < .01 && Math.Abs(trip.Z.Value + 25) < .01 && stub.ReceivedAny(r => r.Route == "POST /api/v1/map/arrival" && r.Body.Contains(beachId.ToString())), "viajar leva ao ponto escolhido da ilha, conferido pelo servidor");
             map = new LifeVerse.Unity.UI.WorldMapWindow(mapContext); map.Open(); yield return Until(() => map.Page.Items.Count == 2, "o mapa de novo"); map.Choose(map.Page.Items[0], false); traveled = null;
             map.MarkNameField.value = "Cais"; map.AddMark(); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/map/landmarks" && b.Body.Contains("Cais") && b.Body.Contains(beachId.ToString()) && b.Body.Contains("\"x\":10")), "o marco chegar à API com o ponto de nascimento");
             map.ToggleFavorite(); yield return Until(() => map.Chosen.Favorite, "a ilha virar favorita");             string heard = null; player.Client.ChatReceived += message => heard = message.Message;
@@ -630,7 +632,19 @@ namespace LifeVerse.Unity.Server
             Expect(worn.HolderOf(hatId).parent == wearer.Head && worn.HolderOf(hatId).GetComponentInChildren<Renderer>() != null, "o chapéu está preso à cabeça e tem malha");
             var headOffset = LifeVerse.Shared.Avatar.AttachmentPoints.Find("head_top").Offset; Expect(Mathf.Abs(worn.HolderOf(hatId).localPosition.y - (headOffset[1] + .05f)) < .001f, "fica no desvio do ponto mais a posição da pessoa: " + worn.HolderOf(hatId).localPosition.y);
             wearer.ApplyAppearance(new AvatarAppearance { AttachmentsJson = HatJson(true, .2f) }); yield return null; Expect(Mathf.Abs(worn.HolderOf(hatId).localPosition.y - (headOffset[1] + .2f)) < .001f && worn.Count == 1, "mudar a posição move o mesmo objeto");
-            wearer.ApplyAppearance(new AvatarAppearance { AttachmentsJson = HatJson(false, .2f) }); yield return null; Expect(worn.Count == 0 && worn.HolderOf(hatId) == null, "tirado, o chapéu some do corpo"); Destroy(wearer.gameObject); _checks++;
+            // the editor on the body: the handles move the object at once, cancel puts it back, save asks the platform
+            stub.Routes["PATCH /api/v1/users/me/avatar/attachments/" + hatId] = "{}"; var hatData = LifeVerse.Unity.Avatar.AttachmentData.ParseArray(HatJson(true, .2f))[0];
+            var onBody = new LifeVerse.Unity.UI.AttachmentEditor(app.Context, hatData, () => worn, () => _camera, () => null, null); onBody.Open(); yield return null; yield return null;
+            onBody.DragBy(1, .1f); Expect(Mathf.Abs(worn.HolderOf(hatId).localPosition.y - (headOffset[1] + .3f)) < .001f, "arrastar a seta para cima sobe o chapéu na hora: " + worn.HolderOf(hatId).localPosition.y);
+            onBody.Cancel(); Expect(Mathf.Abs(worn.HolderOf(hatId).localPosition.y - (headOffset[1] + .2f)) < .001f, "cancelar devolve o chapéu ao lugar salvo"); _checks++;
+            onBody = new LifeVerse.Unity.UI.AttachmentEditor(app.Context, hatData, () => worn, () => _camera, () => null, null); onBody.Open(); onBody.SetTool(LifeVerse.Unity.UI.AttachmentEditRules.Tool.Rotate); onBody.DragBy(1, 90f); onBody.Save();
+            yield return Until(() => onBody.Saved && stub.ReceivedAny(b => b.Route == "PATCH /api/v1/users/me/avatar/attachments/" + hatId && b.Body.Contains("90")), "salvar o giro feito no corpo"); _checks++;
+            // a picture worn on the body becomes a plate with the picture
+            var pictureAsset = Guid.NewGuid(); var pictureId = Guid.NewGuid(); var picturePng = TestAssets.Png(new Color32(230, 60, 60, 255), 32); var oldWornLoader = AvatarAttachments.Loader; AvatarAttachments.Loader = asset => System.Threading.Tasks.Task.FromResult(asset == pictureAsset ? picturePng : asset == hatAsset ? hatGlb : null);
+            var pictureJson = System.Text.Json.JsonSerializer.Serialize(new[] { new { id = pictureId, inventoryItemId = Guid.NewGuid(), assetId = pictureAsset, name = "Placa", point = "chest", pointName = "Peito", position = new[] { 0f, 0f, .2f }, rotation = new[] { 0f, 0f, 0f }, scale = new[] { .3f, .3f, .3f }, equipped = true, revision = 1 } });
+            wearer.ApplyAppearance(new AvatarAppearance { AttachmentsJson = pictureJson }); yield return Until(() => worn.HolderOf(pictureId) != null, "a imagem vestida aparecer no corpo");
+            Expect(worn.KindOfWorn(pictureId) == AvatarAttachments.ContentKind.Image && worn.HolderOf(pictureId).GetComponentInChildren<MeshRenderer>() != null, "a imagem vestida vira uma placa com a imagem"); _checks++; AvatarAttachments.Loader = oldWornLoader;
+            wearer.ApplyAppearance(new AvatarAppearance { AttachmentsJson = HatJson(false, .2f) }); yield return null; Expect(worn.HolderOf(hatId) == null, "tirado, o chapéu some do corpo"); Destroy(wearer.gameObject); _checks++;
             // sway: an object worn on something that moves leans back
             var swayer = AvatarView.Create(4244, "balanca", Color.white); var swayWorn = swayer.GetComponent<AvatarAttachments>(); var swayId = Guid.NewGuid(); swayer.PlaceAt(new Vector3(30f, 5f, 30f));
             string SwayJson(float sway) => "[{\"id\":\"" + swayId + "\",\"assetId\":\"" + hatAsset + "\",\"name\":\"Cauda\",\"point\":\"head_top\",\"position\":[0,0,0],\"rotation\":[0,0,0],\"scale\":[1,1,1],\"equipped\":true,\"revision\":1,\"sway\":" + sway.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}]";
@@ -1251,7 +1265,7 @@ namespace LifeVerse.Unity.Server
             Expect(app.Store.SaveProfile("antes do teste") == null, "guardar as configurações de antes do teste");
             var cfg = new LifeVerse.Unity.UI.SettingsCatalogWindow(app.Context, app.Store, app.SettingsApplied, id => LifeVerse.Unity.UI.SettingsEffects.Info(id, app), app.SettingActions(), () => app.OpenClassicSettings().Open()); cfg.Open();
             yield return null; Expect(cfg.Section == "Graphics" && cfg.Controls.ContainsKey("graphics.vsync") && cfg.SummaryText.Contains("valem no Unity"), "a janela abre em Gráficos com as opções do catálogo"); _checks++; yield return Snap("ui-settings");
-            Expect(cfg.Change("graphics.ssr", "true") == "" && !cfg.Controls["graphics.ssr"].enabledSelf, "o que o Unity ainda não faz aparece desligado e não muda");
+            Expect(cfg.Change("graphics.water_waves", "false") == "" && !cfg.Controls["graphics.water_waves"].enabledSelf, "o que o Unity ainda não faz aparece desligado e não muda");
             cfg.Change("graphics.preset", "high"); cfg.Change("graphics.shadow_distance", "300"); Expect(app.Store.Get("graphics.preset") == "custom" && cfg.Status.Contains("Personalizada"), "mudar as sombras à mão deixa a predefinição Personalizada");
             cfg.Change("perf.render_distance", "800"); Expect(app.Follow.Camera.farClipPlane == 800f, "a distância de renderização chega à câmera: " + app.Follow.Camera.farClipPlane); _checks++;
             cfg.Show("Camera"); yield return null; cfg.Change("camera.fov", "90"); cfg.Change("camera.shoulder", "0.5"); cfg.Change("camera.fp_bob", "false"); yield return null; yield return null;
@@ -1266,6 +1280,22 @@ namespace LifeVerse.Unity.Server
             yield return null; cfg.Press("Usar Teste"); Expect(app.Follow.FieldOfView == 75f && app.Store.ActiveProfile == "Teste", "usar um perfil põe todas as opções dele"); _checks++;
             cfg.Show("Advanced"); yield return null; Expect(cfg.Controls.ContainsKey("advanced.version") && cfg.Controls.ContainsKey("advanced.gpu") && LifeVerse.Unity.UI.SettingsEffects.Info("advanced.version", app) == Application.version, "as informações de Avançado");
             var report = LifeVerse.Unity.UI.SettingsEffects.WriteDiagnostics(app.Store, app); Expect(System.IO.File.Exists(report) && System.IO.File.ReadAllText(report).Contains("Unity " + Application.unityVersion), "exportar o diagnóstico"); System.IO.File.Delete(report); _checks++;
+            // people around, seen lately and friends now in the world (the trip is checked by the server first)
+            stub.Routes["GET /api/v1/map/people"] = System.Text.Json.JsonSerializer.Serialize(new[] { new { userId = Guid.NewGuid(), name = "Bia", username = "bia", islandId = island, islandName = "Ilha de Teste", x = 5, z = 6 } });
+            stub.Routes["POST /api/v1/map/arrival"] = System.Text.Json.JsonSerializer.Serialize(new { allowed = false, reason = "parcel_restricted", x = 0, z = 0, forced = false });
+            var peopleHub = new LifeVerse.Unity.UI.PeopleHubWindow(app.Context, app.NearbyPeople, app.RecentPeople, _ => { }, _ => { }); peopleHub.Open(); yield return null;
+            Expect(peopleHub.NearbyCount >= 1, "as pessoas perto com a distância: " + peopleHub.NearbyCount); yield return Until(() => app.RecentPeople().Count >= 1, "quem passou perto entrar nos recentes", 6f);
+            peopleHub.Show("recentes"); Expect(peopleHub.RecentCount >= 1, "os vistos recentemente"); peopleHub.Show("amigos"); yield return Until(() => peopleHub.FriendsShown == 1, "os amigos no mundo agora"); _checks++; yield return Snap("ui-people");
+            peopleHub.Press("Ir até Bia"); yield return Until(() => peopleHub.Status.Contains("restrito"), "o servidor dizer que o terreno do amigo é restrito"); peopleHub.Close(); _checks++;
+            // the picture, the chat, the names and the mini-map follow Configurações
+            app.Store.Set("graphics.ssao", "false"); app.Store.Set("graphics.fog", "false"); app.Store.Set("graphics.msaa", "4"); app.Store.Set("graphics.shadow_cascades", "2"); app.SettingsApplied();
+            var effects = app.Client.Environment.Effects; var cameraData = app.Follow.Camera.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
+            Expect(!effects.AmbientOcclusion && !effects.Fog && effects.Cascades == 2 && cameraData.antialiasing == UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.AntialiasingMode.SubpixelMorphologicalAntiAliasing, "os efeitos de imagem seguem as configurações"); _checks++;
+            app.Store.Set("avatar.show_names", "false"); app.Store.Set("world.minimap_zoom", "100"); app.Store.Set("chat.visible_seconds", "3"); app.SettingsApplied();
+            var someone = app.PeopleViews.Peers.Where(p => p != app.Client.SelfPeerId).Select(p => app.PeopleViews.ViewOf(p)).FirstOrDefault(v => v != null); yield return new WaitForSeconds(.4f);
+            Expect(someone == null || !someone.NameShown, "sem nomes sobre os outros avatares"); Expect(Mathf.Abs(app.Hud.Map.SpanMetres - 100f) < .5f && app.Hud.Map.CoordsText.Length > 0, "o mini-mapa mostra 100 m e as coordenadas: " + app.Hud.Map.SpanMetres); _checks++;
+            app.Hud.Chat.AddSystem("teste do tempo do chat"); yield return new WaitForSeconds(3.6f); Expect(!app.Hud.Chat.LogShown, "o chat some depois do tempo visível"); app.Hud.Chat.AddSystem("de novo"); Expect(app.Hud.Chat.LogShown, "uma mensagem nova mostra o chat"); _checks++;
+            foreach (var id in new[] { "graphics.ssao", "graphics.fog", "graphics.msaa", "graphics.shadow_cascades", "avatar.show_names", "world.minimap_zoom", "chat.visible_seconds" }) app.Store.Set(id, LifeVerse.Unity.UI.SettingsCatalog.All.First(d => d.Id == id).Default, false);
             cfg.Close(); app.Store.LoadProfile("antes do teste"); app.Store.DeleteProfile("antes do teste"); app.Store.DeleteProfile("Teste"); app.SettingsApplied();
 
             stub.Routes["GET /api/v1/discovery/events"] = "[{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Festa na praia\",\"startsAt\":\"2026-12-01T20:00:00Z\",\"capacity\":80}]"; stub.Routes["GET /api/v1/discovery/events/mine"] = "[]"; stub.Routes["POST /api/v1/discovery/events"] = "{}";
@@ -1317,6 +1347,9 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => app.Current == LifeVerse.Unity.UI.GameApp.Phase.Login, "voltar à tela de entrada com a sessão acabada");
             Expect(gone.Result.Status == 401 && app.Login.Status.text.Contains("sessão acabou"), "sem renovação a pessoa volta ao login com a mensagem: " + app.Login.Status.text); _checks++;
             app.Login.Password.value = "segredo"; app.Login.Remember.value = true; app.Login.Submit(); yield return Until(() => app.Current == LifeVerse.Unity.UI.GameApp.Phase.Playing, "entrar de novo depois da sessão acabada", 25f);
+            // the connection drops: with "reconectar sozinho" the island is entered again
+            app.SimulateDrop(); Expect(app.Reconnects == 1 && app.Current != LifeVerse.Unity.UI.GameApp.Phase.Login, "a conexão caiu: o jogo tenta voltar sozinho");
+            yield return Until(() => app.Current == LifeVerse.Unity.UI.GameApp.Phase.Playing && app.Client != null && app.Client.Authenticated && app.Reconnects == 0, "voltar à ilha sozinho depois da queda", 30f); _checks++;
             app.BackToLogin(); Expect(app.Current == LifeVerse.Unity.UI.GameApp.Phase.Login && !app.Hud.Visible, "voltar à tela de entrada fecha o HUD"); _checks++;
             UnityEngine.Object.Destroy(app.gameObject); if (System.IO.File.Exists(settingsFile)) System.IO.File.Delete(settingsFile);
             // 6) a new account: the API refuses the entry (409) until the character exists, so the creator opens by itself, and saving it enters the island

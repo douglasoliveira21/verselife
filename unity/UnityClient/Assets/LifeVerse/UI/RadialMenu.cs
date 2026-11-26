@@ -15,7 +15,10 @@ namespace LifeVerse.Unity.UI
     /// </summary>
     public sealed class RadialMenu : VisualElement
     {
-        public const float Inner = 46f, Outer = 150f;
+        /// <summary>The size of the ring (1 = 300 px across at Full HD), how opaque its slices are and how much the slice under the cursor glows (Configurações › Interface).</summary>
+        public static float Scale = 1f, Opacity = .88f, Glow = .6f;
+        public static float Inner => 46f * Scale;
+        public static float Outer => 150f * Scale;
         private readonly List<List<RadialItem>> _pages = new List<List<RadialItem>>(); private int _page; private Vector2 _centre; private int _hover = -1;
         private readonly List<Label> _labels = new List<Label>();
         public bool IsOpen => parent != null;
@@ -88,7 +91,7 @@ namespace LifeVerse.Unity.UI
             for (var i = 0; i < count; i++)
             {
                 var centre = AngleOf(i, count); var half = Mathf.PI / count; var enabled = Slices[i].Enabled;
-                painter.fillColor = i == _hover && enabled ? new Color(.07f, .44f, .44f, .95f) : new Color(.1f, .15f, .18f, .88f); painter.strokeColor = new Color(.43f, .5f, .55f, 1f); painter.lineWidth = 1.5f;
+                painter.fillColor = i == _hover && enabled ? Color.Lerp(new Color(.1f, .15f, .18f, Mathf.Max(Opacity, .5f)), new Color(.07f, .6f, .6f, .97f), Mathf.Clamp01(.25f + Glow)) : new Color(.1f, .15f, .18f, Opacity); painter.strokeColor = new Color(.43f, .5f, .55f, 1f); painter.lineWidth = 1.5f;
                 painter.BeginPath(); painter.Arc(_centre, Outer, new Angle(centre - half + .01f, AngleUnit.Radian), new Angle(centre + half - .01f, AngleUnit.Radian)); painter.Arc(_centre, Inner, new Angle(centre + half - .01f, AngleUnit.Radian), new Angle(centre - half + .01f, AngleUnit.Radian), ArcDirection.CounterClockwise); painter.ClosePath(); painter.Fill(); painter.Stroke();
             }
         }

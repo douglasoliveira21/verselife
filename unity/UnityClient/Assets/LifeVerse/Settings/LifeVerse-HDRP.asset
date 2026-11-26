@@ -211,9 +211,9 @@ MonoBehaviour:
   m_NumIterationsEnclosingSphere: 64
   m_RenderPipelineSettings:
     supportShadowMask: 1
-    supportSSR: 0
+    supportSSR: 1
     supportSSRTransparent: 0
-    supportSSAO: 0
+    supportSSAO: 1
     supportSSGI: 0
     supportSubsurfaceScattering: 0
     subsurfaceScatteringAttenuation: 1
@@ -225,7 +225,7 @@ MonoBehaviour:
       m_Values: 000000000000000000000000i
       m_SchemaId:
         m_Id: With3Levels
-    supportVolumetrics: 0
+    supportVolumetrics: 1
     supportVolumetricClouds: 0
     supportLightLayers: 0
     renderingLayerMaskBuffer: 0
@@ -366,7 +366,7 @@ MonoBehaviour:
       lutFormat: 48
       bufferFormat: 74
     dynamicResolutionSettings:
-      enabled: 0
+      enabled: 1
       useMipBias: 0
       advancedUpscalersByPriority: 
       advancedUpscalerNames:
@@ -391,7 +391,7 @@ MonoBehaviour:
       fsrOverrideSharpness: 0
       fsrSharpness: 0.92
       maxPercentage: 100
-      minPercentage: 100
+      minPercentage: 50
       dynResType: 1
       upsampleFilter: 1
       forceResolution: 0

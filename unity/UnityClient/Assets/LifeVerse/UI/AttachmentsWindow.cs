@@ -24,17 +24,27 @@ namespace LifeVerse.Unity.UI
         public DropdownField ItemField => _item;
         public DropdownField PointField => _point;
 
-        public AttachmentsWindow(ApiContext context, Action changed = null) : base(context.Ui, "attachments", "Anexos do corpo", 520f, 560f, new Vector2(420, 90))
+        private readonly Func<AttachmentData, FloatingWindow> _edit; private readonly DropdownField _region;
+        public DropdownField RegionField => _region;
+
+        public AttachmentsWindow(ApiContext context, Action changed = null, Func<AttachmentData, FloatingWindow> edit = null) : base(context.Ui, "attachments", "Anexos do corpo", 520f, 560f, new Vector2(420, 90))
         {
-            _c = context; _changed = changed; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
+            _c = context; _changed = changed; _edit = edit; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
             _list.style.flexGrow = 1; _list.style.minHeight = 180; Body.Add(_list);
             Body.Add(UiKit.Text("Vestir um objeto", "lv-bold", "lv-accent"));
-            _item = new DropdownField("Item do inventário", new List<string> { "(carregando…)" }, 0); _point = new DropdownField("Ponto do corpo", PointNames(_profiles), 0); Body.Add(_item); Body.Add(_point);
+            _item = new DropdownField("Item do inventário", new List<string> { "(carregando…)" }, 0); _point = new DropdownField("Ponto do corpo", PointNames(_profiles), 0);
+            _region = new DropdownField("Região do corpo", Regions.Select(r => r.Text).ToList(), 0); _region.RegisterValueChangedCallback(_ => { _point.choices = PointNames(_profiles, RegionOf(_region.index)); _point.index = 0; });
+            Body.Add(_item); Body.Add(_region); Body.Add(_point);
             Body.Add(UiKit.Button("Vestir", Wear, "lv-btn-primary"));
             Reload(); LoadItems();
         }
 
-        public static List<string> PointNames(IEnumerable<string> profiles) => AttachmentPoints.All.Where(p => (p.Profile == AttachmentPoints.Humanoid || (profiles ?? Array.Empty<string>()).Contains(p.Profile, StringComparer.OrdinalIgnoreCase))).Select(p => p.Name).ToList();
+        /// <summary>The regions of the body the points are grouped by ("" is every point).</summary>
+        public static readonly (string Id, string Text)[] Regions = { ("", "Todas"), (AttachmentPoints.Head, "Cabeça"), (AttachmentPoints.Torso, "Tronco"), (AttachmentPoints.Arms, "Braços e mãos"), (AttachmentPoints.Legs, "Pernas e pés"), (AttachmentPoints.Special, "Especiais"), (AttachmentPoints.Hud, "Tela (HUD)") };
+        public static string RegionOf(int index) => index >= 0 && index < Regions.Length ? Regions[index].Id : "";
+
+        /// <summary>The names of the points of the body that the person's profiles allow, by region (head first), optionally only of one region.</summary>
+        public static List<string> PointNames(IEnumerable<string> profiles, string region = null) => AttachmentPoints.All.Where(p => (p.Profile == AttachmentPoints.Humanoid || (profiles ?? Array.Empty<string>()).Contains(p.Profile, StringComparer.OrdinalIgnoreCase)) && (string.IsNullOrEmpty(region) || p.Region == region)).OrderBy(p => Array.IndexOf(AttachmentPoints.Regions, p.Region)).ThenBy(p => p.Id).Select(p => p.Name).ToList();
 
         public static string KeyOfName(string name) => AttachmentPoints.All.FirstOrDefault(p => p.Name == name)?.Key;
 
@@ -70,6 +80,7 @@ namespace LifeVerse.Unity.UI
                 UiKit.Button("Aplicar", () => Apply(a, position.value, rotation.value, scale.value, sway.value), "lv-btn-primary"), UiKit.Button("Voltar ao padrão", () => Send("POST", Route + "/" + a.Id + "/reset", null)));
             if (a.CanModify) { box.Add(position); box.Add(rotation); box.Add(scale); box.Add(sway); }
             box.Add(buttons);
+            if (_edit != null && a.Equipped && a.CanModify && !a.IsHud) box.Add(UiKit.Button("Editar no corpo (setas, anéis e caixas)", () => _edit(a)?.Open()));
             var target = new DropdownField("Levar para", PointNames(_profiles), Math.Max(0, PointNames(_profiles).IndexOf(a.PointName))); var replace = new Toggle("Trocar o que já está nesse ponto");
             box.Add(target); box.Add(replace); box.Add(UiKit.Button("Mover", () => Move(a, target.value, replace.value))); return box;
         }

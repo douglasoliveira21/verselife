@@ -296,6 +296,21 @@ namespace LifeVerse.Unity.World
 
         // ---- shapes ----
 
+        /// <summary>Builds a construction of the inventory (or a picture made into a plate) under a parent, outside the world: what a person wears on the body. The shapes and materials are the world's own;
+        /// nothing is registered as an object of the island. The number of shapes made.</summary>
+        public int BuildPackage(LifeVerse.Shared.Building.BuildPackage package, Transform parent)
+        {
+            if (package?.Objects == null || parent == null) return 0; var count = 0;
+            foreach (var o in System.Linq.Enumerable.Take(package.Objects, 64))
+            {
+                var state = new WorldObjectState { Id = Guid.NewGuid(), PrimitiveType = string.IsNullOrEmpty(o.PrimitiveType) || o.PrimitiveType == "mesh" ? "cube" : o.PrimitiveType, Name = o.Name ?? "", MaterialJson = o.MaterialJson ?? "{}", GeometryJson = o.GeometryJson ?? "{}", ScaleX = o.ScaleX, ScaleY = o.ScaleY, ScaleZ = o.ScaleZ };
+                var go = new GameObject(string.IsNullOrEmpty(o.Name) ? "Parte" : o.Name); go.transform.SetParent(parent, false);
+                go.transform.localPosition = new Vector3(o.X, o.Y + package.BaseOffset, -o.Z); go.transform.localRotation = GameSpace.RotationToUnity(o.RotationX, o.RotationY, o.RotationZ); go.transform.localScale = new Vector3(Mathf.Max(.001f, o.ScaleX), Mathf.Max(.001f, o.ScaleY), Mathf.Max(.001f, o.ScaleZ));
+                var filter = go.AddComponent<MeshFilter>(); filter.sharedMesh = MeshFor(state, state.PrimitiveType); go.AddComponent<MeshRenderer>().sharedMaterials = MaterialsFor(state, filter.sharedMesh); count++;
+            }
+            return count;
+        }
+
         private static Mesh MeshFor(WorldObjectState state, string type)
         {
             var key = type + "|" + state.GeometryJson;

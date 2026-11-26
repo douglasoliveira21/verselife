@@ -94,22 +94,6 @@ namespace LifeVerse.Unity.UI
         public FloatingWindow WindowOf(string id) => _windows.TryGetValue(id, out var window) && window.IsOpen ? window : null;
 
         /// <summary>The window of the people around: everyone the server tells about, with how far they are, nearest first.</summary>
-        public static FloatingWindow PeopleWindow(UiRoot ui, PlayerViews views, int selfPeer, Func<Vector3> selfPosition, Action<string> actions = null)
-        {
-            var window = new FloatingWindow(ui, "people", "Pessoas por perto", 320f, 360f, new Vector2(420, 140));
-            var list = new ScrollView(); list.style.flexGrow = 1; window.Body.Add(list);
-            void Refresh()
-            {
-                list.Clear(); var me = selfPosition();
-                foreach (var peer in views.Peers.Where(p => p != selfPeer).OrderBy(p => Vector3.Distance(views.ViewOf(p).GamePosition, me)))
-                {
-                    var view = views.ViewOf(peer); var who = view.DisplayName; var row = UiKit.Row(UiKit.Text(who, "lv-bold"), UiKit.Spacer(), UiKit.Text(Mathf.RoundToInt(Vector3.Distance(view.GamePosition, me)) + " m", "lv-muted")); if (actions != null) row.Add(UiKit.Button("Ações", () => actions(who))); row.AddToClassList("lv-row"); list.Add(row);
-                }
-                if (list.childCount == 0) list.Add(UiKit.Text("Ninguém por perto.", "lv-muted"));
-            }
-            Refresh(); window.schedule.Execute(Refresh).Every(1000); return window;
-        }
-
         public static FloatingWindow HelpWindow(UiRoot ui)
         {
             var window = new FloatingWindow(ui, "help", "Ajuda", 380f, -1f, new Vector2(520, 160));

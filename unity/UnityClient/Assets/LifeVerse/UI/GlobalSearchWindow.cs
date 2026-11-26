@@ -173,7 +173,7 @@ namespace LifeVerse.Unity.UI
 
         private void Detail(JsonElement item, Action back)
         {
-            Reset(); var kind = S(item, "kind"); var id = G(item, "id"); var title = S(item, "title"); Opened = id;
+            Reset(); var kind = S(item, "kind"); var id = G(item, "id"); var title = S(item, "title"); Opened = id; FactsText = ""; Access = ""; Relation = ""; Bought = false;
             Signal("open");
             Buttons(Btn("Voltar aos resultados", back)); Title(title); Line(Describe(item), "lv-small", "lv-muted");
             if (S(item, "description").Length > 0) Line(S(item, "description"));
@@ -181,8 +181,13 @@ namespace LifeVerse.Unity.UI
             var island = G(item, "islandId"); float? x = Has(item, "x") ? (float)D(item, "x") : (float?)null; float? z = Has(item, "z") ? (float)D(item, "z") : (float?)null;
             var actions = new List<VisualElement>();
             var place = kind == "island" ? id : island;
-            if (place != Guid.Empty && kind != "person" && kind != "group") actions.Add(Btn(kind == "store" ? "Visitar a loja" : "Ir até lá", () => { Signal("teleport"); Say("Indo para " + title + "…", false); if (_go != null) _go(place, x, z); else _c.EnterIsland(place); }, "lv-btn-primary"));
-            if (kind == "person") { actions.Add(Btn("Ver perfil", () => new ProfileHubWindow(_c, id).Open(), "lv-btn-primary")); actions.Add(Btn("Ações com a pessoa…", () => new PersonActionsWindow(_c, id, title).Open())); }
+            Button go = null;
+            if (place != Guid.Empty && kind != "person" && kind != "group") actions.Add(go = Btn(kind == "store" ? "Visitar a loja" : "Ir até lá", () => { Signal("teleport"); Say("Indo para " + title + "…", false); if (_go != null) _go(place, x, z); else _c.EnterIsland(place); }, "lv-btn-primary"));
+            var facts = new VisualElement(); _page.Add(facts);
+            if (place != Guid.Empty && kind != "person" && kind != "group") PlaceInfo(place, go, facts);
+            if (kind == "event") EventCalendar(id, facts, actions);
+            if (kind == "product") ItemDetail(id, facts);
+            if (kind == "person") { var relation = UiKit.Text("", "lv-small", "lv-accent"); _page.Add(relation); this.Then(_c.Api.ApiAsync("GET", "/api/v1/social/relations?ids=" + id), r => { if (r.Status == 200) try { using var d = JsonDocument.Parse(r.Body); if (d.RootElement.TryGetProperty(id.ToString(), out var rel) && rel.ValueKind == JsonValueKind.String) { Relation = rel.GetString(); relation.text = RelationWords(Relation); } } catch (JsonException) { } }); actions.Add(Btn("Ver perfil", () => new ProfileHubWindow(_c, id).Open(), "lv-btn-primary")); actions.Add(Btn("Ações com a pessoa…", () => new PersonActionsWindow(_c, id, title).Open())); }
             if (kind == "group") actions.Add(Btn("Ver grupo", () => new GroupProfileWindow(_c, id).Open(), "lv-btn-primary"));
             if (kind == "event") actions.Add(Btn("Participar", () => Send("POST", "/api/v1/discovery/events/" + id + "/join", "{}", "Você vai participar de " + title + ".")));
             if (kind == "product") actions.Add(Btn("Abrir o mercado", () => new MarketWindow(_c).Open()));
@@ -193,6 +198,119 @@ namespace LifeVerse.Unity.UI
             Title("Denunciar este resultado"); var reason = Field("Motivo", "", 300);
             Buttons(Sure("Enviar denúncia", () => "Denunciar " + title + "?", () => { if (reason.value.Trim().Length < 3) { Say("Diga o motivo da denúncia.", true); return; } Send("POST", "/api/v1/search/report/" + kind + "/" + id, new { reason = reason.value.Trim() }, "Denúncia enviada. Obrigado.", null, Words); }));
         }
+
+        // ---- what the discovery knows of a place, an event and an item ----
+
+        /// <summary>The access to the island now ("open", "full", "closed", "private", "banned", "gone"), from <c>/discovery/islands/{id}/info</c>.</summary>
+        public string Access { get; private set; } = "";
+        public bool GuestEvents { get; private set; }
+        public bool InCalendar { get; private set; }
+        public bool CanBuy { get; private set; }
+        public string FactsText { get; private set; } = "";
+
+        public static string AccessWords(string access) => access switch { "full" => "Ilha cheia no momento: tente de novo daqui a pouco.", "closed" => "Ilha temporariamente fechada.", "banned" => "Você foi banido desta ilha.", "private" => "Ilha privada: só convidados entram.", "gone" => "Este lugar não está mais disponível.", _ => "" };
+        public static string AccessButton(string access) => access switch { "full" => "Ilha cheia", "closed" => "Ilha fechada", "banned" => "Acesso negado", "private" => "Ilha privada", _ => "Indisponível" };
+
+        private void Facts(VisualElement area, IEnumerable<string> lines) { foreach (var l in lines.Where(t => !string.IsNullOrWhiteSpace(t))) { var label = UiKit.Text(l, "lv-small"); label.style.whiteSpace = WhiteSpace.Normal; area.Add(label); FactsText += l + "\n"; } }
+
+        private void PlaceInfo(Guid island, Button go, VisualElement area) => this.Then(_c.Api.ApiAsync("GET", "/api/v1/discovery/islands/" + island + "/info"), r =>
+        {
+            if (r.Status == 404) { Access = "gone"; Facts(area, new[] { AccessWords("gone") }); if (go != null) { go.text = AccessButton("gone"); go.SetEnabled(false); } return; }
+            if (r.Status != 200) return;   // not known: the server decides when entering
+            using var d = JsonDocument.Parse(r.Body); var p = d.RootElement; Access = S(p, "access");
+            var owner = Obj(p, "owner"); var visitors = I(p, "visitors"); var max = I(p, "maxPlayers");
+            Facts(area, new[]
+            {
+                S(owner, "displayName").Length > 0 ? "Proprietário(a): " + S(owner, "displayName") + "." : "",
+                string.Join(" · ", new[] { S(p, "category"), S(p, "contentRating").Length > 0 ? "classificação " + S(p, "contentRating") : "", S(p, "language") }.Where(t => t.Length > 0)),
+                Flag(p, "online") ? visitors + (visitors == 1 ? " visitante" : " visitantes") + " agora" + (max > 0 ? " (máximo " + max + ")" : "") + "." : "A ilha está desligada: ela liga quando alguém entra.",
+                AccessWords(Access),
+            });
+            if (go != null && Access.Length > 0 && Access != "open") { go.text = AccessButton(Access); go.SetEnabled(false); }
+            if (Flag(p, "isOwner"))
+            {
+                GuestEvents = Flag(p, "allowsGuestEvents"); Button toggle = null;
+                toggle = Btn(GuestEvents ? "Eventos de convidados: permitidos" : "Eventos de convidados: bloqueados", () =>
+                {
+                    var wanted = !GuestEvents;
+                    this.Then(_c.Api.ApiAsync("PUT", "/api/v1/discovery/islands/" + island + "/event-policy", JsonSerializer.Serialize(new { allowGuests = wanted })), w =>
+                    {
+                        if (w.Status < 200 || w.Status >= 300) { Say(w.Status == 404 ? "Só o dono da ilha decide isso." : UiTasks.Explain(w.Status, w.Body), true); return; }
+                        GuestEvents = wanted; toggle.text = wanted ? "Eventos de convidados: permitidos" : "Eventos de convidados: bloqueados"; Say(wanted ? "Agora convidados podem anunciar eventos nesta ilha." : "Só você anuncia eventos nesta ilha.", false);
+                    });
+                });
+                Actions["Eventos de convidados"] = Actions[toggle.text]; area.Add(toggle);
+            }
+        });
+
+        private void EventCalendar(Guid id, VisualElement area, List<VisualElement> actions) => this.Then(_c.Api.ApiAsync("GET", "/api/v1/discovery/events/" + id), r =>
+        {
+            if (r.Status != 200) return;
+            using var d = JsonDocument.Parse(r.Body); var e = d.RootElement; InCalendar = Flag(e, "inCalendar"); var status = S(e, "status"); var closed = status is "ended" or "cancelled";
+            Facts(area, new[] { Flag(e, "joined") ? "Você vai participar." : "", closed ? (status == "ended" ? "Este evento já terminou." : "Este evento foi cancelado.") : "" });
+            Button calendar = null;
+            calendar = Btn(InCalendar ? "Remover do calendário" : "Adicionar ao calendário", () =>
+            {
+                var on = !InCalendar;
+                this.Then(_c.Api.ApiAsync("PUT", "/api/v1/discovery/events/" + id + "/calendar", JsonSerializer.Serialize(new { on })), w =>
+                {
+                    if (w.Status < 200 || w.Status >= 300) { Say(UiTasks.Explain(w.Status, w.Body), true); return; }
+                    InCalendar = on; calendar.text = on ? "Remover do calendário" : "Adicionar ao calendário"; Say(on ? "Evento guardado no seu calendário." : "Evento tirado do seu calendário.", false);
+                });
+            });
+            Actions["Calendário"] = Actions[calendar.text]; calendar.SetEnabled(!closed || InCalendar); area.Add(calendar);
+        });
+
+        public static string RightsWords(JsonElement flags)
+        {
+            var words = new List<string>(); if (Flag(flags, "copy")) words.Add("copiar"); if (Flag(flags, "modify")) words.Add("modificar"); if (Flag(flags, "transfer")) words.Add("transferir"); if (Flag(flags, "resell")) words.Add("revender");
+            return words.Count == 0 ? "nada além de usar" : string.Join(", ", words);
+        }
+
+        public static string Size(long bytes) => bytes < 1024 ? bytes + " B" : bytes < 1024 * 1024 ? (bytes / 1024.0).ToString("0.#", Pt) + " KB" : (bytes / 1048576.0).ToString("0.#", Pt) + " MB";
+
+        public static string BuyWords(int status, string body)
+        {
+            string code = ""; try { using var d = JsonDocument.Parse(body ?? ""); code = S(d.RootElement, "error"); } catch (JsonException) { }
+            return code switch { "insufficient_balance" => "Saldo insuficiente para esta compra.", "already_owned" => "Você já tem este item.", "cannot_buy_own_product" => "Você não pode comprar o seu próprio item.", "key_reused" => "Esta compra já foi enviada. Confira o seu inventário.", "product_unavailable" or "not_found" => "Este item não está mais à venda.", _ => UiTasks.Explain(status, body) };
+        }
+
+        /// <summary>The item as the market sells it (<c>/discovery/items/{id}</c>): price, creator, seller, what the buyer may do, gift, kind and size, whether it is already theirs; and buying it here.</summary>
+        private void ItemDetail(Guid id, VisualElement area) => this.Then(_c.Api.ApiAsync("GET", "/api/v1/discovery/items/" + id), r =>
+        {
+            if (r.Status == 404) { Facts(area, new[] { "Este item não está mais à venda." }); return; }
+            if (r.Status != 200) { Facts(area, new[] { "Não foi possível carregar o item agora." }); return; }
+            using var d = JsonDocument.Parse(r.Body); var p = d.RootElement; var price = I(p, "priceCoins"); var creator = Obj(p, "creator"); var seller = Obj(p, "seller"); var asset = Obj(p, "asset"); var store = Obj(p, "store");
+            CanBuy = Flag(p, "canBuy"); var own = Flag(p, "isOwn"); var owned = Flag(p, "owned");
+            Facts(area, new[]
+            {
+                "Preço: " + (price > 0 ? Coins(price) : "gratuito"), S(creator, "displayName").Length > 0 ? "Criador(a): " + S(creator, "displayName") : "",
+                S(seller, "name").Length > 0 ? "Vendedor(a): " + S(seller, "name") + (S(seller, "kind") == "group" ? " (grupo)" : "") : "",
+                "Você poderá: " + RightsWords(Obj(p, "rights")) + ".", "E passar adiante: " + RightsWords(Obj(p, "nextRights")) + ".",
+                Flag(p, "allowGift") ? "Pode ser comprado de presente." : "Não pode ser comprado de presente.", Flag(p, "resale") ? "Revenda de um item usado." : "",
+                asset.ValueKind == JsonValueKind.Object ? "Tipo: " + S(asset, "category") + (Has(asset, "byteSize") ? " · " + Size(I(asset, "byteSize")) : "") + "." : "",
+                own ? "Este item é seu." : owned ? "Você já tem este item." : "",
+            });
+            var row = new VisualElement(); row.style.flexDirection = FlexDirection.Row; row.style.flexWrap = Wrap.Wrap; area.Add(row);
+            var key = Guid.NewGuid().ToString("N"); var label = own ? "Este item é seu" : owned && price == 0 ? "Você já pegou este item" : price > 0 ? "Comprar por " + Coins(price) : "Pegar grátis";
+            Button buy = null; buy = Btn(label, () =>
+            {
+                buy.SetEnabled(false); buy.text = "Comprando…";
+                this.Then(_c.Api.ApiAsync("POST", "/api/v1/economy/products/" + id + "/purchase", JsonSerializer.Serialize(new { idempotencyKey = key })), b =>
+                {
+                    if (b.Status >= 200 && b.Status < 300) { buy.text = "Comprado"; Bought = true; Say("Comprado! O item está no seu inventário.", false); _c.Notices.Show("Item comprado.", NoticeKind.Good); return; }
+                    buy.text = label; buy.SetEnabled(true); Say(BuyWords(b.Status, b.Body), true);
+                });
+            }, "lv-btn-primary"); buy.SetEnabled(CanBuy && !own); Actions["Comprar"] = Actions[label]; row.Add(buy);
+            var creatorId = G(creator, "id"); if (creatorId != Guid.Empty) row.Add(Btn("Ver o criador", () => new ProfileHubWindow(_c, creatorId).Open()));
+            var storeId = G(store, "id"); if (storeId != Guid.Empty) row.Add(Btn("Ver a loja", () => { Show("lojas"); }));
+        });
+
+        public bool Bought { get; private set; }
+
+        /// <summary>How the person shown relates to the one searching (friend, blocked, a request either way), from <c>/api/v1/social/relations</c>.</summary>
+        public string Relation { get; private set; } = "";
+        public static string RelationWords(string relation) => relation switch { "friend" => "Vocês são amigos.", "blocked" => "Você bloqueou esta pessoa.", "pending_out" => "Você pediu amizade: esperando a resposta.", "pending_in" => "Esta pessoa pediu sua amizade: responda em Social.", _ => "" };
 
         /// <summary>Tells the search service that a result was opened or used to travel (it ranks the popular places).</summary>
         private void Signal(string type) { if (_query.Trim().Length == 0) return; this.Then(_c.Api.ApiAsync("POST", "/api/v1/search/events", JsonSerializer.Serialize(new { type, query = _query.Trim() }, Options)), _ => { }); }

@@ -298,7 +298,7 @@ namespace LifeVerse.Unity.UI
         {
             if (Chosen == null || !Chosen.CanEnter) return; var spot = TypedSpot();
             if (_spotField.value.Trim().Length > 0 && spot == null) { _status.text = "Escreva o ponto como dois números: x z."; return; }
-            if (spot is { } s) { var (_, _, inside) = MapCoordinates.ToLocal(Chosen, s.X + Chosen.X, s.Z + Chosen.Y); if (!inside) { _status.text = "Esse ponto fica fora da ilha."; return; } TravelTo(Chosen.Id, s.X, s.Z); }
+            if (spot is { } s) { var (_, _, inside) = MapCoordinates.ToLocal(Chosen, s.X + Chosen.X, s.Z + Chosen.Y); if (!inside) { _status.text = "Esse ponto fica fora da ilha."; return; } var island = Chosen.Id; Arrival.Go(_c, island, s.X, s.Z, (text, bad) => { _status.text = text; _status.EnableInClassList("lv-bad", bad); if (!bad && !text.StartsWith("Verificando")) Close(); }); }
             else TravelTo(Chosen.Id, null, null);
         }
 

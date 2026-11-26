@@ -23,6 +23,12 @@ namespace LifeVerse.Unity.UI
         public bool Typing { get; private set; }
         public IReadOnlyList<ChatLine> Lines => _lines;
         public TextField Input => _input;
+        /// <summary>The hour before each message, and for how long the messages stay on screen after one arrives (when the person is not writing); 0 keeps them.</summary>
+        public bool ShowTime = true; public float VisibleSeconds = 6f;
+        private float _lastMessage; private bool _hovered, _watching;
+        public bool LogShown => _log.style.opacity.value > .5f;
+        private void ShowLog() { _log.style.opacity = 1f; if (!_watching) { _watching = true; RegisterCallback<PointerEnterEvent>(_ => { _hovered = true; ShowLog(); }); RegisterCallback<PointerLeaveEvent>(_ => { _hovered = false; _lastMessage = Time.unscaledTime; }); schedule.Execute(FadeIfIdle).Every(250); } }
+        private void FadeIfIdle() { if (VisibleSeconds <= 0f || Typing || _hovered || Minimized) { _log.style.opacity = 1f; return; } if (Time.unscaledTime - _lastMessage > VisibleSeconds) _log.style.opacity = 0f; }
         private readonly Button _minimize;
         /// <summary>Minimized, the chat keeps only the line to write in (the messages stay and come back).</summary>
         public bool Minimized { get; private set; }
@@ -78,8 +84,8 @@ namespace LifeVerse.Unity.UI
             if (line.Text.Length == 0) return;
             _lines.Add(line); if (_lines.Count > MaxLines) { _lines.RemoveAt(0); if (_log.contentContainer.childCount > 0) _log.contentContainer.RemoveAt(0); }
             var label = new Label(); label.AddToClassList("lv-chat-line"); label.style.fontSize = _settings.ChatFontSize; label.enableRichText = true;
-            var when = line.Time.ToLocalTime().ToString("HH:mm");
-            label.text = line.System ? "<color=#A9B3BD><i>" + Escape(line.Text) + "</i></color>" : "<color=#7B858C>" + when + "</color> <color=#2EE6D0><b>" + Escape(line.Name) + "</b></color>  " + Escape(line.Text);
+            var when = line.Time.ToLocalTime().ToString("HH:mm"); _lastMessage = Time.unscaledTime; ShowLog();
+            label.text = line.System ? "<color=#A9B3BD><i>" + Escape(line.Text) + "</i></color>" : (ShowTime ? "<color=#7B858C>" + when + "</color> " : "") + "<color=#2EE6D0><b>" + Escape(line.Name) + "</b></color>  " + Escape(line.Text);
             _log.Add(label); schedule.Execute(() => _log.scrollOffset = new Vector2(0, float.MaxValue / 2f)).StartingIn(30);
         }
 

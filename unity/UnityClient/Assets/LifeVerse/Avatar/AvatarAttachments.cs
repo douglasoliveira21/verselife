@@ -65,7 +65,29 @@ namespace LifeVerse.Unity.Avatar
         private AvatarView _view; private readonly Dictionary<Guid, Worn> _worn = new Dictionary<Guid, Worn>(); private int _generation;
         /// <summary>Gets the bytes of a model by its identifier. Set by the game (the platform's asset route).</summary>
         public static Func<Guid, Task<byte[]>> Loader { get; set; }
-        private static readonly Dictionary<Guid, Task<GLTFast.GltfImport>> Imports = new Dictionary<Guid, Task<GLTFast.GltfImport>>();
+        /// <summary>What a worn asset is: a 3D model, a picture (worn as a plate) or a construction of the inventory (worn as its shapes).</summary>
+        public enum ContentKind { Model, Image, Construction }
+        private sealed class Content { public ContentKind Kind; public GLTFast.GltfImport Import; public LifeVerse.Shared.Building.BuildPackage Package; }
+        private static readonly Dictionary<Guid, Task<Content>> Imports = new Dictionary<Guid, Task<Content>>();
+        /// <summary>Builds the shapes of a construction under a holder (the world's builder); without it pictures and constructions are not drawn.</summary>
+        public static Func<LifeVerse.Shared.Building.BuildPackage, Transform, int> Constructions { get; set; }
+
+        /// <summary>The kind of a file by its first bytes: PNG or JPEG is a picture, a JSON of the build format is a construction, anything else a model.</summary>
+        public static ContentKind KindOf(byte[] b)
+        {
+            if (b == null || b.Length < 4) return ContentKind.Model;
+            if ((b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) || (b[0] == 0xFF && b[1] == 0xD8)) return ContentKind.Image;
+            var start = b.Length >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF ? 3 : 0; while (start < b.Length && char.IsWhiteSpace((char)b[start])) start++;
+            return start < b.Length && b[start] == (byte)'{' && System.Text.Encoding.UTF8.GetString(b, 0, Math.Min(b.Length, 512)).Contains(LifeVerse.Shared.Building.BuildPackages.FormatName) ? ContentKind.Construction : ContentKind.Model;
+        }
+
+        /// <summary>A picture worn on the body: a thin plate one metre on its longest side, showing the picture on its faces.</summary>
+        public static LifeVerse.Shared.Building.BuildPackage Plate(Guid asset, int width, int height)
+        {
+            var longest = Mathf.Max(1, Mathf.Max(width, height)); var w = width / (float)longest; var h = height / (float)longest;
+            var material = JsonSerializer.Serialize(new { texture = asset.ToString(), color = "#FFFFFF" });
+            return new LifeVerse.Shared.Building.BuildPackage(LifeVerse.Shared.Building.BuildPackages.FormatName, 1, "Imagem", 0f, new[] { new LifeVerse.Shared.Building.PackageObject("cube", "Imagem", "", 0f, 0f, 0f, 0f, 0f, 0f, w, h, .01f, material, "{}", "{}", "[]", null) });
+        }
         public int Count => _worn.Count(p => p.Value.Holder != null);
         public int Loaded { get; private set; }
         public IReadOnlyCollection<Guid> Ids => _worn.Keys;
@@ -105,19 +127,40 @@ namespace LifeVerse.Unity.Avatar
                 if (Loader == null) { worn.Loading = false; return; }
                 if (!Imports.TryGetValue(worn.Data.AssetId, out var task)) { task = ImportAsync(worn.Data.AssetId); Imports[worn.Data.AssetId] = task; }
                 var import = await task; if (import == null) { Imports.Remove(worn.Data.AssetId); worn.Loading = false; return; }
+                Kinds[worn.Data.Id] = import.Kind;
                 if (this == null || !_worn.TryGetValue(worn.Data.Id, out var still) || still != worn) return;
                 var holder = new GameObject("Worn " + worn.Data.Name); var content = new GameObject("Content"); content.transform.SetParent(holder.transform, false); content.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);   // the same half turn as the world's models
-                if (!await import.InstantiateMainSceneAsync(content.transform)) { Destroy(holder); worn.Loading = false; return; }
+                if (import.Kind == ContentKind.Model) { if (!await import.Import.InstantiateMainSceneAsync(content.transform)) { Destroy(holder); worn.Loading = false; return; } }
+                else { content.transform.localRotation = Quaternion.identity; if (Constructions == null || Constructions(import.Package, content.transform) == 0) { Destroy(holder); worn.Loading = false; return; } }
                 foreach (var collider in holder.GetComponentsInChildren<Collider>()) Destroy(collider);
                 worn.Holder = holder; worn.Content = content; worn.Loading = false; Loaded++; Place(worn); LifeVerse.Unity.World.ModelAnimations.StartFirst(content);
             }
             catch (Exception exception) when (!(exception is OutOfMemoryException)) { worn.Loading = false; Debug.LogWarning("[LifeVerse] anexo " + worn.Data.Name + ": " + exception.Message); }
         }
 
-        private static async Task<GLTFast.GltfImport> ImportAsync(Guid asset)
+        private static async Task<Content> ImportAsync(Guid asset)
         {
-            var bytes = await Loader(asset); if (bytes == null) return null; var import = new GLTFast.GltfImport(); return await import.LoadGltfBinary(bytes, new Uri("file:///attachment.glb")) ? import : null;
+            var bytes = await Loader(asset); if (bytes == null) return null;
+            switch (KindOf(bytes))
+            {
+                case ContentKind.Image:
+                {
+                    var picture = new Texture2D(2, 2); try { if (!picture.LoadImage(bytes)) return null; return new Content { Kind = ContentKind.Image, Package = Plate(asset, picture.width, picture.height) }; } finally { Destroy(picture); }
+                }
+                case ContentKind.Construction:
+                {
+                    var package = LifeVerse.Shared.Building.BuildPackages.Parse(System.Text.Encoding.UTF8.GetString(bytes).TrimStart((char)0xFEFF), out _); return package == null || package.Objects.Length == 0 ? null : new Content { Kind = ContentKind.Construction, Package = package };
+                }
+                default:
+                {
+                    var import = new GLTFast.GltfImport(); return await import.LoadGltfBinary(bytes, new Uri("file:///attachment.glb")) ? new Content { Kind = ContentKind.Model, Import = import } : null;
+                }
+            }
         }
+
+        private readonly Dictionary<Guid, ContentKind> Kinds = new Dictionary<Guid, ContentKind>();
+        /// <summary>What a worn object turned out to be (for the checks).</summary>
+        public ContentKind? KindOfWorn(Guid id) => Kinds.TryGetValue(id, out var k) ? k : (ContentKind?)null;
 
         /// <summary>Fixes the object to its point: the offset of the point plus the person's position, turned and scaled as they set it (game space to Unity's: z is mirrored).</summary>
         private void Place(Worn worn)
@@ -127,6 +170,13 @@ namespace LifeVerse.Unity.Avatar
             var t = worn.Holder.transform; t.SetParent(anchor, false); var sum = offset + position; t.localPosition = new Vector3(sum.x, sum.y, -sum.z);
             var rotation = Quaternion.Euler(worn.Data.Rotation[0], worn.Data.Rotation[1], worn.Data.Rotation[2]); t.localRotation = new Quaternion(-rotation.x, -rotation.y, rotation.z, rotation.w); t.localScale = new Vector3(Mathf.Max(.001f, worn.Data.Scale[0]), Mathf.Max(.001f, worn.Data.Scale[1]), Mathf.Max(.001f, worn.Data.Scale[2]));
             worn.Revision = worn.Data.Revision;
+        }
+
+        /// <summary>Shows an object at another placement at once (the editor on the body); the saved one comes back with the next list from the platform or another preview.</summary>
+        public bool Preview(Guid id, float[] position, float[] rotation, float[] scale)
+        {
+            if (!_worn.TryGetValue(id, out var worn) || worn.Holder == null) return false;
+            worn.Data.Position = (float[])position.Clone(); worn.Data.Rotation = (float[])rotation.Clone(); worn.Data.Scale = (float[])scale.Clone(); Place(worn); return true;
         }
 
         /// <summary>Sway edited on screen (0 to 1) while the person is still choosing; null puts back what is saved.</summary>

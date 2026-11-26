@@ -16,7 +16,7 @@ namespace LifeVerse.Unity.Tests.EditMode
             Assert.IsTrue(all.All(d => SettingsCatalog.Categories.Any(c => c.Id == d.Category)), "categoria desconhecida");
             foreach (var id in SettingsCatalog.InUnity) Assert.IsNotNull(SettingsCatalog.Find(id), "o Unity diz tratar um id que não existe: " + id);
             Assert.IsTrue(all.Where(d => d.IsValue && d.Kind == "Choice" && !d.Device).All(d => d.Choices.Any(c => c.Id == SettingsCatalog.Normalize(d, d.Default))), "padrão fora das escolhas");
-            Assert.IsTrue(SettingsCatalog.Find("graphics.ssr").Unavailable == SettingsCatalog.NotYet); Assert.IsTrue(SettingsCatalog.Find("camera.fov").IsAvailable); Assert.IsTrue(SettingsCatalog.Find("accessibility.contrast").IsAvailable);
+            Assert.IsFalse(SettingsCatalog.Find("graphics.vegetation").IsAvailable); Assert.IsTrue(SettingsCatalog.Find("graphics.ssr").IsAvailable); Assert.IsTrue(SettingsCatalog.Find("camera.fov").IsAvailable); Assert.IsTrue(SettingsCatalog.Find("accessibility.contrast").IsAvailable);
             Assert.AreEqual("Versão do Unity", SettingsCatalog.Find("advanced.godot").Label);
         }
 

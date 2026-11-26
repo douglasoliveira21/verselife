@@ -38,6 +38,9 @@ namespace LifeVerse.Unity.Avatar
         private TextMesh _tag;
         public bool Visible { get; private set; } = true;
         public Transform NameTag => _tag != null ? _tag.transform : null;
+        /// <summary>The names over the other avatars and over one's own (Configurações › Avatar).</summary>
+        public static bool ShowNames = true, ShowOwnName = true;
+        public bool NameShown => _tag != null && _tag.gameObject.activeSelf;
         public bool Speaking { get; private set; }
         /// <summary>Somebody is talking: their name is lit green while their voice is heard (or sent, for oneself).</summary>
         public void SetSpeaking(bool speaking) { if (Speaking == speaking) return; Speaking = speaking; if (_tag != null) _tag.color = speaking ? new Color(.2f, 1f, .6f) : Color.white; }
@@ -234,7 +237,7 @@ namespace LifeVerse.Unity.Avatar
         private void LateUpdate()
         {
             if (_tag == null) return;
-            var camera = Camera.main; var show = Visible && !External && camera != null && Detail != AvatarDetail.Hidden;
+            var camera = Camera.main; var show = Visible && (External ? ShowOwnName : ShowNames) && camera != null && Detail != AvatarDetail.Hidden && (camera.transform.position - _tag.transform.position).sqrMagnitude > .8f;
             if (show) { var away = camera.transform.position - _tag.transform.position; show = away.sqrMagnitude < 45f * 45f; if (show) _tag.transform.rotation = Quaternion.LookRotation(away.normalized, Vector3.up); } // TextMesh is read from its back, so it looks at the camera, not away from it
             _tag.gameObject.SetActive(show);
         }
