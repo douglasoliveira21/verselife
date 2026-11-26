@@ -34,6 +34,9 @@ public static class TeleportEndpoints
         if (!TryIdentity(context, out var userId, out var sessionId)) return Results.Unauthorized();
         var now = clock.GetUtcNow();
         if (!await db.Sessions.AnyAsync(x => x.Id == sessionId && x.UserId == userId && x.RevokedAt == null && x.ExpiresAt > now, ct)) return Results.Unauthorized();
+        // a trip goes only to an island of the same engine as the client (the other one could not connect)
+        var engine = await db.Islands.AsNoTracking().Where(x => x.Id == request.DestinationIslandId && x.DeletedAt == null).Select(x => x.Engine).FirstOrDefaultAsync(ct);
+        if (engine is not null && engine != IslandEngines.OfClient(context)) return Results.Json(new { code = "engine_mismatch", engine, message = IslandEngines.Mismatch(engine) }, statusCode: 409);
         return Answer(await TeleportService.PrepareAsync(db, userId, sessionId, request, now, ct));
     }
 

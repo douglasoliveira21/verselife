@@ -1,36 +1,48 @@
-# Island server image with the UNITY dedicated server (LifeVerse Wire 12) instead of the Godot one: the same supervisor starts one island process
-# per island that players are waiting for, but the process is LifeVerseServer.x86_64 (SUPERVISOR_ENGINE=unity).
+# Island server image with the UNITY dedicated server (LifeVerse Wire 12): the same supervisor starts one island process per island that players are waiting for,
+# but only for islands whose engine is "unity" (it asks the API with ?engine=unity) and the process is LifeVerseServer.x86_64. It runs NEXT TO the Godot image, which keeps
+# serving the islands whose engine is "godot"; see docs/unity-migration/DEPLOY_UNITY_ISLANDS.md.
 #
 # The Unity Linux player needs glibc (Debian/Ubuntu); it does NOT run on Alpine. This base image is Debian.
 #
-# 1. Build the Linux server (Unity 6000.6.9f1 with the Linux Dedicated Server module), from the repository root:
-#      powershell -File unity/UnityPlugins/build-plugins.ps1
-#      Unity.exe -batchmode -nographics -projectPath unity/UnityClient -executeMethod LifeVerse.Unity.EditorTools.BuildClient.BuildLinuxServer
-#    The result is unity/UnityClient/Builds/LinuxServer (not in git; the Docker context must contain it).
-# 2. Build the image from the repository root:
-#      docker build -f island-supervisor/Dockerfile.unity -t lifeverse-islands-unity .
+# The server build is not in git (161 MB). It comes as a .tar.gz from an address you choose (a GitHub release, for example), checked by its SHA-256:
+#   1. Build it (Unity 6000.6.9f1 with the Linux Dedicated Server module) and pack it:   powershell -File scripts/package-unity-server.ps1
+#      That prints the SHA-256 and leaves LifeVerseServer-linux.tar.gz in artifacts/.
+#   2. Upload the file, then build this image from the repository root with the two build arguments:
+#      docker build -f island-supervisor/Dockerfile.unity --build-arg SERVER_URL=https://.../LifeVerseServer-linux.tar.gz --build-arg SERVER_SHA256=<sha256> -t lifeverse-islands-unity .
 #
-# NOT TESTED as an image (no Docker here). Tested on Ubuntu 26.04 (WSL 2): the supervisor published for linux-x64 starts this exact server, the server answers
-# the health check, serves 64 UDP clients and stops cleanly on SIGTERM. If the first start in a slim container fails with a missing shared library, add it below.
+# Tested end to end on Ubuntu (WSL 2) WITHOUT a container: API + Postgres + this supervisor + this server + the Unity client entered, walked and chatted. NOT tested as an image
+# (no Docker here): if the first start in the container fails with a missing shared library, add it to the apt-get line below.
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS supervisor
 WORKDIR /src
 COPY Directory.Build.props ./
 COPY island-supervisor/ island-supervisor/
 RUN dotnet publish island-supervisor/LifeVerse.IslandSupervisor.csproj -c Release -o /out
 
+FROM debian:bookworm-slim AS server
+ARG SERVER_URL
+ARG SERVER_SHA256
+RUN test -n "$SERVER_URL" && test -n "$SERVER_SHA256" || (echo "SERVER_URL and SERVER_SHA256 are required build arguments" && exit 1)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL "$SERVER_URL" -o /tmp/server.tar.gz \
+    && echo "$SERVER_SHA256  /tmp/server.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/lifeverse-server && tar -xzf /tmp/server.tar.gz -C /opt/lifeverse-server && rm /tmp/server.tar.gz \
+    && rm -rf /opt/lifeverse-server/*BackUpThisFolder_ButDontShipItWithYourGame \
+    && chmod +x /opt/lifeverse-server/LifeVerseServer.x86_64
+
 FROM mcr.microsoft.com/dotnet/runtime:8.0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=supervisor /out /opt/supervisor
-COPY unity/UnityClient/Builds/LinuxServer/ /opt/lifeverse-server/
-RUN chmod +x /opt/lifeverse-server/LifeVerseServer.x86_64 && rm -rf /opt/lifeverse-server/*BackUpThisFolder_ButDontShipItWithYourGame
+COPY --from=server /opt/lifeverse-server/ /opt/lifeverse-server/
 
+# Another port range than the Godot image (7777...), so both can run on the same machine.
 ENV SUPERVISOR_ENGINE=unity \
     SUPERVISOR_UNITY_SERVER_PATH=/opt/lifeverse-server/LifeVerseServer.x86_64 \
-    SUPERVISOR_PORT_START=7777 \
+    SUPERVISOR_PORT_START=7800 \
+    SUPERVISOR_HEALTH_PORT_START=7100 \
     SUPERVISOR_MAX_ISLANDS=8 \
     SUPERVISOR_IDLE_MINUTES=10
 # The Unity server accepts the entry tickets the API issues today (protocol 11) by default; see LIFEVERSE_TICKET_PROTOCOL.
-# One UDP port per island that can run at once (SUPERVISOR_PORT_START + SUPERVISOR_MAX_ISLANDS - 1); the health ports (TCP 7070...) stay inside the container.
-EXPOSE 7777-7784/udp
+# One UDP port per island that can run at once (SUPERVISOR_PORT_START + SUPERVISOR_MAX_ISLANDS - 1); the health ports stay inside the container.
+EXPOSE 7800-7807/udp
 WORKDIR /opt/supervisor
 ENTRYPOINT ["dotnet", "/opt/supervisor/LifeVerse.IslandSupervisor.dll"]

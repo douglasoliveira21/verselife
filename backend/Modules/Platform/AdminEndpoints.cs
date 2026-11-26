@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LifeVerse.Api.Modules.Platform;
 
 public sealed record AdminDecisionRequest(string Decision, string Notes, string EvidenceJson = "{}");
+public sealed record IslandEngineRequest(string Engine);
 
 public static class AdminEndpoints
 {
@@ -15,7 +16,7 @@ public static class AdminEndpoints
         endpoints.MapGet("/admin", () => Results.Content(AdminPanelPage.Html, "text/html; charset=utf-8"));
         var admin = endpoints.MapGroup("/api/v1/admin").WithTags("Administration").RequireAuthorization();
         admin.MapGet("/dashboard", DashboardAsync); admin.MapGet("/users", UsersAsync); admin.MapPost("/users/{id:guid}/suspend", (Guid id, HttpContext c, LifeVerseDbContext d, TimeProvider t, CancellationToken ct) => SetUserAsync(id, "suspended", c, d, t, ct)); admin.MapPost("/users/{id:guid}/ban", (Guid id, HttpContext c, LifeVerseDbContext d, TimeProvider t, CancellationToken ct) => SetUserAsync(id, "banned", c, d, t, ct)); admin.MapPost("/users/{id:guid}/reactivate", (Guid id, HttpContext c, LifeVerseDbContext d, TimeProvider t, CancellationToken ct) => SetUserAsync(id, "active", c, d, t, ct)); admin.MapPost("/users/{id:guid}/revoke-sessions", RevokeSessionsAsync);
-        admin.MapGet("/islands", IslandsAsync); admin.MapPost("/islands/{id:guid}/suspend", SuspendIslandAsync); admin.MapPost("/islands/{id:guid}/resume", ResumeIslandAsync);
+        admin.MapGet("/islands", IslandsAsync); admin.MapPost("/islands/{id:guid}/suspend", SuspendIslandAsync); admin.MapPost("/islands/{id:guid}/resume", ResumeIslandAsync); admin.MapPut("/islands/{id:guid}/engine", IslandEngineAsync);
         admin.MapGet("/moderation", ModerationAsync); admin.MapPost("/moderation/{reportId:guid}/decide", DecideAsync); admin.MapGet("/audit", AuditAsync);
         return endpoints;
     }
@@ -26,6 +27,18 @@ public static class AdminEndpoints
     private static async Task<IResult> IslandsAsync(HttpContext c, LifeVerseDbContext db, CancellationToken ct) { if (!Admin(c, out _)) return Results.Forbid(); return Results.Ok(await db.Islands.AsNoTracking().Where(x => x.DeletedAt == null).OrderByDescending(x => x.UpdatedAt).Take(200).Select(x => new { x.Id, x.Name, x.OwnerUserId, x.RuntimeState, x.MaxPlayers, x.UpdatedAt }).ToListAsync(ct)); }
     private static async Task<IResult> SuspendIslandAsync(Guid id, HttpContext c, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) => await SetIslandState(id, "suspended", c, db, clock, ct);
     private static async Task<IResult> ResumeIslandAsync(Guid id, HttpContext c, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) => await SetIslandState(id, "running", c, db, clock, ct);
+    /// <summary>Moves an island to the other island server (godot or unity). Only while it is not running: the next entry starts it on the new engine, and its clients change with it.</summary>
+    private static async Task<IResult> IslandEngineAsync(Guid id, IslandEngineRequest request, HttpContext c, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct)
+    {
+        if (!Admin(c, out var admin)) return Results.Forbid();
+        if (!IslandEngines.IsValid(request.Engine)) return Results.BadRequest(new { error = "invalid_engine" });
+        var island = await db.Islands.SingleOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct); if (island is null) return Results.NotFound();
+        var now = clock.GetUtcNow();
+        if (island.RuntimeState is "running" or "starting" || await db.ServerInstances.AnyAsync(s => s.IslandId == id && s.StoppedAt == null && s.LastHeartbeatAt > now.AddSeconds(-45), ct)) return Results.Conflict(new { error = "island_running" });
+        if (island.Engine == request.Engine) return Results.Ok(new { id, engine = island.Engine });
+        island.Engine = request.Engine; island.UpdatedAt = now; await Audit(db, admin, "island.engine." + request.Engine, "island", id, now, ct); await db.SaveChangesAsync(ct);
+        return Results.Ok(new { id, engine = island.Engine });
+    }
     private static async Task<IResult> SetIslandState(Guid id, string state, HttpContext c, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) { if (!Admin(c, out var admin)) return Results.Forbid(); var island = await db.Islands.SingleOrDefaultAsync(x => x.Id == id && x.DeletedAt == null, ct); if (island is null) return Results.NotFound(); island.RuntimeState = state; island.UpdatedAt = clock.GetUtcNow(); await Audit(db, admin, $"island_{state}", "island", id, island.UpdatedAt, ct); await db.SaveChangesAsync(ct); return Results.Ok(new { island.Id, island.RuntimeState }); }
     private static async Task<IResult> ModerationAsync(HttpContext c, LifeVerseDbContext db, CancellationToken ct) { if (!Admin(c, out _)) return Results.Forbid(); return Results.Ok(await db.SocialReports.AsNoTracking().Where(x => x.Status == "open").OrderBy(x => x.CreatedAt).Take(200).ToListAsync(ct)); }
     private static async Task<IResult> DecideAsync(Guid reportId, AdminDecisionRequest request, HttpContext c, LifeVerseDbContext db, TimeProvider clock, CancellationToken ct) { if (!Admin(c, out var admin)) return Results.Forbid(); if (request.Decision is not ("dismissed" or "actioned" or "escalated")) return Results.BadRequest(); var report = await db.SocialReports.SingleOrDefaultAsync(x => x.Id == reportId, ct); if (report is null) return Results.NotFound(); report.Status = request.Decision; var now = clock.GetUtcNow(); db.ModerationCases.Add(new ModerationCase { Id = Guid.NewGuid(), ReportId = reportId, ReviewerUserId = admin, Decision = request.Decision, Notes = request.Notes[..Math.Min(4000, request.Notes.Length)], EvidenceJson = request.EvidenceJson, CreatedAt = now }); await Audit(db, admin, "moderation_decision", "report", reportId, now, ct); await db.SaveChangesAsync(ct); return Results.NoContent(); }

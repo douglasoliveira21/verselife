@@ -103,7 +103,11 @@ Um defeito do meu código apareceu na comparação: o `Dispose` do `UnityIslandP
 
 O `IslandScripting*.cs` do Godot não depende de engine, então o `Core` o compila direto de `island-server/Scripts` (um `Compile Include` no `.csproj`; uma correção lá vale para os dois servidores). Só duas coisas foram escritas: `ServerConfiguration` (a parte que o código de scripts lê) e `HttpCompat` (sobrecargas do .NET 5+ que faltam no `netstandard2.1`). **Quando o servidor Godot for aposentado, essas fontes precisam ser movidas para o `Core`.** Verificado com Lua real: toque e chat. **Não verificado**: os demais eventos, HUD, mídia, efeitos, pagamentos, NPCs e gestos no servidor (o código é o mesmo do Godot, mas não há teste meu); Lua dentro do player Unity (só o compilador Lua foi autoverificado). **Física de objetos**: veja a seção abaixo.
 
-## Convivência com a API (decisão pendente)
+## Convivência com a API (decidida em 26/11/2026: motor por ilha)
+
+Cada ilha tem um motor (`world.islands.engine`: `godot` ou `unity`). O cliente diz o seu no cabeçalho `X-LifeVerse-Engine`; sem o cabeçalho, conta como `godot`. A API só deixa entrar e viajar para ilhas do mesmo motor (409 `engine_mismatch` com a frase para mostrar). As listas e o lugar inicial seguem o motor, e uma ilha criada pelo cliente Unity já nasce `unity`. Cada supervisor pede só as ilhas do seu motor (`?engine=`). Um administrador troca o motor de uma ilha parada com `PUT /api/v1/admin/islands/{id}/engine`. O passo a passo da produção está em `DEPLOY_UNITY_ISLANDS.md`, provado de ponta a ponta no WSL (Postgres, API, supervisor e servidor Unity para Linux, com o cliente Unity entrando, andando e conversando). O texto abaixo é o histórico de antes da decisão.
+
+### Antes da decisão
 
 A API grava um único `ProtocolVersion` (11) nos bilhetes e o servidor Godot exige igualdade. O servidor Unity fala o Wire 12 com o cliente, mas aceita bilhetes de protocolo 11 (`LIFEVERSE_TICKET_PROTOCOL`, padrão `NetworkProtocol.Version`), então **funciona sem mudar a API**. O custo: nada impede que um cliente Godot receba o endereço de uma ilha Unity (ou o contrário); ele só vê `ProtocolRejected` (a ilha responde com a versão 12). Para escolher o motor por ilha é preciso um campo `engine`/`wireVersion` na ilha e no bilhete. Isso é uma mudança de API e de banco (migração): **não foi feita** e depende de autorização.
 

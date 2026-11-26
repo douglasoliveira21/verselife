@@ -124,16 +124,22 @@ public static class PlayerLocations
     /// Where a person should go when they sign in: the island they were on last, as long as it still exists and they may enter it; otherwise the welcome
     /// island (which is also where every new avatar starts).
     /// </summary>
-    public static async Task<StartPlace> StartAsync(LifeVerseDbContext db, Guid userId, DateTimeOffset now, CancellationToken ct)
+    public static async Task<StartPlace> StartAsync(LifeVerseDbContext db, Guid userId, DateTimeOffset now, CancellationToken ct, string engine = IslandEngines.Godot)
     {
         var last = await db.PlayerLocations.AsNoTracking().SingleOrDefaultAsync(l => l.UserId == userId, ct);
         if (last is not null)
         {
             var island = await db.Islands.AsNoTracking().SingleOrDefaultAsync(i => i.Id == last.IslandId && i.DeletedAt == null, ct);
-            if (island is not null && (island.IsPublic || island.OwnerUserId == userId || await db.IslandPermissions.AnyAsync(p => p.IslandId == island.Id && p.UserId == userId && p.RevokedAt == null && p.Permission == "enter", ct)))
+            if (island is not null && island.Engine == engine && (island.IsPublic || island.OwnerUserId == userId || await db.IslandPermissions.AnyAsync(p => p.IslandId == island.Id && p.UserId == userId && p.RevokedAt == null && p.Permission == "enter", ct)))
                 return new StartPlace(island.Id, island.Name, "last", island.IsWelcome);
         }
         var welcome = await WelcomeIsland.ResolveAsync(db, now, ct);
+        if (welcome.Engine != engine)
+        {
+            // while the welcome island still runs on the other engine, the client starts on the oldest public island of its own (when there is one)
+            var own = await db.Islands.AsNoTracking().Where(i => i.DeletedAt == null && i.IsPublic && !i.AccessClosed && i.Engine == engine).OrderBy(i => i.CreatedAt).FirstOrDefaultAsync(ct);
+            if (own is not null) return new StartPlace(own.Id, own.Name, "engine", false);
+        }
         return new StartPlace(welcome.Id, welcome.Name, "welcome", true);
     }
 }
@@ -145,7 +151,7 @@ public static class WelcomeEndpoints
         var group = endpoints.MapGroup("/api/v1/worlds").WithTags("Worlds").RequireAuthorization();
         group.MapGet("/welcome", async (LifeVerseDbContext db, TimeProvider t, CancellationToken ct) => { var i = await WelcomeIsland.ResolveAsync(db, t.GetUtcNow(), ct); return Results.Ok(new { islandId = i.Id, name = i.Name }); });
         group.MapGet("/me/start", async (HttpContext c, LifeVerseDbContext db, TimeProvider t, CancellationToken ct) =>
-            Guid.TryParse(c.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var me) ? Results.Ok(await PlayerLocations.StartAsync(db, me, t.GetUtcNow(), ct)) : Results.Unauthorized());
+            Guid.TryParse(c.User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var me) ? Results.Ok(await PlayerLocations.StartAsync(db, me, t.GetUtcNow(), ct, IslandEngines.OfClient(c))) : Results.Unauthorized());
         return endpoints;
     }
 }

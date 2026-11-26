@@ -27,7 +27,7 @@ if (engine is not ("godot" or "unity")) throw new InvalidOperationException("SUP
 var launcher = engine == "unity"
     ? SystemProcessLauncher.ForUnity(Optional("SUPERVISOR_UNITY_SERVER_PATH", "/opt/lifeverse-server/LifeVerseServer.x86_64"), Console.WriteLine)
     : new SystemProcessLauncher(Optional("SUPERVISOR_GODOT_PATH", "godot"), Optional("SUPERVISOR_PROJECT_PATH", "/app/island-server"), Console.WriteLine);
-var supervisor = new IslandProcessSupervisor(options, new HttpPendingIslands(http, apiUrl), launcher, () => DateTimeOffset.UtcNow, Log);
+var supervisor = new IslandProcessSupervisor(options, new HttpPendingIslands(http, apiUrl, engine), launcher, () => DateTimeOffset.UtcNow, Log);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };

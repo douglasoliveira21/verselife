@@ -236,6 +236,8 @@ public sealed class Island
     public string RuntimeState { get; set; } = "suspended";
     /// <summary>The island every new avatar arrives on (at most one island is it; see WelcomeIsland).</summary>
     public bool IsWelcome { get; set; }
+    /// <summary>Which island server runs it, and so which client can enter: "godot" (protocol 11) or "unity" (LifeVerse Wire 12). See IslandEngines.</summary>
+    public string Engine { get; set; } = IslandEngines.Godot;
     public long SnapshotVersion { get; set; }
 
     // ---- for sale (null price: not for sale). The whole island, with its land and, when the sale says so, the seller's objects.

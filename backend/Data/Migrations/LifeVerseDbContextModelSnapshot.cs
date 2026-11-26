@@ -2174,6 +2174,14 @@ namespace LifeVerse.Api.Data.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("description");
 
+                    b.Property<string>("Engine")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("godot")
+                        .HasColumnName("engine");
+
                     b.Property<string>("EnvironmentJson")
                         .IsRequired()
                         .HasColumnType("jsonb")

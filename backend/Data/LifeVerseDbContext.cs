@@ -196,6 +196,7 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
             b.HasIndex(x => new { x.IsPublic, x.Category, x.DeletedAt });
             b.HasIndex(x => x.Slug).IsUnique().HasFilter("deleted_at IS NULL");
             b.HasIndex(x => x.IsWelcome).IsUnique().HasFilter("is_welcome = true AND deleted_at IS NULL");
+            b.Property(x => x.Engine).HasMaxLength(16).HasDefaultValue(IslandEngines.Godot);
             b.HasIndex(x => x.OwnerUserId);
             b.HasOne<User>().WithMany().HasForeignKey(x => x.OwnerUserId).OnDelete(DeleteBehavior.Restrict);
         });
