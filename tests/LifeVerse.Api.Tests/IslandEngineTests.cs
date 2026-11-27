@@ -53,6 +53,13 @@ public sealed class IslandEngineTests : IDisposable
         var unity = await PlayerLocations.StartAsync(_db, owner.Id, _now, default, IslandEngines.Unity); Assert.Equal(plaza.Id, unity.IslandId); Assert.Equal("welcome", unity.Reason);
     }
 
+    [Fact]
+    public async Task TheIslandTheServerMakesRunsOnUnity()
+    {
+        var made = await WelcomeIsland.ResolveAsync(_db, _now, default);
+        Assert.Equal(IslandEngines.Unity, made.Engine);
+    }
+
     private sealed class Recorder : HttpMessageHandler
     {
         public string? Url;

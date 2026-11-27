@@ -11,6 +11,9 @@ public static class IslandEngines
 {
     public const string Godot = "godot", Unity = "unity", Header = "X-LifeVerse-Engine";
 
+    /// <summary>The engine of the islands the server makes by itself (the official ones and the welcome island): the game now runs on Unity. An island a person creates takes the engine of their client.</summary>
+    public const string ForNewIslands = Unity;
+
     public static bool IsValid(string? engine) => engine is Godot or Unity;
 
     /// <summary>The engine a word names ("godot" when it is missing or unknown).</summary>

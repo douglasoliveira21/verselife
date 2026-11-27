@@ -80,7 +80,7 @@ public static class WelcomeIsland
         var slug = DefaultSlug; for (var n = 2; await db.Islands.AnyAsync(i => i.Slug == slug && i.DeletedAt == null, ct); n++) slug = $"{DefaultSlug}-{n}";
         var island = new Island
         {
-            Id = Guid.NewGuid(), OwnerUserId = owner.Id, Name = DefaultName, Slug = slug, IsPublic = true, Category = "social", Size = 256, MaxPlayers = 100, IsWelcome = true,
+            Id = Guid.NewGuid(), OwnerUserId = owner.Id, Name = DefaultName, Slug = slug, IsPublic = true, Category = "social", Size = 256, MaxPlayers = 100, IsWelcome = true, Engine = IslandEngines.ForNewIslands,
             Description = "É aqui que todo avatar novo chega. Passeie, conheça outras pessoas e use o mapa e a busca para visitar as outras ilhas.", CreatedAt = now, UpdatedAt = now
         };
         db.Islands.Add(island); await db.SaveChangesAsync(ct); return island;
