@@ -11,6 +11,10 @@ public static class IdentityEndpoints
         group.MapPost("/login", LoginAsync).RequireRateLimiting("auth").Produces<AuthResponse>().ProducesValidationProblem().ProducesProblem(401);
         group.MapPost("/refresh", RefreshAsync).RequireRateLimiting("auth-refresh").Produces<AuthResponse>().ProducesProblem(401);
         group.MapPost("/logout", LogoutAsync).RequireRateLimiting("auth-refresh").Produces(204);
+        var sessions = group.MapGroup("/sessions").RequireAuthorization();
+        sessions.MapGet("", AccountSessions.ListAsync).Produces<List<OpenSession>>().ProducesProblem(401);
+        sessions.MapDelete("", AccountSessions.EndOthersAsync).ProducesProblem(401);
+        sessions.MapDelete("/{id:guid}", AccountSessions.EndOneAsync).Produces(204).Produces(404).ProducesProblem(401);
         return endpoints;
     }
 

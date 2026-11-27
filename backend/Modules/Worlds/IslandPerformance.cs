@@ -49,7 +49,7 @@ public static class IslandPerformanceManagement
         var objectNames = await db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.DeletedAt == null && scriptObjectIds.Contains(o.Id)).Select(o => new { o.Id, o.Name }).ToDictionaryAsync(o => o.Id, o => o.Name, ct);
         var scripts = executions.GroupBy(e => e.ScriptId).Select(g => { var s = scriptRows.First(x => x.Id == g.Key); return new { scriptId = s.Id, objectId = s.ObjectId, name = objectNames.GetValueOrDefault(s.ObjectId, "objeto"), script = s.Name, runs = g.Count(), instructions = g.Sum(e => (long)e.InstructionCount), errors = g.Count(e => e.Error.Length > 0), lastRunAt = g.Max(e => e.CreatedAt), status = s.Status }; })
             .OrderByDescending(x => x.instructions).Take(10).ToList();
-        var heavy = await db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.DeletedAt == null).OrderByDescending(o => o.Cost).ThenBy(o => o.Name).Take(10).Select(o => new { objectId = o.Id, name = o.Name, ownerUserId = o.OwnerUserId, cost = o.Cost, physical = o.PhysicsJson.Contains("\"physical\"") }).ToListAsync(ct);
+        var heavy = await db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.DeletedAt == null).OrderByDescending(o => o.Cost).ThenBy(o => o.Name).Take(10).Select(o => new { objectId = o.Id, name = o.Name, ownerUserId = o.OwnerUserId, cost = o.Cost, physical = JsonColumn.Text(o.PhysicsJson).Contains("\"physical\"") }).ToListAsync(ct);
         var owners = new Dictionary<Guid, string>(); foreach (var id in heavy.Select(h => h.ownerUserId).Distinct()) owners[id] = await IslandAudit.NameAsync(db, id, ct);
 
         return Results.Ok(new

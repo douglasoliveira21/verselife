@@ -149,7 +149,7 @@ public static class SearchIndexer
     }
 
     /// <summary>A person can be found when they are active, not the system account, and have not made their profile private or asked not to be found.</summary>
-    public static bool Discoverable(User u) => u.DeletedAt == null && u.Status == "active" && u.PasswordHash != "!" && !u.PrivacyJson.Contains("\"profile\":\"private\"", StringComparison.Ordinal) && !u.PrivacyJson.Contains("\"searchable\":\"no\"", StringComparison.Ordinal);
+    public static bool Discoverable(User u) => u.DeletedAt == null && u.Status == "active" && u.PasswordHash != "!" && !Users.ProfileService.PrivacyOf(u.PrivacyJson).ProfilePrivate && Users.ProfileService.PrivacyValue(u.PrivacyJson, "searchable") != "no";
 
     private static async Task<int> ApplyGroupsAsync(LifeVerseDbContext db, List<Guid> ids, DateTimeOffset now, CancellationToken ct)
     {

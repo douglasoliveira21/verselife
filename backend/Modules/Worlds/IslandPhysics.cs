@@ -45,7 +45,7 @@ public static class IslandPhysicsManagement
     {
         var now = clock.GetUtcNow(); var (island, _, refusal) = await AdminOf(islandId, context, db, now, ct); if (island is null) return refusal!;
         var live = db.BuildObjects.AsNoTracking().Where(o => o.IslandId == islandId && o.DeletedAt == null);
-        var simulated = live.Where(o => o.FrozenPhysicsJson != null || o.PhysicsJson.Contains("\"physical\""));
+        var simulated = live.Where(o => o.FrozenPhysicsJson != null || JsonColumn.Text(o.PhysicsJson).Contains("\"physical\""));
         var active = await simulated.CountAsync(o => o.FrozenPhysicsJson == null, ct); var frozen = await simulated.CountAsync(o => o.FrozenPhysicsJson != null, ct);
         var instance = await ServerChannel.RunningAsync(db, islandId, now, ct); var report = instance is null ? null : ServerChannel.ReadReport(instance);
         var fresh = instance?.ReportedAt is { } reported && now - reported < ServerChannel.FreshFor && report is not null;
@@ -74,7 +74,7 @@ public static class IslandPhysicsManagement
         var ids = (request.ObjectIds ?? []).Distinct().Take(MaxPerCall).ToList();
         if (!request.All && ids.Count == 0) return ([], Results.ValidationProblem(new Dictionary<string, string[]> { ["objectIds"] = ["Escolha ao menos um objeto."] }));
         var query = db.BuildObjects.Where(o => o.IslandId == islandId && o.DeletedAt == null);
-        query = wantFrozen ? query.Where(o => o.FrozenPhysicsJson != null) : query.Where(o => o.FrozenPhysicsJson == null && o.PhysicsJson.Contains("\"physical\""));
+        query = wantFrozen ? query.Where(o => o.FrozenPhysicsJson != null) : query.Where(o => o.FrozenPhysicsJson == null && JsonColumn.Text(o.PhysicsJson).Contains("\"physical\""));
         if (!request.All) query = query.Where(o => ids.Contains(o.Id));
         return (await query.OrderBy(o => o.CreatedAt).Take(MaxPerCall).ToListAsync(ct), null);
     }

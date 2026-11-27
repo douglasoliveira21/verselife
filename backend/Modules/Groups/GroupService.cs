@@ -344,8 +344,10 @@ public static partial class GroupService
             if (!ctx.Roles.TryGetValue(wanted, out var offered) || offered.SystemKey == "owner") return GroupResult.Fail("bad_role");
             if (offered.SystemKey != "member" && (!GroupRules.Has(ctx.Actor, GroupPermissions.AssignRoles) || !GroupRules.CanManageRank(ctx.Actor, offered.Rank))) return GroupResult.Fail("outranked"); // nobody hands out a cargo they could not give
         }
-        if (!await db.Users.AnyAsync(u => u.Id == userId && u.DeletedAt == null, ct)) return GroupResult.Fail("not_found");
+        var invitedPrivacy = await db.Users.AsNoTracking().Where(u => u.Id == userId && u.DeletedAt == null).Select(u => u.PrivacyJson).SingleOrDefaultAsync(ct);
+        if (invitedPrivacy is null) return GroupResult.Fail("not_found");
         if (await db.GroupMembers.AnyAsync(m => m.GroupId == groupId && m.UserId == userId, ct)) return GroupResult.Fail("already_member");
+        if (!await Users.PrivacyChoices.AllowsAsync(db, Users.PrivacyChoices.Read(invitedPrivacy).GroupInvites, userId, me, ct)) return GroupResult.Fail("invites_closed");
         if (await BannedAsync(db, groupId, userId, now, ct)) return GroupResult.Fail("banned");
         if (await db.GroupInvites.AnyAsync(i => i.GroupId == groupId && i.InvitedUserId == userId && i.Status == "pending", ct)) return GroupResult.Done(new { invited = true });
         if (await db.GroupInvites.CountAsync(i => i.GroupId == groupId && i.Status == "pending", ct) >= GroupRules.MaxPendingInvites) return GroupResult.Fail("too_many_invites");

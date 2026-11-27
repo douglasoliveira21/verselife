@@ -153,6 +153,7 @@ public static class GroupEndpoints
     public static IResult Answer(GroupResult result, bool created = false) => result.Ok ? created ? Results.Created(string.Empty, result.Data) : Results.Ok(result.Data ?? new { }) : result.Error switch
     {
         "not_found" => Results.NotFound(new { error = result.Error }),
+        "invites_closed" => Results.Json(new { error = result.Error, message = "Essa pessoa não aceita convites de grupo de você (privacidade)." }, statusCode: 403),
         "forbidden" or "outranked" or "cannot_grant" or "muted" => Results.Json(new { error = result.Error }, statusCode: 403),
         "rate_limited" => Results.Json(new { error = result.Error }, statusCode: 429),
         var e when e is not null && (e.StartsWith("bad_", StringComparison.Ordinal) || e is "confirmation_needed") => Results.BadRequest(new { error = e }),

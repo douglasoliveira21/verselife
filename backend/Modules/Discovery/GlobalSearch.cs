@@ -81,7 +81,13 @@ public static class GlobalSearch
 
         var islands = Ids(SearchKinds.Island); if (islands.Count > 0) await Keep(SearchKinds.Island, db.Islands.AsNoTracking().Where(i => islands.Contains(i.Id) && i.IsPublic && i.ShowInSearch && i.DeletedAt == null).Select(i => i.Id));
         var parcels = Ids(SearchKinds.Parcel); if (parcels.Count > 0) await Keep(SearchKinds.Parcel, db.IslandParcels.AsNoTracking().Where(p => parcels.Contains(p.Id) && p.DeletedAt == null && p.AccessMode == "public" && open.Contains(p.IslandId)).Select(p => p.Id));
-        var people = Ids(SearchKinds.Person); if (people.Count > 0) await Keep(SearchKinds.Person, db.Users.AsNoTracking().Where(u => people.Contains(u.Id) && u.Id != viewer && u.DeletedAt == null && u.Status == "active" && u.PasswordHash != "!" && !u.PrivacyJson.Contains("\"profile\":\"private\"") && !u.PrivacyJson.Contains("\"searchable\":\"no\"")).Select(u => u.Id));
+        var people = Ids(SearchKinds.Person);
+        if (people.Count > 0)
+        {
+            // privacy is a JSON document: it is read here, with the same rule that decides what is indexed
+            var shown = (await db.Users.AsNoTracking().Where(u => people.Contains(u.Id) && u.Id != viewer).ToListAsync(ct)).Where(SearchIndexer.Discoverable).Select(u => u.Id).ToHashSet();
+            foreach (var e in found.Where(e => e.Kind == SearchKinds.Person && shown.Contains(e.RefId))) ok.Add(e.Id);
+        }
         var groups = Ids(SearchKinds.Group); if (groups.Count > 0) await Keep(SearchKinds.Group, db.SocialGroups.AsNoTracking().Where(g => groups.Contains(g.Id) && g.DeletedAt == null && g.Privacy == "public").Select(g => g.Id));
         var stores = Ids(SearchKinds.Store); if (stores.Count > 0) await Keep(SearchKinds.Store, db.WorldStores.AsNoTracking().Where(s => stores.Contains(s.Id) && s.DeletedAt == null && open.Contains(s.IslandId) && db.MarketplaceProducts.Any(p => p.Id == s.ProductId && p.Status == "active")).Select(s => s.Id).Union(db.Storefronts.AsNoTracking().Where(f => stores.Contains(f.Id) && f.DeletedAt == null && f.IsOpen && db.MarketplaceProducts.Any(p => p.SellerUserId == f.OwnerUserId && p.GroupId == f.GroupId && p.Status == "active")).Select(f => f.Id)));
         var products = Ids(SearchKinds.Product); if (products.Count > 0) await Keep(SearchKinds.Product, db.MarketplaceProducts.AsNoTracking().Where(p => products.Contains(p.Id) && p.Status == "active").Select(p => p.Id));

@@ -62,7 +62,7 @@ public static class InventoryIntegrity
 
         // 6. something that cannot be copied, in more than one object of its holder
         var uses = new Dictionary<(Guid Owner, Guid Asset), List<Guid>>();
-        foreach (var o in await db.BuildObjects.AsNoTracking().Where(o => o.DeletedAt == null && (user == null || o.OwnerUserId == user) && (o.PrimitiveType == "mesh" || o.ContentJson.Length > 2)).Select(o => new { o.Id, o.OwnerUserId, o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson }).ToListAsync(ct))
+        foreach (var o in await db.BuildObjects.AsNoTracking().Where(o => o.DeletedAt == null && (user == null || o.OwnerUserId == user) && (o.PrimitiveType == "mesh" || JsonColumn.Text(o.ContentJson).Length > 2)).Select(o => new { o.Id, o.OwnerUserId, o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson }).ToListAsync(ct))
             foreach (var single in ObjectRights.PartsOf(o.PrimitiveType, o.GeometryJson, o.MaterialJson, o.ContentJson).Singles) { if (!uses.TryGetValue((o.OwnerUserId, single), out var list)) uses[(o.OwnerUserId, single)] = list = []; list.Add(o.Id); }
         inspected += uses.Count;
         foreach (var ((owner, asset), objects) in uses.Where(u => u.Value.Count > 1))

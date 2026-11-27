@@ -111,9 +111,12 @@ public sealed class LifeVerseDbContext(DbContextOptions<LifeVerseDbContext> opti
     public DbSet<SocialReport> SocialReports => Set<SocialReport>();
     public DbSet<RadioStation> RadioStations => Set<RadioStation>();
 
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) => optionsBuilder.AddInterceptors(UtcParameters.Instance);
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("public");
+        JsonColumn.Register(modelBuilder);
 
         modelBuilder.Entity<User>(b =>
         {

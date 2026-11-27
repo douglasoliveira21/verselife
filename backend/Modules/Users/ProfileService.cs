@@ -25,6 +25,20 @@ public static class ProfileService
 
     public sealed record Privacy(bool ProfilePrivate, bool GroupsHidden, bool MarriageHidden, bool PresencePrivate, bool ParcelsHidden = false, bool FavoritesShown = false, bool BirthdayHidden = false, bool StatsHidden = false, bool AchievementsHidden = false);
 
+    /// <summary>One value of the privacy document ("messages", "searchable"...), or empty when it is not there. Always read it this way: the database does not keep the spacing that was written.</summary>
+    public static string PrivacyValue(string? json, string key)
+    {
+        try { return JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json) is JsonObject root && root[key] is JsonValue value && value.TryGetValue<string>(out var text) ? text : string.Empty; }
+        catch (Exception e) when (e is JsonException or ArgumentException) { return string.Empty; }
+    }
+
+    /// <summary>What may be stored as the privacy document: a JSON object, each key once.</summary>
+    public static bool IsPrivacyDocument(string json)
+    {
+        try { return JsonNode.Parse(json) is JsonObject root && root.Count >= 0; }
+        catch (Exception e) when (e is JsonException or ArgumentException) { return false; }
+    }
+
     public static Privacy PrivacyOf(string? json)
     {
         try
@@ -33,7 +47,7 @@ public static class ProfileService
             string Text(string key) => root[key] is JsonValue v && v.TryGetValue<string>(out var s) ? s : string.Empty;
             return new Privacy(Text("profile") == "private", Text("groups") == "hidden", Text("marriage") == "hidden", Text("presence") == "private", Text("parcels") == "hidden", Text("favorites") == "shown", Text("birthday") == "hidden", Text("stats") == "hidden", Text("achievements") == "hidden");
         }
-        catch (JsonException) { return new Privacy(false, false, false, false); }
+        catch (Exception e) when (e is JsonException or ArgumentException) { return new Privacy(false, false, false, false); }
     }
 
     private static string WithPrivacy(string? json, ProfileUpdate update)
@@ -77,7 +91,7 @@ public static class ProfileService
         {
             id = user.Id, username = user.Username, displayName = display, isSelf = self, privateProfile = !open,
             joinedAt = CreatedOf(user), accountType = user.AccountType, donorSince = open ? user.DonorSince : null,
-            presence = self || !privacy.PresencePrivate ? user.PresenceStatus : "offline",
+            presence = await PrivacyChoices.SeesPresenceAsync(db, user, viewer, ct) ? user.PresenceStatus : "offline",
             bio = open ? user.Bio : string.Empty, firstLifeBio = open ? user.FirstLifeBio : string.Empty, interests = open ? user.Interests : string.Empty,
             hasPhoto = open && (user.ProfilePhotoAssetId is not null || !string.IsNullOrWhiteSpace(user.ProfilePhotoUrl)), photoUrl = open ? user.ProfilePhotoUrl : null,
             birthday = open && (self || !privacy.BirthdayHidden) ? BirthdayText(user) : null, characterAgeYears = open ? Math.Max(0, (int)((now - CreatedOf(user)).TotalDays / 365.25)) : (int?)null,

@@ -74,7 +74,8 @@ public static partial class ScriptingEndpoints
         if (auth is null) return Results.Json(new ScriptPaymentResult("rejected", "not_authorized"), statusCode: StatusCodes.Status403Forbidden);
         if (call.Amount > auth.MaxPerPayment) return Results.Json(new ScriptPaymentResult("rejected", "over_payment_limit"), statusCode: StatusCodes.Status409Conflict);
         var start = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
-        var today = await db.LedgerTransactions.Where(x => x.Type == "script_payout" && x.InitiatorUserId == target.OwnerUserId && x.CreatedAt >= start && x.MetadataJson.Contains(call.ScriptId.ToString())).SumAsync(x => (long?)x.Amount, ct) ?? 0;
+        var scriptText = call.ScriptId.ToString();
+        var today = await db.LedgerTransactions.Where(x => x.Type == "script_payout" && x.InitiatorUserId == target.OwnerUserId && x.CreatedAt >= start && JsonColumn.Text(x.MetadataJson).Contains(scriptText)).SumAsync(x => (long?)x.Amount, ct) ?? 0;
         if (today + call.Amount > auth.MaxPerDay) return Results.Json(new ScriptPaymentResult("rejected", "over_daily_limit"), statusCode: StatusCodes.Status409Conflict);
         if (!await db.Users.AnyAsync(x => x.Id == call.RecipientUserId && x.DeletedAt == null, ct)) return Results.NotFound();
         var owner = await EconomyEndpoints.EnsureWallet(db, target.OwnerUserId, ct); var receiver = await EconomyEndpoints.EnsureWallet(db, call.RecipientUserId, ct);
