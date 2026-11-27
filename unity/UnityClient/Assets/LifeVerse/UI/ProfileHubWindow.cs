@@ -62,10 +62,32 @@ namespace LifeVerse.Unity.UI
             Line("No LifeVerse desde " + When(Date(p, "joinedAt")) + (Has(p, "characterAgeYears") ? " · " + I(p, "characterAgeYears") + " ano(s) de personagem" : "") + (S(p, "birthday").Length > 0 ? " · aniversário " + S(p, "birthday") : "") + (Flag(p, "married") ? " · casado(a)" : ""), "lv-small", "lv-muted");
             if (S(p, "firstLifeBio").Length > 0) { Title("Fora do jogo"); Line(S(p, "firstLifeBio")); } if (S(p, "interests").Length > 0) { Title("Interesses"); Line(S(p, "interests")); }
             if (!IsSelf) return;
+            Title("Foto do perfil"); Line((Flag(p, "hasPhoto") ? "Troque a sua foto." : "Você ainda não tem foto.") + " Ela aparece no perfil e na busca (se o perfil não for privado). " + PictureChooser.Formats, "lv-small", "lv-muted");
+            Buttons(Btn("Enviar uma foto do computador…", () => PictureChooser.FromComputer(_c, "Escolha a foto do perfil", UsePhoto, why => Say(why, true)), "lv-btn-primary"),
+                Btn("Escolher uma foto do inventário…", () => PictureChooser.FromInventory(_c, "Foto do perfil", UsePhoto)));
             Title("Editar"); var bio = Field("Sobre você", S(p, "bio"), 1000); var outside = Field("Fora do jogo", S(p, "firstLifeBio"), 1000); var interests = Field("Interesses", S(p, "interests"), 300);
             var settings = Obj(p, "settings"); var privateProfile = Check("Perfil privado", Flag(settings, "privateProfile")); var hideStats = Check("Esconder as estatísticas", Flag(settings, "hideStats")); var hideAchievements = Check("Esconder as conquistas", Flag(settings, "hideAchievements")); var showFavorites = Check("Mostrar os favoritos", Flag(settings, "showFavorites"));
             Buttons(Btn("Salvar o perfil", () => Send("PUT", Me + "/details", new { bio = bio.value, firstLifeBio = outside.value, interests = interests.value, privateProfile = privateProfile.value, hideStats = hideStats.value, hideAchievements = hideAchievements.value, showFavorites = showFavorites.value }, "Perfil salvo.", () => Show("sobre")), "lv-btn-primary"));
         }
+
+        /// <summary>Makes an image of the person their photo: it goes into the gallery (the first one becomes the photo by itself) and is then made the main one.</summary>
+        public void UsePhoto(Guid asset)
+        {
+            var before = new HashSet<Guid>(Arr(_profile, "gallery").Select(g => G(g, "id")));
+            Say("Guardando a foto…", false);
+            Send("POST", Me + "/gallery", new { assetId = asset }, null, () => this.Then(_c.Api.ApiAsync("GET", U + "/profile/full"), r =>
+            {
+                var added = Guid.Empty;
+                if (r.Status == 200)
+                    try { using var d = JsonDocument.Parse(r.Body); foreach (var g in Arr(d.RootElement, "gallery")) if (!before.Contains(G(g, "id"))) added = G(g, "id"); }
+                    catch (JsonException) { }
+                if (added == Guid.Empty) { PicturesChanged("sobre"); return; }
+                Send("PUT", Me + "/gallery/" + added + "/main", "{}", "Foto do perfil mudada.", () => PicturesChanged("sobre"));
+            }));
+        }
+
+        /// <summary>Reads the page again, fetching the pictures anew (the photo and the cover keep the same address when they change).</summary>
+        private void PicturesChanged(string section) { _images.Clear(); GlobalSearchWindow.ForgetPictures(); Show(section); }
 
         // ---- Feed ----
 
@@ -98,9 +120,10 @@ namespace LifeVerse.Unity.UI
             var gallery = Arr(p, "gallery"); var order = gallery.Select(g => G(g, "id")).ToList();
             if (IsSelf)
             {
-                Buttons(Btn("Pôr uma imagem do inventário…", () => new TexturePickerWindow(_c, (builtin, id) => { if (builtin) { Say("Escolha uma imagem do inventário (não uma do sistema).", true); return; } Send("POST", Me + "/gallery", new { assetId = Guid.Parse(id) }, "Imagem posta na galeria.", () => Show("galeria")); }, "Imagem para a galeria").Open(), "lv-btn-primary"),
-                    Btn("Escolher a capa…", () => new TexturePickerWindow(_c, (builtin, id) => { if (builtin) return; Send("PUT", Me + "/cover", new { assetId = Guid.Parse(id) }, "Capa salva.", () => Show("galeria")); }, "Capa do perfil").Open()),
-                    Btn("Tirar a capa", () => Send("PUT", Me + "/cover", new { assetId = (Guid?)null }, "Capa retirada.", () => Show("galeria"))));
+                Buttons(Btn("Enviar uma imagem do computador…", () => PictureChooser.FromComputer(_c, "Imagem para a galeria", asset => Send("POST", Me + "/gallery", new { assetId = asset }, "Imagem posta na galeria.", () => PicturesChanged("galeria")), why => Say(why, true)), "lv-btn-primary"),
+                    Btn("Pôr uma imagem do inventário…", () => new TexturePickerWindow(_c, (builtin, id) => { if (builtin) { Say("Escolha uma imagem do inventário (não uma do sistema).", true); return; } Send("POST", Me + "/gallery", new { assetId = Guid.Parse(id) }, "Imagem posta na galeria.", () => Show("galeria")); }, "Imagem para a galeria").Open(), "lv-btn-primary"),
+                    Btn("Escolher a capa…", () => new TexturePickerWindow(_c, (builtin, id) => { if (builtin) return; Send("PUT", Me + "/cover", new { assetId = Guid.Parse(id) }, "Capa salva.", () => PicturesChanged("galeria")); }, "Capa do perfil").Open()),
+                    Btn("Tirar a capa", () => Send("PUT", Me + "/cover", new { assetId = (Guid?)null }, "Capa retirada.", () => PicturesChanged("galeria"))));
             }
             foreach (var g in gallery)
             {
@@ -108,9 +131,9 @@ namespace LifeVerse.Unity.UI
                 var cells = new List<VisualElement> { UiKit.Text(Flag(g, "main") ? "foto do perfil" : "", "lv-small", "lv-accent"), UiKit.Spacer() };
                 if (IsSelf)
                 {
-                    if (!Flag(g, "main")) cells.Add(Btn("Usar como foto", () => Send("PUT", Me + "/gallery/" + id + "/main", "{}", "Foto do perfil mudada.", () => Show("galeria"))));
+                    if (!Flag(g, "main")) cells.Add(Btn("Usar como foto", () => Send("PUT", Me + "/gallery/" + id + "/main", "{}", "Foto do perfil mudada.", () => PicturesChanged("galeria"))));
                     cells.Add(Btn("Subir", () => Send("PUT", Me + "/gallery/order", new { ids = Moved(order, id, -1) }, null, () => Show("galeria")))); cells.Add(Btn("Descer", () => Send("PUT", Me + "/gallery/order", new { ids = Moved(order, id, 1) }, null, () => Show("galeria"))));
-                    cells.Add(Sure("Tirar da galeria", () => "Tirar esta imagem da galeria?", () => Send("DELETE", Me + "/gallery/" + id, null, "Imagem tirada.", () => Show("galeria"))));
+                    cells.Add(Sure("Tirar da galeria", () => "Tirar esta imagem da galeria?", () => Send("DELETE", Me + "/gallery/" + id, null, "Imagem tirada.", () => PicturesChanged("galeria"))));
                 }
                 Row(id, cells.ToArray());
             }

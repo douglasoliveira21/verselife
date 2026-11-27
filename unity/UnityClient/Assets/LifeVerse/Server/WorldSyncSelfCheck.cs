@@ -208,6 +208,21 @@ namespace LifeVerse.Unity.Server
                 input.Run = false; input.Forward = 0f; input.Right = 0f; local.enabled = true; yield return new WaitForSeconds(1.5f);
             }
 
+            // walking to a point (a double click on the ground): the person gets there and stops, the island agrees, and walking by hand ends it
+            {
+                input = new PlayerInputSample(); yield return new WaitForSeconds(.4f);
+                var home = local.GamePosition; var goal = home + new Vector3(3f, 0f, 2f);
+                Expect(local.WalkTo(goal), "andar até um ponto é aceito de pé");
+                yield return Until(() => !local.WalkTarget.HasValue, "chegar ao ponto");
+                yield return new WaitForSeconds(.8f);
+                var off = Vector2.Distance(new Vector2(local.GamePosition.x, local.GamePosition.z), new Vector2(goal.x, goal.z));
+                Expect(off < .9f && viewer.Views.TryGetSnapshot(peer, out seen) && seen.Motion == NetworkMotionState.Idle && Vector3.Distance(new Vector3(seen.X, seen.Y, seen.Z), local.GamePosition) < .6f, "chegou ao ponto e parou, também para a ilha: faltaram " + off.ToString("F2") + " m"); _checks++;
+                Expect(local.WalkTo(home), "voltar andando"); yield return Until(() => !local.WalkTarget.HasValue, "voltar ao ponto de partida"); yield return new WaitForSeconds(.5f);
+                local.WalkTo(goal); yield return new WaitForSeconds(.2f); input.Forward = 1f; yield return new WaitForSeconds(.15f);
+                Expect(!local.WalkTarget.HasValue, "andar com as teclas cancela a caminhada até o ponto"); _checks++;
+                input = new PlayerInputSample(); yield return new WaitForSeconds(.6f);
+            }
+
             // jumping: up about 1.4 m and back to the ground
             var ground = local.GamePosition.y; var peak = ground; input.Jump = true; var jumpTime = 0f;
             while (jumpTime < 1.6f) { jumpTime += Time.deltaTime; if (jumpTime > .08f) input.Jump = false; peak = Mathf.Max(peak, local.GamePosition.y); yield return null; }
@@ -515,6 +530,104 @@ namespace LifeVerse.Unity.Server
             yield return Until(() => !app.LoginMusic.isPlaying, "a música da entrada sumir ao entrar no mundo", 5f); _checks++;
             Expect(app.Client.Authenticated && app.Hud.Visible && app.Settings.LastLogin == "dono" && System.IO.File.ReadAllText(settingsFile).Contains("\"LastLogin\": \"dono\""), "entrou pela tela: HUD aberto, usuário lembrado e salvo"); _checks++;
             yield return Until(() => app.Player != null && app.Player.Spawned, "o jogador do jogo nascer");
+            // what the former client had and this one got back: walking to a point, the camera behind again, the welcome island, one's own sky, the first steps and the preview of items
+            {
+                Expect(app.Welcome == null, "o guia não abre sozinho nas verificações (só no jogo que a pessoa abre)");
+                var newFeet = app.Player.GamePosition; var newGoal = new Vector3(newFeet.x + 3f, newFeet.y, newFeet.z + 3f);
+                app.Follow.ZoomTarget = Vector3.zero; app.Follow.DoubleClick(new Ray(GameSpace.ToUnity(newGoal.x, newFeet.y + 40f, newGoal.z), Vector3.down));
+                Expect(app.Follow.ZoomTarget == null && app.Player.WalkTarget is { } to && Vector2.Distance(new Vector2(to.x, to.z), new Vector2(newGoal.x, newGoal.z)) < .5f, "o duplo clique no chão manda andar até o ponto: " + app.Player.WalkTarget); _checks++;
+                app.Player.StopWalking();
+                app.Follow.Yaw = app.Player.HeadingDegrees + 120f; app.Follow.Distance = 11f; app.Follow.ZoomTarget = Vector3.zero; app.ResetCamera();
+                Expect(Mathf.Abs(Mathf.DeltaAngle(app.Follow.Yaw, app.Player.HeadingDegrees)) < .5f && app.Follow.ZoomTarget == null && Mathf.Abs(app.Follow.Distance - app.Store.Float("camera.default_distance")) < .01f, "redefinir a câmera a põe atrás da pessoa"); _checks++;
+                stub.Routes["GET /api/v1/worlds/welcome"] = "{\"islandId\":\"" + app.Island + "\",\"name\":\"Boas-vindas\"}"; app.GoToWelcome();
+                yield return Until(() => { lock (stub.Requests) return stub.Requests.Contains("GET /api/v1/worlds/welcome"); }, "o jogo perguntar pela Ilha de Boas-vindas"); yield return new WaitForSeconds(.3f); Expect(!app.Travelling, "já estando nela, não viaja"); _checks++;
+                var newSky = new LifeVerse.Unity.UI.LocalSkyWindow(app.Ui, () => app.Client.Environment); newSky.Open(); newSky.ChooseHour(2); newSky.ChooseWeather(5);
+                Expect(Mathf.Approximately(app.Client.Environment.HourShown, 12f) && app.Client.Environment.WeatherShown == "fog", "a hora e o clima escolhidos valem na tela, por cima dos da ilha"); _checks++; yield return new WaitForSeconds(1.5f); yield return Snap("ui-local-sky");
+                newSky.ChooseHour(0); newSky.ChooseWeather(0); Expect(app.Client.Environment.LocalHour == null && app.Client.Environment.LocalWeather == null, "\"Da ilha\" devolve o céu da ilha"); newSky.Close();
+                app.Settings.WelcomeDone = false; var newGuide = app.OpenWelcome(); yield return new WaitForSeconds(.2f); newGuide.Close(); Expect(!app.Settings.WelcomeDone, "fechar no começo deixa o guia voltar");
+                newGuide = app.OpenWelcome(); yield return Snap("ui-welcome"); for (var i = 0; i < newGuide.PageCount; i++) newGuide.Next();
+                Expect(app.Settings.WelcomeDone && System.IO.File.ReadAllText(settingsFile).Contains("\"WelcomeDone\": true"), "lido até o fim, o guia não abre mais sozinho"); _checks++;
+                var newPicture = Guid.NewGuid(); var newShape = Guid.NewGuid(); var newTune = Guid.NewGuid(); var newDance = Guid.NewGuid(); var newHouse = Guid.NewGuid();
+                stub.Binary["/api/v1/assets/" + newPicture + "/download"] = TestAssets.Png(new Color32(30, 200, 90, 255)); stub.Binary["/api/v1/assets/" + newShape + "/download"] = TestAssets.Glb(); stub.Binary["/api/v1/assets/" + newTune + "/download"] = WavBytes(.6f, 440f); stub.Binary["/api/v1/assets/" + newDance + "/download"] = Resources.Load<TextAsset>("Animations/idle_animation").bytes;
+                stub.Routes["GET /api/v1/inventory/items/" + newHouse + "/contents"] = "{\"objects\":2,\"linksets\":1,\"withScripts\":1,\"withAnimations\":0,\"parts\":[{\"index\":0,\"name\":\"Base\",\"shape\":\"cube\",\"parent\":null,\"scripts\":1,\"animations\":0,\"otherContent\":0},{\"index\":1,\"name\":\"Telhado\",\"shape\":\"cone\",\"parent\":0,\"scripts\":0,\"animations\":0,\"otherContent\":0}],\"assets\":[{\"name\":\"Telha\",\"role\":\"texture\",\"held\":false}],\"missing\":1}";
+                LifeVerse.Unity.UI.ItemPreviewWindow Look(Guid asset, string category, string mime) { var w = new LifeVerse.Unity.UI.ItemPreviewWindow(app.Context, newHouse, asset, "Item " + category, category, mime, 1000); w.Open(); return w; }
+                var newLook = Look(newPicture, "textures", "image/png"); yield return Until(() => newLook.Loaded || newLook.Problem.Length > 0, "a prévia da textura"); Expect(newLook.Loaded, "a textura aparece: " + newLook.Problem); _checks++; newLook.Close();
+                newLook = Look(newShape, "models", "model/gltf-binary"); yield return Until(() => newLook.Loaded || newLook.Problem.Length > 0, "a prévia do modelo", 15f); Expect(newLook.Loaded && newLook.Info.Contains("triângulos"), "o modelo gira na prévia: " + newLook.Problem + " " + newLook.Info); _checks++; yield return Snap("ui-item-model"); newLook.Close();
+                newLook = Look(newTune, "sounds", "audio/wav"); yield return Until(() => newLook.Loaded || newLook.Problem.Length > 0, "a prévia do som"); Expect(newLook.Loaded && Mathf.Abs(newLook.Seconds - .6f) < .05f, "o som pode ser tocado: " + newLook.Problem + " " + newLook.Seconds); _checks++; newLook.Close();
+                newLook = Look(newDance, "animations", "model/gltf-binary"); yield return Until(() => newLook.Loaded || newLook.Problem.Length > 0, "a prévia da animação"); Expect(newLook.Loaded && newLook.Clips.Count > 0, "a animação toca no esqueleto: " + newLook.Problem); _checks++; yield return new WaitForSeconds(.5f); yield return Snap("ui-item-animation"); newLook.Close();
+                newLook = Look(Guid.NewGuid(), "packages", "application/json"); yield return Until(() => newLook.Loaded || newLook.Problem.Length > 0, "o conteúdo da construção"); Expect(newLook.Loaded && newLook.Lines.Any(l => l.Contains("└ Telhado")) && newLook.Lines.Any(l => l.StartsWith("✗ Telha")), "as peças e o que falta: " + newLook.Problem + " " + string.Join(" | ", newLook.Lines)); _checks++; yield return Snap("ui-item-contents"); newLook.Close();
+                newLook = Look(Guid.NewGuid(), "textures", "image/png"); yield return Until(() => newLook.Problem.Length > 0, "um arquivo que não vem é dito"); _checks++; newLook.Close();
+            }
+
+            // the ground clicked with a mouse, as a person does: the menu of the right button, its slices, "Sobre este terreno" with no parcel and editing the terrain
+            {
+                var gndInputSettings = UnityEngine.InputSystem.InputSystem.settings; var gndOldEditorInput = gndInputSettings.editorInputBehaviorInPlayMode; var gndOldBackgroundInput = gndInputSettings.backgroundBehavior;
+                gndInputSettings.editorInputBehaviorInPlayMode = UnityEngine.InputSystem.InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView; gndInputSettings.backgroundBehavior = UnityEngine.InputSystem.InputSettings.BackgroundBehavior.IgnoreFocus;
+                var gndPointer = UnityEngine.InputSystem.InputSystem.AddDevice<UnityEngine.InputSystem.Mouse>();
+                void Pointer(Vector2 at, bool left, bool right)
+                {
+                    var gndState = new UnityEngine.InputSystem.LowLevel.MouseState { position = at }; if (left) gndState = gndState.WithButton(UnityEngine.InputSystem.LowLevel.MouseButton.Left); if (right) gndState = gndState.WithButton(UnityEngine.InputSystem.LowLevel.MouseButton.Right);
+                    UnityEngine.InputSystem.InputSystem.QueueStateEvent(gndPointer, gndState);
+                }
+                var gndGroundAt = new Vector2(Screen.width * .68f, Screen.height * .3f);
+                IEnumerator RightClick() { Pointer(gndGroundAt, false, false); yield return null; yield return null; Pointer(gndGroundAt, false, true); yield return null; yield return null; Pointer(gndGroundAt, false, false); yield return new WaitForSeconds(.5f); }
+                IEnumerator Choose(string label)
+                {
+                    var gndRadial = app.Hud.Radial; var at = gndRadial.Slices.ToList().FindIndex(s => s.Label == label); Expect(at >= 0, "o menu do chão tem \"" + label + "\"");
+                    var gndOffset = LifeVerse.Shared.Gameplay.RadialMath.LabelPosition(at, gndRadial.Slices.Count, (LifeVerse.Unity.UI.RadialMenu.Inner + LifeVerse.Unity.UI.RadialMenu.Outer) / 2f);
+                    var gndScale = app.Ui.Panel.scale; var gndScreen = new Vector2((gndRadial.Centre.x + gndOffset.X) * gndScale, Screen.height - (gndRadial.Centre.y + gndOffset.Y) * gndScale);
+                    Pointer(gndScreen, false, false); yield return null; yield return null; Pointer(gndScreen, true, false); yield return null; yield return null; Pointer(gndScreen, false, false); yield return new WaitForSeconds(.4f);
+                }
+                stub.Routes["GET /api/v1/worlds/islands/" + app.Island + "/land"] = "{\"parcels\":[]}";
+                yield return new WaitForSeconds(.5f); yield return RightClick();
+                var gndOffered = app.Hud.Radial.IsOpen ? string.Join("|", app.Hud.Radial.Slices.Select(s => s.Label)) : "(fechado)";
+                Expect(app.Hud.Radial.IsOpen && app.ContextTarget == "ground" && new[] { "Ir até aqui", "Editar terreno", "Sobre este terreno", "Gerenciar terrenos", "Copiar local" }.All(gndOffered.Contains), "o botão direito no chão abre o menu com as ações de terreno: " + app.ContextTarget + " " + gndOffered); _checks++; yield return Snap("ui-ground-menu");
+                yield return Choose("Sobre este terreno");
+                yield return Until(() => app.LastGroundInfo != null && app.LastGroundInfo.IsOpen, "\"Sobre este terreno\" abrir uma janela onde não há parcela"); _checks++; yield return Snap("ui-ground-info"); app.LastGroundInfo.Close();
+                yield return RightClick(); yield return Choose("Editar terreno");
+                Expect(app.TerrainTools.Active, "\"Editar terreno\" no menu do chão abre as ferramentas"); _checks++;
+                var gndDabsBefore = app.TerrainTools.Dabs; var gndHeightBefore = app.Client.Terrain.Raycast(app.Follow.Camera.ScreenPointToRay(gndGroundAt)) is { } gndBefore ? gndBefore.y : float.NaN;
+                Pointer(gndGroundAt, false, false); yield return null; yield return null; Pointer(gndGroundAt, true, false); yield return new WaitForSeconds(.7f); Pointer(gndGroundAt, false, false); yield return new WaitForSeconds(.5f);
+                var gndHeightAfter = app.Client.Terrain.Raycast(app.Follow.Camera.ScreenPointToRay(gndGroundAt)) is { } gndAfter ? gndAfter.y : float.NaN;
+                Expect(app.TerrainTools.Dabs > gndDabsBefore && gndHeightAfter > gndHeightBefore + .1f, "segurar o botão esquerdo levanta o terreno: pinceladas " + (app.TerrainTools.Dabs - gndDabsBefore) + ", altura de " + gndHeightBefore + " para " + gndHeightAfter + " " + app.TerrainTools.Status); _checks++; yield return Snap("ui-terrain-editing");
+                app.TerrainTools.IslandEditorOverride = () => false; var gndRefusals = app.TerrainTools.Refusals;
+                Pointer(gndGroundAt, true, false); yield return new WaitForSeconds(.6f); Pointer(gndGroundAt, false, false); yield return new WaitForSeconds(.3f);
+                Expect(app.TerrainTools.Refusals == gndRefusals + 1, "sem permissão, um clique explica o motivo na tela, uma vez só: " + (app.TerrainTools.Refusals - gndRefusals)); _checks++;
+                app.TerrainTools.IslandEditorOverride = null; app.ToggleTerrain(); app.TerrainPanel?.Close();
+                UnityEngine.InputSystem.InputSystem.RemoveDevice(gndPointer); gndInputSettings.editorInputBehaviorInPlayMode = gndOldEditorInput; gndInputSettings.backgroundBehavior = gndOldBackgroundInput;
+            }
+
+            // pictures for a profile, a group and an island: sent from this computer, saved where the search reads them from
+            {
+                var picFile = System.IO.Path.Combine(Application.temporaryCachePath, "lv-selfcheck-foto.png"); System.IO.File.WriteAllBytes(picFile, TestAssets.Png(new Color32(230, 130, 30, 255)));
+                var picAsset = Guid.NewGuid(); var picImage = Guid.NewGuid(); var picGroup = Guid.NewGuid(); var picIsland = Guid.NewGuid(); var picMe = app.Api.UserId;
+                stub.Routes["POST /api/v1/assets/upload"] = "{\"assetId\":\"" + picAsset + "\"}";
+                stub.Binary["/api/v1/assets/" + picAsset + "/download"] = TestAssets.Png(new Color32(230, 130, 30, 255)); stub.Binary["/api/v1/groups/" + picGroup + "/image"] = TestAssets.Png(new Color32(30, 130, 230, 255));
+                string PicProfile(string gallery) => "{\"isSelf\":true,\"displayName\":\"Eu Mesma\",\"username\":\"eu\",\"presence\":\"online\",\"gallery\":[" + gallery + "],\"settings\":{}}";
+                var picRoute = "GET /api/v1/users/" + picMe + "/profile/full"; stub.Routes[picRoute] = PicProfile("");
+                stub.Routes["POST /api/v1/users/me/profile/gallery"] = "{}"; stub.Routes["PUT /api/v1/users/me/profile/gallery/" + picImage + "/main"] = "{}";
+                var picPerson = new LifeVerse.Unity.UI.ProfileHubWindow(app.Context, picMe); picPerson.Open();
+                yield return Until(() => picPerson.Actions.ContainsKey("Enviar uma foto do computador…"), "o próprio perfil oferecer a foto"); _checks++; yield return Snap("ui-profile-photo");
+                stub.Routes[picRoute] = PicProfile("{\"id\":\"" + picImage + "\",\"main\":false}");
+                LifeVerse.Unity.UI.PictureChooser.FromComputer(app.Context, "foto", picPerson.UsePhoto, why => Expect(false, "a foto não foi enviada: " + why), picFile);
+                yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/users/me/profile/gallery" && b.Body.Contains(picAsset.ToString())) && stub.ReceivedAny(b => b.Route == "PUT /api/v1/users/me/profile/gallery/" + picImage + "/main"), "a foto enviada entrar na galeria e virar a foto do perfil"); _checks++; picPerson.Close();
+
+                stub.Routes["GET /api/v1/groups/" + picGroup] = "{\"isLeader\":true,\"myPermissions\":[],\"myRole\":\"líder\",\"card\":{\"name\":\"Clube\",\"description\":\"d\",\"privacy\":\"public\",\"joinPolicy\":\"open\",\"accentColor\":\"#33AAFF\",\"emblem\":\"star\",\"tag\":\"CLB\",\"memberLimit\":50,\"members\":1,\"category\":\"social\",\"language\":\"pt-BR\",\"contentRating\":\"livre\",\"joinFee\":0,\"isMember\":true,\"imageUrl\":\"asset://" + picAsset + "\"}}";
+                stub.Routes["PUT /api/v1/groups/" + picGroup] = "{}";
+                var picClub = new LifeVerse.Unity.UI.GroupProfileWindow(app.Context, picGroup); picClub.Open(); yield return Until(() => picClub.Actions.Count > 0 || picClub.Lines > 0, "o grupo abrir"); picClub.Show("configuracoes");
+                yield return Until(() => picClub.Actions.ContainsKey("Enviar uma imagem do computador…") && picClub.PicturesShown > 0, "a imagem do grupo e os botões para trocá-la: " + picClub.Status); _checks++; yield return Snap("ui-group-picture");
+                picClub.SetImage(picAsset);
+                yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT /api/v1/groups/" + picGroup && b.Body.Contains("asset://" + picAsset) && b.Body.Contains("\"name\":\"Clube\"")), "a imagem do grupo chegar à API sem mudar o resto"); _checks++; picClub.Close();
+
+                var picBase = "/api/v1/worlds/islands/" + picIsland + "/management";
+                stub.Routes["GET " + picBase] = "{\"name\":\"Ilha da Foto\",\"state\":\"online\",\"maxPlayers\":32,\"visitors\":1,\"canEdit\":true,\"coverImageUrl\":\"\",\"description\":\"\",\"category\":\"social\",\"contentRating\":\"livre\",\"language\":\"pt-BR\",\"spawn\":{\"x\":0,\"z\":0},\"options\":{},\"usage\":{}}";
+                stub.Routes["PUT " + picBase + "/general"] = "{}";
+                var picIsle = new LifeVerse.Unity.UI.IslandManagementWindow(app.Context, picIsland); picIsle.Open(); yield return Until(() => picIsle.Actions.ContainsKey("Enviar uma imagem do computador…"), "a gestão da ilha oferecer a imagem: " + picIsle.Status); _checks++;
+                picIsle.SetCover(picAsset);
+                yield return Until(() => stub.ReceivedAny(b => b.Route == "PUT " + picBase + "/general" && b.Body.Contains("\"coverImageUrl\":\"asset:" + picAsset + "\"")), "a imagem da ilha ser salva: " + picIsle.Status); _checks++; yield return Snap("ui-island-picture"); picIsle.Close();
+                System.IO.File.Delete(picFile);
+            }
+
             // a trip to another island: prepare, ticket, leave and connect, and the arrival confirmed by the API
             var tripId = Guid.NewGuid(); var tripIsland = island; stub.Routes["POST /api/v1/worlds/teleports/prepare"] = "{\"id\":\"" + tripId + "\",\"status\":\"prepared\"}";
             stub.Routes["POST /api/v1/worlds/teleports/" + tripId + "/connect"] = "{\"token\":\"" + stub.EntryToken + "\",\"host\":\"" + stub.Host + "\",\"port\":" + stub.Port + ",\"protocolVersion\":" + stub.ProtocolVersion + "}"; stub.Routes["GET /api/v1/worlds/teleports/" + tripId] = "{\"status\":\"arrived\"}";

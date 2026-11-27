@@ -19,11 +19,12 @@ namespace LifeVerse.Unity.UI
         public bool Loaded { get; private set; }
         public string Problem { get; private set; } = "";
 
-        public ModelPreview(int width, int height)
+        /// <param name="aside">Where its stage goes, sideways (metres): two previews open at once must not share a corner.</param>
+        public ModelPreview(int width, int height, float aside = 0f)
         {
             Image.style.width = width; Image.style.height = height; Image.style.borderTopLeftRadius = Image.style.borderTopRightRadius = Image.style.borderBottomLeftRadius = Image.style.borderBottomRightRadius = 12; Image.style.backgroundColor = new Color(.1f, .15f, .18f);
             Texture = new RenderTexture(width * 2, height * 2, 24, RenderTextureFormat.ARGB32) { name = "Model preview" }; Image.image = Texture;
-            _stage = new GameObject("Model preview stage"); _stage.transform.position = new Vector3(0, StageY, 0);
+            _stage = new GameObject("Model preview stage"); _stage.transform.position = new Vector3(aside, StageY, 0);
             var cam = new GameObject("Camera"); cam.transform.SetParent(_stage.transform, false); cam.transform.localPosition = new Vector3(0f, .25f, -3.2f); cam.transform.localRotation = Quaternion.Euler(5f, 0f, 0f);
             var camera = cam.AddComponent<Camera>(); camera.targetTexture = Texture; camera.clearFlags = CameraClearFlags.SolidColor; camera.backgroundColor = new Color(.1f, .15f, .18f); camera.fieldOfView = 35f; camera.nearClipPlane = .1f; camera.farClipPlane = 30f; cam.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
             var lightObject = new GameObject("Key light"); lightObject.transform.SetParent(_stage.transform, false); lightObject.transform.rotation = Quaternion.Euler(35f, 150f, 0f); var light = lightObject.AddComponent<Light>(); light.type = LightType.Directional; light.intensity = 3.5f;

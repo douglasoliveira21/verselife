@@ -85,8 +85,8 @@ namespace LifeVerse.Unity.UI
         public bool SubmitAt(float x, float z)
         {
             var client = _client(); if (client == null || !client.Connected) { Say("Entre numa ilha para editar o terreno."); return false; }
-            if (!CanSculpt) { Say("Você não pode editar o terreno aqui: é preciso ser o dono, o locatário ou construtor de um terreno (ou editor da ilha)."); return false; }
-            var mask = Mask; var terrain = _terrain(); if (mask != null && terrain?.Map != null) { var half = terrain.Map.Cells / 2f; var cx = Mathf.RoundToInt(x / terrain.Map.CellSize + half); var cz = Mathf.RoundToInt(z / terrain.Map.CellSize + half); if (!mask(cx, cz)) { Say("Aí não é o seu terreno: o ponto sob o pincel precisa estar dentro de um terreno seu."); return false; } }
+            if (!CanSculpt) { Refuse("Você não pode editar o terreno aqui: é preciso ser o dono, o locatário ou construtor de um terreno (ou editor da ilha)."); return false; }
+            var mask = Mask; var terrain = _terrain(); if (mask != null && terrain?.Map != null) { var half = terrain.Map.Cells / 2f; var cx = Mathf.RoundToInt(x / terrain.Map.CellSize + half); var cz = Mathf.RoundToInt(z / terrain.Map.CellSize + half); if (!mask(cx, cz)) { Refuse("Aí não é o seu terreno: o ponto sob o pincel precisa estar dentro de um terreno seu."); return false; } }
             if (client.Send(RequestAt(x, z))) { Dabs++; return true; } return false;
         }
 
@@ -120,6 +120,16 @@ namespace LifeVerse.Unity.UI
         }
 
         public void Say(string text) { Status = text; Changed?.Invoke(); }
+
+        /// <summary>A click that changes nothing is explained on screen too (the line in the window is easy to miss), without repeating while the button is held.</summary>
+        private void Refuse(string text)
+        {
+            Say(text); if (Time.realtimeSinceStartup - _refusedAt < 4f) return;
+            _refusedAt = Time.realtimeSinceStartup; Refusals++; _c.Notices.Show(text, NoticeKind.Warn);
+        }
+        private float _refusedAt = -10f;
+        /// <summary>How many times a click was refused with a notice (for the checks).</summary>
+        public int Refusals { get; private set; }
 
         public void Refresh() { Say(_client() == null || !_client().Connected ? "Entre numa ilha para editar o terreno." : !CanSculpt ? "Você não pode editar o terreno aqui: é preciso ser o dono, o locatário ou construtor de um terreno (ou editor da ilha)." : !IslandEditor ? "Você mexe só no chão dos seus terrenos: a prévia em vermelho mostra o que não pode mudar." : Tool == TerrainTool.Paint ? "Segure o botão esquerdo para pintar o material escolhido." : Tool == TerrainTool.Level ? "Escolha a altura do nível e segure o botão esquerdo para levar o solo até ela." : Tool == TerrainTool.Restore ? "Segure o botão esquerdo para devolver o terreno original." : "Segure o botão esquerdo sobre o terreno."); }
 
@@ -166,7 +176,7 @@ namespace LifeVerse.Unity.UI
         public void Tick(float dt)
         {
             if (!Active) return; var client = _client(); var camera = _camera(); var terrain = _terrain();
-            if (client != null && client.LastTerrainRejection != null && client.LastTerrainRejection != _lastRejection) { _lastRejection = client.LastTerrainRejection; Say(RejectionText(_lastRejection)); }
+            if (client != null && client.LastTerrainRejection != null && client.LastTerrainRejection != _lastRejection) { _lastRejection = client.LastTerrainRejection; Refuse(RejectionText(_lastRejection)); }
             _hover = null; var mouse = Mouse.current; var keyboard = Keyboard.current;
             if (keyboard != null && keyboard.ctrlKey.isPressed) { if (keyboard.zKey.wasPressedThisFrame) { if (keyboard.shiftKey.isPressed) Redo(); else Undo(); } if (keyboard.yKey.wasPressedThisFrame) Redo(); }
             if (mouse != null && camera != null && terrain != null)
@@ -236,7 +246,7 @@ namespace LifeVerse.Unity.UI
         private void Refresh()
         {
             foreach (var pair in _tools) pair.Value.EnableInClassList("lv-btn-selected", pair.Key == _t.Tool); for (var i = 0; i < _layers.Count; i++) { var chosen = i == _t.Layer; _layers[i].style.borderTopWidth = _layers[i].style.borderBottomWidth = _layers[i].style.borderLeftWidth = _layers[i].style.borderRightWidth = chosen ? 4 : 1; _layers[i].style.borderTopColor = _layers[i].style.borderBottomColor = _layers[i].style.borderLeftColor = _layers[i].style.borderRightColor = chosen ? new Color(.07f, .95f, .88f) : new Color(1, 1, 1, .25f); }
-            _levelBox.style.display = _t.Tool == TerrainTool.Level ? DisplayStyle.Flex : DisplayStyle.None; _paintBox.style.display = _t.Tool == TerrainTool.Paint ? DisplayStyle.Flex : DisplayStyle.None; _islandBox.style.display = _t.IslandEditor ? DisplayStyle.Flex : DisplayStyle.None; _status.text = _t.Status;
+            _levelBox.style.display = _t.Tool == TerrainTool.Level ? DisplayStyle.Flex : DisplayStyle.None; _paintBox.style.display = _t.Tool == TerrainTool.Paint ? DisplayStyle.Flex : DisplayStyle.None; _islandBox.style.display = _t.IslandEditor ? DisplayStyle.Flex : DisplayStyle.None; _status.text = _t.Status; _status.EnableInClassList("lv-bad", !_t.CanSculpt);
         }
     }
 }

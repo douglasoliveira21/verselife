@@ -118,6 +118,8 @@ Achadas ao rodar a API inteira sobre um PostgreSQL local. Foram enviadas (`4a525
 
 As rotas novas de privacidade, bloqueados e sessões foram no mesmo deploy.
 
+**Envio de arquivos quebrado (27/11/2026):** a API não resolve o nome do MinIO (`Name does not resolve (verselife_minio:9000)`). Enquanto isso não for corrigido no Easypanel, nenhum envio (foto, modelo, textura, som) funciona. O dono informou o nome interno `verselife_minio_minio` (com a porta 9001, que é a do painel web; a API usa a 9000): `ObjectStorage__Endpoint=http://verselife_minio_minio:9000`. Como o nome tem `_`, é preciso também implantar a correção de `S3ObjectStore.cs` (o MinIO recusa `_` no `Host`, segundo relatos). No console do app da API, `getent hosts <nome>` confirma que o nome existe.
+
 ### 1.1 Ilhas Unity (no ar desde 27/11/2026)
 
 - Pacote do servidor Linux publicado como pré-lançamento na tag `unity-server-20261127` (SHA-256 `9a08579be897fbaef5740d065b8fca044156e40620ea57200022c92ffd74a72b`). Um pacote novo só é preciso quando o código do servidor de ilha mudar (`powershell -File scripts/package-unity-server.ps1`).
@@ -133,8 +135,9 @@ As rotas novas de privacidade, bloqueados e sessões foram no mesmo deploy.
 
 Feito: os scripts Lua foram para `unity/UnityIslandServer/Core/Scripting`; os arquivos que o jogo usa foram para `assets/`; `client/`, `island-server/`, o modo Godot do supervisor, o CI e as ferramentas do Godot saíram; a versão mínima do cliente passou a `0.7.0` em `backend/appsettings.json`.
 
+**API reimplantada (27/11/2026, 17:23 UTC, conferido de fora):** `/health` `Healthy`, `/client/release` pede `0.7.0`, as três ilhas oficiais são `unity` e nenhuma `godot`. Estavam `suspended`; às 18:01 UTC, durante o teste do dono, a "LifeVerse Plaza" estava `running` com sinal de vida recente, então **o supervisor segue ligando ilhas depois do commit `dc35fe5`** (de fora não se sabe se o serviço dele foi reconstruído).
+
 O que falta:
-- **Reimplantar a API** para a versão mínima nova valer (se o serviço definir `ClientRelease__*` por variável de ambiente, ela manda).
 - **Apagar o app antigo `island`** no Easypanel, se ainda existir: o Dockerfile dele (`island-server/Dockerfile`) não existe mais, e um novo deploy falharia.
 - **Publicar o instalador Unity** como o oficial (seção 6).
 - As sobras locais das pastas `client/` e `island-server/` (caches do Godot, `export_presets.cfg`, `LifeVerse.Client.sln`, nunca estiveram no git) foram apagadas nesta máquina a pedido do dono. Em outra máquina elas podem continuar lá; o `.gitignore` as esconde.
@@ -142,7 +145,14 @@ O que falta:
 
 ## 3. Funcionalidades do Godot que ainda faltam no cliente Unity
 
-Das 95 rotas da API que o Godot usava e o Unity não usava, **todas** têm uso agora. Os itens 3.1 (avisos imobiliários), 3.2 (comprar dentro da busca), 3.3 (ícones das conquistas), 3.4 (reencaixe de roupa com esqueleto), 3.8 (voz desligada pelo terreno) e 3.9 (sincronizar as configurações) foram feitos; o detalhe está em `GODOT_PARITY_AUDIT.md`. A numeração dos que ficaram foi mantida.
+Os itens 3.1 (avisos imobiliários), 3.2 (comprar dentro da busca), 3.3 (ícones das conquistas), 3.4 (reencaixe de roupa com esqueleto), 3.8 (voz desligada pelo terreno) e 3.9 (sincronizar as configurações) foram feitos; o detalhe está em `GODOT_PARITY_AUDIT.md`. A numeração dos que ficaram foi mantida.
+
+**Comparação de 27/11/2026:** três rotas que o Godot usava não tinham uso no Unity (`/inventory/items/{id}/contents`, `/huds` e `/worlds/welcome`) e faltavam alguns recursos. No mesmo dia foram feitos o **3.12** (pré-visualizar item), o **3.13** (conteúdo de construção), o **3.14** (andar com duplo clique no chão), o **3.15** (hora e clima só neste computador), o **3.16** ("Primeiros passos"), o **3.17** (redefinir a câmera, R) e o **3.19** (Ilha de Boas-vindas pelo menu). A comparação foi por busca no código (`git show 177c0c1:client/Scripts/...`) e não cobriu cada tela em detalhe.
+
+- **Menu do chão (botão direito):** refeito em 27/11/2026 (ver `GODOT_PARITY_AUDIT.md`). **Os menus do botão direito sobre pessoas, objetos, o próprio avatar e itens não foram comparados com os do Godot** (`ContextInteraction.cs`); ainda faltam no chão comprar ou alugar direto do menu, "selecionar terreno" arrastando e "criar objeto aqui".
+- **Fotos (27/11/2026):** perfil, grupo e ilha têm botão para enviar uma imagem do computador ou escolher do inventário, e a busca mostra as três. Imagens que são endereços de outros sites continuam não aparecendo na busca, por escolha de privacidade. A capa de grupo (campo `coverUrl`, endereço https) segue só como endereço.
+- **3.18 Editor visual de HUD** (montar, guardar e equipar um HUD; `HudEditor.cs` no Godot, `/api/v1/huds` na API): **não foi feito**; é pouco usado, combinar com o dono antes.
+- **O dono testou os recursos novos no editor (27/11/2026) e confirmou que funcionaram.** Não foi detalhado quais prévias ele viu com arquivos do inventário (nos testes automáticos foram arquivos de teste). Falta ver no jogo gerado: o instalador de 27/11 é anterior a estes recursos.
 
 - **Controles de andar (decidido em 27/11/2026: ficam como estão no Unity):** A/D andam de lado em relação à câmera e S vira o corpo e volta andando; Q abre o menu radial. No Godot, A/D giram, Q/Z dão o passo de lado e S anda de costas. A diferença é de propósito; não mudar sem o dono pedir.
 - **Corrida na diagonal (27/11/2026):** corria travada; corrigido no cliente (desenho entre os passos de movimento e correções mais suaves da ilha) e o dono confirmou no editor que ficou boa. Não precisa de deploy do servidor.
@@ -220,10 +230,12 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
   - falta testar instalar, jogar pela versão instalada e atualizar por cima;
   - `scripts/build-unity-client.ps1 -Installer`. Nesta máquina a política de execução do PowerShell bloqueia scripts: o pacote de 27/11 foi montado com os mesmos passos, um comando por vez.
 - **Launcher:** adaptar o launcher (`launcher/`) e o manifesto ao formato do build Unity (risco R17).
-- **CI:**
-  - `.github/workflows/unity.yml` nunca rodou; precisa dos segredos `UNITY_LICENSE` e afins (licença Unity em CI);
-  - o build do servidor Linux também não está no CI;
-  - o `dotnet build LifeVerse.slnx` do `ci.yml` precisa antes dos fontes gerados pelo `build-plugins.ps1`, que o CI não roda: numa cópia sem eles o build falha (já falhava antes de o Godot sair).
+- **CI** (visto no GitHub em 27/11/2026, commit `dc35fe5`):
+  - passam: protocolo e servidor de ilha, a construção do estágio do supervisor da imagem e a compilação dos plugins no Linux;
+  - falha o `ci.yml` em `dotnet build LifeVerse.slnx`: ele não roda antes o `build-plugins.ps1` (a parte `netstandard2.1` não acha `LifeVerse.Shared`), então os testes da API nem rodam. Já falhava antes de o Godot sair;
+  - os testes e o build da Unity são pulados sem os segredos `UNITY_LICENSE` e afins (licença Unity em CI), e por isso o trabalho de pacote falha ao baixar um build que não existe;
+  - os testes do servidor de ilha falharam no CI do commit anterior (`177c0c1`) e passaram neste: podem ser instáveis lá;
+  - o build do servidor Linux não está no CI.
 - **Avisos de licença:** o build copia `Assets/LifeVerse/Legal/THIRD-PARTY-NOTICES.txt` para junto do jogo, e um teste exige que toda DLL nova esteja nele. Falta conferir que o instalador o leva.
 - **Assinatura do executável:** o `.exe` não é assinado, e o Controle Inteligente de Aplicativos do Windows 11 pode bloqueá-lo (aconteceu na máquina de desenvolvimento). Avaliar um certificado de assinatura de código antes de distribuir.
 - **Versão:** o cliente Unity é a 0.7.0 (`bundleVersion`), e `release.json` e `SHA256SUMS` são gerados pelo script. Falta publicar uma versão de verdade no endereço que `UpdateCheck` lê.
@@ -277,7 +289,7 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
 
 ## Ordem sugerida
 
-1. **Seção 2:** reimplantar a API e apagar o app antigo no Easypanel.
+1. **Seção 2:** apagar o app antigo no Easypanel (a API já foi reimplantada).
 2. **Seção 6:** gerar e instalar o cliente de verdade, assinatura do executável, IL2CPP e CI. É o que falta para outras pessoas jogarem.
 3. **Repetir as verificações no player gerado** quando houver como executá-lo (seção 0).
 4. **Seção 8:** uma sessão real com teclado, mouse e microfone.

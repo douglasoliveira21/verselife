@@ -69,10 +69,14 @@ public sealed class S3ObjectStore(AssetStorageOptions options, HttpClient http, 
     private HttpRequestMessage Build(HttpMethod method, string? key, string payloadHash)
     {
         var path = "/" + SigV4.EncodePath(options.Bucket) + (key is null ? string.Empty : "/" + SigV4.EncodePath(key));
-        var host = _endpoint.IsDefaultPort ? _endpoint.Host : $"{_endpoint.Host}:{_endpoint.Port}";
+        // Docker panels name a service "project_service", and MinIO answers 400 "Invalid Request (invalid hostname)" to a Host with "_". The connection still goes to the real
+        // name; only the name the request calls the server by changes (the server does not care which one it is, as long as it is the one signed).
+        var authority = _endpoint.IsDefaultPort ? _endpoint.Host : $"{_endpoint.Host}:{_endpoint.Port}";
+        var host = authority.Replace('_', '-');
         var now = clock.GetUtcNow();
         var headers = new Dictionary<string, string> { ["host"] = host, ["x-amz-content-sha256"] = payloadHash, ["x-amz-date"] = now.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture) };
         var request = new HttpRequestMessage(method, new Uri(_endpoint, path));
+        if (host != authority) request.Headers.Host = host;
         request.Headers.TryAddWithoutValidation("x-amz-content-sha256", payloadHash);
         request.Headers.TryAddWithoutValidation("x-amz-date", headers["x-amz-date"]);
         request.Headers.TryAddWithoutValidation("Authorization", SigV4.Authorization(method.Method, path, string.Empty, headers, payloadHash, options.AccessKey, options.SecretKey, options.Region, "s3", now));

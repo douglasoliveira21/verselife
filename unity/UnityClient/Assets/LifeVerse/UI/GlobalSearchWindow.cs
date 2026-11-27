@@ -71,19 +71,24 @@ namespace LifeVerse.Unity.UI
         public static string IconOfKind(string kind) => kind switch { "person" => "user", "island" => "globe", "parcel" => "pin", "event" => "calendar", "group" => "people", "product" or "item" => "bag", "store" => "home", _ => "search" };
 
         /// <summary>Where the picture of a result is fetched from (null when it is not one this game fetches: only this API's images and assets, never another site).</summary>
-        public static string ThumbPath(string reference, Guid island)
+        public static string ThumbPath(string reference, Guid island, Guid group = default)
         {
             if (string.IsNullOrEmpty(reference)) return null;
+            // a group keeps its picture as asset://…; the platform hands it out by the group, to who may see it
+            if (reference.StartsWith("asset://", StringComparison.OrdinalIgnoreCase)) return group != Guid.Empty ? "/api/v1/groups/" + group + "/image" : null;
             if (reference.StartsWith("asset:", StringComparison.Ordinal) && Guid.TryParse(reference.Substring(6), out var asset)) return island != Guid.Empty ? "/api/v1/worlds/islands/" + island + "/assets/" + asset + "/file" : "/api/v1/assets/" + asset + "/download";
             return reference.StartsWith("/api/v1/", StringComparison.Ordinal) && !reference.Contains("..") ? reference : null;
         }
+
+        /// <summary>The pictures already fetched are asked for again (after a photo, a group's picture or an island's changed).</summary>
+        public static void ForgetPictures() => Thumbs.Clear();
 
         private VisualElement Thumb(JsonElement item)
         {
             var box = new VisualElement { pickingMode = PickingMode.Ignore }; box.style.width = 40; box.style.height = 40; box.style.flexShrink = 0; box.style.marginRight = 8; box.style.backgroundColor = new Color(1f, 1f, 1f, .06f);
             box.style.borderTopLeftRadius = box.style.borderTopRightRadius = box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 8; box.style.alignItems = Align.Center; box.style.justifyContent = Justify.Center;
             var icon = new Icon(IconOfKind(S(item, "kind")), 22); box.Add(icon);
-            var island = G(item, "islandId"); var path = ThumbPath(S(item, "thumbnailUrl"), island != Guid.Empty ? island : S(item, "kind") == "island" ? G(item, "id") : Guid.Empty);
+            var island = G(item, "islandId"); var path = ThumbPath(S(item, "thumbnailUrl"), island != Guid.Empty ? island : S(item, "kind") == "island" ? G(item, "id") : Guid.Empty, S(item, "kind") == "group" ? G(item, "id") : Guid.Empty);
             if (path == null) return box;
             void Put(Texture2D t) { box.style.backgroundImage = new StyleBackground(t); box.style.unityBackgroundScaleMode = ScaleMode.ScaleAndCrop; icon.style.display = DisplayStyle.None; ThumbnailsShown++; }
             if (Thumbs.TryGetValue(path, out var have)) { if (have != null) Put(have); return box; }

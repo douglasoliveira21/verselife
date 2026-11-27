@@ -15,8 +15,8 @@ namespace LifeVerse.Unity.Avatar
     public sealed class FollowCamera : MonoBehaviour
     {
         public Camera Camera; public TerrainView Terrain;
-        public float Yaw, Pitch = 14f, Distance = 4.6f;
-        public const float MinDistance = 1.2f, MaxDistance = 14f, HeadHeight = 1.55f, EyeHeight = 1.62f, ClearGround = .35f;
+        public float Yaw, Pitch = DefaultPitch, Distance = 4.6f;
+        public const float MinDistance = 1.2f, MaxDistance = 14f, HeadHeight = 1.55f, EyeHeight = 1.62f, ClearGround = .35f, DefaultPitch = 14f;
         /// <summary>From inside the head: the eyes stand this far in front of the neck, and what is this close is still drawn (the own arms and chest).</summary>
         public const float EyesForward = .12f, FirstPersonNear = .04f;
         private float _near = -1f;
@@ -73,7 +73,25 @@ namespace LifeVerse.Unity.Avatar
         private Vector3 _detachedAt;
         /// <summary>What a double click focuses on: a person or an object under the ray (never the ground). Set by the game.</summary>
         public System.Func<Ray, Vector3?> PickFocus;
+        /// <summary>A double click on the world that did not focus the camera (the ground, for one): the game walks there.</summary>
+        public System.Action<Ray> DoubleClicked;
         private float _lastClick = -10f; private Vector2 _lastClickAt;
+
+        /// <summary>What a double click on the world does: with a person or an object under it (and the setting on) the camera focuses on them; otherwise the game is told. True when the camera took it.</summary>
+        public bool DoubleClick(Ray ray)
+        {
+            if (FreeOptions.FocusOnDoubleClick && PickFocus?.Invoke(ray) is { } target)
+            {
+                FocusAt(ray); ZoomTarget = target; ZoomDistance = Mathf.Clamp(Vector3.Distance(Camera != null ? Camera.transform.position : ray.origin, target), 2.5f, 8f); return true;
+            }
+            DoubleClicked?.Invoke(ray); return false;
+        }
+
+        /// <summary>The camera goes back behind the avatar, at the usual height and distance, and leaves whatever it was looking at.</summary>
+        public void ResetBehind(float headingDegrees, float distance)
+        {
+            SetDetached(false); ZoomTarget = null; Yaw = headingDegrees; Pitch = DefaultPitch; Distance = Mathf.Clamp(distance, MinDistance, MaxDistance);
+        }
 
         public void SetDetached(bool on)
         {
@@ -112,10 +130,10 @@ namespace LifeVerse.Unity.Avatar
             if (keys != null && FreeOptions.AllowDetached && keys.altKey.isPressed && keys.vKey.wasPressedThisFrame) SetDetached(!Detached);
             if (Detached && keys != null && keys.escapeKey.wasPressedThisFrame) SetDetached(false);
             if (Detached) { DetachedUpdate(mouse, keys); return; }
-            if (FreeOptions.FocusOnDoubleClick && mouse.leftButton.wasPressedThisFrame && Camera != null && !(keys != null && (keys.ctrlKey.isPressed || keys.altKey.isPressed || keys.shiftKey.isPressed)))
+            if (mouse.leftButton.wasPressedThisFrame && Camera != null && !(keys != null && (keys.ctrlKey.isPressed || keys.altKey.isPressed || keys.shiftKey.isPressed)))
             {
                 var at = mouse.position.ReadValue();
-                if (IsDoubleClick(Time.unscaledTime, at) && !(OverInterface?.Invoke(at) ?? false) && PickFocus?.Invoke(Camera.ScreenPointToRay(at)) is { } target) { FocusAt(Camera.ScreenPointToRay(at)); ZoomTarget = target; ZoomDistance = Mathf.Clamp(Vector3.Distance(Camera.transform.position, target), 2.5f, 8f); return; }
+                if (IsDoubleClick(Time.unscaledTime, at) && !(OverInterface?.Invoke(at) ?? false) && DoubleClick(Camera.ScreenPointToRay(at))) return;
             }
             if (!FirstPerson && FreeCamera(mouse)) return;
             var looking = FirstPerson ? Cursor.lockState == CursorLockMode.Locked : mouse.rightButton.isPressed;

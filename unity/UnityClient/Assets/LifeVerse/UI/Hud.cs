@@ -223,8 +223,8 @@ namespace LifeVerse.Unity.UI
         /// <summary>The keys of the game, by what they do.</summary>
         public static readonly (string Title, (string Keys, string Does)[] Rows)[] HelpPages =
         {
-            ("Mover", new[] { ("W A S D", "andar"), ("Shift", "correr"), ("Espaço", "pular ou subir voando"), ("F", "voar"), ("C ou Ctrl", "descer"), ("X", "sentar"), ("E", "entrar no carro e sair") }),
-            ("Câmera", new[] { ("Botão direito + mouse", "girar a câmera"), ("Roda do mouse", "aproximar e afastar"), ("V", "primeira pessoa"), ("Alt + V", "câmera solta") }),
+            ("Mover", new[] { ("W A S D", "andar"), ("Shift", "correr"), ("Espaço", "pular ou subir voando"), ("F", "voar"), ("C ou Ctrl", "descer"), ("X", "sentar"), ("E", "entrar no carro e sair"), ("Duplo clique no chão", "andar até o ponto") }),
+            ("Câmera", new[] { ("Botão direito + mouse", "girar a câmera"), ("Roda do mouse", "aproximar e afastar"), ("V", "primeira pessoa"), ("R", "câmera de volta atrás de você"), ("Alt + V", "câmera solta") }),
             ("Gestos", new[] { ("G", "acenar"), ("H", "dançar"), ("J", "aplaudir"), ("K", "apontar"), ("L", "cumprimentar"), ("N", "rir"), ("Q", "menu de gestos") }),
             ("Interface", new[] { ("Enter", "abrir a conversa"), ("Esc", "sair da conversa"), ("B", "construir"), ("T", "editar o terreno"), ("F3", "desempenho"), ("F10", "mostrar a interface no modo imersivo"), ("F12", "tirar foto") }),
         };

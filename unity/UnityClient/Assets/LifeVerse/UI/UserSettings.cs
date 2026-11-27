@@ -70,6 +70,8 @@ namespace LifeVerse.Unity.UI
         public string SyncUser { get; set; } = "";
         // conta e janelas
         public string LastLogin { get; set; } = "";
+        /// <summary>"Primeiros passos" does not open by itself any more.</summary>
+        public bool WelcomeDone { get; set; }
         public string LastIsland { get; set; } = "";
         public Dictionary<string, float[]> Windows { get; set; } = new Dictionary<string, float[]>();
         /// <summary>The bottom toolbar: the order of its buttons and the ones hidden (ids).</summary>

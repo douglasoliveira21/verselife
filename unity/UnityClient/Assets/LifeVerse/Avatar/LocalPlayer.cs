@@ -65,6 +65,32 @@ namespace LifeVerse.Unity.Avatar
         public float HeadingDegrees { get; private set; }
         public Vector3 GamePosition => new Vector3(State.X, State.Y, State.Z);
 
+        // ---- walking to a point (a double click on the ground) ----
+        /// <summary>Where the person is walking to by themselves (game space), or null. Walking, jumping, flying or sitting by hand ends it.</summary>
+        public Vector3? WalkTarget { get; private set; }
+        /// <summary>How near is "there", and how long without getting nearer before giving up (a wall, an object in the way).</summary>
+        public const float ArriveDistance = .35f, GiveUpSeconds = 1.5f;
+        private float _nearest, _noCloser;
+
+        /// <summary>Walks to a point of the ground. False while sitting or driving.</summary>
+        public bool WalkTo(Vector3 gamePoint)
+        {
+            if (!Spawned || State.Seated || ServerSeated || ObjectSeat.HasValue || Driving != null) return false;
+            WalkTarget = gamePoint; _nearest = float.MaxValue; _noCloser = 0f; return true;
+        }
+
+        public void StopWalking() => WalkTarget = null;
+
+        /// <summary>The direction of this step toward the point being walked to, or false when the walk is over.</summary>
+        private bool Toward(out float x, out float z)
+        {
+            x = z = 0f; if (!(WalkTarget is { } goal)) return false;
+            var dx = goal.x - State.X; var dz = goal.z - State.Z; var left = Mathf.Sqrt(dx * dx + dz * dz);
+            if (left < _nearest - .05f) { _nearest = left; _noCloser = 0f; } else _noCloser += Step;
+            if (left < ArriveDistance || _noCloser > GiveUpSeconds || State.Seated) { StopWalking(); return false; }
+            x = dx / left; z = dz / left; return true;
+        }
+
         /// <summary>Double tap forward to run, hold jump to fly.</summary>
         public readonly MoveGestures Gestures = new MoveGestures();
         private float _accumulator, _flightAsked; private bool _flyEdge, _sitEdge, _flightWanted;
@@ -89,7 +115,7 @@ namespace LifeVerse.Unity.Avatar
         private void OnSpawn(SpawnPlayerMessage spawn)
         {
             if (spawn.PeerId != Client.SelfPeerId) return;
-            State.X = spawn.X; State.Y = spawn.Y; State.Z = spawn.Z; State.VelocityX = State.VelocityY = State.VelocityZ = 0f; Spawned = true;
+            State.X = spawn.X; State.Y = spawn.Y; State.Z = spawn.Z; State.VelocityX = State.VelocityY = State.VelocityZ = 0f; Spawned = true; StopWalking();
             if (Follow != null) Follow.Snap(GamePosition);
         }
 
@@ -116,7 +142,7 @@ namespace LifeVerse.Unity.Avatar
             if (!Spawned || Client == null || !Client.Authenticated) return;
             _accumulator = Mathf.Min(_accumulator + delta, .25f);
             var driving = Vehicles != null ? Vehicles.DrivenBy(Client.SelfPeerId) : null;
-            if (driving != null && Driving == null) { _history.Clear(); State.Flying = false; State.VelocityX = State.VelocityY = State.VelocityZ = 0f; }
+            if (driving != null && Driving == null) { _history.Clear(); StopWalking(); State.Flying = false; State.VelocityX = State.VelocityY = State.VelocityZ = 0f; }
             Driving = driving;
             while (_accumulator >= Step) { _accumulator -= Step; _before = GamePosition; if (Driving != null) DriveOnce(); else StepOnce(); }
             if (Driving != null) { State.X = Driving.GamePosition.x; State.Y = Driving.GamePosition.y + LifeVerse.Shared.Vehicles.VehicleFleet.DriverHeight; State.Z = Driving.GamePosition.z; State.Seated = true; Motion = NetworkMotionState.Sit; HeadingDegrees = -Driving.Yaw * Mathf.Rad2Deg; }
@@ -233,6 +259,7 @@ namespace LifeVerse.Unity.Avatar
             sample.Typing |= Typing;
             if (_flyEdge) { sample.Fly = true; _flyEdge = false; }
             if (_sitEdge) { sample.Sit = true; _sitEdge = false; _asking = true; }
+            if (sample.Forward != 0f || sample.Right != 0f || sample.Jump || sample.Descend || sample.Fly || sample.Sit) StopWalking();   // doing it by hand ends the walk to a point
             // flying is a state the server is asked for (reliable, idempotent), not a per-step input: ask, and take it at once locally as the server will
             if (sample.Fly && !State.Seated)
             {
@@ -243,6 +270,7 @@ namespace LifeVerse.Unity.Avatar
             // the direction relative to the camera: the camera's heading h (Unity, degrees) looks along game (sin h, -cos h); right of it is (cos h, sin h)
             var h = (Follow != null ? Follow.Yaw : 0f) * Mathf.Deg2Rad; float fx = Mathf.Sin(h), fz = -Mathf.Cos(h), rx = Mathf.Cos(h), rz = Mathf.Sin(h);
             var x = fx * sample.Forward + rx * sample.Right; var z = fz * sample.Forward + rz * sample.Right;
+            if (Toward(out var tx, out var tz)) { x = tx; z = tz; }
             var length = Mathf.Sqrt(x * x + z * z); if (length > 1f) { x /= length; z /= length; }
             var flags = InputFlags.None;
             // moving, jumping, flying or sitting ends a gesture
@@ -279,7 +307,7 @@ namespace LifeVerse.Unity.Avatar
             if (_flightAsked > 0f) { if (serverFlying == _flightWanted || Time.realtimeSinceStartup - _flightAsked > 1.5f) { _flightAsked = 0f; State.Flying = serverFlying; } }
             else State.Flying = serverFlying;
             State.Seated = server.Motion == NetworkMotionState.Sit; ServerSeated = State.Seated; _lastProcessed = server.LastProcessedInput;
-            if (LastError > 3f) { Shift(error, server.LastProcessedInput); _ease = Vector3.zero; State.VelocityX = server.VelocityX; State.VelocityY = server.VelocityY; State.VelocityZ = server.VelocityZ; Corrections++; return; }
+            if (LastError > 3f) { StopWalking(); Shift(error, server.LastProcessedInput); _ease = Vector3.zero;State.VelocityX = server.VelocityX; State.VelocityY = server.VelocityY; State.VelocityZ = server.VelocityZ; Corrections++; return; }
             var running = State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ > .25f;
             if (LastError <= (running ? MovingTolerance : RestTolerance)) return;   // over the internet the island is a few centimetres off all the time: chasing that shakes the run
             var part = error * CorrectionShare; Shift(part, server.LastProcessedInput); _ease -= part; Corrections++;

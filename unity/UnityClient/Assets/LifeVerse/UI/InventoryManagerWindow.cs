@@ -216,6 +216,9 @@ namespace LifeVerse.Unity.UI
             Change("POST", Inv + "/move", new { itemIds = items, folderIds = folders, targetFolderId = to }, (items.Length + folders.Length) + " movido(s) para " + (to is { } f ? PathOf(f) : "fora das pastas") + ".", reload);
         }
 
+        /// <summary>The preview opened last from an item (for the checks).</summary>
+        public ItemPreviewWindow Preview { get; private set; }
+
         // ---- the details of an item ----
 
         private void Detail(JsonElement item, Action back)
@@ -229,6 +232,8 @@ namespace LifeVerse.Unity.UI
             Title("Nome"); var rename = Field("Nome no inventário", name, 120); Buttons(Btn("Renomear", () => { if (rename.value.Trim().Length == 0) { Say("Dê um nome ao item.", true); return; } Change("PATCH", Inv + "/items/" + id, new { displayName = rename.value.Trim() }, "Item renomeado.", back); }));
             Title("Pasta"); var folder = Choice("Pasta", FolderOptions(true), Has(item, "folderId") ? S(item, "folderId") : "");
             Buttons(Btn("Mudar de pasta", () => { var to = IdOf(folder); Change("PATCH", Inv + "/items/" + id, to.Length == 0 ? (object)new { clearFolder = true } : new { folderId = Guid.Parse(to) }, "Item mudou de pasta.", back); }));
+            var kind = ItemPreviewWindow.KindOf(S(item, "category"), S(item, "mimeType"));
+            if (kind != ItemPreviewKind.None) Buttons(Btn(kind == ItemPreviewKind.Package ? "Ver o conteúdo" : "Pré-visualizar", () => { Preview = new ItemPreviewWindow(_c, id, G(item, "assetId"), name, S(item, "category"), S(item, "mimeType"), I(item, "size")); Preview.Open(); }, "lv-btn-primary"));
             Title("Ações"); var slot = Choice("Vestir em", Slots.ToList(), "accessory");
             Buttons(Btn(Flag(item, "favorite") ? "Tirar dos favoritos" : "Pôr nos favoritos", () => Change(Flag(item, "favorite") ? "DELETE" : "POST", Inv + "/items/" + id + "/favorite", Flag(item, "favorite") ? null : "{}", Flag(item, "favorite") ? "Tirado dos favoritos." : "Nos favoritos.", back)),
                 Btn("Fazer uma cópia", () => Change("POST", Inv + "/items/" + id + "/copy", "{}", "Cópia feita.", back)),

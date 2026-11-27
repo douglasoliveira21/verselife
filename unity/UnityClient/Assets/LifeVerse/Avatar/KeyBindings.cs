@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 
 namespace LifeVerse.Unity.Avatar
 {
-    public enum GameAction { Forward, Back, Left, Right, Jump, Run, Descend, Fly, Sit, Vehicle, FirstPerson, Radial, Chat, Performance, Build, Terrain, Talk, Wave, Dance, Applaud, Point, Greet, Laugh }
+    public enum GameAction { Forward, Back, Left, Right, Jump, Run, Descend, Fly, Sit, Vehicle, FirstPerson, Radial, Chat, Performance, Build, Terrain, Talk, Wave, Dance, Applaud, Point, Greet, Laugh, CameraReset }
 
     /// <summary>
     /// The keys of the game and what each does. Every action has one key the person can change (the arrow keys and the left Ctrl stay as extra keys for walking and going down). Choosing a key that another action already uses swaps the two, so nothing
@@ -17,7 +17,7 @@ namespace LifeVerse.Unity.Avatar
         {
             [GameAction.Forward] = Key.W, [GameAction.Back] = Key.S, [GameAction.Left] = Key.A, [GameAction.Right] = Key.D, [GameAction.Jump] = Key.Space, [GameAction.Run] = Key.LeftShift, [GameAction.Descend] = Key.C, [GameAction.Fly] = Key.F,
             [GameAction.Sit] = Key.X, [GameAction.Vehicle] = Key.E, [GameAction.FirstPerson] = Key.V, [GameAction.Radial] = Key.Q, [GameAction.Chat] = Key.Enter, [GameAction.Performance] = Key.F3, [GameAction.Build] = Key.B, [GameAction.Terrain] = Key.T,
-            [GameAction.Talk] = Key.Y, [GameAction.Wave] = Key.G, [GameAction.Dance] = Key.H, [GameAction.Applaud] = Key.J, [GameAction.Point] = Key.K, [GameAction.Greet] = Key.L, [GameAction.Laugh] = Key.N,
+            [GameAction.CameraReset] = Key.R, [GameAction.Talk] = Key.Y, [GameAction.Wave] = Key.G, [GameAction.Dance] = Key.H, [GameAction.Applaud] = Key.J, [GameAction.Point] = Key.K, [GameAction.Greet] = Key.L, [GameAction.Laugh] = Key.N,
         };
         private static readonly Dictionary<GameAction, Key> Current = new Dictionary<GameAction, Key>(Defaults);
         private static readonly Dictionary<GameAction, Key[]> Extra = new Dictionary<GameAction, Key[]> { [GameAction.Forward] = new[] { Key.UpArrow }, [GameAction.Back] = new[] { Key.DownArrow }, [GameAction.Left] = new[] { Key.LeftArrow }, [GameAction.Right] = new[] { Key.RightArrow }, [GameAction.Descend] = new[] { Key.LeftCtrl } };
@@ -41,7 +41,7 @@ namespace LifeVerse.Unity.Avatar
                 case GameAction.Run: return "Correr"; case GameAction.Descend: return "Descer (voando ou na água)"; case GameAction.Fly: return "Voar"; case GameAction.Sit: return "Sentar ou levantar"; case GameAction.Vehicle: return "Entrar ou sair do carro";
                 case GameAction.FirstPerson: return "Primeira pessoa"; case GameAction.Radial: return "Menu radial"; case GameAction.Chat: return "Abrir o chat"; case GameAction.Performance: return "Desempenho"; case GameAction.Build: return "Modo de construção";
                 case GameAction.Terrain: return "Editar terreno"; case GameAction.Talk: return "Falar (segurar)"; case GameAction.Wave: return "Gesto: acenar"; case GameAction.Dance: return "Gesto: dançar"; case GameAction.Applaud: return "Gesto: aplaudir";
-                case GameAction.Point: return "Gesto: apontar"; case GameAction.Greet: return "Gesto: cumprimentar"; default: return "Gesto: rir";
+                case GameAction.CameraReset: return "Redefinir a câmera"; case GameAction.Point: return "Gesto: apontar"; case GameAction.Greet: return "Gesto: cumprimentar"; default: return "Gesto: rir";
             }
         }
 

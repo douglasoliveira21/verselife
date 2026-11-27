@@ -47,6 +47,7 @@ namespace LifeVerse.Unity.UI
 
         private void General(JsonElement view, JsonElement card)
         {
+            if (S(card, "imageUrl").StartsWith("asset://", StringComparison.OrdinalIgnoreCase)) ShowPicture(_page, P + "/image", 120f);
             Title(S(card, "name")); if (S(card, "description").Length > 0) Line(S(card, "description"));
             Line("Líder: " + S(view, "leaderName") + " · criado em " + When(Date(view, "createdAt")) + " · " + GroupsHubWindow.CategoryWords(S(card, "category")) + " · " + (S(card, "privacy") == "private" ? "privado" : "público") + " · " + GroupsHubWindow.PolicyWords(S(card, "joinPolicy")).ToLowerInvariant() + (I(card, "joinFee") > 0 ? " · taxa " + Coins(I(card, "joinFee")) : ""), "lv-small", "lv-muted");
             Line(I(card, "members") + " de " + I(card, "memberLimit") + " membros" + (S(card, "title").Length > 0 ? " · seu título: " + S(card, "title") : ""), "lv-small");
@@ -317,11 +318,29 @@ namespace LifeVerse.Unity.UI
 
         // ---- Configurações ----
 
+        /// <summary>Changes only the picture of the group (null takes it away): the rest of the profile goes back as it was last read.</summary>
+        public void SetImage(Guid? asset)
+        {
+            var card = Obj(_view, "card");
+            Change("PUT", P, new { name = S(card, "name"), description = S(card, "description"), imageUrl = asset is { } chosen ? "asset://" + chosen.ToString("D") : "", privacy = S(card, "privacy"), joinPolicy = S(card, "joinPolicy"), accentColor = S(card, "accentColor"), emblem = S(card, "emblem"), tag = S(card, "tag"), memberLimit = I(card, "memberLimit"), category = S(card, "category"), language = S(card, "language"), contentRating = S(card, "contentRating"), coverUrl = S(card, "coverUrl"), joinFee = I(card, "joinFee") }, asset == null ? "Imagem do grupo tirada." : "Imagem do grupo mudada.", "configuracoes");
+            GlobalSearchWindow.ForgetPictures();
+        }
+
         private void Settings(JsonElement view, JsonElement card)
         {
             if (IsMember) { var muted = Check("Silenciar os avisos deste grupo", Flag(view, "notificationsMuted")); Buttons(Btn("Salvar os avisos", () => Change("PUT", P + "/notification-settings", new { muted = muted.value }, muted.value ? "Avisos do grupo silenciados." : "Avisos do grupo ligados.", "configuracoes"))); }
             if (Can(GroupPermissions.EditProfile))
             {
+                var has = S(card, "imageUrl").StartsWith("asset://", StringComparison.OrdinalIgnoreCase);
+                Title("Imagem do grupo"); Line((has ? "Troque a imagem do grupo." : "O grupo ainda não tem imagem.") + " Ela aparece no grupo e na busca. " + PictureChooser.Formats, "lv-small", "lv-muted");
+                if (has) ShowPicture(_page, P + "/image", 120f);
+                var choose = new List<VisualElement>
+                {
+                    Btn("Enviar uma imagem do computador…", () => PictureChooser.FromComputer(_c, "Escolha a imagem do grupo", asset => SetImage(asset), why => Say(why, true)), "lv-btn-primary"),
+                    Btn("Escolher uma imagem do inventário…", () => PictureChooser.FromInventory(_c, "Imagem do grupo", asset => SetImage(asset))),
+                };
+                if (has) choose.Add(Btn("Tirar a imagem", () => SetImage(null)));
+                Buttons(choose.ToArray());
                 Title("Perfil do grupo"); var name = Field("Nome", S(card, "name"), 40); var about = Field("Descrição", S(card, "description"), 1000); var tag = Field("Etiqueta", S(card, "tag"), 5);
                 var policy = Choice("Como se entra", GroupsHubWindow.Policies.ToList(), S(card, "joinPolicy")); var category = Choice("Categoria", GroupsHubWindow.Categories.ToList(), S(card, "category")); var limit = Field("Limite de membros", I(card, "memberLimit").ToString(), 5); var color = Field("Cor (#RRGGBB)", S(card, "accentColor"), 7);
                 Buttons(Btn("Salvar o perfil", () =>

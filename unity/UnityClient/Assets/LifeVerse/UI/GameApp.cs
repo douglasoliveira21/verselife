@@ -31,7 +31,20 @@ namespace LifeVerse.Unity.UI
         {
             if (Application.isBatchMode || Environment.GetCommandLineArgs().Any(a => a.StartsWith("-lifeverse-") && a != "-lifeverse-app")) return;
             if (!Application.isPlaying) return;
-            new GameObject("LifeVerse").AddComponent<GameApp>().Begin(Environment.GetEnvironmentVariable("LIFEVERSE_API_URL") is { Length: > 0 } url ? url : DefaultApi);
+            var app = new GameObject("LifeVerse").AddComponent<GameApp>(); app.ShowWelcome = true;
+            app.Begin(Environment.GetEnvironmentVariable("LIFEVERSE_API_URL") is { Length: > 0 } url ? url : DefaultApi);
+        }
+
+        /// <summary>Whether "Primeiros passos" opens by itself on the first entry (the game a person opens; the checks, which make their own, leave it off).</summary>
+        public bool ShowWelcome { get; set; }
+        /// <summary>The guide opened last.</summary>
+        public WelcomeWindow Welcome { get; private set; }
+
+        /// <summary>Opens "Primeiros passos" and remembers whether it should open by itself again.</summary>
+        public WelcomeWindow OpenWelcome()
+        {
+            Welcome = new WelcomeWindow(Ui, Settings.WelcomeDone, done => { if (Settings.WelcomeDone == done) return; Settings.WelcomeDone = done; Settings.Save(SettingsPath); });
+            Welcome.Open(); return Welcome;
         }
 
         public UserSettings Settings { get; private set; }
@@ -275,7 +288,7 @@ namespace LifeVerse.Unity.UI
             });
             Hud.AddMenu("Mundo", new (string, string, Action)[]
             {
-                ("Mapa do mundo", "globe", () => Hud.Toggle("map", MapWindow)), ("Buscar no LifeVerse", "search", () => Hud.Toggle("search", SearchWindow)),
+                ("Mapa do mundo", "globe", () => Hud.Toggle("map", MapWindow)), ("Ir para a Ilha de Boas-vindas", "home", GoToWelcome), ("Hora e clima só para você", "sun", () => Open(new LocalSkyWindow(Ui, () => Client != null ? Client.Environment : null))), ("Buscar no LifeVerse", "search", () => Hud.Toggle("search", SearchWindow)),
                 ("Eventos, marcos e fotos", "calendar", () => Open(new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f))), Line(),
                 ("Sobre a ilha", "info", () => Open(new IslandInfoWindow(Context, _island))), ("Gerenciar esta ilha", "settings", () => Open(new IslandManagementWindow(Context, _island))), ("Gerenciar terrenos", "grid", () => Open(new LandManagementWindow(Context, _island, Here))),
                 ("Sobre este terreno", "pin", () => OpenParcelHere()), ("Mercado imobiliário", "home", () => Open(new RealEstateMarketWindow(Context))), ("Editar terreno   T", "mountain", ToggleTerrain), Line(),
@@ -285,7 +298,7 @@ namespace LifeVerse.Unity.UI
             {
                 ("Construir   B", "hammer", ToggleBuild), ("Mercado", "bag", () => Open(new MarketWindow(Context))), ("Ofertas de itens", "download", () => Open(new OffersWindow(Context))), ("Script de um objeto", "code", () => ScriptOpener()?.Open()),
             });
-            Hud.AddMenu("Ajuda", new (string, string, Action)[] { ("Atalhos e controles", "help", () => Hud.Toggle("help", () => Hud.HelpWindow(Ui))), ("Manual dos scripts", "doc", () => Open(new ScriptDocsWindow(Context, _ => { }))) });
+            Hud.AddMenu("Ajuda", new (string, string, Action)[] { ("Primeiros passos", "help", () => OpenWelcome()), ("Atalhos e controles", "help", () => Hud.Toggle("help", () => Hud.HelpWindow(Ui))), ("Manual dos scripts", "doc", () => Open(new ScriptDocsWindow(Context, _ => { }))) });
             Hud.AddMenu("Desenvolver", new (string, string, Action)[]
             {
                 ("Desempenho   F3", "chart", () => Hud.TogglePerformance()), ("Exportar diagnóstico", "download", () => { var path = SettingsEffects.WriteDiagnostics(Store, this); Notices.Show("Diagnóstico salvo em " + path, NoticeKind.Good); }),
@@ -366,7 +379,7 @@ namespace LifeVerse.Unity.UI
             Ui.ScreenLayer.Then(Api.ApiAsync("GET", "/api/v1/worlds/islands/" + _island + "/land"), r =>
             {
                 var parcel = r.Status == 200 ? ParcelInfoWindow.ParcelAt(r.Body, at.Value.x, at.Value.z) : Guid.Empty;
-                if (parcel == Guid.Empty) { Notices.Show(r.Status == 200 ? "Você não está em nenhum terreno agora." : UiTasks.Explain(r.Status, r.Body), NoticeKind.Info); return; }
+                if (parcel == Guid.Empty) { if (r.Status == 200) OpenGroundInfo(at.Value); else Notices.Show(UiTasks.Explain(r.Status, r.Body), NoticeKind.Info); return; }
                 LastParcelInfo = new ParcelInfoWindow(Context, _island, parcel, Here); LastParcelInfo.Open();
             });
             return null;
@@ -497,6 +510,7 @@ namespace LifeVerse.Unity.UI
             Player.Attach(Client, Client.Terrain, PeopleViews, Follow); Player.Vehicles = _world.GetComponentInChildren<VehicleViews>(); ApplySettingsToWorld();
             Client.DisconnectedBy += OnDisconnected; Client.ChatReceived += OnChat; Client.PlayerSpawned += OnSpawned; Client.PlayerDespawned += OnDespawned;
             NameIsland(); Show(Phase.Playing); Notices.Show("Você entrou na ilha.", NoticeKind.Good);
+            if (ShowWelcome && !Settings.WelcomeDone && Welcome == null) OpenWelcome();
             Reconnects = 0; if (Settings.IslandYaw.TryGetValue(_island.ToString("N"), out var yaw) && Follow != null) Follow.Yaw = yaw; Islands.Visit(_island); Hud.SetTravel(Islands.CanBack, Islands.CanForward); ApplyInterface(); SetMinimap(Store.Bool("world.minimap_open"));
             if (Sync != null && Sync.Enabled) { var pull = Sync.PullIfEnabledAsync(); while (!pull.IsCompleted) yield return null; if (pull.Result.Result == SyncResult.Ok && pull.Result.Values.Count > 0) { ApplySettingsToWorld(); Settings.Save(SettingsPath); } }
         }
@@ -569,7 +583,7 @@ namespace LifeVerse.Unity.UI
             var views = new GameObject("People").AddComponent<PlayerViews>(); views.transform.SetParent(_world.transform); views.Camera = cam; views.Attach(Client);
             var cars = new GameObject("Vehicles").AddComponent<VehicleViews>(); cars.transform.SetParent(_world.transform); cars.Attach(Client);
             Follow = _world.AddComponent<FollowCamera>(); Follow.Camera = cam; Follow.Terrain = terrain; Follow.Distance = Store.Float("camera.default_distance"); SettingsEffects.Camera(Store, Follow, Settings.ReduceMotion); Player = _world.AddComponent<LocalPlayer>();
-            Plates = new NamePlates(Ui); Follow.PickPoint = PickPoint; Follow.PickFocus = PickFocus; Follow.OverInterface = point => UiKit.IsOver(Ui.Root, point);
+            Plates = new NamePlates(Ui); Follow.PickPoint = PickPoint; Follow.PickFocus = PickFocus; Follow.OverInterface = point => UiKit.IsOver(Ui.Root, point); Follow.DoubleClicked = ray => WalkToGround(ray);
             Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             // what scripts of objects ask of the person: dialogs, permission requests and panels (the island checks every answer)
             ScriptDialogs = new ScriptDialogs(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } }; ScriptPanels = new ScriptHud(Ui) { Send = json => { if (Client != null) Client.SendScriptResponse(json); } };
@@ -752,6 +766,7 @@ namespace LifeVerse.Unity.UI
                 if (KeyBindings.Pressed(GameAction.Chat) && Time.frameCount > Hud.Chat.ReleasedFrame + 1) Hud.Chat.Focus();
                 if (KeyBindings.Pressed(GameAction.Performance)) Hud.TogglePerformance();
                 if (Follow != null && Follow.ZoomTarget.HasValue && (keyboard.escapeKey.wasPressedThisFrame || KeyBindings.Pressed(GameAction.Forward) || KeyBindings.Pressed(GameAction.Back) || KeyBindings.Pressed(GameAction.Left) || KeyBindings.Pressed(GameAction.Right) || KeyBindings.Pressed(GameAction.Jump))) Follow.ZoomTarget = null;
+                if (KeyBindings.Pressed(GameAction.CameraReset)) ResetCamera();
                 if (KeyBindings.Pressed(GameAction.Build)) ToggleBuild();
                 if (KeyBindings.Pressed(GameAction.Terrain)) ToggleTerrain();
                 var editing = (Builder != null && Builder.Active) || (TerrainTools != null && TerrainTools.Active);
@@ -847,7 +862,19 @@ namespace LifeVerse.Unity.UI
         private Vector2 _rightAt; private float _rightTime, _rightMoved;
         public readonly IslandHistory Islands = new IslandHistory();
 
-        /// <summary>The point a ray of the screen hits, in the Unity scene: the nearest of a person (their chest), an object (the centre of its box) and the ground.</summary>
+        /// <summary>A double click on the ground walks there. Not while building or shaping the land, not through the person's own eyes, and not when a person or an object is in front.</summary>
+        public bool WalkToGround(Ray ray)
+        {
+            if (Current != Phase.Playing || Player == null || Client?.Terrain == null || Follow == null || Follow.FirstPerson) return false;
+            if ((Builder != null && Builder.Active) || (TerrainTools != null && TerrainTools.Active) || Hud.Radial.IsOpen) return false;
+            if (PickFocus(ray) != null || !(Client.Terrain.Raycast(ray) is { } ground)) return false;
+            if (!Player.WalkTo(LifeVerse.Unity.World.GameSpace.ToGame(ground))) return false;
+            ObjectMenu?.Close(); Follow.ZoomTarget = null; return true;   // walking away: the camera comes back to the person
+        }
+
+        /// <summary>R: the camera goes back behind the person, at the usual height and distance.</summary>
+        public void ResetCamera() { if (Follow != null && Player != null && !Follow.Mirror) Follow.ResetBehind(Player.HeadingDegrees, Store.Float("camera.default_distance")); }
+
         /// <summary>What a double click focuses on: the nearest person or object under the ray (the ground is not a target: a double click there still walks).</summary>
         public Vector3? PickFocus(Ray ray)
         {
@@ -916,8 +943,13 @@ namespace LifeVerse.Unity.UI
             if (Client.Terrain != null && Client.Terrain.Raycast(ray) is { } ground)
             {
                 ContextTarget = "ground"; var spot = LifeVerse.Unity.World.GameSpace.ToGame(ground);
-                items.Add(new RadialItem("Teleportar para cá", () => Client?.RequestTeleport("", spot.x, spot.z))); items.Add(new RadialItem("Sobre este terreno", () => OpenParcelAt(spot)));
-                items.Add(new RadialItem("Olhar para cá", () => Follow?.FocusAt(ray))); items.Add(new RadialItem("Construir aqui", ToggleBuild));
+                items.Add(new RadialItem("Ir até aqui", () => Player?.WalkTo(spot), true, "Anda até este ponto."));
+                items.Add(new RadialItem("Teleportar para cá", () => Client?.RequestTeleport("", spot.x, spot.z)));
+                items.Add(new RadialItem("Editar terreno", () => { if (TerrainTools != null && !TerrainTools.Active) ToggleTerrain(); }, true, "Abre as ferramentas de terreno: elevar, abaixar, nivelar, suavizar e pintar."));
+                items.Add(new RadialItem("Sobre este terreno", () => OpenParcelAt(spot), true, "De quem é este chão, o tamanho e o que se pode fazer nele."));
+                items.Add(new RadialItem("Gerenciar terrenos", () => new LandManagementWindow(Context, _island, () => spot).Open(), true, "Demarcar, vender, alugar e dar permissões."));
+                items.Add(new RadialItem("Construir aqui", ToggleBuild)); items.Add(new RadialItem("Olhar para cá", () => Follow?.FocusAt(ray)));
+                items.Add(new RadialItem("Copiar local", () => { GUIUtility.systemCopyBuffer = PlaceText(spot); Notices.Show("Localização copiada: " + PlaceText(spot), NoticeKind.Good); }));
             }
             return items;
         }
@@ -931,6 +963,22 @@ namespace LifeVerse.Unity.UI
 
         /// <summary>The interface mode (full, compact, immersive) and the toolbar (order, hidden buttons, small) from the settings.</summary>
         public void ApplyInterface() { Hud.SetToolbarEdge(Settings.ToolbarEdge); Hud.ApplyLayout(Store.Get("interface.mode"), Store.Bool("interface.compact_toolbar"), Settings.ToolbarOrder, Settings.ToolbarCustomized ? Settings.ToolbarHidden : (IReadOnlyCollection<string>)Hud.DefaultHidden); }
+
+        /// <summary>To the welcome island: the platform says which it is.</summary>
+        public void GoToWelcome()
+        {
+            if (Current != Phase.Playing) return;
+            Ui.Root.Then(_api.ApiAsync("GET", "/api/v1/worlds/welcome"), answer =>
+            {
+                var island = Guid.Empty;
+                if (answer.Status == 200)
+                    try { using var json = System.Text.Json.JsonDocument.Parse(answer.Body); island = SectionWindow.G(json.RootElement, "islandId"); }
+                    catch (System.Text.Json.JsonException) { }
+                if (island == Guid.Empty) { Notices.Show("Não foi possível achar a Ilha de Boas-vindas agora.", NoticeKind.Bad); return; }
+                if (island == _island) { Notices.Show("Você já está nesta ilha.", NoticeKind.Info); return; }
+                Notices.Show("Indo para a Ilha de Boas-vindas…", NoticeKind.Info); Teleport(island);
+            });
+        }
 
         /// <summary>Back (-1) or forward (+1) among the islands visited in this session.</summary>
         public void TravelIslands(int step)
@@ -991,9 +1039,29 @@ namespace LifeVerse.Unity.UI
             Ui.ScreenLayer.Then(Api.ApiAsync("GET", "/api/v1/worlds/islands/" + _island + "/land"), r =>
             {
                 var parcel = r.Status == 200 ? ParcelInfoWindow.ParcelAt(r.Body, game.x, game.z) : Guid.Empty;
-                if (parcel == Guid.Empty) { Notices.Show(r.Status == 200 ? "Aqui não há terreno." : UiTasks.Explain(r.Status, r.Body), NoticeKind.Info); return; }
+                if (parcel == Guid.Empty) { if (r.Status == 200) OpenGroundInfo(game); else Notices.Show(UiTasks.Explain(r.Status, r.Body), NoticeKind.Info); return; }
                 LastParcelInfo = new ParcelInfoWindow(Context, _island, parcel, Here); LastParcelInfo.Open();
             });
+        }
+
+        private static string PlaceText(Vector3 game) => string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:0.#}, {1:0.#}, {2:0.#}", game.x, game.y, game.z);
+
+        /// <summary>The window about ground that is in no parcel (for the checks).</summary>
+        public FloatingWindow LastGroundInfo { get; private set; }
+
+        /// <summary>"Sobre este terreno" where no parcel was marked out: whose ground it is and what can be done there.</summary>
+        public FloatingWindow OpenGroundInfo(Vector3 game)
+        {
+            LastGroundInfo?.Close();
+            var window = new FloatingWindow(Ui, "ground-info", "Sobre este terreno", 380f, -1f, new Vector2(430, 120)); LastGroundInfo = window; window.SetIcon("pin");
+            void Line(string text, params string[] classes) { var label = UiKit.Text(text, classes); label.style.whiteSpace = WhiteSpace.Normal; window.Body.Add(label); }
+            Line("Aqui não há um terreno demarcado (parcela): este chão é da ilha.", "lv-bold");
+            Line("Ponto: " + PlaceText(game), "lv-small", "lv-muted");
+            Line(Client != null && Client.CanEditTerrain ? "Você administra o relevo desta ilha: pode editar o chão e demarcar terrenos." : "Só quem administra a ilha pode mudar o relevo aqui e demarcar terrenos.", "lv-body");
+            window.Body.Add(UiKit.Button("Editar o terreno", () => { window.Close(); if (TerrainTools != null && !TerrainTools.Active) ToggleTerrain(); }, "lv-btn-primary"));
+            window.Body.Add(UiKit.Button("Gerenciar terrenos (demarcar)", () => { window.Close(); new LandManagementWindow(Context, _island, () => game).Open(); }));
+            window.Body.Add(UiKit.Button("Sobre a ilha", () => { window.Close(); new IslandInfoWindow(Context, _island).Open(); }));
+            window.Open(); return window;
         }
 
         /// <summary>The values of the settings catalog (the Configurações window), over <see cref="Settings"/>.</summary>

@@ -171,6 +171,7 @@ namespace LifeVerse.Unity.UI
                 {
                     var category = Choice("Categoria", Categories.ToList(), d.Category); var language = Choice("Idioma", Languages.ToList(), d.Language); var rating = Choice("Classificação", Ratings.ToList(), d.Rating);
                     var limit = Field("Limite de membros", d.Limit.ToString(), 5); var cover = Field("Capa (https, opcional)", d.Cover, 300);
+                    Line("A imagem do grupo, que aparece na busca, é escolhida depois de criar: abra o grupo e vá em Configurações.", "lv-small", "lv-muted");
                     Next(() => { d.Category = IdOf(category); d.Language = IdOf(language); d.Rating = IdOf(rating); d.Limit = int.TryParse(limit.value.Trim(), out var l) ? l : 0; d.Cover = cover.value.Trim(); }); break;
                 }
                 default:

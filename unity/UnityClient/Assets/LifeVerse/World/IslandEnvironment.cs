@@ -138,8 +138,10 @@ namespace LifeVerse.Unity.World
         /// <summary>How far the look has taken over, 0 to 1.</summary>
         public float LookBlend => _blend;
         public bool LookActive => _look != null;
-        public float HourShown => _lastLook.Hour is { } target && _blend > 0 ? Mathf.Repeat(Hour + ShortestHourDelta(Hour, target) * _blend, 24f) : Hour;
-        public string WeatherShown => _lastLook.Weather != null && _blend >= .5f ? _lastLook.Weather : Weather;
+        /// <summary>The hour and the weather this person chose to see on their own screen (menu Mundo); they win over the island's and the parcel's. Null: as the island says.</summary>
+        public float? LocalHour; public string LocalWeather;
+        public float HourShown => LocalHour ?? (_lastLook.Hour is { } target && _blend > 0 ? Mathf.Repeat(Hour + ShortestHourDelta(Hour, target) * _blend, 24f) : Hour);
+        public string WeatherShown => LocalWeather ?? (_lastLook.Weather != null && _blend >= .5f ? _lastLook.Weather : Weather);
         public float LightShown => Mathf.Lerp(1f, _lastLook.Light ?? 1f, _blend);
         public Light Sun { get { Create(); return _sun; } }
         public Volume Volume => _volume;

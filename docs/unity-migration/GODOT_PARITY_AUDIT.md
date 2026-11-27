@@ -544,3 +544,33 @@ A pedido do dono, a interface do cliente Unity **deixou de imitar a do Godot** e
 ### Instalador (27/11/2026, "gerar o instalador")
 - **Defeito achado ao conferir o pacote:** a lista de arquivos do jogo (`integrity.json`) incluía a pasta de depuração que não vai no pacote, então um jogo instalado acusaria arquivo faltando em "Verificar arquivos do jogo" e mandaria instalar de novo. A lista agora só leva o que vai para o jogador (`GameFiles.Write`).
 - **Verificado:** EditMode 237/237 (o teste da lista cobre as duas pastas de depuração); zip extraído e conferido contra a lista, 230 arquivos sem problema; o jogo do zip passou na autoverificação (`plugin_self_check`, 6). **Não verificado:** instalar, abrir com janela e entrar numa ilha pela versão instalada. Nem o jogo nem o instalador são assinados.
+
+### Verificação de funcionamento (27/11/2026, commit `dc35fe5`)
+- **Passou:** verificação ao vivo contra a API local sobre PostgreSQL, 32/32 (no editor); autoteste do mundo, 345 verificações (no editor). Do mesmo dia: EditMode 237/237 e os testes .NET do protocolo (33) e do servidor de ilha (64).
+- **Comparação com o cliente Godot (por busca no código):** faltam no Unity a pré-visualização de itens, o conteúdo de construções, andar com duplo clique, ambiente e clima locais, "Primeiros passos", redefinir a câmera, o editor de HUD e o atalho para a Ilha de Boas-vindas (`FALTA_FAZER.md`, 3.12 a 3.19).
+- **Não verificado:** jogar com teclado e mouse, voz com microfone, várias pessoas, a versão instalada e o supervisor em produção.
+
+### Recursos do cliente antigo repostos (27/11/2026)
+- **Andar com duplo clique no chão** (para ao chegar, ao encontrar um obstáculo ou quando a pessoa anda pelo teclado); não vale em primeira pessoa nem construindo. Com o foco por duplo clique ligado, pessoas e objetos continuam focando a câmera.
+- **R** redefine a câmera (tecla trocável, sincronizada como `camera_reset`). **Mundo → Ir para a Ilha de Boas-vindas** e **Mundo → Hora e clima só para você** (vale até sair da ilha).
+- **"Primeiros passos"**: abre na primeira entrada do jogo aberto pela pessoa (não nas verificações automáticas) e em Ajuda; mostra as teclas que a pessoa usa.
+- **Inventário → Detalhes → Pré-visualizar** (modelo, textura, animação num esqueleto, som) e **Ver o conteúdo** (peças e o que falta de uma construção).
+- **Verificado:** EditMode 240/240; autoteste do mundo 358 (no editor, com fotos das janelas novas), incluindo a caminhada até um ponto contra o servidor da ilha. As prévias e o conteúdo foram testados com arquivos e respostas de teste. **Não verificado:** mouse e teclado de verdade, arquivos reais de um inventário e o jogo gerado.
+- **Fica de fora:** o editor visual de HUD (3.18).
+- **Depois:** o dono testou no editor e confirmou que os recursos funcionaram.
+
+### Terreno pelo clique no chão (27/11/2026, "não está funcional")
+- **O que se achou:** com mouse simulado, abrir o menu do chão e editar segurando o botão esquerdo já funcionavam no servidor de teste. Faltava no menu o **Editar terreno** (o Godot tinha), "Sobre este terreno" num chão sem parcela só mostrava um aviso curto ("Aqui não há terreno"), e uma edição recusada por falta de permissão só aparecia numa linha pequena da janela.
+- **Feito:** o menu do chão tem Ir até aqui, Teleportar, Editar terreno, Sobre este terreno, Gerenciar terrenos, Construir aqui, Olhar para cá e Copiar local; sem parcela, "Sobre este terreno" abre uma janela com o que dá para fazer ali; a recusa de uma edição vira um aviso na tela (uma vez, não a cada pincelada).
+- **Verificado:** autoteste do mundo 363 (no editor), com cliques de mouse simulados no menu e na edição (o chão sobe), e EditMode 240/240. **Não verificado:** a conta do dono em produção; lá só edita o relevo quem é dono da ilha ou tem a permissão de terreno.
+
+### Fotos no perfil, no grupo e na ilha (27/11/2026, "não está aparecendo")
+- **O que se achou:** o perfil só aceitava uma imagem que já estivesse no inventário, escondida na aba Galeria; não havia como pôr imagem num grupo; a ilha só aceitava um endereço https, que a busca não carrega; e a busca não sabia pedir a imagem de grupo (`asset://`).
+- **Feito:** **Perfil → Sobre → Foto do perfil**, **Grupo → Configurações → Imagem do grupo** e **Gerenciar esta ilha → Geral → Imagem da ilha**, com envio de arquivo (PNG, JPG ou WebP, até 8 MB) ou escolha do inventário, e a prévia; a busca pede a imagem do grupo pela rota do grupo. Sem mudança no servidor.
+- **Verificado:** EditMode 240/240; autoteste do mundo 369 (no editor, com fotos das telas); contra a API real nesta máquina (banco em memória), com os mesmos pedidos que o jogo faz: as três imagens salvas, lidas por outra conta e devolvidas pela busca com um endereço que o jogo consegue buscar. **Não verificado:** a produção, o PostgreSQL e o seletor de arquivos usado com o mouse.
+
+### Envio de foto falhando em produção (27/11/2026, "problema na API")
+- **O que o log mostrou:** `Name does not resolve (verselife_minio:9000)`: a API não encontra um servidor com esse nome (sugerido por mim sem ter conferido). O arquivo não chega ao MinIO. O endereço anterior era `lifeverse-minio:9000`.
+- **Nome interno informado pelo dono:** `verselife_minio_minio` (a porta 9001 que veio junto é a do painel web do MinIO; a API usa a 9000).
+- **Falta (produção, com o dono):** pôr `ObjectStorage__Endpoint=http://verselife_minio_minio:9000`, implantar a API com a correção abaixo e enviar uma foto.
+- **Feito no código:** se o nome tiver `_`, a API continua conectando por ele, mas envia e assina o `Host` com `-` (o MinIO recusa `_`, segundo relatos). **Verificado:** testes da API 2.570 aprovados, 44 de PostgreSQL ignorados. **Não verificado:** contra um MinIO real nem em produção.

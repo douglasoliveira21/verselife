@@ -64,6 +64,22 @@ public sealed class ObjectStorageTests
     }
 
     [Fact]
+    public async Task AServiceNameWithAnUnderscoreIsReachedByItsNameButCalledByOneMinioAccepts()
+    {
+        var server = new FakeS3(); var now = new FixedClock(new DateTimeOffset(2026, 11, 27, 12, 0, 0, TimeSpan.Zero));
+        var store = new S3ObjectStore(new AssetStorageOptions { Endpoint = "http://verselife_minio:9000", AccessKey = "key", SecretKey = "secret", Bucket = "bucket" }, new HttpClient(server), now);
+        await store.PutAsync("owner/abc", [1, 2], default);
+        var put = server.Requests.Single();
+        Assert.Equal("verselife_minio", put.RequestUri!.Host);                 // the connection goes to the service as it is named
+        Assert.Equal("verselife-minio:9000", put.Headers.Host);               // MinIO refuses a Host with "_"
+        var signed = new Dictionary<string, string> { ["host"] = "verselife-minio:9000", ["x-amz-content-sha256"] = SigV4.Sha256Hex([1, 2]), ["x-amz-date"] = "20261127T120000Z" };
+        Assert.Equal(SigV4.Authorization("PUT", "/bucket/owner/abc", "", signed, signed["x-amz-content-sha256"], "key", "secret", "us-east-1", "s3", now.GetUtcNow()), put.Headers.GetValues("Authorization").Single());
+        var (plain, other) = Create(); await plain.PutAsync("owner/abc", [1], default); Assert.Null(other.Requests.Single().Headers.Host);   // other names are left alone
+    }
+
+    private sealed class FixedClock(DateTimeOffset at) : TimeProvider { public override DateTimeOffset GetUtcNow() => at; }
+
+    [Fact]
     public async Task AMissingObjectIsNullAndAServerErrorIsAnException()
     {
         var (store, server) = Create();

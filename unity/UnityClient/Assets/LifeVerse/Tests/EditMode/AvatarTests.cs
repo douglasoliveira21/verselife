@@ -130,6 +130,48 @@ namespace LifeVerse.Unity.Tests.EditMode
         }
 
         [Test]
+        public void ADoubleClickFocusesOnWhatIsThereOrIsHandedToTheGame()
+        {
+            var host = new GameObject("camera"); var follow = host.AddComponent<FollowCamera>(); follow.Interactive = false;
+            try
+            {
+                var handed = 0; follow.DoubleClicked = _ => handed++; Vector3? thing = new Vector3(0f, 1f, 5f); follow.PickFocus = _ => thing;
+                follow.FreeOptions = follow.FreeOptions with { FocusOnDoubleClick = true };
+                Assert.IsTrue(follow.DoubleClick(new Ray(Vector3.up, Vector3.forward)), "com uma pessoa ou objeto, a câmera olha para ele"); Assert.IsTrue(follow.ZoomTarget.HasValue); Assert.AreEqual(0, handed);
+                thing = null; Assert.IsFalse(follow.DoubleClick(new Ray(Vector3.up, Vector3.down))); Assert.AreEqual(1, handed, "no chão, o jogo é avisado (para andar até lá)");
+                thing = Vector3.one; follow.FreeOptions = follow.FreeOptions with { FocusOnDoubleClick = false }; Assert.IsFalse(follow.DoubleClick(new Ray(Vector3.up, Vector3.down))); Assert.AreEqual(2, handed);
+                follow.Yaw = 200f; follow.Pitch = -30f; follow.Distance = 12f; follow.ZoomTarget = Vector3.one; follow.ResetBehind(45f, 5f);
+                Assert.AreEqual(45f, follow.Yaw); Assert.AreEqual(FollowCamera.DefaultPitch, follow.Pitch); Assert.AreEqual(5f, follow.Distance); Assert.IsFalse(follow.ZoomTarget.HasValue);
+                Assert.AreEqual(UnityEngine.InputSystem.Key.R, KeyBindings.DefaultOf(GameAction.CameraReset)); Assert.AreEqual("Redefinir a câmera", KeyBindings.Label(GameAction.CameraReset));
+            }
+            finally { Object.DestroyImmediate(host); }
+        }
+
+        [Test]
+        public void TheSkyThePersonChoosesWinsOverTheIslandsAndGoesBack()
+        {
+            var host = new GameObject("céu"); var sky = host.AddComponent<IslandEnvironment>();
+            try
+            {
+                sky.Hour = 9f; sky.Weather = "clear"; sky.SetLook(new LifeVerse.Shared.Land.ParcelEnvironment(22f, "rain", null, null, null)); sky.FinishBlend();
+                sky.LocalHour = 12f; sky.LocalWeather = "fog"; Assert.AreEqual(12f, sky.HourShown); Assert.AreEqual("fog", sky.WeatherShown);
+                sky.LocalHour = null; sky.LocalWeather = null; Assert.AreEqual(22f, sky.HourShown, .01f); Assert.AreEqual("rain", sky.WeatherShown);
+            }
+            finally { Object.DestroyImmediate(host); }
+        }
+
+        [Test]
+        public void EachKindOfItemHasItsOwnPreview()
+        {
+            Assert.AreEqual(LifeVerse.Unity.UI.ItemPreviewKind.Package, LifeVerse.Unity.UI.ItemPreviewWindow.KindOf("packages", "application/json"));
+            Assert.AreEqual(LifeVerse.Unity.UI.ItemPreviewKind.Animation, LifeVerse.Unity.UI.ItemPreviewWindow.KindOf("animations", "model/gltf-binary"));
+            Assert.AreEqual(LifeVerse.Unity.UI.ItemPreviewKind.Model, LifeVerse.Unity.UI.ItemPreviewWindow.KindOf("accessories", "model/gltf-binary"));
+            Assert.AreEqual(LifeVerse.Unity.UI.ItemPreviewKind.Texture, LifeVerse.Unity.UI.ItemPreviewWindow.KindOf("textures", ""));
+            Assert.AreEqual(LifeVerse.Unity.UI.ItemPreviewKind.Audio, LifeVerse.Unity.UI.ItemPreviewWindow.KindOf("sounds", "audio/ogg"));
+            Assert.AreEqual(LifeVerse.Unity.UI.ItemPreviewKind.None, LifeVerse.Unity.UI.ItemPreviewWindow.KindOf("scripts", "text/plain"));
+        }
+
+        [Test]
         public void ARemoteBodyFollowsTheSnapshotsAndASnapshotFarAwayMovesItAtOnce()
         {
             var view = Make(); view.ApplySnapshot(new PlayerSnapshot(1, 0, 0, 0, 0, 0, 0, 0f, NetworkMotionState.Idle, 0));

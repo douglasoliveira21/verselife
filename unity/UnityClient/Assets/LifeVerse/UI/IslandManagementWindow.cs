@@ -79,13 +79,38 @@ namespace LifeVerse.Unity.UI
         private void General() => LoadSummary(() =>
         {
             var g = _general; var options = Obj(g, "options"); var editable = Flag(g, "canEdit");
-            Title("Identidade"); Field("Nome", S(g, "name"), (int)Math.Max(3, I(options, "nameLimit") is var nl && nl > 0 ? nl : 64)); Field("Descrição", S(g, "description"), (int)(I(options, "descriptionLimit") is var dl && dl > 0 ? dl : 1000)); Field("Imagem de capa (https)", S(g, "coverImageUrl"), 512);
+            Title("Identidade"); Field("Nome", S(g, "name"), (int)Math.Max(3, I(options, "nameLimit") is var nl && nl > 0 ? nl : 64)); Field("Descrição", S(g, "description"), (int)(I(options, "descriptionLimit") is var dl && dl > 0 ? dl : 1000)); IslandPicture(S(g, "coverImageUrl"), editable);
             Title("Como aparece"); Choice("Categoria", OptionsOf(options, "categories"), S(g, "category")); Choice("Classificação", OptionsOf(options, "ratings"), S(g, "contentRating")); Choice("Idioma", OptionsOf(options, "languages"), S(g, "language"));
             Check("Aparecer no buscador", Flag(g, "showInSearch")); Check("Aparecer no mapa", Flag(g, "showOnMap"));
             Title("Lotação e chegada"); Field("Pessoas ao mesmo tempo", I(g, "maxPlayers").ToString(), 4); var spawn = Obj(g, "spawn"); Field("Ponto de chegada X", D(spawn, "x").ToString("0.#", CultureInfo.InvariantCulture), 10); Field("Ponto de chegada Z", D(spawn, "z").ToString("0.#", CultureInfo.InvariantCulture), 10);
             Line("Criada em " + When(Date(g, "createdAt")) + "  ·  " + I(g, "adminCount") + " administrador(es)  ·  tamanho " + I(g, "size") + " m", "lv-small", "lv-muted");
             if (editable) _page.Add(Btn("Salvar", SaveGeneral, "lv-btn-primary")); else Line("Só o dono e os administradores mudam estes dados.", "lv-small", "lv-muted");
         });
+
+        /// <summary>The picture that stands for the island: what it is now and the ways to change it. The reference is kept in a field that is not shown.</summary>
+        private void IslandPicture(string reference, bool editable)
+        {
+            Title("Imagem da ilha");
+            var kept = Field("Imagem de capa", reference, 512); kept.style.display = DisplayStyle.None;
+            if (reference.StartsWith("asset:", StringComparison.Ordinal) && Guid.TryParse(reference.Substring(6), out var asset))
+                ShowPicture(_page, "/api/v1/assets/" + asset + "/download", 160f, "/api/v1/worlds/islands/" + _island + "/assets/" + asset + "/file");
+            else Line(reference.Length == 0 ? "A ilha ainda não tem imagem. Ela aparece na busca. " + PictureChooser.Formats : "A imagem atual é um endereço da web, que não aparece na busca. Envie um arquivo para trocar.", "lv-small", "lv-muted");
+            if (!editable) return;
+            var choose = new List<VisualElement>
+            {
+                Btn("Enviar uma imagem do computador…", () => PictureChooser.FromComputer(_c, "Escolha a imagem da ilha", chosen => SetCover(chosen), why => Say(why, true)), "lv-btn-primary"),
+                Btn("Escolher uma imagem do inventário…", () => PictureChooser.FromInventory(_c, "Imagem da ilha", chosen => SetCover(chosen))),
+            };
+            if (reference.Length > 0) choose.Add(Btn("Tirar a imagem", () => SetCover(null)));
+            Buttons(choose.ToArray());
+        }
+
+        /// <summary>Changes the picture of the island and saves the page (null takes it away).</summary>
+        public void SetCover(Guid? asset)
+        {
+            if (!Fields.TryGetValue("Imagem de capa", out var kept)) return;
+            kept.value = asset is { } chosen ? "asset:" + chosen.ToString("D") : ""; GlobalSearchWindow.ForgetPictures(); SaveGeneral();
+        }
 
         /// <summary>The checks before the general data is sent. Null when fine.</summary>
         public static string ValidateGeneral(string name, string maxPlayers, string x, string z, out int max, out float spawnX, out float spawnZ)
@@ -100,7 +125,7 @@ namespace LifeVerse.Unity.UI
         public void SaveGeneral()
         {
             var problem = ValidateGeneral(Fields["Nome"].value, Fields["Pessoas ao mesmo tempo"].value, Fields["Ponto de chegada X"].value, Fields["Ponto de chegada Z"].value, out var max, out var x, out var z); if (problem != null) { Say(problem, true); return; }
-            var cover = Fields["Imagem de capa (https)"].value.Trim();
+            var cover = Fields["Imagem de capa"].value.Trim();
             Send("PUT", Base + "/general", new { name = Fields["Nome"].value.Trim(), description = Fields["Descrição"].value, coverImageUrl = cover.Length == 0 ? null : cover, category = IdOf(Choices["Categoria"]), contentRating = IdOf(Choices["Classificação"]), language = IdOf(Choices["Idioma"]), maxPlayers = max, showInSearch = Toggles["Aparecer no buscador"].value, showOnMap = Toggles["Aparecer no mapa"].value, spawnX = x, spawnZ = z, expectedUpdatedAt = _generalAt }, "Dados da ilha salvos.", () => LoadSummary());
         }
 

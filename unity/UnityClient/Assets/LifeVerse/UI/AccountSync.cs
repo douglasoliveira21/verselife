@@ -30,7 +30,7 @@ namespace LifeVerse.Unity.UI
         public static readonly (string Name, GameAction Action)[] KeyActions =
         {
             ("move_forward", GameAction.Forward), ("move_back", GameAction.Back), ("move_left", GameAction.Left), ("move_right", GameAction.Right), ("jump", GameAction.Jump), ("run", GameAction.Run), ("fly_toggle", GameAction.Fly), ("descend", GameAction.Descend),
-            ("emote_wave", GameAction.Wave), ("emote_dance", GameAction.Dance), ("first_person", GameAction.FirstPerson), ("build_mode", GameAction.Build), ("terrain_mode", GameAction.Terrain), ("voice_talk", GameAction.Talk),
+            ("emote_wave", GameAction.Wave), ("emote_dance", GameAction.Dance), ("first_person", GameAction.FirstPerson), ("camera_reset", GameAction.CameraReset), ("build_mode", GameAction.Build), ("terrain_mode", GameAction.Terrain), ("voice_talk", GameAction.Talk),
         };
 
         public static string KeyId(string name) => "controls." + name + ".1";

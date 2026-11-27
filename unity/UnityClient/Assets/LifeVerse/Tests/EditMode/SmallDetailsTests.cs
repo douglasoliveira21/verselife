@@ -38,6 +38,9 @@ namespace LifeVerse.Unity.Tests.EditMode
             Assert.AreEqual("/api/v1/worlds/islands/" + island + "/assets/" + asset + "/file", GlobalSearchWindow.ThumbPath("asset:" + asset, island));
             Assert.AreEqual("/api/v1/assets/" + asset + "/download", GlobalSearchWindow.ThumbPath("asset:" + asset, Guid.Empty));
             Assert.AreEqual("/api/v1/users/x/profile/photo", GlobalSearchWindow.ThumbPath("/api/v1/users/x/profile/photo", Guid.Empty));
+            var club = Guid.NewGuid();
+            Assert.AreEqual("/api/v1/groups/" + club + "/image", GlobalSearchWindow.ThumbPath("asset://" + asset, Guid.Empty, club), "a group's picture is asked by the group");
+            Assert.IsNull(GlobalSearchWindow.ThumbPath("asset://" + asset, Guid.Empty), "without the group there is nowhere to ask");
             Assert.IsNull(GlobalSearchWindow.ThumbPath("https://elsewhere.example/a.png", Guid.Empty), "other sites are never fetched");
             Assert.IsNull(GlobalSearchWindow.ThumbPath("/api/v1/../secret", Guid.Empty));
             Assert.AreEqual("calendar", GlobalSearchWindow.IconOfKind("event")); Assert.AreEqual("globe", GlobalSearchWindow.IconOfKind("island"));

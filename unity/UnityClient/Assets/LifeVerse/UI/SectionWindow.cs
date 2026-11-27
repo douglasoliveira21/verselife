@@ -65,6 +65,24 @@ namespace LifeVerse.Unity.UI
         /// <summary>The icon beside a section of the side menu.</summary>
         public static string IconOfSection(string id) => id != null && SectionIcons.TryGetValue(id, out var icon) ? icon : "caret-right";
 
+        /// <summary>How many pictures of the page arrived and were drawn (for the checks).</summary>
+        public int PicturesShown { get; private set; }
+
+        /// <summary>A picture the platform hands out, drawn in a place of the page when it arrives; <paramref name="otherwise"/> is asked when the first address does not give it.</summary>
+        protected void ShowPicture(VisualElement into, string path, float size, string otherwise = null)
+        {
+            var image = new Image { scaleMode = ScaleMode.ScaleToFit, name = "picture" }; image.style.width = size; image.style.height = size; image.style.marginBottom = 4; image.style.flexShrink = 0; into.Add(image);
+            Texture2D drawn = null; image.RegisterCallback<DetachFromPanelEvent>(_ => { if (drawn != null) UnityEngine.Object.Destroy(drawn); drawn = null; });
+            void Ask(string from, string then) => this.Then(_c.Api.GetBytesAsync(from), r =>
+            {
+                if (image.parent == null) return;
+                var texture = r.Status == 200 && r.Bytes != null ? new Texture2D(2, 2) : null;
+                if (texture != null && LifeVerse.Unity.World.Pictures.Load(texture, r.Bytes)) { image.image = drawn = texture; PicturesShown++; return; }
+                if (texture != null) UnityEngine.Object.Destroy(texture); if (then != null) Ask(then, null);
+            });
+            Ask(path, otherwise);
+        }
+
         public bool Press(string text) { if (!Actions.TryGetValue(text, out var run)) return false; run(); return true; }
 
         public void Show(string section)
