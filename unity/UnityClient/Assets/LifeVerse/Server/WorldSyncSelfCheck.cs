@@ -349,6 +349,12 @@ namespace LifeVerse.Unity.Server
             Console.WriteLine($"event=builtin_body seconds={Time.realtimeSinceStartup - loadStart:F1} bones={view.Skeleton.BoneCount} triangles={view.Skeleton.Triangles} height={view.Skeleton.RenderBounds.size.y:F2}");
             Expect(Mathf.Abs(view.Skeleton.RenderBounds.size.y - 1.8f) < .15f && view.Skeleton.Triangles > 2000 && view.Appearance.CustomModelTriangles == view.Skeleton.Triangles, "o homem do LifeVerse tem 1,8 m, esqueleto padrão e a conta de triângulos: " + view.Skeleton.RenderBounds.size + " " + view.Skeleton.Triangles); _checks++;
             if (_shots != null) { yield return new WaitForSeconds(.5f); viewer.Views.gameObject.SetActive(false); dressed.Views.gameObject.SetActive(false); var manAt = view.GamePosition; _camera.transform.position = GameSpace.ToUnity(manAt.x + .6f, manAt.y + 1.4f, manAt.z - 3.4f); _camera.transform.LookAt(GameSpace.ToUnity(manAt.x, manAt.y + 1f, manAt.z)); yield return Shot("man"); viewer.Views.gameObject.SetActive(true); dressed.Views.gameObject.SetActive(true); }
+            // the body faces where the avatar goes: the toes are ahead of the heels (a body turned around walks backwards in every direction)
+            {
+                var bones = view.Skeleton.Content.GetComponentsInChildren<Transform>(true); Transform Named(string name) => System.Linq.Enumerable.First(bones, t => t.name == name);
+                var toes = Vector3.Dot(Named("ball_l").position - Named("foot_l").position, view.transform.forward);
+                Expect(toes > .05f, "o corpo olha para onde o avatar vai: os dedos dos pés ficam à frente (" + toes.ToString("F2") + " m)"); _checks++;
+            }
             // the head follows the person's look
             viewer.Client.Send(new HeadLookMessage(.5f));
             yield return Until(() => editor.Views.ViewOf(viewer.Client.SelfPeerId) != null && Mathf.Abs(editor.Views.ViewOf(viewer.Client.SelfPeerId).HeadPitch - .5f) < .01f, "a cabeÃ§a do outro jogador acompanhar o olhar"); _checks++;
@@ -611,6 +617,31 @@ namespace LifeVerse.Unity.Server
             Expect(sync.UseAccount(fetched.Result) == 4 && Math.Abs(syncSettings.MouseSensitivity - .225f) < .001f && syncSettings.InvertY && syncSettings.ChatFontSize == 20 && Math.Abs(syncSettings.ChatOpacity - .5f) < .001f && sync.Enabled && sync.Revision == 4, "usar a conta aplica os valores e liga a sincronia");
             syncSettings.AlwaysRun = true; var pushed = sync.PushAppliedAsync(); yield return Until(() => pushed.IsCompleted, "o envio"); Expect(pushed.Result.Result == LifeVerse.Unity.UI.SyncResult.Ok && sync.Revision == 5 && stub.ReceivedAny(b => b.Route == "PUT /api/v1/users/me/preferences" && b.Body.Contains("\"baseRevision\":4") && b.Body.Contains("\"controls.always_run\":true") && b.Body.Contains("\"controls.mouse_sensitivity\":1.5") && b.Body.Contains("\"interface.mode\"") && !b.Body.Contains("graphics.") && !b.Body.Contains("audio.master")), "o envio leva a revisão vista e só ids da lista");
             sync.TurnOff(); Expect(!sync.Enabled, "desligar volta ao local"); _checks++;            player.Client.SendChat("oi do outro lado"); yield return Until(() => app.Hud.Chat.Lines.Any(l => l.Text == "oi do outro lado" && l.Name == "joiner"), "o chat do outro aparecer na tela"); _checks++;
+            // the walking keys are also the interface's navigation keys: while playing they must not take the focus anywhere (in the chat they would be typed) nor press a button
+            {
+                var ring = app.Ui.Root.panel.focusController; var button = UnityEngine.UIElements.UQueryExtensions.Q<UnityEngine.UIElements.Button>(app.Hud.BottomBar); var presses = 0; Action count = () => presses++; button.clicked += count;
+                var oldBlocked = KeyBindings.Blocked; KeyBindings.Blocked = () => true;   // the avatar stays where it is
+                var keys = UnityEngine.InputSystem.InputSystem.AddDevice<UnityEngine.InputSystem.Keyboard>("lv-nav-keyboard"); var behaviour = UnityEngine.InputSystem.InputSystem.settings.backgroundBehavior; UnityEngine.InputSystem.InputSystem.settings.backgroundBehavior = UnityEngine.InputSystem.InputSettings.BackgroundBehavior.IgnoreFocus;
+                button.Focus(); yield return null; Expect(ReferenceEquals(ring.focusedElement, button), "um botão da barra recebe o foco: " + ring.focusedElement);
+                foreach (var key in new[] { UnityEngine.InputSystem.Key.W, UnityEngine.InputSystem.Key.A, UnityEngine.InputSystem.Key.S, UnityEngine.InputSystem.Key.D })
+                {
+                    UnityEngine.InputSystem.InputSystem.QueueStateEvent(keys, new UnityEngine.InputSystem.LowLevel.KeyboardState(key)); yield return new WaitForSeconds(.15f);
+                    UnityEngine.InputSystem.InputSystem.QueueStateEvent(keys, new UnityEngine.InputSystem.LowLevel.KeyboardState()); yield return new WaitForSeconds(.15f);
+                    Expect(ReferenceEquals(ring.focusedElement, button), "a tecla " + key + " não leva o foco para outro lugar: " + ring.focusedElement);
+                }
+                foreach (var direction in new[] { UnityEngine.UIElements.NavigationMoveEvent.Direction.Left, UnityEngine.UIElements.NavigationMoveEvent.Direction.Up, UnityEngine.UIElements.NavigationMoveEvent.Direction.Right, UnityEngine.UIElements.NavigationMoveEvent.Direction.Down })
+                {
+                    using (var move = UnityEngine.UIElements.NavigationMoveEvent.GetPooled(direction)) { move.target = button; button.SendEvent(move); } yield return null;
+                    Expect(ReferenceEquals(ring.focusedElement, button), "andar com " + direction + " não move o foco da interface: " + ring.focusedElement);
+                }
+                using (var submit = UnityEngine.UIElements.NavigationSubmitEvent.GetPooled()) { submit.target = button; button.SendEvent(submit); } yield return null;
+                Expect(presses == 0, "uma tecla do jogo não aperta o botão que ficou com o foco"); button.clicked -= count;
+                // Enter in the chat sends and gives the keyboard back to the game
+                app.Hud.Chat.Focus(); yield return Until(() => app.Hud.Chat.Typing, "o chat receber o foco"); var field = app.Hud.Chat.Input; field.value = "tchau";
+                using (var enter = UnityEngine.UIElements.KeyDownEvent.GetPooled('\n', KeyCode.Return, EventModifiers.None)) { enter.target = field; field.SendEvent(enter); } yield return null;
+                Expect(!app.Hud.Chat.Typing && field.value == "", "Enter envia e o teclado volta para o jogo");
+                UnityEngine.InputSystem.InputSystem.settings.backgroundBehavior = behaviour; UnityEngine.InputSystem.InputSystem.RemoveDevice(keys); KeyBindings.Blocked = oldBlocked; _checks++;
+            }
             // sound: the recordings, the volumes, the soundscape, footsteps and typing, what scripts play, the music of a parcel, and voice
             yield return Until(() => SoundLibrary.Has(SoundLibrary.Footsteps) && SoundLibrary.Has(SoundLibrary.Typing) && SoundLibrary.Has(SoundLibrary.Login), "as gravações do jogo serem lidas", 20f);
             Expect(SoundLibrary.Get(SoundLibrary.Footsteps).length > 3f && SoundLibrary.Get(SoundLibrary.Typing).length > 3f && SoundLibrary.Get(SoundLibrary.Login).length > 20f, "as três gravações são mp3 de verdade lidos: " + SoundLibrary.Get(SoundLibrary.Footsteps).length + " " + SoundLibrary.Get(SoundLibrary.Typing).length + " " + SoundLibrary.Get(SoundLibrary.Login).length);

@@ -11,7 +11,7 @@ namespace LifeVerse.Unity.Avatar
     /// A person's own body: a GLB with the standard humanoid skeleton, loaded with glTFast under the avatar, brought to 1.8 m and set on the ground. The game's clips
     /// (<see cref="DefaultClips"/>, the shared <see cref="SkeletonClip"/>) are sampled every frame: for each standard bone a rotation "how far it has turned from rest, in the space of
     /// the model" that is put on the bone whatever the model's own proportions and bone axes are, and moved over to Unity (glTFast mirrors x; the content is turned half a turn about
-    /// the vertical to meet the game space) before use. States without a clip (sitting, waving, dancing, gestures) and the time before the clips are read use the procedural pose of
+    /// the vertical not being needed, as the model already looks forward) before use. States without a clip (sitting, waving, dancing, gestures) and the time before the clips are read use the procedural pose of
     /// the simple body, laid on the skeleton (arms are brought down from the T-pose). Switching clips crosses over for a fifth of a second. Not yet: custom items on the body, the
     /// animations of the person's own files, finger bones and the look of the eyes.
     /// </summary>
@@ -55,8 +55,9 @@ namespace LifeVerse.Unity.Avatar
             if (gltf == null) return null;
             var holder = new GameObject("Skeletal body"); holder.transform.SetParent(parent, false);
             var body = holder.AddComponent<SkeletalBody>();
-            // a glTF is right-handed and glTFast mirrors x; the game space flips z instead: half a turn about the vertical gives exactly that (as for imported objects)
-            var content = new GameObject("Content"); content.transform.SetParent(holder.transform, false); content.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            // a glTF body looks along +Z and glTFast only mirrors x, so it already looks where the avatar goes (Unity +Z): it is not turned. (An imported object keeps its place in the world with half a
+            // turn; a body also has to face forward, which in the Godot client is a second half turn, and the two cancel out.)
+            var content = new GameObject("Content"); content.transform.SetParent(holder.transform, false);
             if (!await gltf.InstantiateMainSceneAsync(content.transform)) { Destroy(holder); return null; }
             if (keepLoaderClips) body.LoaderClips = gltf.GetAnimationClips();
             if (!body.Setup(content.transform)) { Destroy(holder); return null; }

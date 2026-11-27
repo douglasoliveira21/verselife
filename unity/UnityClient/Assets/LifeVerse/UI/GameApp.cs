@@ -56,6 +56,7 @@ namespace LifeVerse.Unity.UI
             ApiBase = apiBase; Settings = settings ?? UserSettings.Load(SettingsPath); GraphicsQuality.Apply(Settings); Store = new SettingsStore(Settings); Store.Set("world.minimap_open", "false", false);   // as in the Godot client, the game always starts with the mini-map closed
             Store.Changed += OnSettingChanged; if (Store.Bool("general.keep_on_top")) SettingsEffects.KeepOnTop(true); ModelImportWindow.CollisionChosen = shape => Store.Set("build.import_collision", shape, false);
             Ui = UiRoot.Create(Settings); Notices = new NotificationCenter(Ui); Hud = new Hud(Ui, Notices);
+            GameKeyboard.Guard(Ui.Root.panel.visualTree, () => Current == Phase.Playing);
             Login = new LoginView(Settings, "Versão " + Application.version + "  •  Unity"); Login.SignIn += OnSignIn; Login.Register += OnRegister; Ui.ScreenLayer.Add(Login);
             Loading = new LoadingView(); Loading.Back.clicked += BackToLogin;
             _api = new IslandEntryClient(apiBase); _api.SessionExpired += () => _sessionGone = true;   // told from a worker thread: the screens change on the next frame
@@ -745,9 +746,10 @@ namespace LifeVerse.Unity.UI
             }
             if (Voice != null) { Voice.TalkHeld = KeyBindings.Held(GameAction.Talk); ApplyLandVoice(); }
             if (Hearing != null && PeopleViews != null) foreach (var peer in PeopleViews.Peers) { var view = PeopleViews.ViewOf(peer); if (view != null) view.SetSpeaking(SpeakingIndicators && (peer == Client.SelfPeerId ? Voice != null && Voice.Talking : Hearing.IsSpeaking(peer))); }
+            if (Mouse.current is { } pointer && (pointer.leftButton.wasPressedThisFrame || pointer.rightButton.wasPressedThisFrame) && !UiKit.IsOver(Ui.Root, pointer.position.ReadValue())) GameKeyboard.ReleaseFocus(Ui.Root);   // a click on the world takes the keyboard back from a field
             if (Keyboard.current is { } keyboard && !Hud.Chat.Typing)
             {
-                if (KeyBindings.Pressed(GameAction.Chat)) Hud.Chat.Focus();
+                if (KeyBindings.Pressed(GameAction.Chat) && Time.frameCount > Hud.Chat.ReleasedFrame + 1) Hud.Chat.Focus();
                 if (KeyBindings.Pressed(GameAction.Performance)) Hud.TogglePerformance();
                 if (Follow != null && Follow.ZoomTarget.HasValue && (keyboard.escapeKey.wasPressedThisFrame || KeyBindings.Pressed(GameAction.Forward) || KeyBindings.Pressed(GameAction.Back) || KeyBindings.Pressed(GameAction.Left) || KeyBindings.Pressed(GameAction.Right) || KeyBindings.Pressed(GameAction.Jump))) Follow.ZoomTarget = null;
                 if (KeyBindings.Pressed(GameAction.Build)) ToggleBuild();

@@ -155,9 +155,15 @@ namespace LifeVerse.Unity.UI
 
         private void OnKey(KeyDownEvent e)
         {
-            if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { Submit(); e.StopPropagation(); }
-            else if (e.keyCode == KeyCode.Escape) { _input.Blur(); e.StopPropagation(); }
+            if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { Submit(); Release(); e.StopPropagation(); }   // as in the Godot client: said (or nothing to say), the keys walk again
+            else if (e.keyCode == KeyCode.Escape) { Release(); e.StopPropagation(); }
         }
+
+        /// <summary>The frame in which the field last gave the keyboard back: the Enter that did it must not open the chat again.</summary>
+        public int ReleasedFrame { get; private set; } = -10;
+
+        /// <summary>Gives the keyboard back to the game.</summary>
+        public void Release() { ReleasedFrame = Time.frameCount; _input.Blur(); SetTyping(false); }
 
         /// <summary>The text as it will be sent: control characters out, spaces trimmed, cut at the limit. Null when nothing is left.</summary>
         public static string Clean(string text)
