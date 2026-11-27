@@ -1,13 +1,14 @@
 # LifeVerse — projeto Unity 6 HDRP
 
-Migração do cliente (e, depois, do servidor de ilha) de Godot 4.7 para Unity 6 HDRP. O projeto Godot (`client/`, `island-server/`) **não é alterado**. Plano e riscos: `docs/unity-migration/`.
+O cliente do jogo e o servidor de ilha, em Unity 6 HDRP. Os projetos Godot que vieram antes saíram do repositório em 27/11/2026 (estão no histórico do git). Plano e riscos da migração: `docs/unity-migration/`.
 
 | Pasta | Conteúdo |
 |---|---|
 | `UnityClient/` | Projeto Unity 6000.6.9f1, HDRP 17.6.0, Input System 1.20.1, glTFast 6.21.0 |
 | `UnityPlugins/` | Compila `shared/` e `scripting/` para a Unity (netstandard2.1, C# 12) **sem alterar os originais** |
 | `UnityWire/` | `LifeVerse.Wire`: protocolo de rede 12 (44 mensagens) e transporte LiteNetLib, `netstandard2.1` e `net8.0`. Especificação em `docs/unity-migration/WIRE_PROTOCOL.md`; testes em `tests/LifeVerse.Wire.Tests` |
-| `UnityIslandServer/` | (Fase 6; D4 autorizada, falta o módulo Linux da Unity) |
+| `UnityIslandServer/` | Servidor de ilha sem engine (`Core`, com os scripts Lua em `Core/Scripting`; `Host`; `LoadTest`). O servidor dedicado da Unity usa o mesmo `Core` |
+| `../assets/` | Arquivos que vão no jogo (corpo, sons, ícone, licenças); o build copia o corpo e os sons para `StreamingAssets` |
 
 ## Comandos
 
@@ -51,4 +52,4 @@ Criadas junto com o primeiro código real de cada módulo, para não existir ass
 
 ## Pacote para distribuir
 
-`powershell -ExecutionPolicy Bypass -File scripts\build-unity-client.ps1 -Installer` compila o cliente, monta `artifacts\unity-<versão>\` com o zip, o instalador (Inno Setup, o mesmo `installer\LifeVerse.iss` do cliente Godot, com `/DEdition=-unity`), `SHA256SUMS.txt` e `release.json`. A versão é a do projeto Unity (`bundleVersion`). A configuração do aviso de atualização é a mesma da API (`ClientRelease:*`): o cliente lê `/api/v1/client/release?platform=windows`.
+`powershell -ExecutionPolicy Bypass -File scripts\build-unity-client.ps1 -Installer` compila o cliente, monta `artifacts\unity-<versão>\` com o zip, o instalador (Inno Setup, `installer\LifeVerse.iss`), `SHA256SUMS.txt` e `release.json`. A versão é a do projeto Unity (`bundleVersion`). A configuração do aviso de atualização é a mesma da API (`ClientRelease:*`): o cliente lê `/api/v1/client/release?platform=windows`.

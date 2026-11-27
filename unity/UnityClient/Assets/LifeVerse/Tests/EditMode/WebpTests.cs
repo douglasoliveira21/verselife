@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace LifeVerse.Unity.Tests.EditMode
 {
-    /// <summary>WebP pictures, read in C#: the pixels must be the ones Godot (libwebp) reads from the same files (tests/fixtures/webp, made by unity/tools/webp-fixtures).</summary>
+    /// <summary>WebP pictures, read in C#: the pixels must be the ones Godot (libwebp) reads from the same files (tests/fixtures/webp, made with Godot before it left the repository).</summary>
     public sealed class WebpTests
     {
         private static string Folder => Path.GetFullPath(Path.Combine(Application.dataPath, "../../../tests/fixtures/webp"));

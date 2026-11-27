@@ -12,7 +12,7 @@ using UnityEngine;
 namespace LifeVerse.Unity.Server
 {
     /// <summary>
-    /// The same scenarios, parameters and measurements as the Godot project of <c>unity/PhysicsComparison</c> (which reproduces <c>island-server/Scripts/ServerPhysics.cs</c>), run on the
+    /// The same scenarios, parameters and measurements the Godot island physics was measured with (that project is in the git history; the table is in MIGRATION_ISLAND_SERVER.md), run on the
     /// island physics of this server, so the two engines can be compared line by line: "RESULT name key=value …" with the same keys. Flat ground at y = 0 or a slope, 60 Hz,
     /// 1 m balls (radius .5) and boxes unless said. The first five scenarios are the original ones.
     /// </summary>

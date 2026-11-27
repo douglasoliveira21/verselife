@@ -1,4 +1,4 @@
-// The sea, ported from the water shader of the Godot client (client/Scripts/OceanSurface.cs): turquoise in the shallows to deep blue by the depth of what is behind
+// The sea, ported from the water shader of the Godot client (OceanSurface.cs, in the git history): turquoise in the shallows to deep blue by the depth of what is behind
 // each pixel, three sliding layers of ripples, foam where the water is shallow, the sky mirrored at grazing angles, the sun's glint, a fade into the horizon and,
 // seen from below, a translucent ceiling. HDRP unlit and transparent: it lights itself with the sun and the sky the environment publishes (_LV globals), in the same
 // units as the rest of the picture. _Detail 0 is the cheaper sea of the low presets (two ripple layers, plain foam, no clouds in the mirror).

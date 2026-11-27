@@ -1,10 +1,10 @@
 # LifeVerse
 
-LifeVerse is an original persistent 3D social sandbox. This monorepository contains the Godot .NET client, authoritative island server, ASP.NET Core API, shared contracts, infrastructure, tests, and technical documentation.
+LifeVerse is an original persistent 3D social sandbox. This monorepository contains the Unity client, the island server (Unity dedicated server) and its supervisor, the ASP.NET Core API, shared contracts, infrastructure, tests, and technical documentation.
 
 ## Requirements
 
-- Godot 4.7.2 .NET (project is pinned to the supported 4.7 stable patch)
+- Unity 6000.6.9f1 (HDRP), with the "Linux Dedicated Server Build Support" module to build the island server
 - .NET SDK 10.0.301 or a compatible 10.0 patch
 - Docker Desktop with Docker Compose v2
 - Git
@@ -13,25 +13,16 @@ LifeVerse is an original persistent 3D social sandbox. This monorepository conta
 
 1. Copy `.env.example` to `.env` and replace every placeholder secret.
 2. Run `./scripts/dev-up.ps1` from PowerShell.
-3. Open `client/project.godot` with the Godot .NET editor.
-4. Run the Bootstrap scene. The API defaults to `http://localhost:8080`.
+3. Build the libraries the Unity project uses: `powershell -File unity\UnityPlugins\build-plugins.ps1`.
+4. Set `LIFEVERSE_API_URL=http://localhost:8080` (without it the client talks to the production API), open `unity/UnityClient` in Unity and press Play.
+
+Commands for tests and builds are in [unity/README.md](unity/README.md); what is still open is in [docs/unity-migration/FALTA_FAZER.md](docs/unity-migration/FALTA_FAZER.md).
 
 Use `./scripts/dev-logs.ps1`, `./scripts/dev-down.ps1`, and `./scripts/dev-update.ps1` to inspect, stop, or rebuild the stack.
 
-## Phase 02 controls
+## Documentation written for the former Godot client
 
-- W/S (or Up/Down): walk forward/back along the avatar's facing
-- A/D (or Left/Right): turn the avatar in place; the camera swings behind it while moving
-- Q/Z: sidestep left/right
-- Double-click the ground: walk there (any movement key cancels)
-- T: terrain tools (see [docs/TERRAIN.md](docs/TERRAIN.md)); the viewer-style interface is described in [docs/VIEWER_UI.md](docs/VIEWER_UI.md)
-- Enter: local chat; Esc: leave the chat box
-- Shift: run; Space: jump/ascend; Ctrl: descend
-- F: toggle flight; C: first/third person; Alt: release/capture cursor
-- Mouse: camera orbit; wheel: zoom; E: interact/stand
-- G: wave; H: dance
-
-The avatar creator is available after registration and through **Edit avatar** in the world HUD.
+The game was first written in Godot; those projects (`client/`, `island-server/`) were removed on 2026-11-27 and remain in the git history (last commit with them: `177c0c1`). Many documents in `docs/` were written then: the API, data and product rules they describe still hold, but file paths, controls and test scenes of the Godot projects do not.
 
 Island persistence, permissions, terrain snapshots, official templates, and World Manager behavior are documented in [docs/ISLANDS.md](docs/ISLANDS.md).
 
@@ -43,16 +34,18 @@ Sandboxed Lua scripts and the in-world HUD editor are documented in [docs/LUA_HU
 
 Chat, friendships, groups, LiveKit room tokens, moderation and island radios are documented in [docs/SOCIAL.md](docs/SOCIAL.md).
 
-## Phase 03 multiplayer
+## Multiplayer
 
-The World scene now contains the Multiplayer panel. Enter an island UUID to request a short-lived entry ticket, connect through ENet, see nearby authenticated avatars, and use local chat. The authoritative protocol, admission flow, rate limits, reconnect behavior, and operational settings are documented in [docs/MULTIPLAYER.md](docs/MULTIPLAYER.md).
+The client asks the API for a short-lived entry ticket and connects to the island server over LifeVerse Wire 12 ([docs/unity-migration/WIRE_PROTOCOL.md](docs/unity-migration/WIRE_PROTOCOL.md)). Island servers start on demand ([docs/ISLAND_HOSTING.md](docs/ISLAND_HOSTING.md)).
 
 ## Repository layout
 
-- `client`: Godot .NET desktop client
-- `island-server`: authoritative Godot headless island process
+- `unity`: Unity client, engine-free island server core and network protocol
+- `island-supervisor`: starts one island server per island players ask to enter
 - `backend`: modular ASP.NET Core API
-- `shared`: versioned transport contracts and protocol notes
+- `shared`: versioned game rules and transport contracts
+- `scripting`: sandboxed Lua runtime
+- `assets`: files that ship with the game (body, sounds, icon, licences)
 - `infrastructure`: containers and environment configuration
 - `tests`: automated tests and smoke-test scripts
 
@@ -62,7 +55,7 @@ LV Coins, the ledger, marketplace purchases and island rentals are documented in
 
 The administrative panel, RBAC/MFA contract, audit trail and backup runbook are documented in [docs/ADMINISTRATION.md](docs/ADMINISTRATION.md).
 
-Lua scripts on objects (runs on the island server) are documented in [docs/SCRIPTING.md](docs/SCRIPTING.md).
+Lua scripts on objects (run on the island server) are documented in [docs/SCRIPTING.md](docs/SCRIPTING.md).
 
 Windows build, launcher, installer, manifest and release gates are documented in [docs/RELEASE.md](docs/RELEASE.md).
 - `docs`: product, architecture, security, operations, and progress records

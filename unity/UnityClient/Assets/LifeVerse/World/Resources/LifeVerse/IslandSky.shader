@@ -1,4 +1,4 @@
-// The sky of an island: the sky shader of the Godot client (client/Scripts/IslandEnvironmentController.cs) as an HDRP sky. Pass 0 draws the cube map the world is lit by,
+// The sky of an island: the sky shader of the Godot client (IslandEnvironmentController.cs, in the git history) as an HDRP sky. Pass 0 draws the cube map the world is lit by,
 // pass 1 the sky behind the picture. Colours are linear, in Godot's units; _IslandIntensity turns them into HDRP radiance. Loaded from Resources, so builds carry it.
 Shader "Hidden/LifeVerse/IslandSky"
 {

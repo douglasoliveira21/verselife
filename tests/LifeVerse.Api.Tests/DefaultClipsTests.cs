@@ -9,7 +9,7 @@ public sealed class DefaultClipsTests
     private static SkeletonClip Clip(string file, string name)
     {
         string? path = null;
-        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null && path is null; d = d.Parent) { var candidate = Path.Combine(d.FullName, "client", "Assets", "animations", file); if (File.Exists(candidate)) path = candidate; }
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null && path is null; d = d.Parent) { var candidate = Path.Combine(d.FullName, "unity", "UnityClient", "Assets", "LifeVerse", "Avatar", "Resources", "Animations", file); if (File.Exists(candidate)) path = candidate; }
         Assert.NotNull(path); var clip = SkeletonClip.Read(File.ReadAllBytes(path!), name);
         Assert.NotNull(clip); return clip!;
     }
@@ -19,7 +19,7 @@ public sealed class DefaultClipsTests
     [Fact]
     public void StandingStillIsALongLoopThatNeverStops()
     {
-        var clip = Clip("idle_animation.bin", "Idle");
+        var clip = Clip("idle_animation.bytes", "Idle");
         Assert.InRange(clip.Duration, 10f, 20f); foreach (var bone in Body) Assert.Contains(bone, clip.Bones);
         var start = clip.SampleDeltas(0f); var middle = clip.SampleDeltas(clip.Duration / 2);
         Assert.Contains(middle, p => System.Numerics.Quaternion.Dot(p.Value, start[p.Key]) is var dot && Math.Abs(dot) < .9999f);          // it moves
@@ -30,8 +30,8 @@ public sealed class DefaultClipsTests
     }
 
     [Theory]
-    [InlineData("jump_animation.bin", "Jump", .5f, 1.5f)]
-    [InlineData("jumpdown_animation.bin", "JumpDown", .2f, 1.0f)]
+    [InlineData("jump_animation.bytes", "Jump", .5f, 1.5f)]
+    [InlineData("jumpdown_animation.bytes", "JumpDown", .2f, 1.0f)]
     public void TheJumpClipsAreShortAndLeaveTheLiftToThePhysics(string file, string name, float minSeconds, float maxSeconds)
     {
         var clip = Clip(file, name);

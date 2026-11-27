@@ -71,11 +71,10 @@ public sealed class IslandEngineTests : IDisposable
     }
 
     [Fact]
-    public async Task EachSupervisorAsksForTheIslandsOfItsEngine()
+    public async Task TheSupervisorAsksForTheUnityIslands()
     {
         var recorder = new Recorder(); using var http = new HttpClient(recorder);
-        var islands = await new HttpPendingIslands(http, "http://api.local/", "unity").GetAsync(default);
+        var islands = await new HttpPendingIslands(http, "http://api.local/").GetAsync(default);
         Assert.Equal("http://api.local/api/v1/platform/supervisor/pending?engine=unity", recorder.Url); Assert.Single(islands);
-        await new HttpPendingIslands(http, "http://api.local").GetAsync(default); Assert.EndsWith("?engine=godot", recorder.Url);
     }
 }

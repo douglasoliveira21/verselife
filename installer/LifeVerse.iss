@@ -1,5 +1,5 @@
-; Windows installer for the exported LifeVerse client. Built in CI by .github/workflows/release.yml:
-;   iscc /DAppVersion=0.6.0 /DSourceDir=..\build\windows installer\lifeverse.iss
+; Windows installer for the LifeVerse client (the Unity build). Called by scripts/build-unity-client.ps1 -Installer:
+;   iscc /DAppVersion=0.7.0 /DEdition=-unity /DSourceDir=<folder with the build> installer\LifeVerse.iss
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -18,7 +18,7 @@ AppPublisher=LifeVerse
 DefaultDirName={autopf}\LifeVerse
 DefaultGroupName=LifeVerse
 UninstallDisplayIcon={app}\LifeVerse.exe
-SetupIconFile=..\client\Assets\brand\icon.ico
+SetupIconFile=..\assets\brand\icon.ico
 OutputDir=..\build\installer
 OutputBaseFilename=LifeVerse-Setup-{#AppVersion}{#Edition}
 Compression=lzma2

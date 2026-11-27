@@ -11,7 +11,9 @@ secrets/
 .vs/
 .tools/
 
-# Godot
+# leftovers of the former Godot projects, on machines that had them
+/client/
+/island-server/
 **/.godot/
 **/.mono/
 **/android/

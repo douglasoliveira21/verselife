@@ -99,8 +99,9 @@ public sealed class ClientReleaseEndpointTests
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
         var settings = File.ReadAllText(Path.Combine(root, "backend/appsettings.json"));
-        var client = File.ReadAllText(Path.Combine(root, "client/Autoloads/AppManager.cs"));
-        var clientVersion = System.Text.RegularExpressions.Regex.Match(client, "Version = \"([^\"]+)\"").Groups[1].Value;
+        var client = File.ReadAllText(Path.Combine(root, "unity/UnityClient/ProjectSettings/ProjectSettings.asset"));
+        var clientVersion = System.Text.RegularExpressions.Regex.Match(client, @"(?m)^  bundleVersion: (\S+)").Groups[1].Value;
+        Assert.NotEmpty(clientVersion);
         Assert.Contains($"\"Latest\": \"{clientVersion}\"", settings);
         Assert.Contains($"\"Minimum\": \"{clientVersion}\"", settings);
     }

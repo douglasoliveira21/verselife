@@ -1,7 +1,7 @@
 """
 Builds the default man of LifeVerse from the Character Creator base (LifeVerse_Avatar_Base.fbx), exactly as it is (no clothes and no hair are added):
   blender -b --python tools/blender/build_default_man.py -- <base.fbx> <out.glb>
-(Blender adds .glb to the name: rename the result to client/Assets/avatars/lifeverse_man.bin.)
+(Blender adds .glb to the name: rename the result to assets/avatars/lifeverse_man.bin.)
 
 What is kept: every mesh, the skeleton, the weights and every texture at its full size and in the format the file had (normal maps included).
 What is dropped: the morph targets (expressions and body morphs: the game does not use them, and each avatar would have to load them: 161 of them on the body alone).

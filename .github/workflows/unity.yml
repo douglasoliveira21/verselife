@@ -7,9 +7,9 @@ name: Unity client
 on:
   push:
     branches: [main]
-    paths: ['unity/**', 'shared/**', 'scripting/**', 'scripts/build-unity-client.ps1', 'installer/**', '.github/workflows/unity.yml']
+    paths: ['unity/**', 'assets/**', 'shared/**', 'scripting/**', 'scripts/build-unity-client.ps1', 'installer/**', '.github/workflows/unity.yml']
   pull_request:
-    paths: ['unity/**', 'shared/**', 'scripting/**', 'scripts/build-unity-client.ps1', 'installer/**', '.github/workflows/unity.yml']
+    paths: ['unity/**', 'assets/**', 'shared/**', 'scripting/**', 'scripts/build-unity-client.ps1', 'installer/**', '.github/workflows/unity.yml']
   workflow_dispatch:
 
 concurrency:

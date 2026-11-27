@@ -51,7 +51,7 @@ public sealed class TypingTests
     public void TheClipTheGameShipsIsALoopOfSecondsWithTheBonesOfAPerson()
     {
         var dir = AppContext.BaseDirectory; string? path = null;
-        for (var d = new DirectoryInfo(dir); d is not null && path is null; d = d.Parent) { var candidate = Path.Combine(d.FullName, "client", "Assets", "animations", "typing_animation.bin"); if (File.Exists(candidate)) path = candidate; }
+        for (var d = new DirectoryInfo(dir); d is not null && path is null; d = d.Parent) { var candidate = Path.Combine(d.FullName, "unity", "UnityClient", "Assets", "LifeVerse", "Avatar", "Resources", "Animations", "typing_animation.bytes"); if (File.Exists(candidate)) path = candidate; }
         Assert.NotNull(path); var clip = SkeletonClip.Read(File.ReadAllBytes(path!), "Typing");
         Assert.NotNull(clip); Assert.InRange(clip!.Duration, 4f, 12f);
         foreach (var bone in new[] { "hips", "spine", "head", "upper_arm_l", "upper_arm_r", "lower_arm_l", "lower_arm_r", "hand_l", "hand_r" }) Assert.Contains(bone, clip.Bones);

@@ -10,7 +10,7 @@ using UnityEngine.Networking;
 
 namespace LifeVerse.Unity.Audio
 {
-    /// <summary>The recordings that come with the game (sneakers on concrete, a keyboard, the login theme). They are copied from client/Assets/audio into StreamingAssets when the player is built and read from there once.</summary>
+    /// <summary>The recordings that come with the game (sneakers on concrete, a keyboard, the login theme). They are copied from assets/audio into StreamingAssets when the player is built and read from there once.</summary>
     public static class SoundLibrary
     {
         public const string Footsteps = "footsteps", Typing = "typing", Login = "login";

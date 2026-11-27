@@ -1,4 +1,4 @@
-# Builds client/Assets/animations/default_avatar_animations.bin (a GLB) from Mixamo FBX clips.
+# Builds unity/UnityClient/Assets/LifeVerse/Avatar/Resources/Animations/default_avatar_animations.bytes (a GLB) from Mixamo FBX clips.
 # Usage: blender -b --python tools/blender/build_default_avatar_animations.py -- <folder with the FBX files> <output .glb>
 # Clips (Mixamo .fbx in the folder): Idle, Walking (1), Running, Floating, Swimming, Treading Water, Jump, Jumping Down, Falling, Flying, Walking Backwards, Falling Flat Impact, Male Dynamic Pose. Meters, in place, the jump without hip lift.
 import sys, os

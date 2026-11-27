@@ -1,11 +1,11 @@
-// Generated from the Tabler icon set (MIT, see client/Assets/ui/Tabler-LICENSE.txt) plus a few hand-drawn icons.
+// Generated from the Tabler icon set (MIT, see assets/licenses/Tabler-LICENSE.txt) plus a few hand-drawn icons.
 // Each entry is (filled, inner SVG of a 24x24 icon). Regenerate with the script kept with the UI redesign notes.
 using System.Collections.Generic;
 
 namespace LifeVerse.Unity.UI
 {
 
-/// <summary>The icons of the Godot client (Tabler, MIT: see client/Assets/ui/Tabler-LICENSE.txt), the same data: drawn by <see cref="Icon"/>.</summary>
+/// <summary>The icons of the Godot client (Tabler, MIT: see assets/licenses/Tabler-LICENSE.txt), the same data: drawn by <see cref="Icon"/>.</summary>
 public static class UiIconData
 {
     public static readonly Dictionary<string, (bool Filled, string Inner)> Icons = new()

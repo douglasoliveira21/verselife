@@ -20,7 +20,7 @@ public sealed class IslandSupervisorTests
         public bool Fail { get; set; }
         public IChildProcess Start(IslandLaunch launch)
         {
-            if (Fail) throw new InvalidOperationException("cannot start godot");
+            if (Fail) throw new InvalidOperationException("cannot start the server");
             var child = new FakeChild(); Started.Add((launch, child)); return child;
         }
     }
@@ -167,7 +167,7 @@ public sealed class SystemProcessLauncherTests
         var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
         // Environment.ProcessPath may be testhost, which starts another test runner
         // rather than a predictable short-lived child. Use the actual dotnet host.
-        var launcher = new SystemProcessLauncher(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet", "x", lines.Enqueue);
+        var launcher = new SystemProcessLauncher(Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet", new[] { "x" }, lines.Enqueue);
         var island = Guid.NewGuid();
         var child = launcher.Start(new IslandLaunch(island, "Teste", 7777, 7070, Guid.NewGuid(), new Dictionary<string, string> { ["LIFEVERSE_ISLAND_ID"] = island.ToString() }));
         var deadline = DateTime.UtcNow.AddSeconds(30);
@@ -181,7 +181,7 @@ public sealed class SystemProcessLauncherTests
     [Fact]
     public void TheArgumentsOfTheEngineAreForwardedAsGiven()
     {
-        // "dotnet --version" succeeds only if the launcher passes exactly the arguments it was given (the Godot ones would fail), which is how the Unity server gets its own
+        // "dotnet --version" succeeds only if the launcher passes exactly the arguments it was given (any other ones would fail), which is how the Unity server gets its own
         var lines = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var launcher = new SystemProcessLauncher("dotnet", new[] { "--version" }, lines.Enqueue);
         var island = Guid.NewGuid();
@@ -204,7 +204,7 @@ public sealed class SystemProcessLauncherTests
     [Fact]
     public void AMissingExecutableIsReportedNotThrownAsAnOsError()
     {
-        var launcher = new SystemProcessLauncher("/definitely/not/godot", "x", _ => { });
+        var launcher = new SystemProcessLauncher("/definitely/not/a/server", Array.Empty<string>(), _ => { });
         Assert.Throws<InvalidOperationException>(() => launcher.Start(new IslandLaunch(Guid.NewGuid(), "x", 7777, 7070, Guid.NewGuid(), new Dictionary<string, string>())));
     }
 }

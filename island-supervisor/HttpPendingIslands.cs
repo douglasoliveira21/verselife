@@ -3,12 +3,12 @@ using System.Text.Json;
 
 namespace LifeVerse.IslandSupervisor;
 
-/// <summary>Reads the islands waiting for a server from the API, authenticated with the platform service key: only the islands of this supervisor's engine ("godot" or "unity").</summary>
-public sealed class HttpPendingIslands(HttpClient http, string apiBaseUrl, string engine = "godot") : IPendingIslands
+/// <summary>Reads the islands waiting for a server from the API, authenticated with the platform service key: only the Unity islands (the API also knows the older "godot" engine, which nothing serves).</summary>
+public sealed class HttpPendingIslands(HttpClient http, string apiBaseUrl) : IPendingIslands
 {
     public async Task<IReadOnlyList<PendingIsland>> GetAsync(CancellationToken ct)
     {
-        using var response = await http.GetAsync($"{apiBaseUrl.TrimEnd('/')}/api/v1/platform/supervisor/pending?engine={Uri.EscapeDataString(engine)}", ct);
+        using var response = await http.GetAsync($"{apiBaseUrl.TrimEnd('/')}/api/v1/platform/supervisor/pending?engine=unity", ct);
         response.EnsureSuccessStatusCode();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
         return document.RootElement.GetProperty("islands").EnumerateArray()

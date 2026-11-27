@@ -124,6 +124,8 @@ namespace LifeVerse.Unity.Tests.EditMode
             try
             {
                 Directory.CreateDirectory(Path.Combine(folder, "dados")); File.WriteAllText(Path.Combine(folder, "jogo.exe"), "um"); File.WriteAllText(Path.Combine(folder, "dados", "a.bin"), "dois");
+                // what Unity says not to ship stays out of the package, so it stays out of the list: an installed game would call it missing
+                foreach (var kept in new[] { "jogo_BackUpThisFolder_ButDontShipItWithYourGame", "jogo_BurstDebugInformation_DoNotShip" }) { Directory.CreateDirectory(Path.Combine(folder, kept)); File.WriteAllText(Path.Combine(folder, kept, "depurar.txt"), "só aqui"); }
                 Assert.IsNull(LifeVerse.Unity.World.GameFiles.Verify(folder), "no list yet"); Assert.AreEqual(2, LifeVerse.Unity.World.GameFiles.Write(folder));
                 var good = LifeVerse.Unity.World.GameFiles.Verify(folder).Value; Assert.AreEqual(2, good.Checked); Assert.AreEqual(0, good.Bad.Count);
                 File.WriteAllText(Path.Combine(folder, "dados", "a.bin"), "mudou"); File.Delete(Path.Combine(folder, "jogo.exe"));

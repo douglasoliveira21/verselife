@@ -7,7 +7,7 @@ namespace LifeVerse.Unity.Avatar
 {
     /// <summary>
     /// The body that comes with the game: "the man of LifeVerse" (base model <c>lifeverse_man</c>), a GLB of about 50 MB that every client has, so nobody has to download it and everybody sees it.
-    /// It is the same file the Godot client carries (client/Assets/avatars/lifeverse_man.bin); a build copies it to StreamingAssets/avatars (see the BuiltInBodiesCopy build step), and the
+    /// The original is assets/avatars/lifeverse_man.bin in the repository; a build copies it to StreamingAssets/avatars (see the BuiltInBodiesCopy build step), and the
     /// game reads it from there once and keeps the parsed model: every person with this body is made from that one import (the materials are copied per person, so skin tints do not leak).
     /// </summary>
     public static class BuiltInBodies

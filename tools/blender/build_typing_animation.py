@@ -1,4 +1,4 @@
-# Builds client/Assets/animations/typing_animation.bin (a GLB with one clip, "Typing") from an Unreal-skeleton mocap FBX (Mocap Pack 03: Standing Conversation).
+# Builds unity/UnityClient/Assets/LifeVerse/Avatar/Resources/Animations/typing_animation.bytes (a GLB with one clip, "Typing") from an Unreal-skeleton mocap FBX (Mocap Pack 03: Standing Conversation).
 # Usage: blender -b --python tools/blender/build_typing_animation.py -- <input.fbx> <output.glb>
 # The mocap is 45 s long and does not loop. This finds, by itself, the stretch of 5 to 10 seconds whose last pose is the closest to its first one
 # (with real movement in it: hands and head, not a person standing still), and exports only that, at 30 frames per second, in meters, in place.

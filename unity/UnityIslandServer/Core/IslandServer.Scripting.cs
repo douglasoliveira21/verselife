@@ -6,7 +6,7 @@ using LifeVerse.Wire;
 namespace LifeVerse.IslandServer.Core;
 
 /// <summary>
-/// Object scripts. The Lua host and its glue to the island (IslandScripting, compiled straight from island-server/ so there is a single source) load
+/// Object scripts. The Lua host and its glue to the island (IslandScripting, in Scripting/) load
 /// the island's objects and scripts from the API, turn touches, chat, walking into objects and timers into script events, and apply what scripts ask for
 /// through the same build-operation path players use. This file wires that glue to the Wire server: players, NPCs, gestures, vehicles and region changes.
 /// Object physics comes through <see cref="IIslandPhysics"/> when the host provides one; without it the scripts that ask for impulse, velocity or contacts get "false"/null, as on an island without bodies.

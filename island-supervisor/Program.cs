@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using LifeVerse.IslandSupervisor;
 
-// Runs inside the island image: starts a Godot island server for each island players ask to enter.
+// Runs inside the island image: starts a Unity dedicated server (LifeVerse Wire 12) for each island players ask to enter.
 static string Required(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : throw new InvalidOperationException($"{name} is required.");
 static int Number(string name, int fallback) => int.TryParse(Environment.GetEnvironmentVariable(name), out var value) ? value : fallback;
 static string Optional(string name, string fallback) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } value ? value : fallback;
@@ -14,26 +14,21 @@ var options = new SupervisorOptions(
     BaseEnvironment: new Dictionary<string, string>
     {
         ["LIFEVERSE_API_URL"] = apiUrl, ["LIFEVERSE_SERVICE_KEY"] = serviceKey, ["LIFEVERSE_HOSTNAME"] = Optional("LIFEVERSE_HOSTNAME", Environment.MachineName),
-        ["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"] = Optional("SUPERVISOR_IDLE_MINUTES", "10"), ["GODOT_HEADLESS"] = "1"
+        ["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"] = Optional("SUPERVISOR_IDLE_MINUTES", "10")
     });
 
 void Log(string message) => Console.WriteLine($"{{\"timestamp\":\"{DateTimeOffset.UtcNow:O}\",\"event\":\"supervisor\",\"message\":{System.Text.Json.JsonSerializer.Serialize(message)}}}");
 
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 http.DefaultRequestHeaders.Add("X-LifeVerse-Service-Key", serviceKey);
-// SUPERVISOR_ENGINE=godot (default) starts the Godot island server; =unity starts the Unity dedicated server build (LifeVerse Wire 12, see docs/unity-migration/MIGRATION_ISLAND_SERVER.md).
-var engine = Optional("SUPERVISOR_ENGINE", "godot").ToLowerInvariant();
-if (engine is not ("godot" or "unity")) throw new InvalidOperationException("SUPERVISOR_ENGINE must be godot or unity.");
-var launcher = engine == "unity"
-    ? SystemProcessLauncher.ForUnity(Optional("SUPERVISOR_UNITY_SERVER_PATH", "/opt/lifeverse-server/LifeVerseServer.x86_64"), Console.WriteLine)
-    : new SystemProcessLauncher(Optional("SUPERVISOR_GODOT_PATH", "godot"), Optional("SUPERVISOR_PROJECT_PATH", "/app/island-server"), Console.WriteLine);
-var supervisor = new IslandProcessSupervisor(options, new HttpPendingIslands(http, apiUrl, engine), launcher, () => DateTimeOffset.UtcNow, Log);
+var launcher = SystemProcessLauncher.ForUnity(Optional("SUPERVISOR_UNITY_SERVER_PATH", "/opt/lifeverse-server/LifeVerseServer.x86_64"), Console.WriteLine);
+var supervisor = new IslandProcessSupervisor(options, new HttpPendingIslands(http, apiUrl), launcher, () => DateTimeOffset.UtcNow, Log);
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cancellation.Cancel(); };
 using var terminate = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context => { context.Cancel = true; cancellation.Cancel(); });
 
-Log($"supervisor started ({engine}): UDP {options.PortStart}-{options.PortStart + options.MaxIslands - 1}, idle shutdown {options.BaseEnvironment!["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"]} min");
+Log($"supervisor started (unity): UDP {options.PortStart}-{options.PortStart + options.MaxIslands - 1}, idle shutdown {options.BaseEnvironment!["LIFEVERSE_IDLE_SHUTDOWN_MINUTES"]} min");
 var poll = TimeSpan.FromSeconds(Math.Clamp(Number("SUPERVISOR_POLL_SECONDS", 3), 1, 60));
 try
 {

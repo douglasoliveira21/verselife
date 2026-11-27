@@ -9,7 +9,8 @@ Os outros documentos desta pasta contam a história do trabalho. Alguns estão *
 ## 0. Antes de começar
 
 ### Onde está cada coisa
-- Cliente Godot (a referência do comportamento): `client/` (`client/Scripts`, `client/Autoloads`). O Godot portátil fica em `.tools/godot-4.7.2/...console.exe`.
+- **O Godot saiu do repositório em 27/11/2026** (`client/`, `island-server/` e as ferramentas que dependiam dele). O comportamento antigo se consulta no histórico: `git show 177c0c1:client/...`. Onde este documento ou os outros citam um desses caminhos, é no histórico que ele está.
+- Arquivos que vão no jogo: `assets/` (corpo, sons, ícone, licenças); os desenhos de referência da interface estão em `docs/design/`.
 - Cliente Unity: `unity/UnityClient/Assets/LifeVerse/`, com as pastas:
   - `UI`: janelas e HUD em UI Toolkit, construídas por código. O visual fica em `Resources/LifeVerse/UI/Theme.uss` e nas texturas de `Resources/LifeVerse/UI/Skin`, desenhadas por `python unity/tools/ui-skin/generate.py`;
   - `World`: terreno, mar, objetos, ambiente;
@@ -17,13 +18,10 @@ Os outros documentos desta pasta contam a história do trabalho. Alguns estão *
   - `Audio`;
   - `Server`: o servidor de ilha Unity, os autotestes e a verificação ao vivo;
   - `Tests/EditMode`.
-- Código compartilhado pelos dois motores e pela API: `shared/` (compilado como `LifeVerse.Shared.dll`) e `scripting/` (Lua, MoonSharp).
-- Servidor de ilha Unity, sem a Unity: `unity/UnityIslandServer` (`Core`, `Host`, `LoadTest`). O protocolo é o LifeVerse Wire 12, em `unity/UnityWire`, descrito em `WIRE_PROTOCOL.md`.
+- Código compartilhado pelo cliente, pelo servidor de ilha e pela API: `shared/` (compilado como `LifeVerse.Shared.dll`) e `scripting/` (Lua, MoonSharp).
+- Servidor de ilha Unity, sem a Unity: `unity/UnityIslandServer` (`Core`, com os scripts Lua em `Core/Scripting`; `Host`; `LoadTest`). O protocolo é o LifeVerse Wire 12, em `unity/UnityWire`, descrito em `WIRE_PROTOCOL.md`.
 - API: `backend/` (ASP.NET, Postgres). Testes: `tests/`.
-- Convivência dos dois motores: cada ilha tem um motor (`world.islands.engine`).
-  - O cliente diz o seu no cabeçalho `X-LifeVerse-Engine`.
-  - Um motor diferente recebe 409 `engine_mismatch`.
-  - O guia de implantação é `DEPLOY_UNITY_ISLANDS.md`.
+- Motor da ilha: `world.islands.engine`. Só as `unity` têm servidor; quem não manda `X-LifeVerse-Engine: unity` recebe 409 `engine_mismatch`. O guia de implantação é `DEPLOY_UNITY_ISLANDS.md`.
 
 ### Comandos (Windows, PowerShell ou Git Bash)
 O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\Unity.exe`. O modo batch só funciona com a licença válida; se der o código 198, reative a licença no Unity Hub.
@@ -52,7 +50,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   Unity.exe -batchmode -projectPath unity/UnityClient -executeMethod LifeVerse.Unity.EditorTools.EditorChecks.Play -logFile editor.log -lifeverse-editor-run <saida.log> -lifeverse-live-api http://127.0.0.1:5099
   Unity.exe -projectPath unity/UnityClient -executeMethod LifeVerse.Unity.EditorTools.EditorChecks.Play -logFile editor.log -lifeverse-editor-run <saida.log> -lifeverse-world-selfcheck
   ```
-- **Fotos do mundo e física, no editor** (`-lifeverse-world-preview <prefixo>` com `-batchmode`; `-lifeverse-physics-report` com `-batchmode -nographics`), pelo mesmo `EditorChecks.Play`. As fotos do Godot saem de `client/Tests/WorldCompareCapture.tscn` (variável `LIFEVERSE_CAPTURE_PATH`), e a física dele de `Godot_console.exe --headless --path unity/PhysicsComparison`.
+- **Fotos do mundo e física, no editor** (`-lifeverse-world-preview <prefixo>` com `-batchmode`; `-lifeverse-physics-report` com `-batchmode -nographics`), pelo mesmo `EditorChecks.Play`.
 
   O autoteste precisa da **janela** do editor (sem `-batchmode`): sem ela o fim do quadro nunca chega e ele trava. O erro `ArgumentOutOfRangeException` em `UnityEditor.Search`, logo no começo, é do editor.
 - **Outros modos de foto e teste:**
@@ -62,7 +60,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   - `-lifeverse-e2e <api> <usuário> <senha>`: ponta a ponta, contra uma API e um supervisor de verdade.
 - **API:** `dotnet test tests/LifeVerse.Api.Tests`. A última rodada, com `LIFEVERSE_TEST_PG`, deu 2.614 aprovados, 0 falhas e nenhum pulado. Os testes de carga e do depurador Lua já falharam uma vez cada quando rodaram junto com os outros, e passaram sozinhos.
 - **Protocolo e servidor de ilha:** `dotnet test tests/LifeVerse.Wire.Tests` (33) e `dotnet test tests/LifeVerse.IslandServer.Tests` (64, com os 64 jogadores em rede ruim, as entradas hostis e a volta longa). Para sessões longas: `LIFEVERSE_SOAK_SECONDS` (gente entrando e saindo; memória e passos), `LIFEVERSE_FUZZ_SECONDS` (fuzz do leitor), `LIFEVERSE_FUZZ_SEED` e `LIFEVERSE_FUZZ_MESSAGES` (mensagens absurdas ao servidor) e `LIFEVERSE_LAG_SECONDS`.
-- **Imagens WebP de referência:** `Godot_console.exe --headless --script unity/tools/webp-fixtures/make_fixtures.gd -- <repo>\tests\fixtures\webp`.
+- **Imagens WebP de referência:** em `tests/fixtures/webp`, geradas com o Godot antes de ele sair; não há mais gerador no repositório.
 - **Pilha completa em WSL** (Postgres, API, supervisor Unity e servidor Linux): foi montada com scripts `e2e/up.sh` e `e2e/down.sh` na pasta temporária da sessão. Esses scripts não estão no repositório; o roteiro está no fim de `DEPLOY_UNITY_ISLANDS.md`.
 
 ### Duas travas desta máquina (descobertas em 26/11/2026)
@@ -103,9 +101,9 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
 O jogo passou para outro servidor, com banco de dados novo e vazio.
 
 - **API:** `https://app.lifeverse.euporiagames.com`. **Host:** `38.4.141.223` (é o `LIFEVERSE_HOSTNAME` das ilhas).
-- **Clientes:** o endereço padrão do Godot e da Unity foi trocado no código. Um jogo gerado antes ainda procura o endereço antigo; `LIFEVERSE_API_URL` troca sem gerar de novo.
+- **Clientes:** o endereço padrão do jogo foi trocado no código. Um jogo gerado antes ainda procura o endereço antigo; `LIFEVERSE_API_URL` troca sem gerar de novo.
 - **Banco vazio:** as três ilhas oficiais nascem no primeiro cadastro. Os IDs de ilha antigos não valem mais.
-- **Conferido de fora às 12:44 UTC:** `/health` responde `Healthy` (versão 0.6.0); as três ilhas oficiais foram criadas pelo primeiro cadastro; a "LifeVerse Plaza" está `running`, com sinal de vida recente, e a porta **UDP 7800** responde ao início da conexão. As ilhas são Godot, ligadas pelo serviço do supervisor (portas 7800 a 7802).
+- **Conferido de fora às 12:44 UTC:** `/health` responde `Healthy` (versão 0.6.0); as três ilhas oficiais foram criadas pelo primeiro cadastro; a "LifeVerse Plaza" está `running`, com sinal de vida recente, e a porta **UDP 7800** responde ao início da conexão. Nesse momento as ilhas ainda eram Godot (ver 1.1).
 - **Supervisor conferido (13:10 UTC):** a "Sandbox Island", desligada, ligou sozinha depois de um pedido de entrada feito com a conta do dono (`starting` → `running`), a porta 7800 respondeu e a API entregou o host `38.4.141.223`. A "Plaza" tinha desligado às 12:53:49, cerca de 10 minutos depois de ligar, como no desligamento por inatividade.
 - **Não conferido:** o log do serviço de ilhas, andar e conversar dentro da ilha, a "Tropical Island" e duas ilhas ao mesmo tempo (portas 7801 e 7802). O log de um contêiner com a imagem antiga (uma ilha só) repetia 404 às 12:49: falta pará-lo no Easypanel.
 
@@ -120,46 +118,27 @@ Achadas ao rodar a API inteira sobre um PostgreSQL local. Foram enviadas (`4a525
 
 As rotas novas de privacidade, bloqueados e sessões foram no mesmo deploy.
 
-### 1.1 Pôr as ilhas Unity no ar
+### 1.1 Ilhas Unity (no ar desde 27/11/2026)
 
-Nada disto foi feito na produção. O passo a passo está em `DEPLOY_UNITY_ISLANDS.md`.
-
-1. **Push da API com a migração `Phase104IslandEngine`.** O push já foi feito. Confirmar que a API subiu e aplicou a migração: ela cria a coluna `engine` com `godot` em todas as ilhas.
-2. **Pacote do servidor Linux:**
-   - rode `powershell -File scripts/package-unity-server.ps1` (gera `artifacts/LifeVerseServer-linux.tar.gz` e mostra o SHA-256);
-   - suba o arquivo num endereço público, sem login.
-   - **27/11/2026, decisão do dono:** só Unity daqui para frente. No servidor novo o serviço de ilhas Godot é **substituído** pelo Unity, nas mesmas portas `7800-7802` (passo a passo no começo de `DEPLOY_UNITY_ISLANDS.md`). As ilhas que a API cria sozinha já nascem `unity` (testes da API: 2.571 aprovados, 44 de PostgreSQL pulados).
-   - **27/11/2026:** pacote gerado (60 MB, SHA-256 `9a08579be897fbaef5740d065b8fca044156e40620ea57200022c92ffd74a72b`), com a correção de concorrência dos scripts. Ele subiu no Ubuntu do WSL contra uma API inexistente (só até a recusa da conexão). **Publicado** como pré-lançamento na tag `unity-server-20261127`; às 13:47 UTC o endereço respondia 200 e o GitHub informava o mesmo tamanho e SHA-256. O dono trocou o serviço no Easypanel e passou as ilhas para `unity` no banco; às 13:59 UTC a API listava as três como Unity e nenhuma como Godot. **Supervisor Unity provado:** o serviço antigo precisou ser apagado e recriado (o contêiner Godot nunca era substituído); depois disso a "LifeVerse Plaza" ficou `running` às 14:40 UTC e a porta UDP 7800 aceitou a conexão do protocolo Unity (90 ms, sem entrar na ilha). **O dono entrou pelo jogo (no editor da Unity) e confirmou que funcionou.** Não foi detalhado se testou andar, conversar, voz, outra ilha ou duas ao mesmo tempo. Segredos colados no chat durante a implantação ainda precisam ser trocados.3. **Serviço novo no Easypanel** (`lifeverse-islands-unity`):
-   - Dockerfile `island-supervisor/Dockerfile.unity`;
-   - argumentos de build `SERVER_URL` e `SERVER_SHA256`;
-   - variáveis `LIFEVERSE_API_URL`, `LIFEVERSE_SERVICE_KEY` e `LIFEVERSE_HOSTNAME`;
-   - portas UDP 7800 a 7807.
-4. **Passar uma ilha de teste para `unity`** com `PUT /api/v1/admin/islands/{id}/engine`. Exige estar em `LIFEVERSE_ADMIN_USER_IDS` e mandar `X-Admin-MFA`.
-5. **Conferir** com `-lifeverse-e2e https://app.lifeverse.euporiagames.com <conta de teste> <senha>`. A conta de teste é do dono do projeto; peça a ele.
+- Pacote do servidor Linux publicado como pré-lançamento na tag `unity-server-20261127` (SHA-256 `9a08579be897fbaef5740d065b8fca044156e40620ea57200022c92ffd74a72b`). Um pacote novo só é preciso quando o código do servidor de ilha mudar (`powershell -File scripts/package-unity-server.ps1`).
+- O dono trocou o serviço no Easypanel e passou as ilhas para `unity` no banco. O serviço antigo precisou ser apagado e recriado (o contêiner Godot nunca era substituído). A "LifeVerse Plaza" ficou `running`, a porta UDP 7800 aceitou o protocolo Unity e **o dono entrou pelo jogo (no editor da Unity) e confirmou que funcionou**, e depois jogou nela.
+- Passo a passo: `DEPLOY_UNITY_ISLANDS.md`. Segredos colados no chat durante a implantação ainda precisam ser trocados.
 
 **Nunca provado:**
-- a imagem Docker em si (não havia Docker aqui);
-- o Easypanel;
-- UDP pela internet;
-- HTTPS contra a API de produção;
+- conversa, voz, outra ilha ou duas ilhas ao mesmo tempo (portas 7801 e 7802) na produção;
 - horas seguidas de uso (memória, vazamento);
 - a renovação do token de 15 minutos durante uma sessão longa contra a API real.
 
-## 2. Quando o Godot for aposentado (não fazer antes)
+## 2. Aposentar o Godot (feito no repositório em 27/11/2026)
 
-Fazer isto hoje quebraria a imagem Godot em produção ou deixaria os clientes Godot de fora.
+Feito: os scripts Lua foram para `unity/UnityIslandServer/Core/Scripting`; os arquivos que o jogo usa foram para `assets/`; `client/`, `island-server/`, o modo Godot do supervisor, o CI e as ferramentas do Godot saíram; a versão mínima do cliente passou a `0.7.0` em `backend/appsettings.json`.
 
-1. **Scripts Lua do servidor:**
-   - o `Core` Unity compila `island-server/Scripts/IslandScripting*.cs` direto da pasta do Godot (`Compile Include`);
-   - mover essas fontes para `unity/UnityIslandServer/Core` e tirar o `Compile Include`;
-   - ver `MIGRATION_ISLAND_SERVER.md`, seção "Scripts".
-2. **Versão mínima do cliente:**
-   - subir a versão mínima (`ClientRelease`, lida em `/client/release`) para a do cliente Unity, que hoje é 0.7.0;
-   - publicar o instalador Unity como o oficial.
-3. **Ilhas e serviços:**
-   - trocar o motor de todas as ilhas para `unity`;
-   - desligar o serviço de ilhas Godot.
-4. **Limpeza:** tirar `client/`, `island-server/` e o supervisor em modo Godot do repositório e do CI.
+O que falta:
+- **Reimplantar a API** para a versão mínima nova valer (se o serviço definir `ClientRelease__*` por variável de ambiente, ela manda).
+- **Apagar o app antigo `island`** no Easypanel, se ainda existir: o Dockerfile dele (`island-server/Dockerfile`) não existe mais, e um novo deploy falharia.
+- **Publicar o instalador Unity** como o oficial (seção 6).
+- As sobras locais das pastas `client/` e `island-server/` (caches do Godot, `export_presets.cfg`, `LifeVerse.Client.sln`, nunca estiveram no git) foram apagadas nesta máquina a pedido do dono. Em outra máquina elas podem continuar lá; o `.gitignore` as esconde.
+- A API ainda aceita o motor `godot` e ele é o padrão da coluna no banco. Tirar isso pede uma migração em produção; não há ganho agora.
 
 ## 3. Funcionalidades do Godot que ainda faltam no cliente Unity
 
@@ -209,7 +188,6 @@ Elas aparecem desligadas, com o motivo do Godot. A lista sai de `UI/SettingsCata
 Mais duas que só o Unity não cumpre, com o motivo na tela: `audio.output_device` (o motor sai sempre pelo dispositivo padrão do Windows) e `interface.side_bar` (o cliente Unity não tem barra lateral).
 
 **Privacidade e sessões (feitas):** quem vê a presença, quem manda mensagens, quem convida para grupos, quem pede amizade, a lista de bloqueados e as sessões abertas ficam em **Configurações → Privacidade e sessões** (`UI/AccountPrivacyWindow.cs`; no servidor, `Modules/Users/PrivacyChoices.cs` e `Modules/Identity/AccountSessions.cs`). Ficam de fora:
-- o cliente Godot continua mostrando essas opções desligadas;
 - uma sessão encerrada perde o acesso no pedido seguinte; não foi verificado se uma ilha ou o canal de avisos já abertos por ela são derrubados.
 
 ## 5. Aparência: diferenças que ainda se veem
@@ -237,13 +215,15 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
   - `BuildClient.BuildWindowsIl2cpp` já confere os pré-requisitos, e há um `link.xml`;
   - riscos: MoonSharp (reflexão), Concentus e `System.Text.Json` sendo cortados no build.
 - **Instalador:**
+  - **27/11/2026:** pacote 0.7.0 gerado em `artifacts/unity-0.7.0-20261127/` (zip, instalador, `SHA256SUMS.txt`, `release.json`; a pasta `artifacts/unity-0.7.0` é de 20/11 e aponta para a API antiga). O zip extraído foi conferido contra a lista do jogo (230 arquivos) e o `LifeVerse.exe` dele passou na autoverificação sem janela nesta máquina;
   - `installer/LifeVerse.iss` com `/DEdition` gera o instalador Unity, que **nunca foi instalado** (pede administrador e regras de firewall);
-  - falta testar instalar e atualizar por cima;
-  - `scripts/build-unity-client.ps1 -Installer`.
+  - falta testar instalar, jogar pela versão instalada e atualizar por cima;
+  - `scripts/build-unity-client.ps1 -Installer`. Nesta máquina a política de execução do PowerShell bloqueia scripts: o pacote de 27/11 foi montado com os mesmos passos, um comando por vez.
 - **Launcher:** adaptar o launcher (`launcher/`) e o manifesto ao formato do build Unity (risco R17).
 - **CI:**
   - `.github/workflows/unity.yml` nunca rodou; precisa dos segredos `UNITY_LICENSE` e afins (licença Unity em CI);
-  - o build do servidor Linux também não está no CI.
+  - o build do servidor Linux também não está no CI;
+  - o `dotnet build LifeVerse.slnx` do `ci.yml` precisa antes dos fontes gerados pelo `build-plugins.ps1`, que o CI não roda: numa cópia sem eles o build falha (já falhava antes de o Godot sair).
 - **Avisos de licença:** o build copia `Assets/LifeVerse/Legal/THIRD-PARTY-NOTICES.txt` para junto do jogo, e um teste exige que toda DLL nova esteja nele. Falta conferir que o instalador o leva.
 - **Assinatura do executável:** o `.exe` não é assinado, e o Controle Inteligente de Aplicativos do Windows 11 pode bloqueá-lo (aconteceu na máquina de desenvolvimento). Avaliar um certificado de assinatura de código antes de distribuir.
 - **Versão:** o cliente Unity é a 0.7.0 (`bundleVersion`), e `release.json` e `SHA256SUMS` são gerados pelo script. Falta publicar uma versão de verdade no endereço que `UpdateCheck` lê.
@@ -297,13 +277,11 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
 
 ## Ordem sugerida
 
-0. **Seção 1.0** (as correções de privacidade e de PostgreSQL), assim que o dono autorizar o commit, o push e o deploy.
-1. **Repetir as verificações no player gerado** quando houver como executá-lo (seção 0).
-2. **Seção 1.1** (ilhas Unity), quando o dono autorizar: é o que põe o Unity na mão dos jogadores. O servidor de ilha Unity precisa ser do mesmo commit do cliente (a entrega dos snapshots mudou).
-3. **Seção 8:** uma sessão real com teclado, mouse e microfone.
-4. **Seção 6:** IL2CPP, instalador, assinatura do executável e CI, antes de distribuir.
+1. **Seção 2:** reimplantar a API e apagar o app antigo no Easypanel.
+2. **Seção 6:** gerar e instalar o cliente de verdade, assinatura do executável, IL2CPP e CI. É o que falta para outras pessoas jogarem.
+3. **Repetir as verificações no player gerado** quando houver como executá-lo (seção 0).
+4. **Seção 8:** uma sessão real com teclado, mouse e microfone.
 5. **Seção 7:** internet de verdade e licenças.
 6. **Item 3.6** (depende dos arquivos) e um corpo com dedos.
 7. **Seções 5 e 5.1:** acabamento visual.
 8. **Seção 4 e 3.11:** dependem de servidor ou de decisão de produto; combinar com o dono.
-9. **Seção 2**, só no fim.

@@ -22,10 +22,17 @@ namespace LifeVerse.Unity.World
 
         private static string Relative(string folder, string path) => path.Substring(Path.GetFullPath(folder).TrimEnd('\\', '/').Length + 1).Replace('\\', '/');
 
-        /// <summary>Writes the list of the files of a build; returns how many it holds.</summary>
+        /// <summary>The folders Unity writes beside a build for debugging only: the package leaves them out (scripts/build-unity-client.ps1).</summary>
+        private static bool Shipped(string name)
+        {
+            var top = name.Split('/')[0];
+            return !top.Contains("_BackUpThisFolder") && !top.Contains("_BurstDebugInformation_DoNotShip");
+        }
+
+        /// <summary>Writes the list of the files of a build that go to players; returns how many it holds.</summary>
         public static int Write(string folder)
         {
-            var files = Directory.GetFiles(Path.GetFullPath(folder), "*", SearchOption.AllDirectories).Select(p => (Full: p, Name: Relative(folder, p))).Where(f => f.Name != Manifest).OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+            var files = Directory.GetFiles(Path.GetFullPath(folder), "*", SearchOption.AllDirectories).Select(p => (Full: p, Name: Relative(folder, p))).Where(f => f.Name != Manifest && Shipped(f.Name)).OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
             var list = files.ToDictionary(f => f.Name, f => HashOf(f.Full));
             File.WriteAllText(Path.Combine(folder, Manifest), JsonSerializer.Serialize(list, new JsonSerializerOptions { TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver() })); return list.Count;
         }

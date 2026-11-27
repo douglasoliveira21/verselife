@@ -1,7 +1,7 @@
 namespace LifeVerse.Shared.Avatar;
 
 /// <summary>
-/// The wardrobe of the man of LifeVerse. For now it holds only the "bare" choices (wearing nothing), so he starts as the model is; items that come with the game are added by a generated partial (Generated), each one a file in client/Assets/wearables.
+/// The wardrobe of the man of LifeVerse. For now it holds only the "bare" choices (wearing nothing), so he starts as the model is; items that come with the game are added by a generated partial (Generated), each one a file in assets/wearables.
 /// </summary>
 public static partial class BuiltInWearableCatalog
 {

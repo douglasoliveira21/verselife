@@ -1,6 +1,5 @@
-# Island server image with the UNITY dedicated server (LifeVerse Wire 12): the same supervisor starts one island process per island that players are waiting for,
-# but only for islands whose engine is "unity" (it asks the API with ?engine=unity) and the process is LifeVerseServer.x86_64. It runs NEXT TO the Godot image, which keeps
-# serving the islands whose engine is "godot"; see docs/unity-migration/DEPLOY_UNITY_ISLANDS.md.
+# Island server image: the supervisor starts one Unity dedicated server process (LifeVerse Wire 12) per island that players are waiting for
+# (it asks the API with ?engine=unity). The path of this file is what the production service builds. See docs/unity-migration/DEPLOY_UNITY_ISLANDS.md.
 #
 # The Unity Linux player needs glibc (Debian/Ubuntu); it does NOT run on Alpine. This base image is Debian.
 #
@@ -34,9 +33,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=supervisor /out /opt/supervisor
 COPY --from=server /opt/lifeverse-server/ /opt/lifeverse-server/
 
-# Another port range than the Godot image (7777...), so both can run on the same machine.
-ENV SUPERVISOR_ENGINE=unity \
-    SUPERVISOR_UNITY_SERVER_PATH=/opt/lifeverse-server/LifeVerseServer.x86_64 \
+ENV SUPERVISOR_UNITY_SERVER_PATH=/opt/lifeverse-server/LifeVerseServer.x86_64 \
     SUPERVISOR_PORT_START=7800 \
     SUPERVISOR_HEALTH_PORT_START=7100 \
     SUPERVISOR_MAX_ISLANDS=8 \

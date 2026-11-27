@@ -6,7 +6,7 @@ using UnityEngine.UIElements;
 namespace LifeVerse.Unity.UI
 {
     /// <summary>
-    /// The name plates over the avatars, as the Godot client draws them (client/Assets/ui/09_placas_nome.png): a dark glass pill with a light outline, the status dot (green online, grey away,
+    /// The name plates over the avatars, as the Godot client draws them (docs/design/09_placas_nome.png): a dark glass pill with a light outline, the status dot (green online, grey away,
     /// red busy), the name, and the waves of the voice while the person speaks. The plate follows the head on screen; when and whether a name shows is the avatar's own rule (distance, facing,
     /// the "show names" options), so this only draws.
     /// </summary>
