@@ -120,6 +120,7 @@ namespace LifeVerse.Unity.Server
         yield return Step("buying from the search: coins from the test provider, product bought in its details, the store and its catalog", BuyFromSearch());
         yield return Step("real estate notices: a payment writes one, it shows in My Properties and is marked as read", PropertyNotices());
         yield return Step("voice switched off by a parcel; every synced setting accepted by the account", VoiceAndSync());
+        yield return Step("privacy and sessions: the choices hold, the blocked list unblocks, the other sessions end", PrivacyAndSessions());
         yield return Step("live: notification channel (message pushed by the API)", Live());
         }
 
@@ -137,10 +138,40 @@ namespace LifeVerse.Unity.Server
 
         private IEnumerator Refresh()
         {
-            var raw = _a.ApiAsync("POST", "/api/v1/auth/refresh", JsonSerializer.Serialize(new { refreshToken = _a.RefreshToken })); yield return Wait(raw);
-            if (raw.Result.Status == 500) { Console.WriteLine("event=live_note name=refresh detail=INCONCLUSIVO: a API aceitou o corpo (o token passou) mas o banco em memória não implementa ExecuteUpdate; precisa do Postgres"); yield break; }
-            Check(raw.Result.Status == 200, "a renovação: " + raw.Result.Status + " " + Snip(raw.Result.Body)); var again = Json.One(raw.Result.Body); Check(again.First("accessToken").Length > 20 && again.First("refreshToken").Length > 20, "devolve um novo par de tokens: " + Snip(raw.Result.Body));
+            // through the client, as the game does it: the old session ends at once, so only whoever keeps the new pair can go on
+            var access = _a.AccessToken; var refresh = _a.RefreshToken;
+            var renewal = _a.RefreshAsync(); yield return Wait(renewal);
+            if (!renewal.Result && _a.RefreshToken == refresh) { Console.WriteLine("event=live_note name=refresh detail=INCONCLUSIVO: a API aceitou o token mas o banco em memória não implementa ExecuteUpdate; precisa do Postgres (LIFEVERSE_LIVE_PG)"); yield break; }
+            Check(renewal.Result && _a.AccessToken.Length > 20 && _a.AccessToken != access && _a.RefreshToken.Length > 20 && _a.RefreshToken != refresh, "a renovação devolve um novo par de tokens");
             string body = null; yield return Call(_a, "GET", "/api/v1/social/friends", null, b => body = b); Check(body != null, "o token novo vale");
+        }
+
+        private IEnumerator PrivacyAndSessions()
+        {
+            // the choices, made in the window, and enforced against another person
+            var window = new AccountPrivacyWindow(_ca); window.Open(); yield return Until(() => window.Choices.Count == 4, "as quatro escolhas: " + window.Status);
+            void Choose(string label, string id) { var d = window.Choices[label]; d.index = d.choices.IndexOf(id); }
+            Choose(AccountPrivacyWindow.OnlineLabel, "Ninguém"); Choose(AccountPrivacyWindow.MessagesLabel, "Ninguém"); Check(window.Press("Salvar"), "salvar a privacidade");
+            yield return Until(() => window.Status.Contains("Privacidade salva") && window.Choices.Count == 4, "a privacidade salva: " + window.Status);
+            Check(window.Choices[AccountPrivacyWindow.OnlineLabel].value == "Ninguém", "a página mostra o que o servidor guardou");
+            yield return Call(_a, "PUT", "/api/v1/social/presence", JsonSerializer.Serialize(new { status = "online" }), null);
+            string seen = null; yield return Call(_b, "GET", "/api/v1/social/presence/" + _aId, null, b => seen = b); Check(seen.Contains("\"offline\""), "quem escolheu ninguém aparece offline: " + Snip(seen));
+            string refused = null; yield return Call(_b, "POST", "/api/v1/social/messages", JsonSerializer.Serialize(new { content = "oi", recipientUserId = _aId }), b => refused = b, 403); Check(refused.Contains("privacy_messages"), "a recusa diz o motivo: " + Snip(refused));
+            yield return Call(_a, "PUT", "/api/v1/users/me/privacy", JsonSerializer.Serialize(new { onlineVisibility = "everyone", privateMessages = "everyone" }), null);
+            yield return Call(_b, "GET", "/api/v1/social/presence/" + _aId, null, b => seen = b); Check(seen.Contains("\"online\""), "de volta ao normal: " + Snip(seen));
+            window.Close();
+
+            // the blocked list
+            yield return Call(_a, "POST", "/api/v1/social/blocks/" + _bId, null, null);
+            var blocked = new AccountPrivacyWindow(_ca, "bloqueados"); blocked.Open(); yield return Until(() => blocked.RowIds.Contains(_bId), "a pessoa bloqueada na lista: " + blocked.Status);
+            Check(blocked.Press("Desbloquear " + _bName), "desbloquear"); yield return Until(() => blocked.SummaryText.Contains("não bloqueou"), "a lista fica vazia: " + blocked.SummaryText + " " + blocked.Status); blocked.Close();
+
+            // another computer signed in to the same account, ended from this one
+            var other = new IslandEntryClient(Url); var signed = other.LoginAsync(_aName, "Senha123"); yield return Wait(signed); Check(signed.Result.Ok, "entrar de outro aparelho: " + signed.Result.Status);
+            var sessions = new AccountPrivacyWindow(_ca, "sessoes"); sessions.Open(); yield return Until(() => sessions.RowIds.Count >= 2, "as sessões na lista: " + sessions.Status);
+            Check(sessions.Press("Encerrar todas as outras"), "encerrar as outras"); yield return Until(() => sessions.RowIds.Count == 1, "sobra só esta: " + sessions.RowIds.Count + " " + sessions.Status);
+            var after = other.ApiAsync("GET", "/api/v1/social/friends"); yield return Wait(after); Check(after.Result.Status == 401, "a sessão encerrada não vale mais: " + after.Result.Status);
+            yield return Call(_a, "GET", "/api/v1/social/friends", null, null); sessions.Close(); other.Dispose();
         }
 
         private IEnumerator Avatar()

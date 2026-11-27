@@ -170,7 +170,7 @@ public sealed partial class IslandServer : IDisposable
     {
         if (_stopped) return;
         var started = Stopwatch.GetTimestamp();
-        try { lock (_tickGate) { if (_wireClosed) return; Step(delta); } }
+        try { lock (_tickGate) { if (_wireClosed) return; AsStep(() => Step(delta)); } }
         catch (Exception exception) { Interlocked.Increment(ref _tickFailures); _log.Write("tick_failed", new { error = exception.Message, exception.StackTrace }); }
         var ms = (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency;
         lock (_tickMs) { _tickMs.Enqueue(ms); if (_tickMs.Count > 600) _tickMs.Dequeue(); }
@@ -229,6 +229,7 @@ public sealed partial class IslandServer : IDisposable
 
     private async Task StopCoreAsync()
     {
+        SynchronizationContext.SetSynchronizationContext(null);   // stopping must not wait for a step that may never come
         _stopping = true; _stopRequested = true;
         _cts.Cancel();
         try { if (_scripting is not null) await _scripting.ShutdownAsync().ConfigureAwait(false); }

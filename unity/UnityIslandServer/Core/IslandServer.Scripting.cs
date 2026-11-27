@@ -68,8 +68,8 @@ public sealed partial class IslandServer
                 ticks++;
                 try
                 {
-                    await _scripting!.RefreshAsync(_cts.Token).ConfigureAwait(false);
-                    if (ticks % 2 == 0) await _scripting.FlushStateAsync(_cts.Token).ConfigureAwait(false);
+                    var flush = ticks % 2 == 0;   // inside the step: the re-read changes the walls and the scripts the simulation is using
+                    await OnStepAsync(async () => { await _scripting!.RefreshAsync(_cts.Token); if (flush) await _scripting!.FlushStateAsync(_cts.Token); }).ConfigureAwait(false);
                 }
                 catch (Exception exception) when (exception is HttpRequestException or JsonException or KeyNotFoundException or InvalidOperationException) { _log.Write("scripts_sync_failed", new { error = exception.Message }); }
             }

@@ -96,7 +96,7 @@ namespace LifeVerse.Unity.UI
                 case "Info": { var v = _info(d.Id); control = UiKit.Row(UiKit.Text(d.Label, "lv-bold"), UiKit.Spacer(), UiKit.Text(v.Length > 0 ? v : "—", "lv-small")); break; }
                 case "Action":
                 {
-                    Action run = () => { if (_actions.TryGetValue(d.Id, out var a)) { a(); Say(d.Label + ": feito.", false); } else Say("Isso ainda não existe no Unity.", true); };
+                    Action run = () => { if (_actions.TryGetValue(d.Id, out var a)) { a(); if (!SettingsCatalog.AccountPages.ContainsKey(d.Id)) Say(d.Label + ": feito.", false); } else Say("Isso ainda não existe no Unity.", true); };
                     control = UiKit.Row(UiKit.Text(d.Label, "lv-bold"), UiKit.Spacer(), d.Confirm != null ? (VisualElement)Sure(d.ButtonText, () => d.Confirm, run) : Btn(d.ButtonText, run)); break;
                 }
             }

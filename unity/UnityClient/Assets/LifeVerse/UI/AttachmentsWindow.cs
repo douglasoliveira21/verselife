@@ -27,9 +27,13 @@ namespace LifeVerse.Unity.UI
         private readonly Func<AttachmentData, FloatingWindow> _edit; private readonly DropdownField _region;
         public DropdownField RegionField => _region;
 
-        public AttachmentsWindow(ApiContext context, Action changed = null, Func<AttachmentData, FloatingWindow> edit = null) : base(context.Ui, "attachments", "Anexos do corpo", 520f, 560f, new Vector2(420, 90))
+        private readonly Func<AvatarAttachments> _body; private readonly Dictionary<Guid, (float[] P, float[] R, float[] S)> _previewed = new Dictionary<Guid, (float[], float[], float[])>();
+        /// <summary>How many worn objects show on the body something that was typed and not sent yet.</summary>
+        public int Previewing => _previewed.Count;
+
+        public AttachmentsWindow(ApiContext context, Action changed = null, Func<AttachmentData, FloatingWindow> edit = null, Func<AvatarAttachments> body = null) : base(context.Ui, "attachments", "Anexos do corpo", 520f, 560f, new Vector2(420, 90))
         {
-            _c = context; _changed = changed; _edit = edit; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
+            _c = context; _body = body; Closed += RevertPreviews; _changed = changed; _edit = edit; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
             _list.style.flexGrow = 1; _list.style.minHeight = 180; Body.Add(_list);
             Body.Add(UiKit.Text("Vestir um objeto", "lv-bold", "lv-accent"));
             _item = new DropdownField("Item do inventário", new List<string> { "(carregando…)" }, 0); _point = new DropdownField("Ponto do corpo", PointNames(_profiles), 0);
@@ -79,10 +83,36 @@ namespace LifeVerse.Unity.UI
             var buttons = UiKit.Row(UiKit.Button(a.Equipped ? "Tirar" : "Vestir", () => (a.Equipped ? (Action)(() => Send("DELETE", Route + "/" + a.Id, null)) : () => Send("POST", Route, WearJson(a.InventoryItemId, a.Point, null)))()),
                 UiKit.Button("Aplicar", () => Apply(a, position.value, rotation.value, scale.value, sway.value), "lv-btn-primary"), UiKit.Button("Voltar ao padrão", () => Send("POST", Route + "/" + a.Id + "/reset", null)));
             if (a.CanModify) { box.Add(position); box.Add(rotation); box.Add(scale); box.Add(sway); }
+            foreach (var field in new[] { position, rotation, scale, sway }) field.RegisterValueChangedCallback(_ => Preview(a, position.value, rotation.value, scale.value, sway.value));
             box.Add(buttons);
-            if (_edit != null && a.Equipped && a.CanModify && !a.IsHud) box.Add(UiKit.Button("Editar no corpo (setas, anéis e caixas)", () => _edit(a)?.Open()));
+            if (_edit != null && a.Equipped && a.CanModify && !a.IsHud) box.Add(UiKit.Button("Editar no corpo (setas, anéis e caixas)", () => { RevertPreviews(); _edit(a)?.Open(); }));
             var target = new DropdownField("Levar para", PointNames(_profiles), Math.Max(0, PointNames(_profiles).IndexOf(a.PointName))); var replace = new Toggle("Trocar o que já está nesse ponto");
             box.Add(target); box.Add(replace); box.Add(UiKit.Button("Mover", () => Move(a, target.value, replace.value))); return box;
+        }
+
+        /// <summary>Shows on the body what is being typed (place, turn, size and sway) before "Aplicar". Text that is not complete yet changes nothing; closing the window puts the saved values back.</summary>
+        public bool Preview(AttachmentData a, string position, string rotation, string scale, string sway)
+        {
+            var body = _body?.Invoke(); if (body == null || !a.Equipped || !a.CanModify) return false;
+            var p = ParseTriple(position); var r = ParseTriple(rotation); var s = ParseTriple(scale); var w = ParseSway(sway); if (p == null || r == null || s == null || w == null) return false;
+            var saved = ((float[])a.Position.Clone(), (float[])a.Rotation.Clone(), (float[])a.Scale.Clone());
+            if (!body.Preview(a.Id, p, r, s)) return false;
+            if (!_previewed.ContainsKey(a.Id)) _previewed[a.Id] = saved;
+            body.SetSwayOverride(a.Id, w); _status.RemoveFromClassList("lv-bad"); _status.text = "Prévia no corpo: use Aplicar para guardar."; return true;
+        }
+
+        private void RevertPreviews()
+        {
+            var body = _body?.Invoke();
+            if (body != null) foreach (var pair in _previewed) { body.Preview(pair.Key, pair.Value.P, pair.Value.R, pair.Value.S); body.SetSwayOverride(pair.Key, null); }
+            _previewed.Clear();
+        }
+
+        /// <summary>The platform took a change: what it now holds comes back with the list, so nothing is put back.</summary>
+        private void ForgetPreviews()
+        {
+            var body = _body?.Invoke(); if (body != null) foreach (var id in _previewed.Keys) body.SetSwayOverride(id, null);
+            _previewed.Clear();
         }
 
         private static string WearJson(Guid item, string point, float[] position) => JsonSerializer.Serialize(new { inventoryItemId = item, point, mode = (string)null, position });
@@ -123,7 +153,7 @@ namespace LifeVerse.Unity.UI
 
         private void Send(string method, string path, string json) => this.Then(_c.Api.ApiAsync(method, path, json), r =>
         {
-            if (r.Status >= 200 && r.Status < 300) { _status.RemoveFromClassList("lv-bad"); Reload(); _changed?.Invoke(); }
+            if (r.Status >= 200 && r.Status < 300) { _status.RemoveFromClassList("lv-bad"); ForgetPreviews(); Reload(); _changed?.Invoke(); }
             else Fail(Explain(r.Body) ?? UiTasks.Explain(r.Status, r.Body));
         });
 

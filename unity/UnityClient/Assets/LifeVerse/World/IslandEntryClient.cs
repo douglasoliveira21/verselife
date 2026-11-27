@@ -31,8 +31,10 @@ namespace LifeVerse.Unity.World
 
         /// <summary>This client is the Unity one: the API sends it only to islands that run the Unity island server (LifeVerse Wire 12), lists only those and starts it on one of them.</summary>
         public const string Engine = "unity", EngineHeader = "X-LifeVerse-Engine";
+        /// <summary>What the account's list of sessions shows for a sign-in made here (the system, never the name of the computer).</summary>
+        public static readonly string UserAgent = "LifeVerse-Unity (" + (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "Windows" : System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX) ? "Mac" : "Linux") + ")";
 
-        public IslandEntryClient(string apiBaseUrl, TimeSpan? timeout = null) { _baseUrl = apiBaseUrl.TrimEnd('/'); _http = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) }; _http.DefaultRequestHeaders.Add(EngineHeader, Engine); }
+        public IslandEntryClient(string apiBaseUrl, TimeSpan? timeout = null) { _baseUrl = apiBaseUrl.TrimEnd('/'); _http = new HttpClient { Timeout = timeout ?? TimeSpan.FromSeconds(30) }; _http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", UserAgent); _http.DefaultRequestHeaders.Add(EngineHeader, Engine); }
 
                 /// <summary>The refresh token and when the access token ends (15 minutes after signing in): the client asks for a new pair a minute before, or when the API refuses the old one.</summary>
         public string RefreshToken { get; private set; } = "";

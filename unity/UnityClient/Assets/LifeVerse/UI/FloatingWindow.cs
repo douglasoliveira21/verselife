@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -51,7 +52,7 @@ namespace LifeVerse.Unity.UI
             style.left = start.x; style.top = start.y;
             RegisterCallback<PointerDownEvent>(e => Raise(), TrickleDown.TrickleDown);
             bar.RegisterCallback<PointerDownEvent>(e => { if (e.button != 0 || OnButton(e.target as VisualElement)) return; if (e.clickCount == 2) { SetMinimized(!Minimized); return; } _dragging = true; _grab = new Vector2(e.position.x - resolvedStyle.left, e.position.y - resolvedStyle.top); bar.CapturePointer(e.pointerId); });
-            bar.RegisterCallback<PointerMoveEvent>(e => { if (_dragging) MoveTo(new Vector2(e.position.x - _grab.x, e.position.y - _grab.y)); });
+            bar.RegisterCallback<PointerMoveEvent>(e => { if (!_dragging) return; var wanted = new Vector2(e.position.x - _grab.x, e.position.y - _grab.y); MoveTo(e.shiftKey ? wanted : Snapped(wanted)); });   // Shift drags without docking
             bar.RegisterCallback<PointerUpEvent>(e => { if (!_dragging) return; _dragging = false; bar.ReleasePointer(e.pointerId); Remember(); });
         }
 
@@ -94,6 +95,34 @@ namespace LifeVerse.Unity.UI
         {
             var host = Ui.WindowLayer.layout; var maxW = host.width > 1 ? host.width : 1920f; var maxH = host.height > 1 ? host.height : 1080f;
             style.width = Mathf.Clamp(size.x, MinWidth, maxW); style.height = Mathf.Clamp(size.y, MinHeight, maxH); _sized = true;
+        }
+
+        /// <summary>How near an edge has to be for a dragged window to dock to it.</summary>
+        public const float SnapDistance = 10f;
+
+        private Vector2 Snapped(Vector2 wanted)
+        {
+            var host = Ui.WindowLayer.layout; if (parent == null || host.width <= 1 || !float.IsFinite(resolvedStyle.width) || !float.IsFinite(resolvedStyle.height)) return wanted;
+            var others = new List<Rect>(); foreach (var child in parent.Children()) if (child is FloatingWindow w && w != this && w.resolvedStyle.display != DisplayStyle.None) others.Add(new Rect(w.resolvedStyle.left, w.resolvedStyle.top, w.resolvedStyle.width, w.resolvedStyle.height));
+            return Snap(new Rect(wanted.x, wanted.y, resolvedStyle.width, resolvedStyle.height), others, new Vector2(host.width, host.height));
+        }
+
+        /// <summary>
+        /// Where a dragged window comes to rest: against a side of the screen (under the top bars, over the toolbar), or against a window next to it — side by side, one over the other, or with
+        /// the edges in line. Each direction takes the nearest edge within <paramref name="distance"/>; with none near, the window stays where it is.
+        /// </summary>
+        public static Vector2 Snap(Rect moving, IReadOnlyList<Rect> others, Vector2 screen, float distance = SnapDistance)
+        {
+            var result = moving.position; float bestX = distance, bestY = distance;
+            void X(float x) { var d = Mathf.Abs(x - moving.x); if (d <= bestX) { bestX = d; result.x = x; } }
+            void Y(float y) { var d = Mathf.Abs(y - moving.y); if (d <= bestY) { bestY = d; result.y = y; } }
+            X(0f); X(screen.x - moving.width); Y(TopInset); Y(screen.y - BottomInset - moving.height);
+            foreach (var o in others)
+            {
+                if (moving.yMin <= o.yMax + distance && moving.yMax >= o.yMin - distance) { X(o.xMax); X(o.xMin - moving.width); X(o.xMin); X(o.xMax - moving.width); }
+                if (moving.xMin <= o.xMax + distance && moving.xMax >= o.xMin - distance) { Y(o.yMax); Y(o.yMin - moving.height); Y(o.yMin); Y(o.yMax - moving.height); }
+            }
+            return result;
         }
 
         /// <summary>Moves the window, keeping the title bar on the screen.</summary>

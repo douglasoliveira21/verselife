@@ -78,6 +78,13 @@ namespace LifeVerse.Unity.UI
             "interface.radial_speed", "interface.radial_tooltips", "general.keep_on_top", "general.download_update", "avatar.show_titles", "avatar.default_animations", "avatar.open_mirror", "privacy.external_media", "build.space", "build.import_collision",
             "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache", "network.download_limit", "metrics.cpu_gpu", "advanced.verify_files", "accessibility.captions",
             "accessibility.keyboard", "camera.focus_double_click", "camera.allow_detached", "camera.detached_range", "camera.detached_speed",
+            "privacy.online_visibility", "privacy.private_messages", "privacy.group_invites", "privacy.friend_requests", "privacy.blocked", "account.sessions",
+        };
+
+        /// <summary>Kept and enforced by the platform, not by this computer: here each one is a button that opens its page of "Privacidade e sessões".</summary>
+        public static readonly Dictionary<string, string> AccountPages = new Dictionary<string, string>
+        {
+            ["privacy.online_visibility"] = "quem", ["privacy.private_messages"] = "quem", ["privacy.group_invites"] = "quem", ["privacy.friend_requests"] = "quem", ["privacy.blocked"] = "bloqueados", ["account.sessions"] = "sessoes",
         };
 
         /// <summary>Settings this client cannot honour, with the reason shown instead of the control.</summary>
@@ -96,8 +103,9 @@ namespace LifeVerse.Unity.UI
             {
                 if (_all != null) return _all;
                 var list = new List<SettingDef>();
-                foreach (var d in Raw)
+                foreach (var raw in Raw)
                 {
+                    var d = !AccountPages.ContainsKey(raw.Id) ? raw : new SettingDef(raw.Id, raw.Category, raw.Tab, raw.Label, raw.Help, "Action", "") { ButtonText = raw.Id == "privacy.blocked" || raw.Id == "account.sessions" ? "Ver" : "Escolher", Group = raw.Group, Column = raw.Column, Keywords = raw.Keywords };
                     if (UnityHas.Contains(d.Id)) d.Unavailable = null;
                     else if (UnityCannot.TryGetValue(d.Id, out var why)) d.Unavailable = why;
                     else if (d.Unavailable == null && !InUnity.Contains(d.Id)) d.Unavailable = NotYet;

@@ -173,6 +173,19 @@ namespace LifeVerse.Unity.Tests.EditMode
         }
 
         [Test]
+        public void ADraggedWindowDocksToTheScreenAndToItsNeighbours()
+        {
+            var screen = new Vector2(1280, 720); var other = new[] { new Rect(400, 100, 300, 200) };
+            Assert.AreEqual(new Vector2(0, 300), FloatingWindow.Snap(new Rect(7, 300, 200, 150), other, screen), "a borda esquerda da tela");
+            Assert.AreEqual(new Vector2(1080, FloatingWindow.TopInset), FloatingWindow.Snap(new Rect(1074, FloatingWindow.TopInset + 6, 200, 150), other, screen), "o canto, embaixo das barras");
+            Assert.AreEqual(new Vector2(700, 100), FloatingWindow.Snap(new Rect(706, 108, 200, 150), other, screen), "lado a lado e com o topo na mesma linha");
+            Assert.AreEqual(new Vector2(400, 300), FloatingWindow.Snap(new Rect(393, 305, 200, 150), other, screen), "uma embaixo da outra, alinhadas");
+            Assert.AreEqual(new Vector2(200, 100), FloatingWindow.Snap(new Rect(196, 95, 200, 150), other, screen), "encostada pela esquerda");
+            Assert.AreEqual(new Vector2(706, 400), FloatingWindow.Snap(new Rect(706, 400, 200, 150), other, screen), "longe na vertical, a vizinha não puxa");
+            Assert.AreEqual(new Vector2(730, 340), FloatingWindow.Snap(new Rect(730, 340, 200, 150), other, screen), "sem borda perto, fica onde foi solta");
+        }
+
+        [Test]
         public void TheSectionsAndTheKindsOfItemsHaveTheirIcons()
         {
             Assert.AreEqual("globe", FloatingWindow.IconOf("world-map")); Assert.AreEqual("code", FloatingWindow.IconOf("lua-1234")); Assert.AreEqual("texture", FloatingWindow.IconOf("build-texture")); Assert.IsNull(FloatingWindow.IconOf("zzz"));

@@ -1,6 +1,6 @@
 # O que falta na migração para o Unity (passagem de serviço)
 
-Estado em 27/11/2026, depois do commit `37b6fd1` e de uma rodada **ainda sem commit** (limite de envio e testes de rede no servidor, WebP, rosto e primeira pessoa, céu e neblina próprios, o que faltava da interface, quatro opções). Este é o documento para quem continuar o trabalho, seja pessoa ou IA. Ele junta tudo o que está aberto. Cada item diz onde fica no Godot, onde entraria no Unity, qual API usa e como saber que acabou.
+Estado em 27/11/2026. A última rodada (defeitos que só aparecem no PostgreSQL, privacidade e sessões, teste longo, avisos de licença, prévia dos anexos e encaixe de janelas) e a troca para o servidor novo vêm nos commits depois do `8516450`. Este é o documento para quem continuar o trabalho, seja pessoa ou IA. Ele junta tudo o que está aberto. Cada item diz onde fica no Godot, onde entraria no Unity, qual API usa e como saber que acabou.
 
 Os outros documentos desta pasta contam a história do trabalho. Alguns estão **desatualizados** (ver a seção 10); quando um deles disser "falta" e este não disser, vale este.
 
@@ -41,12 +41,12 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   ```
   LifeVerse.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -lifeverse-world-selfcheck
   ```
-  Espera-se `event=world_sync_check result=passed checks=339`.
+  Espera-se `event=world_sync_check result=passed checks=342`.
   - A cena inicial (`Bootstrap.unity`) **não tem luz própria**: o sol e a lua são do `IslandEnvironment`. A luz padrão da Unity que estava lá iluminava todas as ilhas, inclusive de noite. O teste de sentar ou o de pulo podem falhar por tempo: rode de novo.
 - **Verificação contra a API real, local:**
   1. Suba a API: `dotnet run --project tools/ApiLiveHost -c Release --no-build -- 5099`.
-  2. Rode `LifeVerse.exe -lifeverse-live-api http://127.0.0.1:5099`. Espera-se `steps=31 failed=0`.
-  3. Mate só o PID que escuta a porta 5099. O banco é em memória e dura enquanto o processo viver: reinicie-o antes de repetir.
+  2. Rode `LifeVerse.exe -lifeverse-live-api http://127.0.0.1:5099`. Espera-se `steps=32 failed=0`.
+  3. Mate só o PID que escuta a porta 5099. O banco é em memória e dura enquanto o processo viver: reinicie-o antes de repetir. Com `LIFEVERSE_LIVE_PG` (a conexão de administrador de um PostgreSQL **desta máquina**) a mesma API sobe sobre um banco de verdade, criado e migrado na hora; apague depois os bancos `lifeverse_live_*`. **Prefira assim:** só no PostgreSQL aparecem os erros de tipo, e a renovação da sessão só é testada nele.
 - **As mesmas verificações dentro do editor** (quando o `.exe` não pode ser executado): o resultado sai no arquivo dado em `-lifeverse-editor-run`, e o editor se fecha com o código da verificação (0 passou, 2 o autoteste quebrou, 3 passou de 20 minutos).
   ```
   Unity.exe -batchmode -projectPath unity/UnityClient -executeMethod LifeVerse.Unity.EditorTools.EditorChecks.Play -logFile editor.log -lifeverse-editor-run <saida.log> -lifeverse-live-api http://127.0.0.1:5099
@@ -60,8 +60,8 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   - `-lifeverse-doc-shots <pasta>`, junto do autoteste: as fotos `ui-*.png` das janelas com dados;
   - `-lifeverse-world-preview <prefixo>`: as 9 vistas do mundo;
   - `-lifeverse-e2e <api> <usuário> <senha>`: ponta a ponta, contra uma API e um supervisor de verdade.
-- **API:** `dotnet test tests/LifeVerse.Api.Tests`. A última rodada deu 2.566 aprovados e 0 falhas; 39 testes de Postgres pedem `LIFEVERSE_TEST_PG`.
-- **Protocolo e servidor de ilha:** `dotnet test tests/LifeVerse.Wire.Tests` (33) e `dotnet test tests/LifeVerse.IslandServer.Tests` (63, com os 64 jogadores em rede ruim e as entradas hostis). Para sessões longas: `LIFEVERSE_FUZZ_SECONDS` (fuzz do leitor), `LIFEVERSE_FUZZ_SEED` e `LIFEVERSE_FUZZ_MESSAGES` (mensagens absurdas ao servidor) e `LIFEVERSE_LAG_SECONDS`.
+- **API:** `dotnet test tests/LifeVerse.Api.Tests`. A última rodada, com `LIFEVERSE_TEST_PG`, deu 2.614 aprovados, 0 falhas e nenhum pulado. Os testes de carga e do depurador Lua já falharam uma vez cada quando rodaram junto com os outros, e passaram sozinhos.
+- **Protocolo e servidor de ilha:** `dotnet test tests/LifeVerse.Wire.Tests` (33) e `dotnet test tests/LifeVerse.IslandServer.Tests` (64, com os 64 jogadores em rede ruim, as entradas hostis e a volta longa). Para sessões longas: `LIFEVERSE_SOAK_SECONDS` (gente entrando e saindo; memória e passos), `LIFEVERSE_FUZZ_SECONDS` (fuzz do leitor), `LIFEVERSE_FUZZ_SEED` e `LIFEVERSE_FUZZ_MESSAGES` (mensagens absurdas ao servidor) e `LIFEVERSE_LAG_SECONDS`.
 - **Imagens WebP de referência:** `Godot_console.exe --headless --script unity/tools/webp-fixtures/make_fixtures.gd -- <repo>\tests\fixtures\webp`.
 - **Pilha completa em WSL** (Postgres, API, supervisor Unity e servidor Linux): foi montada com scripts `e2e/up.sh` e `e2e/down.sh` na pasta temporária da sessão. Esses scripts não estão no repositório; o roteiro está no fim de `DEPLOY_UNITY_ISLANDS.md`.
 
@@ -69,10 +69,12 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
 - **O Controle Inteligente de Aplicativos do Windows bloqueia o `LifeVerse.exe` gerado** ("uma política de Controle de Aplicativo bloqueou este arquivo"; eventos 3077 e 3118 em `Microsoft-Windows-CodeIntegrity/Operational`). Enquanto isso, nada que dependa do `.exe` roda nesta máquina. Os testes EditMode e o build funcionam, e o autoteste e a verificação ao vivo rodam **dentro do editor** (ver os comandos acima). É uma proteção do Windows: só o dono decide o que fazer com ela. Vale também para os jogadores: um `.exe` sem assinatura pode ser bloqueado no computador deles (ver a seção 6).
 - **O `build-plugins.ps1` não roda sem liberar a política de execução do PowerShell.** Para um só projeto, dá para compilar com `dotnet build` (os alvos estão no próprio script) e copiar a DLL.
 
+- **O mesmo controle já bloqueou DLLs recém-compiladas** dos testes e da API de teste (26/11/2026). Não há o que contornar: avise o dono.
+
 ### Regras combinadas com o dono do projeto
 - **Fale em português** com ele.
 - **Commit e push só quando ele pedir.** O normal é commitar no `main`.
-- **Nunca use credenciais reais contra a produção** (`api.nerdplus.com.br`).
+- **Nunca use credenciais reais contra a produção** (`app.lifeverse.euporiagames.com`; antes, `api.nerdplus.com.br`).
 - **Peça autorização antes** de qualquer mudança de produção, de banco ou irreversível: migração aplicada em produção, troca do motor de uma ilha, deploy.
 - **Nunca mate processos pelo nome;** só o PID que você mesmo iniciou.
 - **Faça cada item inteiro** sem perguntar se deve continuar.
@@ -87,13 +89,37 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   - toggles de abas escondidas não disparam eventos de mudança;
   - para dar exemplo de opção indisponível, use uma que o Godot também não tenha (`graphics.vegetation`), nunca uma que o Unity possa ganhar depois;
   - os testes de sentar antigo e de pulo às vezes falham: rode de novo.
+- **Banco:** uma coluna `jsonb` volta reescrita pelo PostgreSQL (`{"a": 1}`, com espaço) e não aceita operações de texto. Para ler um valor, interprete o JSON; para filtrar numa consulta, use `JsonColumn.Text(coluna)`. Os testes em memória não pegam nenhum dos dois erros.
 - **Heredoc:** um heredoc no Bash estraga barras invertidas. Use `chr(92)` em Python ou a ferramenta de edição.
 - **WSL:** servidores esquecidos no WSL prendem as portas 17777 e 17070 do Windows.
 - **IL2CPP:** não há como gerar com IL2CPP nesta máquina (falta o Visual Studio C++). Os builds são Mono.
 
 ---
 
-## 1. Produção: pôr as ilhas Unity no ar (precisa de autorização)
+## 1. Produção (precisa de autorização)
+
+### Servidor novo (27/11/2026)
+
+O jogo passou para outro servidor, com banco de dados novo e vazio.
+
+- **API:** `https://app.lifeverse.euporiagames.com`. **Host:** `38.4.141.223` (é o `LIFEVERSE_HOSTNAME` das ilhas).
+- **Clientes:** o endereço padrão do Godot e da Unity foi trocado no código. Um jogo gerado antes ainda procura o endereço antigo; `LIFEVERSE_API_URL` troca sem gerar de novo.
+- **Banco vazio:** as três ilhas oficiais nascem no primeiro cadastro. Os IDs de ilha antigos não valem mais.
+- **Conferido de fora às 12:44 UTC:** `/health` responde `Healthy` (versão 0.6.0); as três ilhas oficiais foram criadas pelo primeiro cadastro; a "LifeVerse Plaza" está `running`, com sinal de vida recente, e a porta **UDP 7800** responde ao início da conexão. As ilhas são Godot, ligadas pelo serviço do supervisor (portas 7800 a 7802).
+- **Não conferido:** o log do serviço de ilhas, andar e conversar dentro da ilha, as outras duas ilhas e o desligamento por inatividade.
+
+### 1.0 Correções da API que a produção ainda não tem (urgente)
+
+Achadas ao rodar a API inteira sobre um PostgreSQL local. Estão corrigidas no código, com teste e com commit; **o servidor só as recebe depois do push e do deploy** da API. Não há migração nova. Pelo código, a produção de hoje tem estes defeitos (não foi conferido lá):
+
+- **Privacidade ignorada:** perfil marcado como privado mostrava biografia e foto e entrava na busca; presença privada aparecia; "mensagens só de amigos" e "de ninguém" não barravam ninguém.
+- **Erro 500:** busca e sugestões quando o resultado tinha pessoas; abas Física e Desempenho da ilha; pagamento feito por script; conferência do inventário.
+- **Datas com fuso:** um horário enviado com `-03:00` (por exemplo, ao criar um evento) era recusado.
+- **JSON inválido** na privacidade do perfil ou nas provas de uma denúncia dava erro 500 em vez de 400.
+
+As rotas novas de privacidade, bloqueados e sessões vão no mesmo deploy. Com a API antiga, as páginas novas do cliente dizem que o servidor ainda não tem a seção.
+
+### 1.1 Pôr as ilhas Unity no ar
 
 Nada disto foi feito na produção. O passo a passo está em `DEPLOY_UNITY_ISLANDS.md`.
 
@@ -107,7 +133,7 @@ Nada disto foi feito na produção. O passo a passo está em `DEPLOY_UNITY_ISLAN
    - variáveis `LIFEVERSE_API_URL`, `LIFEVERSE_SERVICE_KEY` e `LIFEVERSE_HOSTNAME`;
    - portas UDP 7800 a 7807.
 4. **Passar uma ilha de teste para `unity`** com `PUT /api/v1/admin/islands/{id}/engine`. Exige estar em `LIFEVERSE_ADMIN_USER_IDS` e mandar `X-Admin-MFA`.
-5. **Conferir** com `-lifeverse-e2e https://api.nerdplus.com.br <conta de teste> <senha>`. A conta de teste é do dono do projeto; peça a ele.
+5. **Conferir** com `-lifeverse-e2e https://app.lifeverse.euporiagames.com <conta de teste> <senha>`. A conta de teste é do dono do projeto; peça a ele.
 
 **Nunca provado:**
 - a imagem Docker em si (não havia Docker aqui);
@@ -152,18 +178,10 @@ Das 95 rotas da API que o Godot usava e o Unity não usava, **todas** têm uso a
 - A opção `world.teleport_invites` do catálogo veio do Godot marcada "o jogo ainda não tem convites".
 - **O que fazer:** decidir com o dono o que a opção controla (por exemplo, aceitar convites só de amigos) e ligá-la.
 
-## 4. As 25 opções do catálogo que o cliente Unity ainda não cumpre
+## 4. As 19 opções do catálogo que o cliente Unity ainda não cumpre
 
 Elas aparecem desligadas, com o motivo do Godot. A lista sai de `UI/SettingsCatalog.Generated.cs` (os que têm `Unavailable`). Quase todas dependem de **servidor** ou de **decisão de produto**, não só do cliente:
 
-- **Precisam de preferência de conta no servidor** (campo novo e rota em `backend/Modules/Users`, depois o cliente):
-  - `privacy.online_visibility`;
-  - `privacy.private_messages`;
-  - `privacy.group_invites`;
-  - `privacy.friend_requests`.
-- **Precisam de rota nova:**
-  - `privacy.blocked`: listar e desbloquear;
-  - `account.sessions`: listar e encerrar as sessões de outros aparelhos.
 - **Precisam de serviço novo:**
   - `chat.translate`: tradução;
   - `advanced.error_report`: relatórios de erro;
@@ -186,6 +204,10 @@ Elas aparecem desligadas, com o motivo do Godot. A lista sai de `UI/SettingsCata
 
 Mais duas que só o Unity não cumpre, com o motivo na tela: `audio.output_device` (o motor sai sempre pelo dispositivo padrão do Windows) e `interface.side_bar` (o cliente Unity não tem barra lateral).
 
+**Privacidade e sessões (feitas):** quem vê a presença, quem manda mensagens, quem convida para grupos, quem pede amizade, a lista de bloqueados e as sessões abertas ficam em **Configurações → Privacidade e sessões** (`UI/AccountPrivacyWindow.cs`; no servidor, `Modules/Users/PrivacyChoices.cs` e `Modules/Identity/AccountSessions.cs`). Ficam de fora:
+- o cliente Godot continua mostrando essas opções desligadas;
+- uma sessão encerrada perde o acesso no pedido seguinte; não foi verificado se uma ilha ou o canal de avisos já abertos por ela são derrubados.
+
 ## 5. Aparência: diferenças que ainda se veem
 
 Céu, nuvens, pôr do sol, chuva, tempestade, noite, mar, chão e a vista debaixo d'água seguem o Godot (céu próprio em `World/Resources/LifeVerse/IslandSky.shader`, neblina do tempo em `IslandFog.shader`). As fotos lado a lado, das nove vistas, estão em `img/compare/`. O que ainda difere ou não foi visto:
@@ -199,7 +221,7 @@ Céu, nuvens, pôr do sol, chuva, tempestade, noite, mar, chão e a vista debaix
 
 A interface segue o visualizador do Second Life, com tamanho das janelas guardado, barra de ferramentas embaixo ou numa borda, conversas particulares e de grupo em abas e o inventário também como árvore. Ainda faltaria:
 
-- **Janelas:** não há "destacar" abas nem encaixe entre janelas.
+- **Janelas:** não há "destacar" abas. O encaixe entre janelas e nas bordas existe (Shift arrasta sem encaixar), mas só foi testado pela regra, não com o mouse.
 - **Barra de ferramentas:** é uma só (o Second Life permite várias, cada uma com os seus botões).
 - **Conversas:** o histórico é o que a API guarda; o nome de quem escreve num grupo depende de a notificação ao vivo trazê-lo.
 - **Texto:** só a fonte Inter; não há uma fonte de exibição própria para o jogo.
@@ -218,12 +240,14 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
 - **CI:**
   - `.github/workflows/unity.yml` nunca rodou; precisa dos segredos `UNITY_LICENSE` e afins (licença Unity em CI);
   - o build do servidor Linux também não está no CI.
+- **Avisos de licença:** o build copia `Assets/LifeVerse/Legal/THIRD-PARTY-NOTICES.txt` para junto do jogo, e um teste exige que toda DLL nova esteja nele. Falta conferir que o instalador o leva.
 - **Assinatura do executável:** o `.exe` não é assinado, e o Controle Inteligente de Aplicativos do Windows 11 pode bloqueá-lo (aconteceu na máquina de desenvolvimento). Avaliar um certificado de assinatura de código antes de distribuir.
 - **Versão:** o cliente Unity é a 0.7.0 (`bundleVersion`), e `release.json` e `SHA256SUMS` são gerados pelo script. Falta publicar uma versão de verdade no endereço que `UpdateCheck` lê.
 
 ## 7. Riscos e medições não fechados (`MIGRATION_RISKS.md`)
 
 - **Rede (S2):** testados 64 jogadores atrás de uma internet ruim de mentira: com 60–90 ms de atraso por sentido e 5% de perda, o comando volta confirmado em 233 ms (mediana; 281 ms no 99º percentil) e cada um recebe 15 snapshots por segundo; com 120–180 ms e 10%, 385 ms (460 ms) e 14. O teste achou um defeito (os snapshots de uma ilha cheia chegavam pela metade), corrigido. **Falta a internet de verdade** e outra máquina.
+- **Sessão longa do servidor Unity:** 20 minutos com gente entrando e saindo sem parar acharam um defeito de concorrência nos scripts, corrigido (o pacote do servidor Linux precisa ser gerado de um commit com essa correção). Falta medir **horas**, com física, veículos e voz, e a memória do processo inteiro: o teste mede só a parte gerenciada, que foi de 3,2 para 4,8 MB sem a origem separada.
 - **Segurança (R12):** há limite de envio por jogador e uma sessão de fuzz de 15 minutos no leitor (1,4 bilhão de leituras, nenhuma exceção); mensagens válidas com valores absurdos não derrubam o servidor (um defeito achado e corrigido nas respostas de script, que vale também para o servidor Godot). Falta rever o limite com jogadores de verdade.
 - **Física dos objetos (S4):** comparada em 32 cenários (`unity/PhysicsComparison` e `-lifeverse-physics-report`); a tabela está em `MIGRATION_ISLAND_SERVER.md`. Diferenças que ficaram:
   - bola solta numa rampa de 10°: no Godot ela fica parada, no Unity rola 4 m;
@@ -231,14 +255,14 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
   - 200 corpos: depois de 8 s dormem 100 no Unity e 186 no Godot (as bolas seguem rolando); o custo por passo é bem menor no Unity (0,2 ms contra 4 ms);
   - girar e tombar: o giro no chão e o rolar de uma caixa que cai torta diferem em até 2 vezes;
   - corpos de malha importada e juntas não existem nos dois servidores.
-- **Licenças (R16):** verificar a licença comercial da Unity para o modelo de negócio e a licença da fonte (Inter) antes de distribuir. As tabelas do decodificador WebP vêm da libwebp (BSD de 3 cláusulas, Google): a distribuição precisa incluir o aviso.
+- **Licenças (R16):** as bibliotecas, a fonte, os ícones e as tabelas da libwebp estão nos avisos (seção 6). **Falta o dono confirmar** a licença comercial da Unity para o modelo de negócio e a origem e o direito de distribuição dos arquivos que vão no jogo e não têm licença registrada no repositório: o corpo `lifeverse_man.bin` (Character Creator), as animações (Mixamo e um pacote de captura de movimento), os três sons (`footsteps_concrete`, `keyboard_typing`, `login_theme`) e o fundo da tela de entrada. Roupas do MakeHuman com licença CC-BY, se forem distribuídas, pedem crédito.
 - **Requisitos de hardware (R7):** definir e publicar a especificação mínima (HDRP pede GPU moderna).
 - **Testes do código compartilhado:** a suíte inteira de `shared` ainda não roda no Test Runner da Unity (Fase 4); só partes rodam.
 
 ## 8. Testes que faltam ou que nunca rodaram de verdade
 
 - **Microfone real** e como a voz soa: os testes usam amostras sintéticas.
-- **No player gerado:** a última rodada foi verificada só dentro do editor (31/31 na API local e 339 verificações no autoteste). Falta repetir com o `.exe`, e as fotos com GPU, quando for possível executá-lo.
+- **No player gerado:** a última rodada foi verificada só dentro do editor (32/32 na API local, em memória e em PostgreSQL, e 342 verificações no autoteste). Falta repetir com o `.exe`, e as fotos com GPU, quando for possível executá-lo.
 - **Teclado e mouse de verdade:** os testes usam entrada por script. Falta jogar uma sessão real, com estes pontos em especial:
   - ALT + V;
   - duplo clique;
@@ -247,11 +271,11 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
   - setas na busca.
 - **Corpo próprio:** os sliders foram fotografados num corpo GLB de teste (o boneco do jogo); falta um corpo de pessoa de verdade, e as variações de animação.
 - **Mapas:** há fotos do mini-mapa girando e dos terrenos e marcos no mapa-múndi; falta ver os contornos de construções numa ilha construída.
-- **Testes de banco:** os 39 testes de Postgres da API pedem um banco de teste (`LIFEVERSE_TEST_PG`). Nunca use a produção.
+- **Testes de banco:** os testes de PostgreSQL só rodam com `LIFEVERSE_TEST_PG` (sem ela são pulados, e a maioria dos testes usa o banco em memória, que não pega erros de tipo). Rode-os sempre que mexer em consulta. Nunca use a produção.
 - **Animações de modelos:** a troca de LOD de malha nunca foi vista num objeto pesado do mundo, e malhas com esqueleto não entram no LOD.
 - **Anexos:**
   - pontos de tela (HUD) não são desenhados no corpo;
-  - o balanço (sway) só aparece depois de "Aplicar", sem prévia ao vivo.
+  - a prévia ao vivo (posição, giro, escala e balanço enquanto se digita) foi verificada no autoteste com um chapéu de teste, não com o mouse.
 
 - **Reencaixe de roupa:** tem teste EditMode com dois esqueletos de proporções diferentes, mas não foi visto com uma roupa de verdade e GPU.
 
@@ -269,8 +293,9 @@ A interface segue o visualizador do Second Life, com tamanho das janelas guardad
 
 ## Ordem sugerida
 
+0. **Seção 1.0** (as correções de privacidade e de PostgreSQL), assim que o dono autorizar o commit, o push e o deploy.
 1. **Repetir as verificações no player gerado** quando houver como executá-lo (seção 0).
-2. **Seção 1** (produção), quando o dono autorizar: é o que põe o Unity na mão dos jogadores. O servidor de ilha Unity precisa ser do mesmo commit do cliente (a entrega dos snapshots mudou).
+2. **Seção 1.1** (ilhas Unity), quando o dono autorizar: é o que põe o Unity na mão dos jogadores. O servidor de ilha Unity precisa ser do mesmo commit do cliente (a entrega dos snapshots mudou).
 3. **Seção 8:** uma sessão real com teclado, mouse e microfone.
 4. **Seção 6:** IL2CPP, instalador, assinatura do executável e CI, antes de distribuir.
 5. **Seção 7:** internet de verdade e licenças.

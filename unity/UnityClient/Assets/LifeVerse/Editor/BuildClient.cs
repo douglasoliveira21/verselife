@@ -14,6 +14,11 @@ namespace LifeVerse.Unity.EditorTools
     /// </summary>
     public static class BuildClient
     {
+        /// <summary>The licenses of what the game ships (they have to travel with every copy of it).</summary>
+        public const string Notices = "Assets/LifeVerse/Legal/THIRD-PARTY-NOTICES.txt";
+
+        public static void CopyNotices(string folder) => File.Copy(Notices, Path.Combine(folder, Path.GetFileName(Notices)), true);
+
         public static void BuildWindows()
         {
             var scenes = EditorBuildSettings.scenes.Where(scene => scene.enabled).Select(scene => scene.path).ToArray();
@@ -24,6 +29,7 @@ namespace LifeVerse.Unity.EditorTools
             var report = BuildPipeline.BuildPlayer(options);
             var summary = report.summary;
             Debug.Log($"[LifeVerse] Build {summary.result}: {summary.totalSize / (1024 * 1024)} MB em {summary.totalTime:g}, erros {summary.totalErrors}, avisos {summary.totalWarnings}");
+            if (summary.result == BuildResult.Succeeded) CopyNotices("Builds/Windows");   // before the list of files, so the check covers it
             if (summary.result == BuildResult.Succeeded) Debug.Log($"[LifeVerse] Lista de arquivos para a verificação do jogo: {LifeVerse.Unity.World.GameFiles.Write("Builds/Windows")} arquivos");
             EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
         }
@@ -55,6 +61,7 @@ namespace LifeVerse.Unity.EditorTools
                 var scenes = EditorBuildSettings.scenes.Where(scene => scene.enabled).Select(scene => scene.path).ToArray(); Directory.CreateDirectory("Builds/WindowsIl2cpp");
                 var report = BuildPipeline.BuildPlayer(new BuildPlayerOptions { scenes = scenes, locationPathName = "Builds/WindowsIl2cpp/LifeVerse.exe", target = BuildTarget.StandaloneWindows64, subtarget = (int)StandaloneBuildSubtarget.Player, options = BuildOptions.None });
                 Debug.Log($"[LifeVerse] IL2CPP: {report.summary.result}, {report.summary.totalErrors} erros");
+                if (report.summary.result == BuildResult.Succeeded) CopyNotices("Builds/WindowsIl2cpp");
                 EditorApplication.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
             }
             finally { PlayerSettings.SetScriptingBackend(target, before); }
@@ -74,6 +81,7 @@ namespace LifeVerse.Unity.EditorTools
             };
             var report = BuildPipeline.BuildPlayer(options);
             var summary = report.summary;
+            if (summary.result == BuildResult.Succeeded) CopyNotices("Builds/LinuxServer");
             Debug.Log($"[LifeVerse] Servidor Linux {summary.result}: {summary.totalSize / (1024 * 1024)} MB em {summary.totalTime:g}, erros {summary.totalErrors}, avisos {summary.totalWarnings}");
             EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
         }

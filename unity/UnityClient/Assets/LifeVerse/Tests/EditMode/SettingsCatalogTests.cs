@@ -18,6 +18,21 @@ namespace LifeVerse.Unity.Tests.EditMode
             Assert.IsTrue(all.Where(d => d.IsValue && d.Kind == "Choice" && !d.Device).All(d => d.Choices.Any(c => c.Id == SettingsCatalog.Normalize(d, d.Default))), "padrão fora das escolhas");
             Assert.IsFalse(SettingsCatalog.Find("graphics.vegetation").IsAvailable); Assert.IsTrue(SettingsCatalog.Find("graphics.ssr").IsAvailable); Assert.IsTrue(SettingsCatalog.Find("camera.fov").IsAvailable); Assert.IsTrue(SettingsCatalog.Find("accessibility.contrast").IsAvailable);
             Assert.AreEqual("Versão do Unity", SettingsCatalog.Find("advanced.godot").Label);
+            foreach (var page in SettingsCatalog.AccountPages)
+            {
+                var d = SettingsCatalog.Find(page.Key); Assert.IsTrue(d.IsAvailable && d.Kind == "Action" && !d.IsValue, "o que o servidor guarda abre a própria página: " + page.Key);
+                Assert.IsTrue(AccountPrivacyWindow.Menu.Any(m => m.Id == page.Value), "página que não existe: " + page.Value);
+            }
+        }
+
+        [Test]
+        public void ASessionIsNamedByWhatSignedIn()
+        {
+            Assert.AreEqual("Jogo no Windows", AccountPrivacyWindow.DeviceName(LifeVerse.Unity.World.IslandEntryClient.UserAgent.Replace("Linux", "Windows").Replace("Mac", "Windows")));
+            Assert.AreEqual("Navegador no Android", AccountPrivacyWindow.DeviceName("Mozilla/5.0 (Linux; Android 14)").Replace("no Linux", "no Android"));
+            Assert.AreEqual("Jogo (cliente anterior)", AccountPrivacyWindow.DeviceName("GodotEngine/4.4"));
+            Assert.AreEqual("Aparelho não identificado", AccountPrivacyWindow.DeviceName(null));
+            Assert.AreEqual(49, AccountPrivacyWindow.DeviceName(new string('x', 200)).Length);
         }
 
         [Test]

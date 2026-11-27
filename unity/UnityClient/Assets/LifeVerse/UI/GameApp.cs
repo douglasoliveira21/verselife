@@ -261,7 +261,7 @@ namespace LifeVerse.Unity.UI
             Hud.AddMenu("Eu", new (string, string, Action)[]
             {
                 ("Meu perfil", "user", () => Open(new ProfileHubWindow(Context, _api.UserId))), ("Avatar: visuais, corpo, roupas e animações", "avatar", () => Open(OpenAvatarStudio())), ("Meu personagem", "user", () => OpenCharacter()?.Open()),
-                ("Anexos do corpo", "pin", () => Open(new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment))), Line(),
+                ("Anexos do corpo", "pin", () => Open(new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment, () => OwnAttachments))), Line(),
                 ("Inventário", "bag", () => Hud.Toggle("inventory", () => new InventoryManagerWindow(Context, Store))), ("Carteira", "coin", () => Hud.Toggle("wallet", () => new WalletHubWindow(Context))), ("Minhas propriedades", "home", () => Open(new MyPropertiesWindow(Context))), Line(),
                 ("Controles de movimento", "run", () => Hud.Toggle("move", MovePanel)), ("Controles da câmera", "camera", () => Hud.Toggle("camera", CameraPanel)),
                 ("Configurações", "settings", () => Hud.Toggle("settings", SettingsPanel)), ("Barra de ferramentas", "layers", () => Open(ToolbarWindow())), Line(), ("Sair da ilha", "power", BackToLogin),
@@ -308,7 +308,7 @@ namespace LifeVerse.Unity.UI
             Add("Perfil", () => new ProfileHubWindow(Context, _api.UserId)); Add("Grupos", () => new GroupsHubWindow(Context)); Add("Mercado", () => new MarketWindow(Context)); Add("Mercado imobiliário", () => new RealEstateMarketWindow(Context)); Add("Minhas propriedades", () => new MyPropertiesWindow(Context));
             Add("Eventos, marcos e fotos", () => new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f));
             Add("Ofertas de itens", () => new OffersWindow(Context)); Add("Sobre a ilha", () => new IslandInfoWindow(Context, _island)); Add("Gestão da ilha", () => new IslandManagementWindow(Context, _island)); Add("Gestão de terrenos", () => new LandManagementWindow(Context, _island, Here)); Add("Sobre este terreno", OpenParcelHere);
-            Add("Script de um objeto", ScriptOpener); Add("Meu personagem", OpenCharacter); Add("Avatar: visuais, corpo, roupas e animações", OpenAvatarStudio); Add("Barra de ferramentas", ToolbarWindow); Add("Anexos do corpo", () => new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment));
+            Add("Script de um objeto", ScriptOpener); Add("Meu personagem", OpenCharacter); Add("Avatar: visuais, corpo, roupas e animações", OpenAvatarStudio); Add("Barra de ferramentas", ToolbarWindow); Add("Anexos do corpo", () => new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment, () => OwnAttachments));
             return window;
         }
 
@@ -1027,7 +1027,20 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>The buttons of Configurações that do something once.</summary>
-        public Dictionary<string, Action> SettingActions() => new Dictionary<string, Action>
+        public Dictionary<string, Action> SettingActions()
+        {
+            var all = OwnActions(); foreach (var page in SettingsCatalog.AccountPages) { var section = page.Value; all[page.Key] = () => OpenAccountPrivacy(section); }
+            return all;
+        }
+
+        /// <summary>"Privacidade e sessões" on the page asked for (it needs a signed-in account).</summary>
+        public AccountPrivacyWindow OpenAccountPrivacy(string section)
+        {
+            if (Context?.Api == null || Context.Api.UserId == Guid.Empty) { Notices.Show("Entre na conta para ver isto.", NoticeKind.Info); return null; }
+            var window = new AccountPrivacyWindow(Context, section); window.Open(); return window;
+        }
+
+        private Dictionary<string, Action> OwnActions() => new Dictionary<string, Action>
         {
             ["account.leave_island"] = () => { if (Current == Phase.Playing) BackToLogin(); },
             ["account.quit"] = Application.Quit,
