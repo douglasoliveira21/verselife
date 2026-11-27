@@ -6,7 +6,7 @@ public partial class AppManager : Node
 {
     public const string Version = "0.6.0";
     /// <summary>The server of the game. A build made for players (an export, not the editor) talks to the real one; the editor and the tests talk to a server on this machine. LIFEVERSE_API_URL overrides both.</summary>
-    public const string ProductionApiUrl = "https://api.nerdplus.com.br", DevelopmentApiUrl = "http://localhost:8080";
+    public const string ProductionApiUrl = "https://app.lifeverse.euporiagames.com", DevelopmentApiUrl = "http://localhost:8080";
     public string ApiBaseUrl { get; private set; } = OS.HasFeature("editor") ? DevelopmentApiUrl : ProductionApiUrl;
     public Scripts.UpdateChecker Updates { get; private set; } = null!;
 

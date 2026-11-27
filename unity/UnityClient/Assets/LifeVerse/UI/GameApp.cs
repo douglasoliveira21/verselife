@@ -23,7 +23,7 @@ namespace LifeVerse.Unity.UI
     /// </summary>
     public sealed class GameApp : MonoBehaviour
     {
-        public const string DefaultApi = "https://api.nerdplus.com.br";
+        public const string DefaultApi = "https://app.lifeverse.euporiagames.com";
         public enum Phase { Login, Loading, Playing }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]

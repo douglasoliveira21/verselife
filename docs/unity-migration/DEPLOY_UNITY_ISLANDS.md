@@ -32,7 +32,7 @@ Crie um serviço novo (App), por exemplo `lifeverse-islands-unity`, ao lado do s
 - **Fonte:** este repositório, Dockerfile `island-supervisor/Dockerfile.unity`.
 - **Argumentos de build:** `SERVER_URL` (o endereço do `.tar.gz`) e `SERVER_SHA256` (o hash que o script mostrou). Se o hash não bater, o build para.
 - **Variáveis de ambiente:**
-  - `LIFEVERSE_API_URL=https://api.nerdplus.com.br`;
+  - `LIFEVERSE_API_URL=https://app.lifeverse.euporiagames.com`;
   - `LIFEVERSE_SERVICE_KEY`: a mesma chave de serviço que o serviço de ilhas Godot usa (`IslandServer:SharedKey` da API);
   - `LIFEVERSE_HOSTNAME`: o nome ou IP público que os jogadores alcançam (o mesmo tipo de valor do serviço Godot).
 - **Portas:** publique as portas UDP `7800-7807` (uma por ilha aberta ao mesmo tempo). O Godot usa `7777...`, então os dois cabem na mesma máquina. As portas de saúde ficam dentro do contêiner.
@@ -45,7 +45,7 @@ Com a ilha parada (sem servidor rodando), um administrador chama:
 
 ```powershell
 $h = @{ Authorization = "Bearer <token de um administrador>"; "X-Admin-MFA" = "<LIFEVERSE_ADMIN_MFA_TOKEN>" }
-Invoke-RestMethod -Method Put -Uri "https://api.nerdplus.com.br/api/v1/admin/islands/<id da ilha>/engine" -Headers $h -ContentType "application/json" -Body '{"engine":"unity"}'
+Invoke-RestMethod -Method Put -Uri "https://app.lifeverse.euporiagames.com/api/v1/admin/islands/<id da ilha>/engine" -Headers $h -ContentType "application/json" -Body '{"engine":"unity"}'
 ```
 
 Administrador é quem está em `LIFEVERSE_ADMIN_USER_IDS` e manda o `X-Admin-MFA` certo. Com a ilha rodando, a resposta é 409 `island_running`; espere ela desligar por inatividade. Fica registrado na auditoria (`island.engine.unity`).
@@ -59,7 +59,7 @@ Sugestão: comece por uma ilha de teste nova (criada pelo cliente Unity, que já
 - No cliente Unity, entre com "Onde parei". Ele deve ir para a ilha Unity, e o avatar deve nascer, andar e falar no chat.
 - Também dá para conferir sozinho, com uma conta de teste:
   ```powershell
-  LifeVerse.exe -screen-fullscreen 0 -lifeverse-e2e https://api.nerdplus.com.br <usuario> <senha>
+  LifeVerse.exe -screen-fullscreen 0 -lifeverse-e2e https://app.lifeverse.euporiagames.com <usuario> <senha>
   ```
   Esse teste escreve uma mensagem no chat da ilha.
 - No cliente Godot, a ilha Unity não aparece na lista, e entrar por código mostra a frase de que ela roda no novo LifeVerse.
