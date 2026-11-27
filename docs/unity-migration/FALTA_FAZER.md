@@ -108,16 +108,16 @@ O jogo passou para outro servidor, com banco de dados novo e vazio.
 - **Conferido de fora às 12:44 UTC:** `/health` responde `Healthy` (versão 0.6.0); as três ilhas oficiais foram criadas pelo primeiro cadastro; a "LifeVerse Plaza" está `running`, com sinal de vida recente, e a porta **UDP 7800** responde ao início da conexão. As ilhas são Godot, ligadas pelo serviço do supervisor (portas 7800 a 7802).
 - **Não conferido:** o log do serviço de ilhas, andar e conversar dentro da ilha, as outras duas ilhas e o desligamento por inatividade.
 
-### 1.0 Correções da API que a produção ainda não tem (urgente)
+### 1.0 Correções da API (implantadas em 27/11/2026)
 
-Achadas ao rodar a API inteira sobre um PostgreSQL local. Estão corrigidas no código, com teste e com commit; **o servidor só as recebe depois do push e do deploy** da API. Não há migração nova. Pelo código, a produção de hoje tem estes defeitos (não foi conferido lá):
+Achadas ao rodar a API inteira sobre um PostgreSQL local. Foram enviadas (`4a5259f`) e implantadas no servidor novo. Conferido de fora às 12:48 UTC: `/health` `Healthy` e as três rotas novas respondem 401 sem sessão (antes, 404); a "LifeVerse Plaza" seguiu `running` e a porta UDP 7800 respondendo. **Falta conferir lá, com uma conta**, que cada defeito sumiu:
 
 - **Privacidade ignorada:** perfil marcado como privado mostrava biografia e foto e entrava na busca; presença privada aparecia; "mensagens só de amigos" e "de ninguém" não barravam ninguém.
 - **Erro 500:** busca e sugestões quando o resultado tinha pessoas; abas Física e Desempenho da ilha; pagamento feito por script; conferência do inventário.
 - **Datas com fuso:** um horário enviado com `-03:00` (por exemplo, ao criar um evento) era recusado.
 - **JSON inválido** na privacidade do perfil ou nas provas de uma denúncia dava erro 500 em vez de 400.
 
-As rotas novas de privacidade, bloqueados e sessões vão no mesmo deploy. Com a API antiga, as páginas novas do cliente dizem que o servidor ainda não tem a seção.
+As rotas novas de privacidade, bloqueados e sessões foram no mesmo deploy.
 
 ### 1.1 Pôr as ilhas Unity no ar
 
