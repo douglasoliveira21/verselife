@@ -106,7 +106,8 @@ O jogo passou para outro servidor, com banco de dados novo e vazio.
 - **Clientes:** o endereço padrão do Godot e da Unity foi trocado no código. Um jogo gerado antes ainda procura o endereço antigo; `LIFEVERSE_API_URL` troca sem gerar de novo.
 - **Banco vazio:** as três ilhas oficiais nascem no primeiro cadastro. Os IDs de ilha antigos não valem mais.
 - **Conferido de fora às 12:44 UTC:** `/health` responde `Healthy` (versão 0.6.0); as três ilhas oficiais foram criadas pelo primeiro cadastro; a "LifeVerse Plaza" está `running`, com sinal de vida recente, e a porta **UDP 7800** responde ao início da conexão. As ilhas são Godot, ligadas pelo serviço do supervisor (portas 7800 a 7802).
-- **Não conferido:** o log do serviço de ilhas, andar e conversar dentro da ilha, as outras duas ilhas e o desligamento por inatividade.
+- **Supervisor conferido (13:10 UTC):** a "Sandbox Island", desligada, ligou sozinha depois de um pedido de entrada feito com a conta do dono (`starting` → `running`), a porta 7800 respondeu e a API entregou o host `38.4.141.223`. A "Plaza" tinha desligado às 12:53:49, cerca de 10 minutos depois de ligar, como no desligamento por inatividade.
+- **Não conferido:** o log do serviço de ilhas, andar e conversar dentro da ilha, a "Tropical Island" e duas ilhas ao mesmo tempo (portas 7801 e 7802). O log de um contêiner com a imagem antiga (uma ilha só) repetia 404 às 12:49: falta pará-lo no Easypanel.
 
 ### 1.0 Correções da API (implantadas em 27/11/2026)
 
