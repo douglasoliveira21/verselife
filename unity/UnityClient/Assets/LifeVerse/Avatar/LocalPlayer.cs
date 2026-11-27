@@ -70,6 +70,13 @@ namespace LifeVerse.Unity.Avatar
         private float _accumulator, _flightAsked; private bool _flyEdge, _sitEdge, _flightWanted;
         private readonly Dictionary<uint, Vector3> _history = new Dictionary<uint, Vector3>();
 
+        // ---- what is drawn: the movement is computed 60 times a second and the screen draws at its own pace ----
+        private Vector3 _before, _ease; private readonly List<uint> _since = new List<uint>();
+        /// <summary>Where the body is drawn: between the last two steps, so it advances on every frame, with what the island corrected spread over a few frames.</summary>
+        public Vector3 DrawnPosition { get; private set; }
+        /// <summary>How far the island may disagree before the prediction moves toward it, running and standing (metres), and which part of the difference each answer closes.</summary>
+        public const float MovingTolerance = .3f, RestTolerance = .08f, CorrectionShare = .12f;
+
         public void Attach(WorldClient client, TerrainView terrain, PlayerViews views, FollowCamera follow)
         {
             Client = client; Terrain = terrain; Views = views; Follow = follow; views.SelfIsExternal = true;
@@ -111,12 +118,14 @@ namespace LifeVerse.Unity.Avatar
             var driving = Vehicles != null ? Vehicles.DrivenBy(Client.SelfPeerId) : null;
             if (driving != null && Driving == null) { _history.Clear(); State.Flying = false; State.VelocityX = State.VelocityY = State.VelocityZ = 0f; }
             Driving = driving;
-            while (_accumulator >= Step) { _accumulator -= Step; if (Driving != null) DriveOnce(); else StepOnce(); }
+            while (_accumulator >= Step) { _accumulator -= Step; _before = GamePosition; if (Driving != null) DriveOnce(); else StepOnce(); }
             if (Driving != null) { State.X = Driving.GamePosition.x; State.Y = Driving.GamePosition.y + LifeVerse.Shared.Vehicles.VehicleFleet.DriverHeight; State.Z = Driving.GamePosition.z; State.Seated = true; Motion = NetworkMotionState.Sit; HeadingDegrees = -Driving.Yaw * Mathf.Rad2Deg; }
             SendHeadLook();
             KeepAskingForSeat();
             if (ObjectSeat.HasValue) { if (State.Seated || ServerSeated) { _seatSeen = true; _standing = 0f; } else if (_seatSeen && _wantSeat != true) { _standing += delta; if (_standing > .6f) ObjectSeat = null; } }   // stood up (X, or the server said so): back to the ground where the person was. A reconcile can flicker the seat, and a lost request is being asked again: neither is standing up
-            var onSeat = ObjectSeat.HasValue && (State.Seated || ServerSeated && _seatSeen); var shown = onSeat ? ObjectSeat.Value : GamePosition; var shownHeading = onSeat ? ObjectSeatHeading : HeadingDegrees;
+            _ease = Vector3.Lerp(_ease, Vector3.zero, 1f - Mathf.Exp(-14f * delta));
+            DrawnPosition = Driving == null && (GamePosition - _before).sqrMagnitude < 1f ? Vector3.Lerp(_before, GamePosition, Mathf.Clamp01(_accumulator / Step)) + _ease : GamePosition;
+            var onSeat = ObjectSeat.HasValue && (State.Seated || ServerSeated && _seatSeen); var shown = onSeat ? ObjectSeat.Value : DrawnPosition; var shownHeading = onSeat ? ObjectSeatHeading : HeadingDegrees;
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
             if (view != null)
             {
@@ -245,7 +254,7 @@ namespace LifeVerse.Unity.Avatar
             var map = Terrain != null ? Terrain.Map : null;
             Motion = AuthoritativeMovement.Step(State, new MovementInput(Sequence, x, z, flags), Step, map != null ? map.SampleHeight : (Func<float, float, float>)null,
                 map != null ? map.SeaLevel : float.NegativeInfinity, map != null ? map.HalfExtent + TerrainMap.OceanMargin : float.PositiveInfinity, Client != null && Client.Objects != null ? Client.Objects.Obstacles : null);
-            _history[Sequence] = GamePosition; if (Sequence > 240) _history.Remove(Sequence - 240);
+            Remember(Sequence, GamePosition); if (Sequence > 240) _history.Remove(Sequence - 240);
             if (State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ > .09f) HeadingDegrees = Mathf.Atan2(State.VelocityX, -State.VelocityZ) * Mathf.Rad2Deg;
         }
 
@@ -270,8 +279,21 @@ namespace LifeVerse.Unity.Avatar
             if (_flightAsked > 0f) { if (serverFlying == _flightWanted || Time.realtimeSinceStartup - _flightAsked > 1.5f) { _flightAsked = 0f; State.Flying = serverFlying; } }
             else State.Flying = serverFlying;
             State.Seated = server.Motion == NetworkMotionState.Sit; ServerSeated = State.Seated; _lastProcessed = server.LastProcessedInput;
-            if (LastError > 3f) { State.X += error.x; State.Y += error.y; State.Z += error.z; State.VelocityX = server.VelocityX; State.VelocityY = server.VelocityY; State.VelocityZ = server.VelocityZ; Corrections++; }
-            else if (LastError > .08f) { State.X += error.x * .3f; State.Y += error.y * .3f; State.Z += error.z * .3f; Corrections++; }
+            if (LastError > 3f) { Shift(error, server.LastProcessedInput); _ease = Vector3.zero; State.VelocityX = server.VelocityX; State.VelocityY = server.VelocityY; State.VelocityZ = server.VelocityZ; Corrections++; return; }
+            var running = State.VelocityX * State.VelocityX + State.VelocityZ * State.VelocityZ > .25f;
+            if (LastError <= (running ? MovingTolerance : RestTolerance)) return;   // over the internet the island is a few centimetres off all the time: chasing that shakes the run
+            var part = error * CorrectionShare; Shift(part, server.LastProcessedInput); _ease -= part; Corrections++;
+        }
+
+        /// <summary>Where the prediction was after an input was applied: what the island's answer to that input is compared with.</summary>
+        public void Remember(uint sequence, Vector3 position) => _history[sequence] = position;
+
+        /// <summary>Moves the prediction, and what it remembers since the answered input: a difference once corrected is not corrected again by the next answer.</summary>
+        private void Shift(Vector3 by, uint answered)
+        {
+            State.X += by.x; State.Y += by.y; State.Z += by.z; _before += by;
+            _since.Clear(); foreach (var sequence in _history.Keys) if (sequence >= answered) _since.Add(sequence);
+            foreach (var sequence in _since) _history[sequence] += by;
         }
 
         private void OnDestroy() { if (Client != null) { Client.PlayerSpawned -= OnSpawn; Client.SnapshotReceived -= OnSnapshot; } }

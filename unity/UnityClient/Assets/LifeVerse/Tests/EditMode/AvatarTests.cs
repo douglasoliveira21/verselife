@@ -111,6 +111,25 @@ namespace LifeVerse.Unity.Tests.EditMode
         }
 
         [Test]
+        public void ACorrectionFromTheIslandIsGentleAndNeverAppliedTwice()
+        {
+            var host = new GameObject("jogador"); var local = host.AddComponent<LocalPlayer>();
+            try
+            {
+                // running: the few centimetres a late packet makes are left alone, so the run does not shake
+                local.State.VelocityX = 6.4f; local.Reconcile(new PlayerSnapshot(1, .2f, 0, 0, 6.4f, 0, 0, 0f, NetworkMotionState.Run, 7)); Assert.AreEqual(0f, local.State.X, 1e-4f); Assert.AreEqual(0, local.Corrections);
+                // a real difference is closed a little at a time, and the old answers that keep arriving do not add up past it
+                local.Remember(10, Vector3.zero); local.State.X = 1f;
+                for (var i = 0; i < 60; i++) local.Reconcile(new PlayerSnapshot(1, .8f, 0, 0, 6.4f, 0, 0, 0f, NetworkMotionState.Run, 10));
+                Assert.Greater(local.State.X, 1.3f); Assert.LessOrEqual(local.State.X, 1.8f);
+                // standing still it comes closer to the island, and a place far away is taken at once
+                local.State.VelocityX = 0f; local.State.X = 0f; local.Reconcile(new PlayerSnapshot(1, .2f, 0, 0, 0, 0, 0, 0f, NetworkMotionState.Idle, 99)); Assert.Greater(local.State.X, 0f); Assert.Less(local.State.X, .1f);
+                local.Reconcile(new PlayerSnapshot(1, 20f, 0, 0, 0, 0, 0, 0f, NetworkMotionState.Idle, 100)); Assert.AreEqual(20f, local.State.X, 1e-3f);
+            }
+            finally { Object.DestroyImmediate(host); }
+        }
+
+        [Test]
         public void ARemoteBodyFollowsTheSnapshotsAndASnapshotFarAwayMovesItAtOnce()
         {
             var view = Make(); view.ApplySnapshot(new PlayerSnapshot(1, 0, 0, 0, 0, 0, 0, 0f, NetworkMotionState.Idle, 0));

@@ -198,6 +198,16 @@ namespace LifeVerse.Unity.Server
             viewer.Views.TryGetSnapshot(peer, out seen);
             Expect(seen.Motion == NetworkMotionState.Idle, "parou: " + seen.Motion); _checks++;
 
+            // running diagonally on a screen faster than the 60 movement steps a second: the body advances on every frame drawn, by about the same distance (without it, it runs in jerks)
+            {
+                var own = editor.Views.ViewOf(peer); local.enabled = false; input.Run = true; input.Forward = 1f; input.Right = 1f;
+                for (var i = 0; i < 20; i++) local.Advance(1f / 60f);   // up to full speed
+                var drawn = new System.Collections.Generic.List<Vector3>(); for (var i = 0; i < 36; i++) { local.Advance(1f / 144f); drawn.Add(own.GamePosition); }
+                var steps = drawn.Skip(1).Select((p, i) => Vector2.Distance(new Vector2(p.x, p.z), new Vector2(drawn[i].x, drawn[i].z))).ToArray(); var expected = 6.4f / 144f;
+                Expect(steps.Min() > expected * .5f && steps.Max() < expected * 1.6f, "correndo na diagonal, cada quadro avança parecido (esperado " + expected.ToString("F3") + " m): de " + steps.Min().ToString("F3") + " a " + steps.Max().ToString("F3")); _checks++;
+                input.Run = false; input.Forward = 0f; input.Right = 0f; local.enabled = true; yield return new WaitForSeconds(1.5f);
+            }
+
             // jumping: up about 1.4 m and back to the ground
             var ground = local.GamePosition.y; var peak = ground; input.Jump = true; var jumpTime = 0f;
             while (jumpTime < 1.6f) { jumpTime += Time.deltaTime; if (jumpTime > .08f) input.Jump = false; peak = Mathf.Max(peak, local.GamePosition.y); yield return null; }

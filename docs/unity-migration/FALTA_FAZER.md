@@ -166,6 +166,7 @@ Fazer isto hoje quebraria a imagem Godot em produção ou deixaria os clientes G
 Das 95 rotas da API que o Godot usava e o Unity não usava, **todas** têm uso agora. Os itens 3.1 (avisos imobiliários), 3.2 (comprar dentro da busca), 3.3 (ícones das conquistas), 3.4 (reencaixe de roupa com esqueleto), 3.8 (voz desligada pelo terreno) e 3.9 (sincronizar as configurações) foram feitos; o detalhe está em `GODOT_PARITY_AUDIT.md`. A numeração dos que ficaram foi mantida.
 
 - **Controles de andar (decidido em 27/11/2026: ficam como estão no Unity):** A/D andam de lado em relação à câmera e S vira o corpo e volta andando; Q abre o menu radial. No Godot, A/D giram, Q/Z dão o passo de lado e S anda de costas. A diferença é de propósito; não mudar sem o dono pedir.
+- **Corrida na diagonal (27/11/2026):** corria travada; corrigido no cliente (desenho entre os passos de movimento e correções mais suaves da ilha) e o dono confirmou no editor que ficou boa. Não precisa de deploy do servidor.
 - **3.3, uma ressalva:** o pedido citava também ícones nas conquistas do **grupo**, mas nem o servidor nem o Godot têm conquistas de grupo. Não há o que desenhar.
 
 - **3.5 (rosto):** conferido no Godot: os sliders do rosto agem **só no corpo simples**, não num corpo GLB próprio (lá só há os do corpo). O que faltava no Unity era o rosto do corpo simples (nariz, boca, queixo, sobrancelhas, largura da cabeça), e foi feito.
