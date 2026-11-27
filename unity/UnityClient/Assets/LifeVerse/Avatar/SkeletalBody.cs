@@ -101,6 +101,20 @@ namespace LifeVerse.Unity.Avatar
             inContent = Matrix4x4.identity; return false;
         }
 
+        /// <summary>The head (with the neck that carries it and what is worn there) shrunk to a speck where it stands, so the camera inside it sees the rest of the body.</summary>
+        public bool HeadHidden { get; private set; }
+        private Vector3 _headWas = Vector3.one;
+        private Bone TopOfHead => _byName.TryGetValue("neck", out var neck) ? neck : _byName.TryGetValue("head", out var head) ? head : null;
+
+        public void HideHead(bool hidden)
+        {
+            if (HeadHidden == hidden) return; var bone = TopOfHead; HeadHidden = hidden; if (bone == null) return;
+            if (hidden) { _headWas = bone.T.localScale; bone.T.localScale = Vector3.one * .001f; } else bone.T.localScale = _headWas;
+        }
+
+        /// <summary>The size of the bone the head hangs from (for the tests).</summary>
+        public float HeadSize => TopOfHead is { } bone ? bone.T.localScale.x : 1f;
+
         /// <summary>How much the legs grew (metres) after <see cref="ApplyShape"/>, the body lifted by the same so the feet stay on the ground.</summary>
         public float LegExtra { get; private set; }
 
@@ -112,6 +126,7 @@ namespace LifeVerse.Unity.Avatar
         {
             float Get(string key) => body != null && body.TryGetValue(key, out var v) && v > 0f ? v : 1f;
             float legs = Get("legs"), arms = Get("arms"), torso = Get("torso"), head = Get("head"), height = Get("height"), shoulder = Get("shoulder");
+            var hidden = HeadHidden; HideHead(false);
             foreach (var bone in _bones) bone.T.localScale = Vector3.one;
             transform.localScale = Vector3.one * _unit; transform.localPosition = Vector3.zero;
             var legLength = _byName.TryGetValue("upper_leg_l", out var hip) && _byName.TryGetValue("foot_l", out var foot) ? Mathf.Max(0f, hip.T.position.y - foot.T.position.y) : 0f;
@@ -126,6 +141,7 @@ namespace LifeVerse.Unity.Avatar
             if (_byName.TryGetValue("head", out var h)) h.T.localScale = Vector3.one * head;
             transform.localScale = new Vector3(_unit * shoulder, _unit * height, _unit * shoulder);
             LegExtra = (legs - 1f) * legLength * height; transform.localPosition = new Vector3(0f, LegExtra, 0f);
+            if (hidden) HideHead(true);
         }
 
         /// <summary>Shows or hides every part of the body.</summary>

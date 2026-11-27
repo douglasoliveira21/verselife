@@ -219,7 +219,7 @@ namespace LifeVerse.Unity.UI
         /// <summary>The performance numbers asked in the settings (FPS, frame time, memory): the overlay shows when any is on, with the memory line when asked.</summary>
         public static bool Metrics(SettingsStore store, Hud hud)
         {
-            var want = store.Bool("metrics.fps") || store.Bool("metrics.frame_time") || store.Bool("metrics.memory") || store.Bool("network.ping");
+            var want = store.Bool("metrics.fps") || store.Bool("metrics.frame_time") || store.Bool("metrics.memory") || store.Bool("network.ping") || store.Bool("metrics.cpu_gpu");
             if (hud != null && hud.PerformanceVisible != want) hud.TogglePerformance();
             return want;
         }
@@ -231,6 +231,21 @@ namespace LifeVerse.Unity.UI
             LifeVerse.Unity.Audio.UiSounds.Volume = store.Float("audio.interface");
             LifeVerse.Unity.World.WorldObjects.LodAt = LifeVerse.Unity.World.WorldObjects.LodFractionOf(store.Get("perf.object_lod"));
             LifeVerse.Unity.World.AssetPreloader.LimitBytes = Mathf.Max(256, store.Int("perf.resource_cache")) * 1024L * 1024L;
+            LifeVerse.Unity.World.DownloadThrottle.BytesPerSecond = Mathf.Clamp(store.Int("network.download_limit"), 0, 100) * 1024L * 1024L;
+        }
+
+        private static readonly FrameTiming[] Timings = new FrameTiming[1];
+        /// <summary>"CPU 45 % do quadro · GPU 80 %": how long each works of the time a frame takes.</summary>
+        public static string Busy(double cpuMs, double gpuMs, double frameMs)
+        {
+            if (frameMs <= 0) return "CPU e GPU: sem medida ainda";
+            string Share(double ms) => ms > 0 ? Mathf.Clamp((float)(ms / frameMs * 100.0), 0f, 100f).ToString("F0") + " %" : "sem medida";
+            return "CPU " + Share(cpuMs) + " do quadro   GPU " + Share(gpuMs);
+        }
+        public static string BusyNow()
+        {
+            FrameTimingManager.CaptureFrameTimings();
+            return FrameTimingManager.GetLatestTimings(1, Timings) == 0 ? Busy(0, 0, 0) : Busy(Timings[0].cpuMainThreadFrameTime, Timings[0].gpuFrameTime, Timings[0].cpuFrameTime);
         }
 
         // ---- the screen ----

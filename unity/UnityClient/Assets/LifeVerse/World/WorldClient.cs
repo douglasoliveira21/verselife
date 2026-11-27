@@ -66,6 +66,7 @@ namespace LifeVerse.Unity.World
         public event Action<AppearanceChangedMessage> AppearanceChanged;
         public event Action<GestureChangedMessage> GestureChanged;
         public event Action<WorldSnapshot> SnapshotReceived;
+        private SnapshotOrder _snapshotOrder, _carOrder;   // late packets are dropped here: the network keeps no order for them
         public event Action<ReceiveChatMessage> ChatReceived;
         public event Action<string> DisconnectedBy;
         public bool SendChat(string text) => Send(new SendChatMessage(text));
@@ -139,10 +140,10 @@ namespace LifeVerse.Unity.World
                 case VehicleSpawnedMessage car: VehicleSpawned?.Invoke(car); break;
                 case VehicleRejectedMessage refused: LastVehicleRejection = refused.Code; break;
                 case VehicleSnapshotsMessage cars:
-                    if (VehicleCodec.TryDecode(cars.Payload, out _, out var vehicles)) { VehicleSnapshotsSeen++; VehicleSnapshotsReceived?.Invoke(vehicles); }
+                    if (VehicleCodec.TryDecode(cars.Payload, out var carTick, out var vehicles) && _carOrder.Accept(carTick)) { VehicleSnapshotsSeen++; VehicleSnapshotsReceived?.Invoke(vehicles); }
                     break;
                 case SnapshotMessage snapshot:
-                    if (SnapshotCodec.TryDecode(snapshot.Payload, out var world)) { Snapshots++; SnapshotReceived?.Invoke(world); }
+                    if (SnapshotCodec.TryDecode(snapshot.Payload, out var world) && _snapshotOrder.Accept(world.ServerTick)) { Snapshots++; SnapshotReceived?.Invoke(world); }
                     break;
                 case TerrainFullMessage full: TerrainMessages++; CanEditTerrain = full.CanEdit; Terrain.ApplyFull(full.Data); if (Ocean != null) Ocean.SeaLevel = Terrain.Map.SeaLevel; break;
                 case TerrainEditedMessage edit:

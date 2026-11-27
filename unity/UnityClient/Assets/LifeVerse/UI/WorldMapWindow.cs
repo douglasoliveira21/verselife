@@ -230,7 +230,7 @@ namespace LifeVerse.Unity.UI
             this.Then(_c.Api.GetBytesAsync(MapApi.TilePath(island.Id)), r =>
             {
                 _tileLoading.Remove(island.Id); var texture = r.Status == 200 && r.Bytes.Length > 8 ? new Texture2D(2, 2) : null;
-                if (texture == null || !texture.LoadImage(r.Bytes)) { if (texture != null) UnityEngine.Object.Destroy(texture); _tileNone[island.Id] = Time.realtimeSinceStartup + NoTileSeconds; return; }
+                if (texture == null || !LifeVerse.Unity.World.Pictures.Load(texture, r.Bytes)) { if (texture != null) UnityEngine.Object.Destroy(texture); _tileNone[island.Id] = Time.realtimeSinceStartup + NoTileSeconds; return; }
                 _tileCache[island.Id] = new TileEntry { Version = version, Texture = texture, Used = ++_tileTick };
                 while (_tileCache.Count > MaxTiles) { var oldest = _tileCache.OrderBy(p => p.Value.Used).First(); UnityEngine.Object.Destroy(oldest.Value.Texture); _tileCache.Remove(oldest.Key); }
                 Canvas.Refresh();

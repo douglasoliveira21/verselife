@@ -21,7 +21,7 @@ namespace LifeVerse.Unity.EditorTools
         {
             Directory.CreateDirectory(Folder);
             var shader = Shader.Find("HDRP/Lit") ?? throw new InvalidOperationException("O shader HDRP/Lit não foi encontrado: o HDRP está instalado e ativo?");
-            BuildTerrain(shader); BuildOcean(); BuildRain(); BuildEffects(); BuildObjects(shader); BuildSun();
+            BuildTerrain(shader); BuildOcean(); BuildRain(); BuildEffects(); BuildObjects(shader);
             AssetDatabase.SaveAssets(); AssetDatabase.Refresh();
             Debug.Log("[LifeVerse] Materiais do mundo criados em " + Folder);
         }
@@ -90,14 +90,6 @@ namespace LifeVerse.Unity.EditorTools
         {
             var texture = new Texture2D(4, 4, TextureFormat.RGBA32, false, linear) { wrapMode = TextureWrapMode.Repeat };
             var pixels = new Color32[16]; for (var i = 0; i < pixels.Length; i++) pixels[i] = colour; texture.SetPixels32(pixels); texture.Apply(); return texture;
-        }
-
-        private static void BuildSun()
-        {
-            var shader = Shader.Find("HDRP/Unlit") ?? throw new InvalidOperationException("O shader HDRP/Unlit não foi encontrado.");
-            var material = Fresh("SunMaterial", shader);
-            material.SetColor("_UnlitColor", Color.black); material.SetColor("_EmissiveColor", new Color(1f, .96f, .82f) * 80000f); material.SetFloat("_UseEmissiveIntensity", 0f);
-            HDShaderUtils.ResetMaterialKeywords(material); EditorUtility.SetDirty(material);
         }
 
         /// <summary>The two materials of the particles scripts put on objects: soft puffs that blend (smoke, dust, rain) and that add light (fire, sparks, explosions).</summary>

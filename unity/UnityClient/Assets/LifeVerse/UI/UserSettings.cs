@@ -81,6 +81,8 @@ namespace LifeVerse.Unity.UI
         public List<string> ToolbarHidden { get; set; } = new List<string>();
         /// <summary>Whether the person arranged the bar (otherwise it shows the default buttons in the default order).</summary>
         public bool ToolbarCustomized { get; set; }
+        /// <summary>Where the toolbar stands: "bottom", "left" or "right".</summary>
+        public string ToolbarEdge { get; set; } = "bottom";
         /// <summary>Where the camera looked last in each island (the yaw, by island id).</summary>
         public Dictionary<string, float> IslandYaw { get; set; } = new Dictionary<string, float>();
 
@@ -101,7 +103,8 @@ namespace LifeVerse.Unity.UI
             Keys ??= new Dictionary<string, string>(); foreach (var key in new List<string>(Keys.Keys)) if (string.IsNullOrEmpty(Keys[key]) || key.Length > 40 || Keys[key].Length > 40) Keys.Remove(key); while (Keys.Count > 40) Keys.Remove(new List<string>(Keys.Keys)[0]);
             SyncRevision = Mathf.Max(0, SyncRevision); SyncUser = (SyncUser ?? "").Length > 40 ? SyncUser.Substring(0, 40) : SyncUser ?? "";
             Windows ??= new Dictionary<string, float[]>();
-            foreach (var key in new List<string>(Windows.Keys)) if (Windows[key] == null || Windows[key].Length != 2 || !float.IsFinite(Windows[key][0]) || !float.IsFinite(Windows[key][1])) Windows.Remove(key);
+            if (ToolbarEdge != "left" && ToolbarEdge != "right") ToolbarEdge = "bottom";
+            foreach (var key in new List<string>(Windows.Keys)) if (Windows[key] == null || (Windows[key].Length != 2 && Windows[key].Length != 4) || System.Array.Exists(Windows[key], v => !float.IsFinite(v))) Windows.Remove(key);
             while (Windows.Count > MaxSavedWindows) { var first = new List<string>(Windows.Keys)[0]; Windows.Remove(first); }
             return this;
         }

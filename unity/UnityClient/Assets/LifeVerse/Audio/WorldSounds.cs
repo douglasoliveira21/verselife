@@ -24,6 +24,8 @@ namespace LifeVerse.Unity.Audio
         /// <summary>Gets the bytes of a file from the internet. Tests replace it; by default it is <see cref="AudioDecode.Fetch"/> (https only).</summary>
         public Func<string, Task<byte[]>> MediaFetch { get; set; }
         public Action<string> Report { get; set; }
+        /// <summary>A sound started playing: whether it is a stream of the internet, and where (Unity space). For the captions.</summary>
+        public event Action<bool, Vector3> Playing;
         public int ActiveSounds => _sounds.Count(p => p.Value.Bus != null);
         public int ActiveStreams => _streams.Count(p => p.Value.Bus != null);
         public int Started { get; private set; }
@@ -82,7 +84,7 @@ namespace LifeVerse.Unity.Audio
         private void Begin(Played p, AudioClip clip, string name, Bus bus, float volume, Vector3 position, float range, bool loop)
         {
             p.Host = new GameObject(name); p.Host.transform.SetParent(transform, false); p.Host.transform.position = position; p.Bus = BusSource.Make(p.Host, bus, volume, true, range, loop); p.Bus.Source.clip = clip; p.Bus.Source.Play();
-            p.Started = Time.realtimeSinceStartup; p.Length = clip.length; p.Loop = loop; p.Loading = false; Started++;
+            p.Started = Time.realtimeSinceStartup; p.Length = clip.length; p.Loop = loop; p.Loading = false; Started++; Playing?.Invoke(bus == Bus.Media, position);
         }
 
         // ---- sound from the internet ----
@@ -104,6 +106,9 @@ namespace LifeVerse.Unity.Audio
             if (clip == null) { _streams.Remove(key); Refused++; return; }
             Begin(claim, clip, "Media_" + key, Bus.Media, volume, position, range, loop);
         }
+
+        /// <summary>The sounds playing now: whether each is a stream, and where.</summary>
+        public IEnumerable<(bool Media, Vector3 Position)> Audible() => _sounds.Values.Concat(_streams.Values).Where(p => p.Bus != null && p.Host != null).Select(p => (p.Media, p.Host.transform.position));
 
         private void Update()
         {

@@ -141,8 +141,22 @@ namespace LifeVerse.Unity.UI
         {
             Mode = mode is "compact" or "immersive" ? mode : "full"; if (Mode != "immersive") Revealed = false;
             var ids = ToolbarLayout.Order(ToolbarDefaults, order ?? new List<string>()); var buttons = ids.Select(id => BottomBar.Q<Button>("btn-" + id)).Where(b => b != null).ToList();
-            foreach (var b in buttons) { b.RemoveFromHierarchy(); BottomBar.Add(b); var id = b.name.Substring(4); b.style.display = hidden != null && hidden.Contains(id) ? DisplayStyle.None : DisplayStyle.Flex; UiKit.IconOnly(b, compactToolbar || Mode == "compact"); }
+            foreach (var b in buttons) { b.RemoveFromHierarchy(); BottomBar.Add(b); var id = b.name.Substring(4); b.style.display = hidden != null && hidden.Contains(id) ? DisplayStyle.None : DisplayStyle.Flex; UiKit.IconOnly(b, compactToolbar || Mode == "compact" || ToolbarEdge != "bottom"); }
             Refresh();
+        }
+
+        /// <summary>The room a toolbar on a side takes.</summary>
+        public const float SideBarWidth = 54f;
+        /// <summary>Where the toolbar stands: "bottom" (icons and names), or "left" / "right" (a column of icons).</summary>
+        public string ToolbarEdge { get; private set; } = "bottom";
+
+        public void SetToolbarEdge(string edge)
+        {
+            ToolbarEdge = edge == "left" || edge == "right" ? edge : "bottom"; var side = ToolbarEdge != "bottom"; var left = ToolbarEdge == "left"; var right = ToolbarEdge == "right";
+            BottomBar.EnableInClassList("lv-toolbar-side", side);
+            BottomBar.style.top = side ? FloatingWindow.TopInset : StyleKeyword.Auto; BottomBar.style.left = right ? StyleKeyword.Auto : 0; BottomBar.style.right = left ? StyleKeyword.Auto : 0;
+            Chat.style.left = Edge + (left ? SideBarWidth : 0f); Chat.style.bottom = side ? Edge : FloatingWindow.BottomInset; Map.style.right = Edge + (right ? SideBarWidth : 0f); Perf.style.left = Edge + (left ? SideBarWidth : 0f);
+            Ui.ToastLayer.style.paddingRight = 10f + (right ? SideBarWidth : 0f); Ui.ToastLayer.style.paddingBottom = side ? 10f : FloatingWindow.BottomInset;
         }
 
         public void ToggleReveal() { if (Mode != "immersive") return; Revealed = !Revealed; Refresh(); }

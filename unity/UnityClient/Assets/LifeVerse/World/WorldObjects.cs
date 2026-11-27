@@ -291,7 +291,7 @@ namespace LifeVerse.Unity.World
             {
                 var bytes = await (MediaLoader != null ? MediaLoader(url) : DownloadAsync(url)); if (bytes == null || bytes.Length < 12 || entry.Object == null || entry.Generation != generation || entry.MediaMaterials == null) return;
                 var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
-                if (!texture.LoadImage(bytes, false)) { Destroy(texture); return; } if (Mathf.Max(texture.width, texture.height) > MaxTextureSize) texture = Shrink(texture, MaxTextureSize); texture.Apply(true);
+                if (!await Pictures.LoadAsync(texture, bytes)) { Destroy(texture); return; } if (entry.Object == null || entry.Generation != generation || entry.MediaMaterials == null) { Destroy(texture); return; } if (Mathf.Max(texture.width, texture.height) > MaxTextureSize) texture = Shrink(texture, MaxTextureSize); texture.Apply(true);
                 foreach (var m in entry.MediaMaterials) { if (m == null) continue; m.SetTexture("_BaseColorMap", texture); m.SetColor("_BaseColor", Color.white); if (glow) { m.SetTexture("_EmissiveColorMap", texture); m.SetColor("_EmissiveColor", Color.white * 2f); } }
                 MediaImages++;
             }
@@ -548,7 +548,7 @@ namespace LifeVerse.Unity.World
         {
             var bytes = await AssetLoader(asset); if (bytes == null || bytes.Length < 12) return null;
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4 };
-            if (!texture.LoadImage(bytes, false)) { Destroy(texture); return null; } // PNG and JPEG; WebP is not read by Unity
+            if (!await Pictures.LoadAsync(texture, bytes)) { Destroy(texture); return null; } // PNG, JPEG and WebP
             if (Mathf.Max(texture.width, texture.height) > MaxTextureSize) texture = Shrink(texture, MaxTextureSize);
             texture.Apply(true); return texture;
         }

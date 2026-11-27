@@ -72,11 +72,11 @@ namespace LifeVerse.Unity.Avatar
         /// <summary>Builds the shapes of a construction under a holder (the world's builder); without it pictures and constructions are not drawn.</summary>
         public static Func<LifeVerse.Shared.Building.BuildPackage, Transform, int> Constructions { get; set; }
 
-        /// <summary>The kind of a file by its first bytes: PNG or JPEG is a picture, a JSON of the build format is a construction, anything else a model.</summary>
+        /// <summary>The kind of a file by its first bytes: PNG, JPEG or WebP is a picture, a JSON of the build format is a construction, anything else a model.</summary>
         public static ContentKind KindOf(byte[] b)
         {
             if (b == null || b.Length < 4) return ContentKind.Model;
-            if ((b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) || (b[0] == 0xFF && b[1] == 0xD8)) return ContentKind.Image;
+            if ((b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) || (b[0] == 0xFF && b[1] == 0xD8) || LifeVerse.Unity.World.Webp.WebpDecoder.IsWebp(b)) return ContentKind.Image;
             var start = b.Length >= 3 && b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF ? 3 : 0; while (start < b.Length && char.IsWhiteSpace((char)b[start])) start++;
             return start < b.Length && b[start] == (byte)'{' && System.Text.Encoding.UTF8.GetString(b, 0, Math.Min(b.Length, 512)).Contains(LifeVerse.Shared.Building.BuildPackages.FormatName) ? ContentKind.Construction : ContentKind.Model;
         }
@@ -145,7 +145,7 @@ namespace LifeVerse.Unity.Avatar
             {
                 case ContentKind.Image:
                 {
-                    var picture = new Texture2D(2, 2); try { if (!picture.LoadImage(bytes)) return null; return new Content { Kind = ContentKind.Image, Package = Plate(asset, picture.width, picture.height) }; } finally { Destroy(picture); }
+                    var picture = new Texture2D(2, 2); try { if (!LifeVerse.Unity.World.Pictures.Load(picture, bytes)) return null; return new Content { Kind = ContentKind.Image, Package = Plate(asset, picture.width, picture.height) }; } finally { Destroy(picture); }
                 }
                 case ContentKind.Construction:
                 {

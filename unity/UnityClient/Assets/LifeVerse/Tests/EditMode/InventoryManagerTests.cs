@@ -32,7 +32,7 @@ namespace LifeVerse.Unity.Tests.EditMode
             var bad = InventoryManagerWindow.PackWords(422, "{\"error\":\"bad_files\",\"report\":{\"problems\":[{\"file\":\"virus.exe\",\"error\":\"tipo não aceito\"}]}}");
             StringAssert.StartsWith("Alguns arquivos", bad); StringAssert.Contains("virus.exe: tipo não aceito", bad);
             Assert.AreEqual("O .zip está vazio.", InventoryManagerWindow.PackWords(422, "{\"error\":\"empty_zip\"}"));
-            Assert.AreEqual(10, InventoryManagerWindow.Sections.Length);
+            Assert.AreEqual(11, InventoryManagerWindow.Sections.Length);
         }
     }
 }

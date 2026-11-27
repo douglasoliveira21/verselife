@@ -508,3 +508,11 @@ A pedido do dono, a interface do cliente Unity **deixou de imitar a do Godot** e
 - **Corrigido:** a seta das listas de escolha ficava embaixo do texto; a lista aberta não tinha fundo; as caixas de marcar ficavam fora de linha; o mini-mapa cobria a barra de cima; os títulos não saíam em negrito; as dicas dos botões não apareciam.
 - **Novo:** barra de menus com saldo, pessoas, hora e conexão; barra de endereço com voltar/avançar, ilha, posição e busca; barra de ferramentas com ícone e nome; janelas que minimizam e mudam de tamanho; janelas **Mover** e **Câmera**; mini-mapa com zoom, fechar e o norte; avisos embaixo à direita; entrada e carregamento refeitos; ícones nos menus laterais e no inventário.
 - **Verificado no editor:** EditMode 225/225, autoteste do mundo com 337 verificações e fotos das telas (`img/ui-*.png`). **Não verificado:** o player gerado.
+
+### O que faltava, parte cliente e rede (27/11/2026)
+- **Servidor de ilha:** limite de envio por jogador; uma mensagem que quebre o próprio tratamento não leva o passo da simulação junto; **corrigido** (Godot e Unity): uma resposta de script com formato errado derrubava o passo; **corrigido:** com atraso variável, os jogadores de uma ilha cheia recebiam metade dos snapshots.
+- **Imagens:** WebP lido no cliente. **Avatar:** rosto do corpo simples e o corpo visível em primeira pessoa.
+- **Céu:** o shader de céu do Godot como céu próprio do HDRP e a neblina por distância do Godot; chuva, tempestade, pôr do sol e noite agora batem nas fotos lado a lado (o `WorldCompareCapture` passou a esperar a neblina chegar).
+- **Interface:** abas de conversa, inventário em árvore, tamanho das janelas guardado, barra de ferramentas numa borda.
+- **Opções que passaram a valer:** limite de download, uso de CPU e GPU, verificação dos arquivos (o build grava `integrity.json`) e legendas.
+- **Verificado:** EditMode 233/233, autoteste do mundo 339, API local 31/31, protocolo 33/33, servidor de ilha 63/63, API 2.566/0, build do Windows. **Não verificado:** o player gerado, desempenho, internet de verdade.

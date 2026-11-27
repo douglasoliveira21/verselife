@@ -91,6 +91,7 @@ public ref struct WireReader
             var b = Byte();
             if (Failed) return 0;
             if (shift == 28 && (b & 0xF0) != 0) { Failed = true; return 0; }
+            if (shift > 0 && b == 0) { Failed = true; return 0; }   // um byte zero a mais: o mesmo número tem uma escrita só
             result |= (uint)(b & 0x7F) << shift;
             if ((b & 0x80) == 0) return result;
         }

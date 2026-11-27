@@ -50,7 +50,7 @@ namespace LifeVerse.Unity.UI
         {
             var image = new Image { scaleMode = ScaleMode.ScaleToFit }; image.style.width = size; image.style.height = size; image.style.marginBottom = 4; _page.Add(image);
             if (_images.TryGetValue(path, out var known)) { image.image = known; return; }
-            this.Then(_c.Api.GetBytesAsync(path), r => { if (r.Status != 200 || r.Bytes == null) return; var t = new Texture2D(2, 2); if (t.LoadImage(r.Bytes)) { _images[path] = t; image.image = t; } });
+            this.Then(_c.Api.GetBytesAsync(path), r => { if (r.Status != 200 || r.Bytes == null) return; var t = new Texture2D(2, 2); if (LifeVerse.Unity.World.Pictures.Load(t, r.Bytes)) { _images[path] = t; image.image = t; } });
         }
 
         // ---- Sobre ----
@@ -176,7 +176,7 @@ namespace LifeVerse.Unity.UI
         {
             if (IsSelf) { Line("Estas são as ações que os outros têm no seu perfil.", "lv-small", "lv-muted"); return; }
             var name = S(_profile, "displayName");
-            Buttons(Btn("Mandar mensagem", () => { var social = new SocialWindow(_c); social.Open(); social.Talk(_user, name); }, "lv-btn-primary"), Btn("Amizade, teleporte, bloquear…", () => new PersonActionsWindow(_c, _user, name).Open()));
+            Buttons(Btn("Mandar mensagem", () => { if (_c.OpenConversation != null) { _c.OpenConversation(_user, name, false); return; } var social = new SocialWindow(_c); social.Open(); social.Talk(_user, name); }, "lv-btn-primary"), Btn("Amizade, teleporte, bloquear…", () => new PersonActionsWindow(_c, _user, name).Open()));
             Title("Enviar um presente"); Line("Escolha um item do seu inventário: a pessoa recebe a oferta e aceita ou recusa.", "lv-small", "lv-muted");
             Get("/api/v1/inventory/items?view=all&page=1&pageSize=100", root =>
             {

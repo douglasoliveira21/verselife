@@ -58,7 +58,7 @@ namespace LifeVerse.Unity.UI
             var rows = Json.Rows(body); Say(rows.Count == 0 ? "Você ainda não tem amigos." : "");
             foreach (var row in rows)
             {
-                var id = row.Id(); var name = row.First("username", "displayName", "name"); var line = UiKit.Row(UiKit.Text(name, "lv-bold"), UiKit.Spacer(), UiKit.Button("Mensagem", () => Talk(id, name)), UiKit.Button("Remover", () => Remove(id)));
+                var id = row.Id(); var name = row.First("username", "displayName", "name"); var line = UiKit.Row(UiKit.Text(name, "lv-bold"), UiKit.Spacer(), UiKit.Button("Mensagem", () => { if (_c.OpenConversation != null) _c.OpenConversation(id, name, false); else Talk(id, name); }), UiKit.Button("Remover", () => Remove(id)));
                 line.AddToClassList("lv-row"); _friends.Add(line);
             }
         });

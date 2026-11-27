@@ -104,7 +104,9 @@ namespace LifeVerse.Unity.Tests.EditMode
             Assert.AreEqual(Vector3.zero.y, environment.Sun.transform.forward.y, .02f, "sunrise: the sun on the horizon");
             environment.Hour = 12f; environment.Apply(1f); var noonLux = environment.Sun.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalLightData>().intensity;
             environment.Weather = "storm"; environment.Apply(1f); var stormLux = environment.Sun.GetComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalLightData>().intensity;
-            Assert.AreEqual(IslandEnvironment.NoonLux, noonLux, 1f); Assert.Less(stormLux, noonLux * .5f);
+            Assert.AreEqual(IslandEnvironment.NoonLux, noonLux, 1f); Assert.AreEqual(noonLux, stormLux, 1f, "as in Godot, a storm does not dim the sun");
+            Assert.AreEqual(IslandEnvironment.FogDensityOf("storm"), environment.FogDensity, 1e-5f, "its fog greys the island"); Assert.AreEqual(1f, environment.SkyCover, 1e-3f, "and covers the sky"); Assert.IsTrue(environment.WeatherFogShown);
+            environment.Weather = "clear"; environment.Apply(1f); Assert.AreEqual(0f, environment.FogDensity); Assert.AreEqual(0f, environment.SkyCover); Assert.IsFalse(environment.WeatherFogShown);
         }
 
         [Test]

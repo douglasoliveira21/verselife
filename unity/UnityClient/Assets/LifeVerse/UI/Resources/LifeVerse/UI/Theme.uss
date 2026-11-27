@@ -275,6 +275,16 @@ TextField:focus .unity-base-text-field__input, .unity-base-text-field:focus > .u
 .lv-btn.lv-tool.lv-btn-open-orange { background-image: resource("LifeVerse/UI/Skin/tool-open-orange"); color: #FFFFFF; }
 .lv-btn.lv-tool.lv-tool-compact { height: 40px; min-width: 40px; padding: 0; }
 .lv-btn.lv-tool.lv-dragging { opacity: 0.6; }
+/* a barra de ferramentas numa borda lateral: uma coluna só de desenhos */
+.lv-toolbar.lv-toolbar-side { flex-direction: column; justify-content: center; height: auto; width: 54px; padding: 4px 3px; }
+.lv-toolbar-side .lv-btn.lv-tool { width: 44px; min-width: 40px; height: 40px; min-height: 26px; margin: 1px 0; flex-shrink: 1; }
+/* as conversas, em abas */
+.lv-chat-tabs { margin: 2px 4px 0 4px; flex-shrink: 0; overflow: hidden; }
+.lv-chat-tabs .lv-btn { min-height: 22px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
+
+/* legendas, sobre a barra de ferramentas */
+.lv-caption { background-color: rgba(5, 8, 12, 0.82); color: #FFFFFF; font-size: 14px; padding: 3px 12px; margin-top: 3px; border-radius: 6px; }
+
 /* ------------------------------------------------ menus e dicas ------------------------------------------------ */
 .lv-menu {
     position: absolute; min-width: 246px; padding: 6px;

@@ -11,6 +11,8 @@ namespace LifeVerse.Unity.UI
     {
         public UiRoot Ui; public LifeVerse.Unity.World.IslandEntryClient Api; public NotificationCenter Notices;
         public Func<Guid> CurrentIsland = () => Guid.Empty;
+        /// <summary>Opens a private or group conversation as a tab of the chat (null outside the game).</summary>
+        public Action<Guid, string, bool> OpenConversation;
         /// <summary>Leaves the island and enters another one.</summary>
         /// <summary>Travels to a spot of an island (meters from its centre; null: where the island spawns people).</summary>
         public Action<Guid, float?, float?> TravelTo;

@@ -89,7 +89,7 @@ namespace LifeVerse.Unity.UI
             if (Thumbs.TryGetValue(path, out var have)) { if (have != null) Put(have); return box; }
             this.Then(_c.Api.GetBytesAsync(path), r =>
             {
-                Texture2D texture = null; if (r.Status == 200 && r.Bytes != null && r.Bytes.Length > 8) { texture = new Texture2D(2, 2); if (!texture.LoadImage(r.Bytes)) { UnityEngine.Object.Destroy(texture); texture = null; } }
+                Texture2D texture = null; if (r.Status == 200 && r.Bytes != null && r.Bytes.Length > 8) { texture = new Texture2D(2, 2); if (!LifeVerse.Unity.World.Pictures.Load(texture, r.Bytes)) { UnityEngine.Object.Destroy(texture); texture = null; } }
                 if (Thumbs.Count > 120) { foreach (var t in Thumbs.Values) if (t != null) UnityEngine.Object.Destroy(t); Thumbs.Clear(); }
                 Thumbs[path] = texture; if (texture != null) Put(texture);
             });

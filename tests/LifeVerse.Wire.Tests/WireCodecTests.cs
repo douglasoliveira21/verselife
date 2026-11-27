@@ -65,19 +65,28 @@ public sealed class WireCodecTests
     [Fact]
     public void ChannelsAndModesAreTheOnesOfTheGodotProtocol()
     {
-        // 18 mensagens confiáveis no canal 0 em cada direção; 3 sequenciadas + 1 de voz não confiável nos canais 1 (cliente) e 2 (servidor)
-        foreach (var (direction, stateChannel) in new[] { (WireDirection.ClientToServer, (byte)1), (WireDirection.ServerToClient, (byte)2) })
+        // 18 mensagens confiáveis no canal 0 em cada direção; as outras 4 nos canais 1 (cliente) e 2 (servidor): do cliente, 3 sequenciadas e a voz;
+        // do servidor, só o olhar é sequenciado (os snapshots vão sem ordem, porque um snapshot grande são vários pacotes, e quem recebe confere o tick)
+        foreach (var (direction, stateChannel, sequenced) in new[] { (WireDirection.ClientToServer, (byte)1, 3), (WireDirection.ServerToClient, (byte)2, 1) })
         {
             var routes = WireCodec.Messages(direction).Select(m => m.Route).ToList();
             Assert.Equal(18, routes.Count(r => r is { Channel: 0, Delivery: WireDelivery.Reliable }));
-            Assert.Equal(3, routes.Count(r => r.Channel == stateChannel && r.Delivery == WireDelivery.Sequenced));
-            Assert.Equal(1, routes.Count(r => r.Channel == stateChannel && r.Delivery == WireDelivery.Unreliable));
+            Assert.Equal(sequenced, routes.Count(r => r.Channel == stateChannel && r.Delivery == WireDelivery.Sequenced));
+            Assert.Equal(4 - sequenced, routes.Count(r => r.Channel == stateChannel && r.Delivery == WireDelivery.Unreliable));
         }
         Assert.Equal(new WireRoute(1, WireDelivery.Sequenced), WireCodec.RouteOf(new SubmitInputMessage(1, 0, 0, 0)));
-        Assert.Equal(new WireRoute(2, WireDelivery.Sequenced), WireCodec.RouteOf(new SnapshotMessage([])));
+        Assert.Equal(new WireRoute(2, WireDelivery.Unreliable), WireCodec.RouteOf(new SnapshotMessage([])));
         Assert.Equal(new WireRoute(1, WireDelivery.Unreliable), WireCodec.RouteOf(new SubmitVoiceMessage(1, [])));
         Assert.Equal(new WireRoute(2, WireDelivery.Unreliable), WireCodec.RouteOf(new ReceiveVoiceMessage(1, 1, [])));
         Assert.Equal(new WireRoute(0, WireDelivery.Reliable), WireCodec.RouteOf(new AuthenticateMessage("t", 12)));
+    }
+
+    [Fact]
+    public void LateSnapshotsAreDroppedAndTheOtherPacketsOfTheSameTickAreKept()
+    {
+        var order = new SnapshotOrder();
+        Assert.True(order.Accept(10)); Assert.True(order.Accept(10)); Assert.True(order.Accept(13)); Assert.False(order.Accept(10)); Assert.False(order.Accept(12)); Assert.True(order.Accept(13));
+        var wrap = new SnapshotOrder(); Assert.True(wrap.Accept(uint.MaxValue - 1)); Assert.True(wrap.Accept(2)); Assert.False(wrap.Accept(uint.MaxValue));
     }
 
     [Fact]

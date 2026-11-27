@@ -62,10 +62,12 @@ namespace LifeVerse.Unity.UI
             Context = new ApiContext { Ui = Ui, Api = _api, Notices = Notices, CurrentIsland = () => _island, EnterIsland = id => Teleport(id), TravelTo = (id, x, z) => Teleport(id, x, z) };
             Hud.Map.RegisterCallback<WheelEvent>(e => { if (Store == null) return; ZoomMap(e.delta.y > 0 ? 1.15f : 1f / 1.15f); e.StopPropagation(); });
             Hud.Map.ZoomAsked = ZoomMap; Hud.Map.CloseAsked = () => SetMinimap(false);
+            Subtitles = new Captions(); Hud.Chat.Load = LoadConversation; Hud.Chat.SendConversation = SendConversation; Context.OpenConversation = OpenConversation; Context.Live += OnLiveMessage;
             RegisterWindows(); Hud.Chat.Send = text => Client != null && Client.SendChat(text);
             Hud.Chat.TypingChanged += typing => { if (Player != null) Player.Typing = typing; };
-            Hud.Perf.Extra = () => (Store != null && Store.Bool("network.ping") ? Network.Describe() + "\n" : "") + (Store != null && Store.Bool("metrics.memory") ? "memória " + (UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576L) + " MB   " : "") + (Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots);
+            Hud.Perf.Extra = () => (Store != null && Store.Bool("metrics.cpu_gpu") ? SettingsEffects.BusyNow() + "\n" : "") + (Store != null && Store.Bool("network.ping") ? Network.Describe() + "\n" : "") + (Store != null && Store.Bool("metrics.memory") ? "memória " + (UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576L) + " MB   " : "") + (Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots);
             if (SavedLogin.Load(SavedLoginPath) is { } saved) Login.FillSaved(saved.Login, saved.Password);
+            SettingsEffects.Resources(Store); if (Store.Bool("advanced.verify_files")) VerifyFiles();
             ApplyAudio(); StartCoroutine(StartSounds()); StartCoroutine(LoadIslands()); StartCoroutine(WatchServers()); Login.MusicToggled += () => { Settings.LoginMusicMuted = !Settings.LoginMusicMuted; Login.SetMusic(Settings.LoginMusicMuted); Settings.Save(SettingsPath); };
             Sync = new AccountSync(Settings, (m, p, b) => _api.ApiAsync(m, p, b), () => _api.UserId, () => Settings.Save(SettingsPath), Store); UpdateInfo = new UpdateCheck(Application.version); Ui.Root.Then(_api.ApiAsync("GET", UpdateCheck.Route), r => { UpdateInfo.Apply(r.Status, r.Body); ShowUpdate(); });
         }
@@ -96,6 +98,67 @@ namespace LifeVerse.Unity.UI
         {
             var island = _island; Hud.SetIsland("Ilha " + island.ToString().Substring(0, 8));
             Ui.ScreenLayer.Then(_api.ApiAsync("GET", "/api/v1/worlds/islands/" + island), r => { if (r.Status != 200 || island != _island) return; var name = Json.One(r.Body).Text("name"); if (!string.IsNullOrWhiteSpace(name)) Hud.SetIsland(name); });
+        }
+
+        // ---- captions and the check of the files ----
+        public Captions Subtitles { get; private set; }
+        private void TickCaptions()
+        {
+            if (Subtitles == null) return; var now = Time.unscaledTime;
+            if (Store.Bool("accessibility.captions") && Client != null)
+            {
+                if (Subtitles.parent == null) Ui.HudLayer.Add(Subtitles);
+                var views = PeopleViews; if (Hearing != null && views != null) foreach (var peer in views.Peers) if (peer != Client.SelfPeerId && Hearing.IsSpeaking(peer)) Subtitles.Say(views.ViewOf(peer).DisplayName + " está falando", now);
+                if (Sounds != null && Follow != null && Follow.Camera != null) foreach (var (media, at) in Sounds.Audible()) { var metres = Vector3.Distance(at, Follow.Focus); if (metres <= 40f) Subtitles.Say(Captions.Sound(media, Mathf.Round(metres / 5f) * 5f), now); }
+            }
+            Subtitles.Tick(now);
+        }
+
+        /// <summary>What the last check of the files said (for the tests).</summary>
+        public string FilesChecked { get; private set; } = "";
+        public void VerifyFiles()
+        {
+            var game = System.IO.Path.GetDirectoryName(Application.dataPath); var cache = LifeVerse.Unity.World.WorldJoin.CacheFolder;
+            Ui.Root.Then(System.Threading.Tasks.Task.Run(() => LifeVerse.Unity.World.GameFiles.Words(LifeVerse.Unity.World.GameFiles.Verify(game), LifeVerse.Unity.World.GameFiles.VerifyCache(cache))), words => { FilesChecked = words; Notices.Show(words, words.Contains("problema") ? NoticeKind.Warn : NoticeKind.Info, 8f); });
+        }
+
+        // ---- private and group conversations, as tabs of the chat ----
+
+        /// <summary>Opens the conversation with a person (or of a group) in the chat.</summary>
+        public void OpenConversation(Guid id, string name, bool group)
+        {
+            if (Hud.Chat.Minimized) Hud.Chat.SetMinimized(false); Hud.Chat.Open(id, group, name); Hud.Chat.Focus();
+        }
+
+        public static string ConversationPath(Guid id, bool group) => group ? "/api/v1/social/messages?groupId=" + id + "&page=1&pageSize=50" : "/api/v1/social/messages?channel=private&conversationWith=" + id + "&page=1&pageSize=50";
+
+        private void LoadConversation(ChatTab tab) => Ui.Root.Then(_api.ApiAsync("GET", ConversationPath(tab.Id, tab.Group)), r =>
+        {
+            if (r.Status != 200) { Notices.Show(UiTasks.Explain(r.Status), NoticeKind.Warn); return; }
+            var mine = _api.UserId;
+            Hud.Chat.Fill(tab, Json.Rows(r.Body).OrderBy(x => x.Text("createdAt")).Select(x =>
+            {
+                var own = Guid.TryParse(x.Text("senderUserId"), out var sender) && sender == mine; var who = own ? "Você" : x.First("senderName", "senderUsername", "username");
+                return (who.Length > 0 ? who : tab.Group ? "?" : tab.Name, x.Text("content"), own, DateTimeOffset.TryParse(x.Text("createdAt"), out var at) ? at : (DateTimeOffset?)null);
+            }).ToList());
+        });
+
+        private void SendConversation(ChatTab tab, string text, Action<bool> done)
+        {
+            var body = tab.Group ? System.Text.Json.JsonSerializer.Serialize(new { content = text, groupId = tab.Id, clientMessageId = Guid.NewGuid().ToString("N") })
+                : System.Text.Json.JsonSerializer.Serialize(new { content = text, recipientUserId = tab.Id, clientMessageId = Guid.NewGuid().ToString("N") });
+            Ui.Root.Then(_api.ApiAsync("POST", "/api/v1/social/messages", body), r =>
+            {
+                var sent = r.Status >= 200 && r.Status < 300; if (!sent) Notices.Show(r.Status == 429 ? "Devagar: muitas mensagens seguidas." : UiTasks.Explain(r.Status), NoticeKind.Warn); done(sent);
+            });
+        }
+
+        private void OnLiveMessage(string type, System.Text.Json.JsonElement data, string json)
+        {
+            if (Current != Phase.Playing || (type != "message" && type != "group_message")) return;
+            var group = type == "group_message"; if (!Guid.TryParse(ApiContext.Field(data, group ? "groupId" : "from"), out var id) || (Guid.TryParse(ApiContext.Field(data, "from"), out var sender) && sender == _api.UserId)) return;   // what one wrote oneself opens nothing
+            var name = ApiContext.Field(data, group ? "groupName" : "fromName"); if (name.Length == 0 && !group) name = ApiContext.Field(data, "fromUsername");
+            Hud.Chat.Arrived(id, group, name);
         }
 
         // ---- the live channel of the platform: notices, the bell, teleport invites, the balance ----
@@ -288,7 +351,7 @@ namespace LifeVerse.Unity.UI
             {
                 var match = r.Status == 200 ? Json.Rows(r.Body).FirstOrDefault(p => string.Equals(p.First("displayName", "username"), displayName, StringComparison.OrdinalIgnoreCase) || string.Equals(p.Text("username"), displayName, StringComparison.OrdinalIgnoreCase)) : default;
                 if (r.Status != 200 || match.Id() == Guid.Empty) { Notices.Show("Não achei " + displayName + " na plataforma.", NoticeKind.Warn); return; }
-                new PersonActionsWindow(Context, match.Id(), displayName, id => new ProfileHubWindow(Context, id).Open(), (id, name) => { var social = new SocialWindow(Context); social.Open(); social.Talk(id, name); }).Open();
+                new PersonActionsWindow(Context, match.Id(), displayName, id => new ProfileHubWindow(Context, id).Open(), (id, name) => { if (Context.OpenConversation != null) { Context.OpenConversation(id, name, false); return; } var social = new SocialWindow(Context); social.Open(); social.Talk(id, name); }).Open();
             });
         }
 
@@ -663,7 +726,7 @@ namespace LifeVerse.Unity.UI
             if (Current != Phase.Playing || Client == null) return;
             var views = PeopleViews; Hud.SetConnection(Client.Connected, Mathf.Max(0, (views?.Count ?? 1) - 1));
             SampleNetwork(); if (Hud.PerformanceVisible) Hud.Perf.Frame(Time.unscaledDeltaTime);
-            _mapClock += Time.unscaledDeltaTime;
+            _mapClock += Time.unscaledDeltaTime; TickCaptions();
             if (Hud.Map.Rotate && Follow != null) Hud.Map.Turn(Follow.Yaw);
             if (_mapClock > .25f && Player != null && Client.Terrain != null)
             {
@@ -865,7 +928,7 @@ namespace LifeVerse.Unity.UI
         private FloatingWindow OpenAvatarStudio() => new AvatarStudioWindow(Context, () => OpenCharacter()?.Open(), on => { if (Follow != null) Follow.Mirror = on; }, RefreshOwnAvatar);
 
         /// <summary>The interface mode (full, compact, immersive) and the toolbar (order, hidden buttons, small) from the settings.</summary>
-        public void ApplyInterface() => Hud.ApplyLayout(Store.Get("interface.mode"), Store.Bool("interface.compact_toolbar"), Settings.ToolbarOrder, Settings.ToolbarCustomized ? Settings.ToolbarHidden : (IReadOnlyCollection<string>)Hud.DefaultHidden);
+        public void ApplyInterface() { Hud.SetToolbarEdge(Settings.ToolbarEdge); Hud.ApplyLayout(Store.Get("interface.mode"), Store.Bool("interface.compact_toolbar"), Settings.ToolbarOrder, Settings.ToolbarCustomized ? Settings.ToolbarHidden : (IReadOnlyCollection<string>)Hud.DefaultHidden); }
 
         /// <summary>Back (-1) or forward (+1) among the islands visited in this session.</summary>
         public void TravelIslands(int step)
@@ -889,10 +952,14 @@ namespace LifeVerse.Unity.UI
                     list.Add(UiKit.Row(toggle, UiKit.Text(label, "lv-body"), UiKit.Spacer(), UiKit.Button("◀", () => { Settings.ToolbarOrder = ToolbarLayout.Move(order, key, -1); Settings.Save(SettingsPath); ApplyInterface(); Fill(); }), UiKit.Button("▶", () => { Settings.ToolbarOrder = ToolbarLayout.Move(order, key, 1); Settings.Save(SettingsPath); ApplyInterface(); Fill(); })));
                 }
             }
-            Fill(); window.Body.Add(UiKit.Button("Restaurar a barra", () => { RestoreToolbar(); Fill(); })); return window;
+            Fill();
+            var edges = new List<string> { "Embaixo", "À esquerda", "À direita" }; var values = new[] { "bottom", "left", "right" };
+            var where = new DropdownField("Onde fica a barra", edges, Mathf.Max(0, Array.IndexOf(values, Settings.ToolbarEdge))) { name = "toolbar-edge" };
+            where.RegisterValueChangedCallback(_ => { Settings.ToolbarEdge = values[Mathf.Clamp(where.index, 0, 2)]; Settings.Save(SettingsPath); ApplyInterface(); }); window.Body.Add(where);
+            window.Body.Add(UiKit.Button("Restaurar a barra", () => { RestoreToolbar(); where.SetValueWithoutNotify(edges[0]); Fill(); })); return window;
         }
 
-        public void RestoreToolbar() { Settings.ToolbarOrder.Clear(); Settings.ToolbarHidden.Clear(); Settings.ToolbarCustomized = false; Store.Set("interface.compact_toolbar", "false"); Settings.Save(SettingsPath); ApplyInterface(); }
+        public void RestoreToolbar() { Settings.ToolbarEdge = "bottom"; Settings.ToolbarOrder.Clear(); Settings.ToolbarHidden.Clear(); Settings.ToolbarCustomized = false; Store.Set("interface.compact_toolbar", "false"); Settings.Save(SettingsPath); ApplyInterface(); }
 
         /// <summary>The last picture taken (its file), for the checks.</summary>
         public string LastPhoto { get; private set; }
@@ -949,7 +1016,9 @@ namespace LifeVerse.Unity.UI
         private void OnSettingChanged(string id)
         {
             if (id.StartsWith("metrics.", StringComparison.Ordinal) || id == "network.ping") SettingsEffects.Metrics(Store, Hud);
-            else if (id == "audio.interface" || id == "perf.object_lod") SettingsEffects.Resources(Store);
+            else if (id == "audio.interface" || id == "perf.object_lod" || id == "network.download_limit") SettingsEffects.Resources(Store);
+            else if (id == "advanced.verify_files") { if (Store.Bool(id)) VerifyFiles(); }
+            else if (id == "accessibility.captions") { if (!Store.Bool(id)) Subtitles?.Clear(); }
             else if (id == "perf.resource_cache") { SettingsEffects.Resources(Store); LifeVerse.Unity.World.AssetPreloader.Prune(LifeVerse.Unity.World.WorldJoin.CacheFolder, LifeVerse.Unity.World.AssetPreloader.LimitBytes); }
             else if (id == "camera.default_distance" && Follow != null) Follow.Distance = Store.Float(id);
             else if (id == "camera.default_mode" && Follow != null) Follow.SetFirstPerson(Store.Get(id) == "first");

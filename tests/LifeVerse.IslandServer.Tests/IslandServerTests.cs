@@ -591,7 +591,6 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.True(await island.PumpAsync(() => near.All<ReceiveVoiceMessage>().Count == 1));
         var heard = near.Last<ReceiveVoiceMessage>()!;
         Assert.Equal(speaker.PeerId, heard.SpeakerPeer); Assert.Equal(80, heard.Data.Length);
-        speaker.Wire.Send(new SubmitVoiceMessage(2, new byte[401])); // maior que o pacote Opus permitido
         for (uint i = 3; i < 140; i++) speaker.Wire.Send(new SubmitVoiceMessage(i, new byte[40])); // mais de 60 por segundo
         await island.PumpForAsync(500);
         var count = near.All<ReceiveVoiceMessage>().Count;
@@ -604,7 +603,9 @@ public class IslandServerTests(Xunit.Abstractions.ITestOutputHelper output)
         await island.PumpForAsync(1100);
         speaker.Wire.Send(new SubmitVoiceMessage(500, new byte[40]));
         await island.PumpForAsync(500);
-        Assert.Equal(before, near.All<ReceiveVoiceMessage>().Count);
+        Assert.Equal(before, near.All<ReceiveVoiceMessage>().Count); Assert.Empty(speaker.Disconnects);
+        speaker.Wire.Send(new SubmitVoiceMessage(501, new byte[401])); // maior que o pacote Opus permitido: o quadro é recusado e o jogador cai
+        Assert.True(await island.PumpAsync(() => speaker.Disconnects.Count > 0));
     }
     [Fact]
     public async Task AppearanceIsAskedFromTheAPIAndToldToEveryoneWithACooldownThatDefersInsteadOfDropping()

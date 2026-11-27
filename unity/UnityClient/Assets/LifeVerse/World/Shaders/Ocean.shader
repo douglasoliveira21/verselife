@@ -127,7 +127,7 @@ Shader "LifeVerse/Ocean"
                     // the sky mirrored (Schlick, from a base of 0.048: Godot's SPECULAR 0.55)
                     float3 R = reflect(-V, N); R.y = abs(R.y);
                     float fresnel = 0.048 + (max(1.0 - rough, 0.048) - 0.048) * pow(1.0 - NdotV, 5.0);
-                    colour += SkyAt(R) * fresnel;
+                    colour += SkyAt(R) * fresnel * lerp(0.24, 1.0, _LVDay);   // as Godot, the mirrored sky dims with the ambient light at night
                     // the glint of the sun (GGX)
                     float3 H = normalize(L + V);
                     float NdotH = saturate(dot(N, H)); float LdotH = saturate(dot(L, H));

@@ -52,7 +52,7 @@ namespace LifeVerse.Unity.UI
         };
 
         /// <summary>Godot marks these as unavailable there; the Unity client has them.</summary>
-        private static readonly HashSet<string> UnityHas = new HashSet<string> { "voice.echo_cancel", "accessibility.contrast", "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache" };
+        private static readonly HashSet<string> UnityHas = new HashSet<string> { "voice.echo_cancel", "accessibility.contrast", "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache", "network.download_limit", "metrics.cpu_gpu", "advanced.verify_files", "accessibility.captions" };
 
         /// <summary>The settings that act in the Unity client (by a value bound to the old settings, or an effect applied in the world, the interface, the audio or the screen), plus every Info and Action handled here.</summary>
         public static readonly HashSet<string> InUnity = new HashSet<string>
@@ -76,7 +76,7 @@ namespace LifeVerse.Unity.UI
             "voice.enabled", "voice.open_mic", "voice.hearing_distance", "voice.spatial", "voice.indicators", "controls.double_tap_run", "controls.hold_to_fly", "camera.fp_look_smoothing", "camera.fp_collision",
             "world.minimap_open", "world.minimap_rotate", "world.minimap_names", "world.minimap_buildings", "world.map_parcels", "world.map_friends", "world.map_names", "world.map_events", "world.map_favorites", "world.map_featured",
             "interface.radial_speed", "interface.radial_tooltips", "general.keep_on_top", "general.download_update", "avatar.show_titles", "avatar.default_animations", "avatar.open_mirror", "privacy.external_media", "build.space", "build.import_collision",
-            "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache",
+            "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache", "network.download_limit", "metrics.cpu_gpu", "advanced.verify_files", "accessibility.captions",
             "accessibility.keyboard", "camera.focus_double_click", "camera.allow_detached", "camera.detached_range", "camera.detached_speed",
         };
 
@@ -101,6 +101,10 @@ namespace LifeVerse.Unity.UI
                     if (UnityHas.Contains(d.Id)) d.Unavailable = null;
                     else if (UnityCannot.TryGetValue(d.Id, out var why)) d.Unavailable = why;
                     else if (d.Unavailable == null && !InUnity.Contains(d.Id)) d.Unavailable = NotYet;
+                    if (d.Id == "network.download_limit") { d.Label = "Limite de download (MB por segundo)"; d.Help = "A velocidade máxima com que o jogo baixa modelos, texturas e sons. 0: sem limite."; d.Min = 0; d.Max = 100; d.Step = 1; d.Unit = " MB/s"; }
+                    if (d.Id == "metrics.cpu_gpu") d.Help = "Mostra no painel de desempenho quanto de cada quadro o processador e a placa de vídeo passam trabalhando.";
+                    if (d.Id == "accessibility.captions") d.Help = "Escreve na tela quem está falando por voz e que sons tocam por perto (a fala não é transcrita).";
+                    if (d.Id == "advanced.verify_files") d.Help = "Ligada, confere ao abrir o jogo os arquivos instalados e os baixados; os downloads estragados são apagados.";
                     if (d.Id == "advanced.godot") { d.Label = "Versão do Unity"; d.Help = "A versão do motor gráfico deste cliente."; }
                     if (d.Id == "graphics.msaa") d.Help = "Suaviza o serrilhado das bordas. Neste cliente: 2x usa FXAA, 4x usa SMAA e 8x a suavização temporal (TAA), feitas depois de desenhar.";
                     list.Add(d);

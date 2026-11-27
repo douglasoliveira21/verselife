@@ -69,12 +69,12 @@ namespace LifeVerse.Unity.World
         }
 
         /// <summary>A request with the access token: renewed first when it is about to end, and once more when the API says 401 and a renewal works.</summary>
-        public async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string json, CancellationToken ct = default)
+        public async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, string json, CancellationToken ct = default, HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
         {
             if (RefreshToken.Length > 0 && ExpiresAt - DateTimeOffset.UtcNow < TimeSpan.FromSeconds(60)) await RefreshAsync(ct).ConfigureAwait(false);
             HttpRequestMessage Make() => new HttpRequestMessage(method, url) { Content = json == null ? null : new StringContent(json, Encoding.UTF8, "application/json") };
-            var response = await _http.SendAsync(Make(), ct).ConfigureAwait(false);
-            if ((int)response.StatusCode == 401 && RefreshToken.Length > 0 && await RefreshAsync(ct).ConfigureAwait(false)) { response.Dispose(); response = await _http.SendAsync(Make(), ct).ConfigureAwait(false); }
+            var response = await _http.SendAsync(Make(), completion, ct).ConfigureAwait(false);
+            if ((int)response.StatusCode == 401 && RefreshToken.Length > 0 && await RefreshAsync(ct).ConfigureAwait(false)) { response.Dispose(); response = await _http.SendAsync(Make(), completion, ct).ConfigureAwait(false); }
             return response;
         }
 
@@ -245,10 +245,14 @@ namespace LifeVerse.Unity.World
             {
                 try
                 {
-                    using var response = await SendAsync(HttpMethod.Get, url, null, ct).ConfigureAwait(false);
-                    if (response.IsSuccessStatusCode) return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    var limited = DownloadThrottle.BytesPerSecond > 0;
+                    using var response = await SendAsync(HttpMethod.Get, url, null, ct, limited ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead).ConfigureAwait(false);
+                    if (!response.IsSuccessStatusCode) continue;
+                    if (!limited) return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    return await DownloadThrottle.ReadAsync(stream, ct).ConfigureAwait(false);
                 }
-                catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { }
+                catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException || exception is System.IO.IOException) { }
             }
             return null;
         }
@@ -258,10 +262,15 @@ namespace LifeVerse.Unity.World
         {
             try
             {
-                using var response = await SendAsync(HttpMethod.Get, _baseUrl + path, null, ct).ConfigureAwait(false);
-                return ((int)response.StatusCode, response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false) : new byte[0]);
+                // with a download limit the body is read piece by piece as it arrives, no faster than allowed
+                var limited = DownloadThrottle.BytesPerSecond > 0;
+                using var response = await SendAsync(HttpMethod.Get, _baseUrl + path, null, ct, limited ? HttpCompletionOption.ResponseHeadersRead : HttpCompletionOption.ResponseContentRead).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode) return ((int)response.StatusCode, new byte[0]);
+                if (!limited) return ((int)response.StatusCode, await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false));
+                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                return ((int)response.StatusCode, await DownloadThrottle.ReadAsync(stream, ct).ConfigureAwait(false));
             }
-            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException) { return (0, new byte[0]); }
+            catch (Exception exception) when (exception is HttpRequestException || exception is TaskCanceledException || exception is System.IO.IOException) { return (0, new byte[0]); }
         }
 
         public void Dispose() => _http.Dispose();

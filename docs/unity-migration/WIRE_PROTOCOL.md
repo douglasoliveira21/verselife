@@ -1,6 +1,6 @@
 # LifeVerse Wire — protocolo 12
 
-Especificação do protocolo de rede do cliente e do servidor de ilha em Unity (decisão D3). Código: `unity/UnityWire` (`LifeVerse.Wire`, alvos `netstandard2.1` e `net8.0`). Testes: `tests/LifeVerse.Wire.Tests` (25 testes xUnit) e, dentro da Unity, `WireTests` e a autoverificação do player.
+Especificação do protocolo de rede do cliente e do servidor de ilha em Unity (decisão D3). Código: `unity/UnityWire` (`LifeVerse.Wire`, alvos `netstandard2.1` e `net8.0`). Testes: `tests/LifeVerse.Wire.Tests` (testes xUnit, entre eles o limite de envio e um fuzz por mutação que `LIFEVERSE_FUZZ_SECONDS` alonga) e, dentro da Unity, `WireTests` e a autoverificação do player.
 
 **Não é compatível com o protocolo 11 do Godot** (`SceneMultiplayer`). As 44 mensagens são as mesmas dos 44 RPCs (mesmos nomes e a mesma ordem de argumentos); os payloads binários `Snapshot`, `VehicleSnapshots` e de voz continuam sendo os de `SnapshotCodec`, `VehicleCodec` e `VoiceCodec`, **byte a byte iguais**.
 
@@ -8,7 +8,7 @@ Especificação do protocolo de rede do cliente e do servidor de ilha em Unity (
 - **Biblioteca:** LiteNetLib 2.1.5 (MIT, C# puro). O ENet-CSharp foi descartado no spike S2: exige um binário nativo por plataforma e não há compilador C++ nesta máquina. O LiteNetLib traz canais, entrega confiável ordenada, não confiável sequenciada e fragmentação.
 - **Chave de conexão:** `"LifeVerse.Wire"`. Muda só se o formato de quadro mudar. A versão do jogo (12) é conferida depois, em `Authenticate`, para o cliente poder mostrar "o servidor exige o protocolo N" (`ProtocolRejected`), como no protocolo 11.
 - **Canais** (3, iguais aos do protocolo 11): 0 = confiável; 1 = entradas do cliente; 2 = estado do servidor.
-- **Entrega:** `Reliable` = confiável ordenada. `Sequenced` = não confiável que descarta o que chega fora de ordem (o "não confiável ordenado" do protocolo 11). `Unreliable` = sem garantia (voz).
+- **Entrega:** `Reliable` = confiável ordenada. `Sequenced` = não confiável que descarta o que chega fora de ordem (o "não confiável ordenado" do protocolo 11). `Unreliable` = sem garantia (voz e snapshots).
 
 ## Quadro
 `[1 byte: id da mensagem][campos]`, até 1.200.000 bytes. Ids de `0x01` a `0x16` vão do cliente ao servidor; de `0x81` a `0x96`, do servidor ao cliente. Quem recebe só aceita a direção que lhe cabe.
@@ -20,7 +20,7 @@ Especificação do protocolo de rede do cliente e do servidor de ilha em Unity (
 | `int`, `uint` | 4 bytes |
 | `long` | 8 bytes |
 | `float` | 4 bytes (IEEE 754); **NaN e infinito são recusados** |
-| comprimento | número variável de até 5 bytes (7 bits por byte; o 5º usa só 4 bits) |
+| comprimento | número variável de até 5 bytes (7 bits por byte; o 5º usa só 4 bits), sem bytes zero a mais: cada número tem uma escrita só |
 | `string` | comprimento em bytes + UTF-8 estrito (inválido é recusado) |
 | `byte[]` | comprimento + bytes |
 | `float[]` | quantidade + floats |
@@ -87,8 +87,8 @@ Canal e entrega entre parênteses; "Rel" = confiável (canal 0).
 | 0x8F | TeleportResult | bool ok, string code, float x, float z, float yaw | Rel |
 | 0x90 / 0x91 | VehicleSpawned / VehicleRejected | int vehicleId, string name, string type, float x, y, z, yaw / string code | Rel |
 | 0x92 | GestureChanged | int peerId, int gestureId | Rel |
-| 0x93 | Snapshot | byte[] payload (`SnapshotCodec`) | canal 2, Sequenced |
-| 0x94 | VehicleSnapshots | byte[] payload (`VehicleCodec`) | canal 2, Sequenced |
+| 0x93 | Snapshot | byte[] payload (`SnapshotCodec`) | canal 2, Unreliable |
+| 0x94 | VehicleSnapshots | byte[] payload (`VehicleCodec`) | canal 2, Unreliable |
 | 0x95 | HeadLookChanged | int peerId, float pitch | canal 2, Sequenced |
 | 0x96 | ReceiveVoice | int speakerPeer, uint sequence, byte[] data | canal 2, Unreliable |
 
@@ -113,4 +113,6 @@ Este documento cobre o protocolo e o transporte. **Não** há ainda um servidor 
 ## Regras de uso descobertas na Fase 6
 
 - **Numeração dos jogadores.** `PeerId` é o id do LiteNetLib mais 1 (o `WireServer` faz a soma). O 0 é reservado para "sistema" (avisos, scripts), como no Godot. Nunca use 0 como jogador.
+- **Snapshots sem ordem garantida (desde 27/11/2026).** `Snapshot` e `VehicleSnapshots` são `Unreliable`: com `Sequenced`, o pacote de um tick que chegasse depois do irmão era descartado, e numa rede com variação de atraso cada jogador de uma ilha com 64 pessoas recebia 7 snapshots por segundo em vez de uns 15. Quem recebe **descarta o que for de um tick mais velho que o último visto** (`SnapshotOrder`) e aceita os outros pacotes do mesmo tick.
+- **Limite de envio por jogador (`WireRateLimit`).** O servidor aceita de cada jogador 300 mensagens e 1,5 MB por segundo, com rajada de 900 mensagens e 4 MB. O que passa é descartado antes de ser decodificado; mais de 300 descartes em 10 segundos desconectam o jogador (`rate_limit`). Depois de recusado, nada mais que ele tenha enviado é lido.
 - **Snapshots em vários pacotes.** O LiteNetLib não fragmenta pacotes `Unreliable`/`Sequenced` (limite ~1020 bytes por quadro). Um `Snapshot` leva no máximo 40 jogadores (6 + 40 × 23 = 926 bytes); com mais gente no raio de interesse o servidor manda **vários `Snapshot` do mesmo `ServerTick`**, com o próprio jogador sempre no primeiro. O cliente deve **mesclar os pacotes de um mesmo tick** (e só então tratar quem não apareceu como fora do raio). Com 64 jogadores por perto são 2 pacotes por jogador por snapshot (medido: 39,8 pacotes/s por cliente a 20 Hz). O mesmo vale para `VehicleSnapshots` quando houver mais de ~40 veículos (o limite do jogo é 64): o servidor já divide em pacotes de 32 veículos do mesmo tick (o cliente mescla).

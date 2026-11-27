@@ -53,7 +53,7 @@ namespace LifeVerse.Unity.UI
             ["paravoce"] = "bulb", ["tudo"] = "grid", ["pessoas"] = "people", ["lugares"] = "pin", ["eventos"] = "calendar", ["grupos"] = "people", ["itens"] = "bag", ["lojas"] = "home", ["favoritos"] = "star",
             ["meus"] = "people", ["descobrir"] = "search", ["convites"] = "mail", ["avisos"] = "bell", ["criar"] = "plus",
             ["membros"] = "people", ["cargos"] = "shield", ["permissoes"] = "lock", ["chat"] = "chat", ["economia"] = "coins", ["propostas"] = "doc", ["loja"] = "bag", ["configuracoes"] = "settings",
-            ["pastas"] = "folder", ["sempasta"] = "folder-open", ["recentes"] = "history", ["atualizados"] = "download", ["devolvidos"] = "undo", ["lixeira"] = "trash", ["espaco"] = "chart", ["pacote"] = "download",
+            ["arvore"] = "layers", ["pastas"] = "folder", ["sempasta"] = "folder-open", ["recentes"] = "history", ["atualizados"] = "download", ["devolvidos"] = "undo", ["lixeira"] = "trash", ["espaco"] = "chart", ["pacote"] = "download",
             ["acesso"] = "user-add", ["banimentos"] = "ban", ["administracao"] = "shield", ["objetos"] = "cube", ["fisica"] = "move", ["desempenho"] = "chart", ["ambiente"] = "sun", ["midia"] = "volume", ["terreno"] = "mountain",
             ["reinicio"] = "power", ["auditoria"] = "history", ["regras"] = "doc", ["terrenos"] = "grid", ["propriedade"] = "home", ["mapa"] = "map", ["demarcacao"] = "grid-dots", ["lista"] = "list", ["vendas"] = "coin", ["alugueis"] = "calendar",
             ["contratos"] = "doc", ["prims"] = "cube", ["historico"] = "history", ["opcoes"] = "settings", ["perto"] = "target", ["amigos"] = "people", ["feed"] = "chat-dots", ["galeria"] = "image", ["conquistas"] = "star",

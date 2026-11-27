@@ -120,8 +120,10 @@ namespace LifeVerse.Unity.Avatar
             var view = Views != null ? Views.ViewOf(Client.SelfPeerId) : null;
             if (view != null)
             {
-                view.External = true; view.SetPose(shown, shownHeading, new Vector3(State.VelocityX, State.VelocityY, State.VelocityZ), Motion);
-                if (Follow != null && view.Visible == Follow.FirstPerson) view.SetVisible(!Follow.FirstPerson);   // one's own body is not drawn from the inside
+                var inside = Follow != null && Follow.FirstPerson;
+                // from inside the head the body turns with the look, so that looking down shows it where it should be
+                view.External = true; view.SetPose(shown, inside && !onSeat && Driving == null ? Follow.Yaw : shownHeading, new Vector3(State.VelocityX, State.VelocityY, State.VelocityZ), Motion);
+                if (Follow != null) view.SetFirstPersonView(inside);
             }
             if (Follow != null)
             {

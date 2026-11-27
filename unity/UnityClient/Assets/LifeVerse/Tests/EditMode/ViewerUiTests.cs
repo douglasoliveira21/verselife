@@ -58,6 +58,86 @@ namespace LifeVerse.Unity.Tests.EditMode
         }
 
         [Test]
+        public void FromInsideTheHeadTheBodyStaysAndTheFaceFollowsItsSliders()
+        {
+            var view = AvatarView.Create(1, "eu", Color.cyan); var host = view.gameObject;
+            try
+            {
+                var wide = AvatarAppearance.Parse("{\"faceSettingsJson\":\"{\\\"mouthWidth\\\":1.2,\\\"noseSize\\\":0.8,\\\"headWidth\\\":1.1,\\\"browHeight\\\":1.1,\\\"jawWidth\\\":0.9}\"}");
+                view.ApplyAppearance(wide);
+                var head = view.Head; Assert.AreEqual(.36f, head.Find("Mouth").localScale.x, 1e-4f); Assert.AreEqual(.096f, head.Find("Nose").localScale.x, 1e-4f); Assert.AreEqual(.286f, head.localScale.x, 1e-4f);
+                Assert.AreEqual(.297f, head.Find("Brow").localPosition.y, 1e-4f); Assert.AreEqual(.666f, head.Find("Jaw").localScale.x, 1e-4f);
+                view.SetFirstPersonView(true); Assert.IsFalse(view.HeadShown); Assert.IsFalse(head.Find("Mouth").GetComponent<Renderer>().enabled);
+                var torso = host.transform.Find("Body/Torso"); Assert.IsTrue(torso.GetComponent<Renderer>().enabled, "the body is still there");
+                view.ApplyAppearance(wide); foreach (var part in head.GetComponentsInChildren<Renderer>()) Assert.IsFalse(part.enabled, "dressed again from inside, the head stays hidden: " + part.name);
+                view.SetFirstPersonView(false); Assert.IsTrue(view.HeadShown && torso.GetComponent<Renderer>().enabled);
+            }
+            finally { Object.DestroyImmediate(host); }
+        }
+
+        [Test]
+        public void TheChatKeepsATabForEachConversation()
+        {
+            var chat = new ChatPanel(_ui.Settings); var asked = new System.Collections.Generic.List<ChatTab>(); chat.Load = asked.Add;
+            var ana = System.Guid.NewGuid(); var club = System.Guid.NewGuid();
+            var tab = chat.Open(ana, false, "Ana"); Assert.AreSame(tab, chat.Active); Assert.AreEqual(1, asked.Count);
+            chat.Fill(tab, new[] { ("Ana", "oi", false, (System.DateTimeOffset?)null), ("Você", "olá", true, null) }); CollectionAssert.AreEqual(new[] { "Ana: oi", "Você: olá" }, tab.Shown);
+            var group = chat.Arrived(club, true, "Clube"); Assert.AreSame(tab, chat.Active, "what arrives does not take the screen"); Assert.AreEqual(DisplayStyle.None, group.Log.style.display.value, "nor is it drawn over the one on screen"); Assert.AreEqual(1, group.Unread); Assert.AreEqual("Clube (1)", group.Choose.text);
+            chat.Select(group); Assert.AreEqual(0, group.Unread); Assert.AreEqual("Clube", group.Choose.text);
+            string said = null; chat.SendConversation = (to, text, done) => { said = to.Name + "|" + text; done(false); };
+            chat.Input.value = " vamos "; Assert.IsTrue(chat.Submit()); Assert.AreEqual("Clube|vamos", said); Assert.AreEqual(" vamos ", chat.Input.value, "what did not go stays to be sent again");
+            chat.SendConversation = (to, text, done) => done(true); var loads = asked.Count; Assert.IsTrue(chat.Submit()); Assert.AreEqual("", chat.Input.value); Assert.AreEqual(loads + 1, asked.Count);
+            chat.CloseTab(group); Assert.IsNull(chat.Active); Assert.AreEqual(1, chat.Tabs.Count);
+            string nearby = null; chat.Send = text => { nearby = text; return true; }; chat.Input.value = "aqui perto"; chat.Submit(); Assert.AreEqual("aqui perto", nearby);
+            for (var i = 0; i < 10; i++) chat.Open(System.Guid.NewGuid(), false, "p" + i); Assert.AreEqual(ChatPanel.MaxTabs, chat.Tabs.Count);
+        }
+
+        [Test]
+        public void AResizedWindowOpensAgainAtItsSizeAndTheToolbarCanStandAtASide()
+        {
+            var window = new FloatingWindow(_ui, "tamanho", "T", 400f, 300f); window.Open(); window.Resize(new Vector2(620f, 410f)); window.Close();
+            Assert.AreEqual(4, _ui.Settings.Windows["tamanho"].Length);
+            var again = new FloatingWindow(_ui, "tamanho", "T", 400f, 300f); Assert.AreEqual(620f, again.style.width.value.value); Assert.AreEqual(410f, again.style.height.value.value);
+            var plain = new FloatingWindow(_ui, "sem", "S", 300f, 200f); plain.Open(); plain.Close(); Assert.AreEqual(2, _ui.Settings.Windows["sem"].Length, "never resized: only the place is kept");
+            var hud = new Hud(_ui, new NotificationCenter(_ui)); var build = hud.Register("Construir", "build", () => null);
+            hud.SetToolbarEdge("left"); hud.ApplyLayout("full", false, null, null); Assert.IsTrue(hud.BottomBar.ClassListContains("lv-toolbar-side")); Assert.IsTrue(((UiKit.ButtonIcon)build.userData).Only); Assert.AreEqual(Hud.Edge + Hud.SideBarWidth, hud.Chat.style.left.value.value);
+            hud.SetToolbarEdge("right"); Assert.AreEqual(Hud.Edge + Hud.SideBarWidth, hud.Map.style.right.value.value);
+            hud.SetToolbarEdge("nada"); hud.ApplyLayout("full", false, null, null); Assert.AreEqual("bottom", hud.ToolbarEdge); Assert.IsFalse(((UiKit.ButtonIcon)build.userData).Only);
+        }
+
+        [Test]
+        public void TheFourSettingsThatOnlyNeededTheClientAct()
+        {
+            foreach (var id in new[] { "network.download_limit", "metrics.cpu_gpu", "advanced.verify_files", "accessibility.captions" }) { var setting = SettingsCatalog.Find(id); Assert.IsTrue(setting.IsAvailable, id); }
+            Assert.AreEqual(100, SettingsCatalog.Find("network.download_limit").Max);
+            // the limit: a second of data per second, shared, and none without a limit
+            double free = 0; Assert.AreEqual(0, LifeVerse.Unity.World.DownloadThrottle.Delay(5000, 0, 1, ref free)); Assert.AreEqual(.5, LifeVerse.Unity.World.DownloadThrottle.Delay(500, 1000, 1, ref free), 1e-9); Assert.AreEqual(1.0, LifeVerse.Unity.World.DownloadThrottle.Delay(500, 1000, 1, ref free), 1e-9); Assert.AreEqual(.1, LifeVerse.Unity.World.DownloadThrottle.Delay(100, 1000, 9, ref free), 1e-9);
+            Assert.AreEqual("CPU 50 % do quadro   GPU 100 %", SettingsEffects.Busy(8, 40, 16)); Assert.AreEqual("CPU e GPU: sem medida ainda", SettingsEffects.Busy(1, 1, 0));
+            var captions = new Captions(); captions.Say("Ana está falando", 0f); captions.Say("Ana está falando", 1f); captions.Say(Captions.Sound(false, 5f), 1f); CollectionAssert.AreEqual(new[] { "Ana está falando", "♪ Som de um objeto a 5 m" }, captions.Lines);
+            captions.Say("b", 2f); captions.Say("c", 2f); Assert.AreEqual(Captions.MaxLines, captions.Lines.Count); captions.Tick(1f + Captions.Seconds); Assert.AreEqual(2, captions.Lines.Count); captions.Tick(100f); Assert.AreEqual(0, captions.Lines.Count);
+        }
+
+        [Test]
+        public void TheGameFilesAreCheckedAgainstTheirListAndDamagedDownloadsAreRemoved()
+        {
+            var folder = Path.Combine(Path.GetTempPath(), "lv-files-" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(Path.Combine(folder, "dados")); File.WriteAllText(Path.Combine(folder, "jogo.exe"), "um"); File.WriteAllText(Path.Combine(folder, "dados", "a.bin"), "dois");
+                Assert.IsNull(LifeVerse.Unity.World.GameFiles.Verify(folder), "no list yet"); Assert.AreEqual(2, LifeVerse.Unity.World.GameFiles.Write(folder));
+                var good = LifeVerse.Unity.World.GameFiles.Verify(folder).Value; Assert.AreEqual(2, good.Checked); Assert.AreEqual(0, good.Bad.Count);
+                File.WriteAllText(Path.Combine(folder, "dados", "a.bin"), "mudou"); File.Delete(Path.Combine(folder, "jogo.exe"));
+                CollectionAssert.AreEquivalent(new[] { "dados/a.bin", "jogo.exe" }, LifeVerse.Unity.World.GameFiles.Verify(folder).Value.Bad);
+                var cache = Path.Combine(folder, "cache"); Directory.CreateDirectory(cache); var bytes = System.Text.Encoding.UTF8.GetBytes("conteudo");
+                string hash; using (var sha = System.Security.Cryptography.SHA256.Create()) hash = System.BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
+                File.WriteAllBytes(Path.Combine(cache, hash + ".bin"), bytes); File.WriteAllText(Path.Combine(cache, new string('0', 64) + ".bin"), "estragado");
+                var found = LifeVerse.Unity.World.GameFiles.VerifyCache(cache); Assert.AreEqual((2, 1), found); Assert.IsTrue(File.Exists(Path.Combine(cache, hash + ".bin")));
+                StringAssert.Contains("1 estragado(s) apagado(s)", LifeVerse.Unity.World.GameFiles.Words(null, found));
+            }
+            finally { if (Directory.Exists(folder)) Directory.Delete(folder, true); }
+        }
+
+        [Test]
         public void TheMovementButtonsAddToTheKeyboard()
         {
             var keys = new PlayerInputSample { Forward = 1f, Right = -1f }; var pad = new PlayerInputSample { Forward = 1f, Run = true, Jump = true };

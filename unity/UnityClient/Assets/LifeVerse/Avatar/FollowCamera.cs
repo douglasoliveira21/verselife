@@ -17,6 +17,9 @@ namespace LifeVerse.Unity.Avatar
         public Camera Camera; public TerrainView Terrain;
         public float Yaw, Pitch = 14f, Distance = 4.6f;
         public const float MinDistance = 1.2f, MaxDistance = 14f, HeadHeight = 1.55f, EyeHeight = 1.62f, ClearGround = .35f;
+        /// <summary>From inside the head: the eyes stand this far in front of the neck, and what is this close is still drawn (the own arms and chest).</summary>
+        public const float EyesForward = .12f, FirstPersonNear = .04f;
+        private float _near = -1f;
         /// <summary>When false the mouse and the wheel are ignored (a menu is open, or a test is driving it).</summary>
         public bool Interactive = true;
         /// <summary>Degrees of turn per pixel of mouse, and whether pushing the mouse up looks down (settings).</summary>
@@ -189,11 +192,13 @@ namespace LifeVerse.Unity.Avatar
                 // "Suavização do olhar": the view catches up with the mouse at the shared rate (instant at 0)
                 var follow = dt <= 0f || !_viewStarted ? 1f : 1f - Mathf.Exp(-Options.LookRate * dt); _viewStarted = true;
                 _viewYaw = Mathf.LerpAngle(_viewYaw, Yaw, follow); _viewPitch = Mathf.Lerp(_viewPitch, Pitch, follow);
-                var eye = new Vector3(steady.X, steady.Y, steady.Z); var rotation = Quaternion.Euler(_viewPitch, _viewYaw, 0f);
+                var eye = new Vector3(steady.X, steady.Y, steady.Z) + Quaternion.Euler(0f, _viewYaw, 0f) * Vector3.forward * EyesForward; var rotation = Quaternion.Euler(_viewPitch, _viewYaw, 0f);
+                if (_near < 0f) _near = camera.nearClipPlane; camera.nearClipPlane = FirstPersonNear;
                 eye += rotation * Vector3.right * _bob.Offset.X + Vector3.up * _bob.Offset.Y; Focus = head;
                 if (Options.Collision && Collide) eye = KeepEyesOutOfWalls(head - Vector3.up * .3f, eye, rotation);
                 _position = eye; camera.transform.position = eye; camera.transform.rotation = rotation * Quaternion.Euler(0f, 0f, Mathf.Rad2Deg * Roll); return;
             }
+            if (_near >= 0f) { camera.nearClipPlane = _near; _near = -1f; }
             Focus = ZoomTarget ?? GameSpace.ToUnity(gamePosition) + Vector3.up * (HeadHeight + HeightOffset) + Quaternion.Euler(0f, Yaw, 0f) * Vector3.right * Shoulder; Roll = 0f;
             var back = -(Quaternion.Euler(Pitch, Yaw, 0f) * Vector3.forward); if (Mirror && !ZoomTarget.HasValue) back = new Vector3(-back.x, back.y, -back.z); var distance = ZoomTarget.HasValue ? ZoomDistance : Distance;
             if (Collide && Terrain != null && Terrain.Map != null && Terrain.Raycast(new Ray(Focus, back), distance) is { } hit) distance = Mathf.Max(MinDistance * .5f, Vector3.Distance(Focus, hit) - .25f);

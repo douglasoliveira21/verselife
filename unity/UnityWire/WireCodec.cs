@@ -79,6 +79,8 @@ public static class WireCodec
             (ref WireReader r) => { var sequence = r.UInt(); var data = r.Bytes(WireLimits.Voice); return new SubmitVoiceMessage(sequence, data); });
 
         // ---- servidor → cliente -------------------------------------------------------------------------------------------------------
+        // Os snapshots vão sem ordem garantida: um snapshot grande são vários pacotes do mesmo tick, e a entrega "sequenced" jogaria fora o que chegasse depois do irmão.
+        // Quem recebe descarta o que for de um tick mais velho que o último visto (ver SnapshotOrder).
         Define<AuthResultMessage>(0x81, S2C, 0, Rel, (w, m) => { w.Bool(m.Success); w.String(m.Code); w.UInt(m.ServerTick); },
             (ref WireReader r) => { var success = r.Bool(); var code = r.String(WireLimits.Code); var tick = r.UInt(); return new AuthResultMessage(success, code, tick); });
         Define<ProtocolRejectedMessage>(0x82, S2C, 0, Rel, (w, m) => w.Int(m.ServerVersion),
@@ -115,9 +117,9 @@ public static class WireCodec
             (ref WireReader r) => new VehicleRejectedMessage(r.String(WireLimits.Code)));
         Define<GestureChangedMessage>(0x92, S2C, 0, Rel, (w, m) => { w.Int(m.PeerId); w.Int(m.GestureId); },
             (ref WireReader r) => { var peer = r.Int(); var gesture = r.Int(); return new GestureChangedMessage(peer, gesture); });
-        Define<SnapshotMessage>(0x93, S2C, 2, Seq, (w, m) => w.Bytes(m.Payload),
+        Define<SnapshotMessage>(0x93, S2C, 2, Unrel, (w, m) => w.Bytes(m.Payload),
             (ref WireReader r) => new SnapshotMessage(r.Bytes(WireLimits.Snapshot)));
-        Define<VehicleSnapshotsMessage>(0x94, S2C, 2, Seq, (w, m) => w.Bytes(m.Payload),
+        Define<VehicleSnapshotsMessage>(0x94, S2C, 2, Unrel, (w, m) => w.Bytes(m.Payload),
             (ref WireReader r) => new VehicleSnapshotsMessage(r.Bytes(WireLimits.Snapshot)));
         Define<HeadLookChangedMessage>(0x95, S2C, 2, Seq, (w, m) => { w.Int(m.PeerId); w.Float(m.Pitch); },
             (ref WireReader r) => { var peer = r.Int(); var pitch = r.Float(); return new HeadLookChangedMessage(peer, pitch); });

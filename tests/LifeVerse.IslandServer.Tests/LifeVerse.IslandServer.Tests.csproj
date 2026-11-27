@@ -14,6 +14,8 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <!-- a internet ruim de mentira dos testes do protocolo -->
+    <Compile Include="..\LifeVerse.Wire.Tests\LossyUdpProxy.cs" Link="LossyUdpProxy.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\unity\UnityIslandServer\Core\LifeVerse.IslandServer.Core.csproj" />

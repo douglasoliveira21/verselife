@@ -46,7 +46,8 @@ public partial class WorldCompareCapture : Node
             {
                 camera.GlobalPosition = view.Position; camera.LookAt(view.Target, Vector3.Up);
                 environment.Hour = view.Hour; environment.Weather = view.Weather; camera.MakeCurrent();
-                await Frames(60);
+                // the weather's fog arrives gradually (by time, not by frames): wait until it is there, however fast the frames go
+                await Frames(60); await ToSignal(GetTree().CreateTimer(3.0), SceneTreeTimer.SignalName.Timeout); await Frames(5);
                 if (!string.IsNullOrWhiteSpace(prefix)) { var error = GetViewport().GetTexture().GetImage().SavePng($"{prefix}-{view.Name}.png"); GD.Print($"event=godot_world_shot view={view.Name} saved={error == Error.Ok}"); }
             }
             GD.Print("event=godot_world_compare result=done"); GetTree().Quit(0);

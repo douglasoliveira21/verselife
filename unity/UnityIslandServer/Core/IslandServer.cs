@@ -16,7 +16,7 @@ namespace LifeVerse.IslandServer.Core;
 
 /// <summary>Os tempos do servidor. Os padrões são os do servidor Godot; os testes os encurtam.</summary>
 public sealed record IslandServerOptions(double HeartbeatSeconds = 15, double LocationSeconds = 20, double WorldSaveSeconds = 60,
-    double SuspendSeconds = 10, double VehicleSyncSeconds = 15, double LandSyncSeconds = 10, double ScriptSyncSeconds = 15, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25);
+    double SuspendSeconds = 10, double VehicleSyncSeconds = 15, double LandSyncSeconds = 10, double ScriptSyncSeconds = 15, double AuthenticationSeconds = 5, double DisconnectDelaySeconds = .25, WireRateLimit? RateLimit = null);
 
 /// <summary>O que o servidor mede de si mesmo (vai para o health check, o heartbeat e os testes de carga).</summary>
 public sealed record IslandServerStats(int Players, long Ticks, double TickAverageMs, double TickP99Ms, double TickMaxMs, double TickRate,
@@ -45,6 +45,7 @@ public sealed partial class IslandServer : IDisposable
         public readonly Queue<DateTimeOffset> TerrainTimes = new(), BuildTimes = new();
         public DateTimeOffset? LastPushLog, LastTeleport, LastAppearance, LastAttachmentLive;
         public bool LateAppearance;
+        public int Failures;
         public string? WornJson; public HashSet<Guid> WornIds = new();
         public DateTimeOffset LastTerrainRequest, LastTerrainImport, LastStrokeAt;
         public readonly List<TerrainPatch> UndoStack = new(), RedoStack = new();
@@ -91,7 +92,7 @@ public sealed partial class IslandServer : IDisposable
         _config = config; _api = api; _log = log ?? new IslandLog(); _options = options ?? new IslandServerOptions();
         _blockedTerms = (Environment.GetEnvironmentVariable("LIFEVERSE_CHAT_BLOCKED_TERMS") ?? string.Empty)
             .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).Where(s => s.Length > 0).ToArray();
-        _wire = new WireServer(config.MaxPlayers, options?.AuthenticationSeconds ?? 5);
+        _wire = new WireServer(config.MaxPlayers, options?.AuthenticationSeconds ?? 5, options?.RateLimit);
         _wire.PeerConnected += OnPeerConnected;
         _wire.PeerDisconnected += OnPeerDisconnected;
         _wire.MessageReceived += OnMessage;
@@ -292,6 +293,20 @@ public sealed partial class IslandServer : IDisposable
         if (!_players.TryGetValue(peerId, out var player)) return;
         if (message is AuthenticateMessage authenticate) { OnAuthenticate(player, authenticate); return; }
         if (!player.Authenticated) return;
+        // uma mensagem que quebre o tratamento dela não pode levar junto o passo da simulação de todos
+        try { Handle(peerId, player, message); }
+        catch (Exception exception)
+        {
+            if (++player.Failures <= 5) _log.Write("message_failed", new { peerId, type = message.GetType().Name, error = exception.Message, exception.StackTrace });
+            if (player.Failures == MaxMessageFailures) { _log.Write("peer_rejected", new { peer = peerId, reason = "message_failures" }); _wire.Disconnect(peerId); }
+        }
+    }
+
+    /// <summary>Quantas mensagens de um jogador podem quebrar o tratamento antes de ele ser desconectado.</summary>
+    public const int MaxMessageFailures = 50;
+
+    private void Handle(int peerId, Player player, IWireMessage message)
+    {
         switch (message)
         {
             case SubmitInputMessage input: OnInput(player, input); break;

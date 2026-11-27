@@ -24,6 +24,7 @@ namespace LifeVerse.Unity.EditorTools
             var report = BuildPipeline.BuildPlayer(options);
             var summary = report.summary;
             Debug.Log($"[LifeVerse] Build {summary.result}: {summary.totalSize / (1024 * 1024)} MB em {summary.totalTime:g}, erros {summary.totalErrors}, avisos {summary.totalWarnings}");
+            if (summary.result == BuildResult.Succeeded) Debug.Log($"[LifeVerse] Lista de arquivos para a verificação do jogo: {LifeVerse.Unity.World.GameFiles.Write("Builds/Windows")} arquivos");
             EditorApplication.Exit(summary.result == BuildResult.Succeeded ? 0 : 1);
         }
 

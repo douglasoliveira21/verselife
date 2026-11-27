@@ -1,6 +1,6 @@
 # O que falta na migração para o Unity (passagem de serviço)
 
-Estado em 26/11/2026, depois do commit `2bbe3b6` e de uma rodada **ainda sem commit** (avisos imobiliários, compra pela busca, ícones das conquistas, voz por terreno, sincronia das configurações, reencaixe de roupa e quatro opções do cliente). Este é o documento para quem continuar o trabalho, seja pessoa ou IA. Ele junta tudo o que está aberto. Cada item diz onde fica no Godot, onde entraria no Unity, qual API usa e como saber que acabou.
+Estado em 27/11/2026, depois do commit `37b6fd1` e de uma rodada **ainda sem commit** (limite de envio e testes de rede no servidor, WebP, rosto e primeira pessoa, céu e neblina próprios, o que faltava da interface, quatro opções). Este é o documento para quem continuar o trabalho, seja pessoa ou IA. Ele junta tudo o que está aberto. Cada item diz onde fica no Godot, onde entraria no Unity, qual API usa e como saber que acabou.
 
 Os outros documentos desta pasta contam a história do trabalho. Alguns estão **desatualizados** (ver a seção 10); quando um deles disser "falta" e este não disser, vale este.
 
@@ -41,7 +41,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   ```
   LifeVerse.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -lifeverse-world-selfcheck
   ```
-  Espera-se `event=world_sync_check result=passed checks=337`.
+  Espera-se `event=world_sync_check result=passed checks=339`.
   - A cena inicial (`Bootstrap.unity`) **não tem luz própria**: o sol e a lua são do `IslandEnvironment`. A luz padrão da Unity que estava lá iluminava todas as ilhas, inclusive de noite. O teste de sentar ou o de pulo podem falhar por tempo: rode de novo.
 - **Verificação contra a API real, local:**
   1. Suba a API: `dotnet run --project tools/ApiLiveHost -c Release --no-build -- 5099`.
@@ -61,6 +61,8 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   - `-lifeverse-world-preview <prefixo>`: as 9 vistas do mundo;
   - `-lifeverse-e2e <api> <usuário> <senha>`: ponta a ponta, contra uma API e um supervisor de verdade.
 - **API:** `dotnet test tests/LifeVerse.Api.Tests`. A última rodada deu 2.566 aprovados e 0 falhas; 39 testes de Postgres pedem `LIFEVERSE_TEST_PG`.
+- **Protocolo e servidor de ilha:** `dotnet test tests/LifeVerse.Wire.Tests` (33) e `dotnet test tests/LifeVerse.IslandServer.Tests` (63, com os 64 jogadores em rede ruim e as entradas hostis). Para sessões longas: `LIFEVERSE_FUZZ_SECONDS` (fuzz do leitor), `LIFEVERSE_FUZZ_SEED` e `LIFEVERSE_FUZZ_MESSAGES` (mensagens absurdas ao servidor) e `LIFEVERSE_LAG_SECONDS`.
+- **Imagens WebP de referência:** `Godot_console.exe --headless --script unity/tools/webp-fixtures/make_fixtures.gd -- <repo>\tests\fixtures\webp`.
 - **Pilha completa em WSL** (Postgres, API, supervisor Unity e servidor Linux): foi montada com scripts `e2e/up.sh` e `e2e/down.sh` na pasta temporária da sessão. Esses scripts não estão no repositório; o roteiro está no fim de `DEPLOY_UNITY_ISLANDS.md`.
 
 ### Duas travas desta máquina (descobertas em 26/11/2026)
@@ -137,32 +139,20 @@ Das 95 rotas da API que o Godot usava e o Unity não usava, **todas** têm uso a
 
 - **3.3, uma ressalva:** o pedido citava também ícones nas conquistas do **grupo**, mas nem o servidor nem o Godot têm conquistas de grupo. Não há o que desenhar.
 
-### 3.5 Sliders do rosto num corpo próprio
-- **Godot:** `AvatarRig.Wear.cs` (traços do rosto) e `AvatarRig.CustomShape.cs`.
-- **Hoje:** o Unity aplica só os sliders do **corpo** (`SkeletalBody.ApplyShape`). Os do **rosto** (nariz, boca, queixo, sobrancelha, distância dos olhos) não agem num corpo GLB.
-- **Observação:** o Godot também só escala ossos da cabeça. Confira o que ele faz de fato antes de inventar.
+- **3.5 (rosto):** conferido no Godot: os sliders do rosto agem **só no corpo simples**, não num corpo GLB próprio (lá só há os do corpo). O que faltava no Unity era o rosto do corpo simples (nariz, boca, queixo, sobrancelhas, largura da cabeça), e foi feito.
+- **3.7 (primeira pessoa):** feito como no Godot (o corpo inteiro é desenhado, menos a cabeça e o que está nela; o corpo vira para onde se olha). Os dedos só foram vistos num corpo sintético: falta um corpo de pessoa com ossos de dedo.
+- **3.10 (WebP):** feito, em C# puro (`World/Webp`), com e sem perdas e com transparência, conferido pixel a pixel contra o Godot em 56 imagens. De uma animação só o primeiro quadro é lido.
 
 ### 3.6 Guarda-roupa do homem que vem com o jogo
 - **O problema:** os arquivos das peças do corpo padrão do homem não estão no repositório. O Godot as lê de `BuiltInWearables` e de um catálogo.
 - **O que fazer:** conseguir os arquivos com o dono do projeto e então ligá-los em `Avatar/BuiltInBodies.cs` e `AvatarWardrobe`.
-
-### 3.7 Mãos e dedos em primeira pessoa
-- **Godot:** `AvatarRig.FirstPerson.cs` e `AvatarRig.Fingers.cs`.
-- **Hoje:** o Unity tem `Avatar/HandFingers.cs`, testado só num corpo sintético, e não mostra as mãos em primeira pessoa.
-- **Falta:**
-  - um corpo de pessoa de verdade com ossos de dedo;
-  - mostrar braços e mãos na câmera de primeira pessoa.
-
-### 3.10 Texturas WebP
-- **O problema:** `World/WorldObjects.cs` (por volta da linha 551) usa `Texture2D.LoadImage`, que lê só PNG e JPEG. Uma textura WebP de jogador não aparece.
-- **O que fazer:** um decodificador WebP em C# puro, sem binário nativo (por causa do IL2CPP e do Linux), ou converter no servidor quando o arquivo é enviado.
 
 ### 3.11 Convites de teleporte como opção
 - O Unity **tem** convites de teleporte (`UI/LiveEvents.cs`).
 - A opção `world.teleport_invites` do catálogo veio do Godot marcada "o jogo ainda não tem convites".
 - **O que fazer:** decidir com o dono o que a opção controla (por exemplo, aceitar convites só de amigos) e ligá-la.
 
-## 4. As 29 opções do catálogo que o cliente Unity ainda não cumpre
+## 4. As 25 opções do catálogo que o cliente Unity ainda não cumpre
 
 Elas aparecem desligadas, com o motivo do Godot. A lista sai de `UI/SettingsCatalog.Generated.cs` (os que têm `Unavailable`). Quase todas dependem de **servidor** ou de **decisão de produto**, não só do cliente:
 
@@ -179,13 +169,9 @@ Elas aparecem desligadas, com o motivo do Godot. A lista sai de `UI/SettingsCata
   - `advanced.error_report`: relatórios de erro;
   - `general.language` e `general.date_format`: internacionalização.
 - **Precisa de decisão:** `notifications.sound`. O Unity já toca um som em todo aviso (quando "Sons da interface" está ligado), e a opção do catálogo começa **desligada**. Decidir se ela passa a mandar no som dos avisos (e os avisos ficam mudos por padrão) ou se soma ao que existe.
-- **Precisam de trabalho no cliente:**
-  - `network.download_limit`;
-  - `accessibility.captions`;
-  - `accessibility.screen_reader`;
-  - `advanced.verify_files`;
+- **Precisam de trabalho no cliente ou de decisão** (as de limite de download, uso de CPU e GPU, verificação dos arquivos e legendas já funcionam; as legendas dizem quem fala e que sons tocam, sem transcrever a fala):
+  - `accessibility.screen_reader` (o motor não fala com leitores de tela; precisaria da voz do Windows por um plugin nativo);
   - `perf.preload_assets`: a descrição fala em baixar antes os arquivos das ilhas **favoritas**. O Unity só pré-carrega a ilha de destino (`AssetPreloader`). Ligar a opção a isso mudaria o sentido dela e, como começa desligada, desligaria o pré-carregamento de hoje;
-  - `metrics.cpu_gpu`.
 - **Sem sentido hoje** (ficam como estão, a menos que o produto mude):
   - `general.start_place`;
   - `privacy.script_permissions` e `scripts.revoke`;
@@ -202,23 +188,20 @@ Mais duas que só o Unity não cumpre, com o motivo na tela: `audio.output_devic
 
 ## 5. Aparência: diferenças que ainda se veem
 
-A rodada de aparência igualou o mar (cor pela profundidade, espuma, mar leve nos presets Baixo e Médio), o chão, os morros, o pôr do sol, a noite e a vista debaixo d'água. As fotos lado a lado, das nove vistas, estão em `img/compare/` (`godot-*.png` e `unity-*.png`). O que ainda difere:
+Céu, nuvens, pôr do sol, chuva, tempestade, noite, mar, chão e a vista debaixo d'água seguem o Godot (céu próprio em `World/Resources/LifeVerse/IslandSky.shader`, neblina do tempo em `IslandFog.shader`). As fotos lado a lado, das nove vistas, estão em `img/compare/`. O que ainda difere ou não foi visto:
 
-- **Tempestade e chuva:** o céu do Unity fica bem mais claro que o do Godot, que cobre tudo com a névoa do tempo (`World/IslandEnvironment.cs`).
-- **Nuvens:** no Unity são maiores e mais suaves.
-- **Pôr do sol olhando para o sol:** o céu do Godot fica laranja só na direção do sol; o do Unity (degradê sem direção) leva só um leve tom. Um shader de céu próprio resolveria isso e as nuvens.
-- **Chão visto rente:** na vista da praia sai um pouco mais claro que no Godot.
-- **Desempenho:** o mar novo e o chão não foram medidos (o `-lifeverse-benchmark` precisa do player). Também não houve comparação lado a lado com o Godot, e só uma placa de vídeo foi usada (RTX 2060 SUPER).
+- **Nuvens:** o desenho do ruído é outro (o Unity não tem o mesmo gerador), então as manchas não coincidem uma a uma.
+- **Chão visto rente:** na vista da praia saía um pouco mais claro que no Godot; não foi medido de novo.
+- **Desempenho:** o mar, o chão, o céu e a neblina não foram medidos (o `-lifeverse-benchmark` precisa do player). Também não houve comparação lado a lado com o Godot, e só uma placa de vídeo foi usada (RTX 2060 SUPER).
 - **No player gerado:** as fotos foram tiradas no editor.
 
 ## 5.1. Interface: o que ainda falta em relação ao Second Life
 
-A interface do cliente Unity foi refeita no formato do visualizador do Second Life (barra de menus, barra de endereço, barra de ferramentas, janelas flutuantes, janelas Mover e Câmera, tela de entrada com a barra embaixo). O que um jogador do Second Life ainda sentiria falta:
+A interface segue o visualizador do Second Life, com tamanho das janelas guardado, barra de ferramentas embaixo ou numa borda, conversas particulares e de grupo em abas e o inventário também como árvore. Ainda faltaria:
 
-- **Janelas:** o tamanho escolhido no canto não é guardado (só a posição); não há "destacar" abas nem encaixe entre janelas.
-- **Barra de ferramentas:** só embaixo (o Second Life permite também nas laterais).
-- **Conversa:** só a conversa por perto; as mensagens particulares e de grupo continuam em janelas próprias, sem abas.
-- **Inventário:** é uma lista com pastas ao lado, não uma árvore que abre no lugar.
+- **Janelas:** não há "destacar" abas nem encaixe entre janelas.
+- **Barra de ferramentas:** é uma só (o Second Life permite várias, cada uma com os seus botões).
+- **Conversas:** o histórico é o que a API guarda; o nome de quem escreve num grupo depende de a notificação ao vivo trazê-lo.
 - **Texto:** só a fonte Inter; não há uma fonte de exibição própria para o jogo.
 - **Verificado só no editor**, em 1280×720; falta ver no player gerado e em telas grandes.
 
@@ -240,34 +223,30 @@ A interface do cliente Unity foi refeita no formato do visualizador do Second Li
 
 ## 7. Riscos e medições não fechados (`MIGRATION_RISKS.md`)
 
-- **Rede (S2):** 64 clientes passaram, mas falta o teste com **latência alta** (150 ms) e perda.
-- **Segurança (R12):** falta fuzzing de longa duração do leitor do protocolo e **limite de taxa por jogador** no servidor.
+- **Rede (S2):** testados 64 jogadores atrás de uma internet ruim de mentira: com 60–90 ms de atraso por sentido e 5% de perda, o comando volta confirmado em 233 ms (mediana; 281 ms no 99º percentil) e cada um recebe 15 snapshots por segundo; com 120–180 ms e 10%, 385 ms (460 ms) e 14. O teste achou um defeito (os snapshots de uma ilha cheia chegavam pela metade), corrigido. **Falta a internet de verdade** e outra máquina.
+- **Segurança (R12):** há limite de envio por jogador e uma sessão de fuzz de 15 minutos no leitor (1,4 bilhão de leituras, nenhuma exceção); mensagens válidas com valores absurdos não derrubam o servidor (um defeito achado e corrigido nas respostas de script, que vale também para o servidor Godot). Falta rever o limite com jogadores de verdade.
 - **Física dos objetos (S4):** comparada em 32 cenários (`unity/PhysicsComparison` e `-lifeverse-physics-report`); a tabela está em `MIGRATION_ISLAND_SERVER.md`. Diferenças que ficaram:
   - bola solta numa rampa de 10°: no Godot ela fica parada, no Unity rola 4 m;
   - quique entre dois corpos elásticos: o Godot soma os dois, o Unity fica com o maior (1,95 contra 2,45 m no cenário medido);
   - 200 corpos: depois de 8 s dormem 100 no Unity e 186 no Godot (as bolas seguem rolando); o custo por passo é bem menor no Unity (0,2 ms contra 4 ms);
   - girar e tombar: o giro no chão e o rolar de uma caixa que cai torta diferem em até 2 vezes;
   - corpos de malha importada e juntas não existem nos dois servidores.
-- **Licenças (R16):** verificar a licença comercial da Unity para o modelo de negócio e a licença da fonte (Inter) antes de distribuir.
+- **Licenças (R16):** verificar a licença comercial da Unity para o modelo de negócio e a licença da fonte (Inter) antes de distribuir. As tabelas do decodificador WebP vêm da libwebp (BSD de 3 cláusulas, Google): a distribuição precisa incluir o aviso.
 - **Requisitos de hardware (R7):** definir e publicar a especificação mínima (HDRP pede GPU moderna).
 - **Testes do código compartilhado:** a suíte inteira de `shared` ainda não roda no Test Runner da Unity (Fase 4); só partes rodam.
 
 ## 8. Testes que faltam ou que nunca rodaram de verdade
 
 - **Microfone real** e como a voz soa: os testes usam amostras sintéticas.
-- **No player gerado:** a última rodada foi verificada só dentro do editor (31/31 na API local e 337 verificações no autoteste, depois da rodada da interface). Falta repetir com o `.exe`, e as fotos com GPU, quando for possível executá-lo.
+- **No player gerado:** a última rodada foi verificada só dentro do editor (31/31 na API local e 339 verificações no autoteste). Falta repetir com o `.exe`, e as fotos com GPU, quando for possível executá-lo.
 - **Teclado e mouse de verdade:** os testes usam entrada por script. Falta jogar uma sessão real, com estes pontos em especial:
   - ALT + V;
   - duplo clique;
   - arrastar botões da barra;
   - arrastar itens do inventário;
   - setas na busca.
-- **Corpo próprio:** os sliders e as variações de animação têm teste de regra (EditMode), mas não foram vistos num corpo GLB de verdade com GPU. Falta uma foto.
-- **Mapas (com GPU):**
-  - mini-mapa girando;
-  - nomes e contornos de construções;
-  - selos do mapa-múndi.
-  Não há fotos; contagens de desenho só existem com GPU.
+- **Corpo próprio:** os sliders foram fotografados num corpo GLB de teste (o boneco do jogo); falta um corpo de pessoa de verdade, e as variações de animação.
+- **Mapas:** há fotos do mini-mapa girando e dos terrenos e marcos no mapa-múndi; falta ver os contornos de construções numa ilha construída.
 - **Testes de banco:** os 39 testes de Postgres da API pedem um banco de teste (`LIFEVERSE_TEST_PG`). Nunca use a produção.
 - **Animações de modelos:** a troca de LOD de malha nunca foi vista num objeto pesado do mundo, e malhas com esqueleto não entram no LOD.
 - **Anexos:**
@@ -291,11 +270,11 @@ A interface do cliente Unity foi refeita no formato do visualizador do Second Li
 ## Ordem sugerida
 
 1. **Repetir as verificações no player gerado** quando houver como executá-lo (seção 0).
-2. **Seção 1** (produção), quando o dono autorizar: é o que põe o Unity na mão dos jogadores.
-3. **Seção 8:** uma sessão real com teclado, mouse e microfone, e fotos com GPU dos itens visuais novos.
+2. **Seção 1** (produção), quando o dono autorizar: é o que põe o Unity na mão dos jogadores. O servidor de ilha Unity precisa ser do mesmo commit do cliente (a entrega dos snapshots mudou).
+3. **Seção 8:** uma sessão real com teclado, mouse e microfone.
 4. **Seção 6:** IL2CPP, instalador, assinatura do executável e CI, antes de distribuir.
-5. **Seção 7:** latência alta, limite de taxa e licenças.
-6. **Itens 3.5, 3.6, 3.7 e 3.10:** mais pesados, alguns dependem de arquivos.
-7. **Seção 5:** acabamento visual.
+5. **Seção 7:** internet de verdade e licenças.
+6. **Item 3.6** (depende dos arquivos) e um corpo com dedos.
+7. **Seções 5 e 5.1:** acabamento visual.
 8. **Seção 4 e 3.11:** dependem de servidor ou de decisão de produto; combinar com o dono.
 9. **Seção 2**, só no fim.

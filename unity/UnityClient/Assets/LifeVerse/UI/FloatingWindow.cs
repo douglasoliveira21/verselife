@@ -25,7 +25,7 @@ namespace LifeVerse.Unity.UI
         public void SetIcon(string name) { if (_icon == null) { _icon = new Icon(name, 17) { name = "title-icon" }; _icon.style.marginRight = 8; _icon.style.alignSelf = Align.Center; _icon.style.flexShrink = 0; _bar.Insert(0, _icon); } else _icon.Name = name; }
         public string IconName => _icon?.Name;
         public event Action Closed;
-        protected readonly UiRoot Ui; private Vector2 _grab; private bool _dragging; private StyleLength _height; private Vector2 _sizeFrom, _pointerFrom; private bool _sizing;
+        protected readonly UiRoot Ui; private Vector2 _grab; private bool _dragging; private StyleLength _height; private Vector2 _sizeFrom, _pointerFrom; private bool _sizing, _sized;
 
         public FloatingWindow(UiRoot ui, string id, string title, float width = 360f, float height = -1f, Vector2? defaultPosition = null)
         {
@@ -40,12 +40,13 @@ namespace LifeVerse.Unity.UI
             CloseButton = WindowButton("close", "Fechar", "lv-close", Close); CloseButton.name = "window-close"; bar.Add(CloseButton); Add(bar); _bar = bar;
             Body = new VisualElement { name = "window-body" }; Body.AddToClassList("lv-window-body"); Add(Body);
             if (IconOf(id) is { } picture) SetIcon(picture);
+            if (height > 0 && saved && kept.Length == 4) { style.width = Mathf.Max(MinWidth, kept[2]); style.height = Mathf.Max(MinHeight, kept[3]); _sized = true; }
             if (height > 0)
             {
                 _grip = new VisualElement { name = "window-grip", tooltip = "Arraste para mudar o tamanho" }; _grip.AddToClassList("lv-window-grip"); Add(_grip);
                 _grip.RegisterCallback<PointerDownEvent>(e => { if (e.button != 0) return; _sizing = true; _sizeFrom = new Vector2(resolvedStyle.width, resolvedStyle.height); _pointerFrom = e.position; _grip.CapturePointer(e.pointerId); e.StopPropagation(); });
                 _grip.RegisterCallback<PointerMoveEvent>(e => { if (_sizing) Resize(_sizeFrom + ((Vector2)e.position - _pointerFrom)); });
-                _grip.RegisterCallback<PointerUpEvent>(e => { if (!_sizing) return; _sizing = false; _grip.ReleasePointer(e.pointerId); });
+                _grip.RegisterCallback<PointerUpEvent>(e => { if (!_sizing) return; _sizing = false; _grip.ReleasePointer(e.pointerId); Remember(); });
             }
             style.left = start.x; style.top = start.y;
             RegisterCallback<PointerDownEvent>(e => Raise(), TrickleDown.TrickleDown);
@@ -92,7 +93,7 @@ namespace LifeVerse.Unity.UI
         public void Resize(Vector2 size)
         {
             var host = Ui.WindowLayer.layout; var maxW = host.width > 1 ? host.width : 1920f; var maxH = host.height > 1 ? host.height : 1080f;
-            style.width = Mathf.Clamp(size.x, MinWidth, maxW); style.height = Mathf.Clamp(size.y, MinHeight, maxH);
+            style.width = Mathf.Clamp(size.x, MinWidth, maxW); style.height = Mathf.Clamp(size.y, MinHeight, maxH); _sized = true;
         }
 
         /// <summary>Moves the window, keeping the title bar on the screen.</summary>
@@ -105,7 +106,9 @@ namespace LifeVerse.Unity.UI
         private void Remember()
         {
             if (Ui.Settings.Windows.Count >= UserSettings.MaxSavedWindows && !Ui.Settings.Windows.ContainsKey(Id)) return;
-            Ui.Settings.Windows[Id] = new[] { resolvedStyle.left, resolvedStyle.top };
+            float x = resolvedStyle.left, y = resolvedStyle.top; if (!float.IsFinite(x) || !float.IsFinite(y)) { x = style.left.value.value; y = style.top.value.value; }   // a window not laid out yet
+            var height = Minimized ? _height : style.height;
+            Ui.Settings.Windows[Id] = _sized && height.keyword == StyleKeyword.Undefined ? new[] { x, y, style.width.value.value, height.value.value } : new[] { x, y };
         }
 
         /// <summary>Brings the window over the others and gives its title the colour of the active one.</summary>

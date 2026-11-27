@@ -19,7 +19,7 @@ namespace LifeVerse.Unity.UI
     {
         public static readonly (string Id, string Text)[] Sections =
         {
-            ("tudo", "Tudo"), ("pastas", "Pastas"), ("sempasta", "Sem pasta"), ("favoritos", "Favoritos"), ("recentes", "Recentes"), ("atualizados", "Atualizados"), ("devolvidos", "Devolvidos"), ("lixeira", "Lixeira"),
+            ("tudo", "Tudo"), ("arvore", "Árvore"), ("pastas", "Pastas"), ("sempasta", "Sem pasta"), ("favoritos", "Favoritos"), ("recentes", "Recentes"), ("atualizados", "Atualizados"), ("devolvidos", "Devolvidos"), ("lixeira", "Lixeira"),
             ("espaco", "Espaço e verificação"), ("pacote", "Abrir um pacote"),
         };
         public static readonly (string Id, string Text)[] Sorts = { ("", "Padrão (favoritos primeiro)"), ("name", "Nome"), ("date", "Mais novos"), ("recent", "Usados por último"), ("size", "Tamanho"), ("type", "Tipo") };
@@ -48,7 +48,7 @@ namespace LifeVerse.Unity.UI
             switch (section)
             {
                 case "tudo": Items("all"); break; case "sempasta": Items("unfiled"); break; case "favoritos": Items("favorites"); break; case "recentes": Items("recent"); break;
-                case "atualizados": Items("updated"); break; case "devolvidos": Items("returned"); break; case "pastas": Folders(); break; case "lixeira": Bin(); break; case "espaco": Space(); break; case "pacote": Pack(); break;
+                case "atualizados": Items("updated"); break; case "arvore": Tree(); break; case "devolvidos": Items("returned"); break; case "pastas": Folders(); break; case "lixeira": Bin(); break; case "espaco": Space(); break; case "pacote": Pack(); break;
             }
         }
 
@@ -236,6 +236,51 @@ namespace LifeVerse.Unity.UI
                 Btn("Direitos e histórico…", () => new ItemWindow(_c, id, name, G(item, "assetId")).Open()),
                 Sure("Mandar para a lixeira", () => "Mandar " + name + " para a lixeira?", () => Change("DELETE", Inv + "/items/" + id, null, name + " foi para a lixeira.", back)));
         }
+
+        // ---- Árvore: the folders open in place, with what is inside under them ----
+
+        private readonly HashSet<Guid> _expanded = new HashSet<Guid>();
+        private readonly Dictionary<Guid, VisualElement> _nodes = new Dictionary<Guid, VisualElement>();
+        public bool Expanded(Guid folder) => _expanded.Contains(folder);
+        /// <summary>The rows shown under an open folder of the tree (for the checks).</summary>
+        public int Under(Guid folder) => _nodes.TryGetValue(folder, out var node) ? node.childCount : 0;
+
+        private void Tree() => LoadFolders(() =>
+        {
+            Reset(); _nodes.Clear(); Line("A seta abre uma pasta no lugar; o botão direito num item mostra as ações; arraste um item sobre uma pasta para movê-lo.", "lv-small", "lv-muted");
+            var root = new VisualElement { name = "tree" }; _page.Add(root);
+            var home = new Icon("home", 16); home.style.marginRight = 8; var top = UiKit.Row(home, UiKit.Text("Meu inventário", "lv-bold")); top.AddToClassList("lv-row"); top.userData = "drop-folder:"; root.Add(top);
+            var body = new VisualElement(); body.style.marginLeft = 16; root.Add(body); TreeNode(body, null);
+        });
+
+        private void TreeNode(VisualElement into, Guid? folder)
+        {
+            foreach (var f in _folders.Where(x => (Guid.TryParse(S(x, "parentId"), out var p) ? p : (Guid?)null) == folder).OrderBy(x => S(x, "name")))
+            {
+                var id = G(f, "id"); var arrow = UiKit.Button("", () => ToggleNode(id), "lv-btn-flat"); arrow.name = "tree-" + id; arrow.AddToClassList("lv-nav-icon"); arrow.tooltip = "Abrir ou fechar a pasta"; var picture = new Icon(_expanded.Contains(id) ? "caret-down" : "caret-right", 12); arrow.Add(picture);
+                var row = UiKit.Row(arrow, new Icon(_expanded.Contains(id) ? "folder-open" : "folder", 17, new Color(.96f, .76f, .36f)), UiKit.Text(S(f, "name"), "lv-bold"), UiKit.Text(I(f, "itemCount") + " itens", "lv-small", "lv-muted"));
+                foreach (var cell in row.Children().Skip(1)) cell.style.marginRight = 8; row.AddToClassList("lv-row"); row.userData = "drop-folder:" + id; into.Add(row); RowIds.Add(id);
+                var under = new VisualElement(); under.style.marginLeft = 22; into.Add(under); _nodes[id] = under;
+                if (_expanded.Contains(id)) { TreeNode(under, id); TreeItems(under, id); }
+            }
+            if (folder == null) TreeItems(into, null);
+        }
+
+        private void TreeItems(VisualElement into, Guid? folder) => Get(ListPath(folder == null ? "unfiled" : "all", folder, "", _sort, 1, 100, _dir), root =>
+        {
+            foreach (var item in Arr(root, "items"))
+            {
+                var id = G(item, "itemId"); var name = S(item, "name"); var data = item;
+                var row = UiKit.Row(new Icon(IconOfCategory(S(item, "category")), 16, new Color(.62f, .72f, .88f)), UiKit.Text(name), UiKit.Text(CategoryWords(S(item, "category")), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Detalhes", () => Detail(data, () => Show("arvore"))));
+                foreach (var cell in row.Children()) cell.style.marginRight = 8; row.AddToClassList("lv-row"); into.Add(row); RowIds.Add(id);
+                row.RegisterCallback<PointerDownEvent>(e => { if (e.button == 1) { ToggleQuick(row, data, () => Show("arvore")); e.StopPropagation(); } });
+                Draggable(row, id, name, () => Show("arvore"));
+            }
+            if (folder != null && into.childCount == 0) into.Add(UiKit.Text("Pasta vazia.", "lv-small", "lv-muted"));
+        });
+
+        /// <summary>Opens or closes a folder of the tree.</summary>
+        public void ToggleNode(Guid folder) { if (!_expanded.Remove(folder)) _expanded.Add(folder); Show("arvore"); }
 
         // ---- Pastas ----
 

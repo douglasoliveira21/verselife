@@ -68,6 +68,7 @@ public sealed partial class IslandScripting
         try
         {
             using var document = JsonDocument.Parse(json); var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return;
             if (TryHudAction(who, root) || TryMediaFinished(who, root) || TrySoundFinished(who, root) || TryDebugCommand(who, root)) return;
             if (root.TryGetProperty("touch_end", out var end) && end.ValueKind == JsonValueKind.True) { if (root.TryGetProperty("objectId", out var o) && Guid.TryParse(o.GetString(), out var touched)) TouchEnd(who, touched); return; }
             if (!root.TryGetProperty("id", out var idElement) || !Guid.TryParse(idElement.GetString(), out var id)) return;
@@ -79,7 +80,7 @@ public sealed partial class IslandScripting
             else if (request.Kind == "payment") _host.RespondPayment(id, who.AvatarId, response);
             else _host.RespondDialog(id, who.AvatarId, response, input);
         }
-        catch (JsonException) { }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException) { }   // a client writes this: a field of the wrong type is as made-up as broken text
     }
 
     /// <summary>The island is going down: scripts hear <c>on_region_shutdown</c> and their state is saved.</summary>

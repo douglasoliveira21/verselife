@@ -58,12 +58,25 @@ namespace LifeVerse.Unity.Avatar
 
         public void StopGesture() { ActiveGesture = Gesture.None; _gestureLeft = 0f; }
 
-        /// <summary>Shows or hides the body and the name (the local player's body is hidden in first person).</summary>
+        /// <summary>Shows or hides the body and the name.</summary>
         public void SetVisible(bool visible)
         {
             Visible = visible; foreach (var renderer in GetComponentsInChildren<Renderer>(true)) renderer.enabled = visible;
             if (visible) ApplyDetail();
         }
+
+        /// <summary>The camera of the person who owns this body is inside its head: the whole body is still drawn (looking down shows chest, arms, hands, legs and what is worn),
+        /// except the head and what it carries, as the Godot client does. Only this computer's drawing changes.</summary>
+        public bool FirstPersonView { get; private set; }
+
+        public void SetFirstPersonView(bool on)
+        {
+            if (FirstPersonView == on) return; FirstPersonView = on; if (Skeleton != null) Skeleton.HideHead(on);
+            if (Visible) SetVisible(true); else ApplyDetail();
+        }
+
+        /// <summary>Whether the head of the body is drawn (it is not, from inside it).</summary>
+        public bool HeadShown => _head != null && (Skeleton != null && Detail >= AvatarDetail.Reduced ? !Skeleton.HeadHidden : _head.GetComponent<Renderer>().enabled);
 
         private Transform _body, _head, _leftArm, _rightArm, _leftLeg, _rightLeg, _hairRoot, _extras;
         private Material _skin, _shirt, _trousers, _shoes, _hairMaterial;
@@ -134,12 +147,14 @@ namespace LifeVerse.Unity.Avatar
             var height = a.Height * (a.BaseModel == "human_b" ? 1.04f : 1f);
             _body.localScale = new Vector3(a.Shoulder * (a.BaseModel == "human_b" ? 1.06f : 1f), height, a.Shoulder * (a.BaseModel == "human_b" ? 1.06f : 1f));
             float Slider(string key) => a.Body.TryGetValue(key, out var v) ? v : 1f;
-            _leftArm.localScale = _rightArm.localScale = new Vector3(1f, Slider("arms"), 1f); _leftLeg.localScale = _rightLeg.localScale = new Vector3(1f, Slider("legs"), 1f); _head.localScale = new Vector3(.26f, .28f, .26f) * Slider("head");
+            float Feature(string key) => a.Face.TryGetValue(key, out var v) ? v : 1f;
+            _leftArm.localScale = _rightArm.localScale = new Vector3(1f, Slider("arms"), 1f); _leftLeg.localScale = _rightLeg.localScale = new Vector3(1f, Slider("legs"), 1f); _head.localScale = Vector3.Scale(new Vector3(.26f * Feature("headWidth"), .28f, .26f), Vector3.one * Slider("head"));
+            var nose = _head.Find("Nose"); if (nose != null) nose.localScale = new Vector3(.12f, .14f, .25f) * Feature("noseSize");
             // clothes the catalog draws differently: shorts and skirts show the legs, a dress covers them
             var bottom = a.Item("bottom", "pants_basic"); _leftLeg.GetChild(0).GetComponent<MeshRenderer>().sharedMaterial = _rightLeg.GetChild(0).GetComponent<MeshRenderer>().sharedMaterial = bottom == "pants_basic" ? _trousers : _skin;
             foreach (var piece in _dressing) if (piece != null) { if (Application.isPlaying) Destroy(piece); else DestroyImmediate(piece); }
             _dressing.Clear();
-            AddHair(a); AddFace(a); AddWorn(a, bottom);
+            AddHair(a); AddFace(a); AddWorn(a, bottom); if (FirstPersonView) ApplyDetail();
             if (Skeleton != null) Skeleton.Tint(a);
             ApplyDetail();
         }
@@ -166,6 +181,12 @@ namespace LifeVerse.Unity.Avatar
         {
             var eyes = Surface(a.Eyes, .8f); var spacing = a.Face.TryGetValue("eyeSpacing", out var sp) ? sp : 1f; var size = a.Face.TryGetValue("eyeScale", out var sc) ? sc : 1f;
             foreach (var side in new[] { -1f, 1f }) Dress(_head, PrimitiveType.Sphere, "Eye", new Vector3(side * .22f * spacing, .12f, .43f), Vector3.one * .16f * size, eyes);
+            // mouth, jaw and brows follow their sliders
+            float Feature(string key) => a.Face.TryGetValue(key, out var v) ? v : 1f;
+            Dress(_head, PrimitiveType.Cube, "Mouth", new Vector3(0, -.22f, .455f), new Vector3(.3f * Feature("mouthWidth"), .045f, .06f), Surface(new Color(.48f, .23f, .23f)));
+            Dress(_head, PrimitiveType.Sphere, "Jaw", new Vector3(0, -.27f, .1f), new Vector3(.74f * Feature("jawWidth"), .38f, .72f), _skin);
+            var brow = Surface(new Color(.23f, .16f, .12f));
+            foreach (var side in new[] { -1f, 1f }) Dress(_head, PrimitiveType.Cube, "Brow", new Vector3(side * .22f * spacing, .27f * Feature("browHeight"), .43f), new Vector3(.2f, .035f, .06f), brow);
             if (a.BeardStyle != "none")
             {
                 var length = a.BeardStyle == "full" ? .5f : a.BeardStyle == "short" ? .3f : .12f; Dress(_head, PrimitiveType.Sphere, "Beard", new Vector3(0, -.3f - length * .2f, .18f), new Vector3(.8f, .35f + length, .7f), _hairMaterial);
@@ -195,7 +216,7 @@ namespace LifeVerse.Unity.Avatar
         /// <summary>Takes the person's own skeleton in place of the procedural body (null goes back to the procedural one).</summary>
         public void UseSkeleton(SkeletalBody skeleton)
         {
-            Skeleton = skeleton; if (skeleton != null) skeleton.HoldsHand = side => { var worn = GetComponent<AvatarAttachments>(); return worn != null && worn.HoldsHand(side); }; ApplyDetail();
+            Skeleton = skeleton; if (skeleton != null) { skeleton.HoldsHand = side => { var worn = GetComponent<AvatarAttachments>(); return worn != null && worn.HoldsHand(side); }; skeleton.HideHead(FirstPersonView); } ApplyDetail();
         }
 
         /// <summary>How much is drawn and moved: hidden, the simple body, or the custom body (Reduced and Full draw it; Full adds the custom clips and items).</summary>
@@ -206,8 +227,9 @@ namespace LifeVerse.Unity.Avatar
             if (_body == null) return;
             var shown = Visible && Detail != AvatarDetail.Hidden; var custom = Skeleton != null && Detail >= AvatarDetail.Reduced;
             foreach (var renderer in _body.GetComponentsInChildren<Renderer>(true)) renderer.enabled = shown && !custom;
+            if (FirstPersonView && _head != null) foreach (var renderer in _head.GetComponentsInChildren<Renderer>(true)) renderer.enabled = false;
             if (Skeleton != null) Skeleton.SetShown(shown && custom);
-            if (_tag != null) _tag.GetComponent<MeshRenderer>().enabled = shown;
+            if (_tag != null) _tag.GetComponent<MeshRenderer>().enabled = shown && !FirstPersonView;
         }
 
         // ---- snapshots ----

@@ -82,8 +82,8 @@ namespace LifeVerse.Unity.Tests.EditMode
         public void ADressedBodyHasItsHairHatAndBackpackAndTheHeightSlider()
         {
             var view = Make(); view.ApplyAppearance(AvatarAppearance.Parse("{\"hairStyle\":\"mohawk\",\"beardStyle\":\"full\",\"bodySettingsJson\":\"{\\\"height\\\":1.1}\",\"equippedItems\":[{\"slot\":\"hat\",\"itemKey\":\"cap_basic\"},{\"slot\":\"back\",\"itemKey\":\"backpack_basic\"}]}"));
-            Assert.AreEqual(1.1f, view.Torso.localScale.y, .001f); Assert.GreaterOrEqual(view.Dressing, 6);
-            view.ApplyAppearance(AvatarAppearance.Parse("{\"hairStyle\":\"bald\"}")); var plain = view.Dressing; Assert.Less(plain, 6, "trocar a aparência tira o que não vale mais");
+            Assert.AreEqual(1.1f, view.Torso.localScale.y, .001f); var dressed = view.Dressing; Assert.AreEqual(11, dressed, "cabelo, barba, rosto (olhos, boca, queixo, sobrancelhas), boné e mochila");
+            view.ApplyAppearance(AvatarAppearance.Parse("{\"hairStyle\":\"bald\"}")); var plain = view.Dressing; Assert.AreEqual(6, plain, "trocar a aparência tira o que não vale mais: ficam os olhos, a boca, o queixo e as sobrancelhas"); Assert.Less(plain, dressed);
         }
 
         [Test]

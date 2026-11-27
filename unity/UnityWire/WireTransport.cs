@@ -37,24 +37,27 @@ internal static class WireTransport
 /// </summary>
 public sealed class WireServer : IDisposable
 {
-    private sealed class PeerState(NetPeer peer) { public readonly NetPeer Peer = peer; public bool Authenticated; public long ConnectedAt = Stopwatch.GetTimestamp(); }
+    private sealed class PeerState(NetPeer peer) { public readonly NetPeer Peer = peer; public bool Authenticated, Cut; public long ConnectedAt = Stopwatch.GetTimestamp(); public WireBudget? Budget; }
 
     private readonly EventBasedNetListener _listener = new();
     private readonly NetManager _manager;
     private readonly Dictionary<int, PeerState> _peers = new();
     private readonly int _maxPeers;
     private readonly double _authenticationSeconds;
+    private readonly WireRateLimit? _rateLimit;
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
 
-    public WireServer(int maxPeers, double authenticationSeconds = WireProtocol.DefaultAuthenticationSeconds)
+    /// <param name="rateLimit">Quanto cada jogador pode enviar; nulo usa os padrões de <see cref="WireRateLimit"/>.</param>
+    public WireServer(int maxPeers, double authenticationSeconds = WireProtocol.DefaultAuthenticationSeconds, WireRateLimit? rateLimit = null)
     {
-        _maxPeers = maxPeers; _authenticationSeconds = authenticationSeconds;
+        _maxPeers = maxPeers; _authenticationSeconds = authenticationSeconds; _rateLimit = rateLimit ?? new WireRateLimit();
         _manager = WireTransport.NewManager(_listener);
         _listener.ConnectionRequestEvent += request =>
         {
             if (_manager.ConnectedPeersCount >= _maxPeers) { request.Reject(); return; }
             request.AcceptIfKey(WireProtocol.ConnectionKey);
         };
-        _listener.PeerConnectedEvent += peer => { _peers[PeerKey(peer)] = new PeerState(peer); PeerConnected?.Invoke(PeerKey(peer)); };
+        _listener.PeerConnectedEvent += peer => { _peers[PeerKey(peer)] = new PeerState(peer) { Budget = new WireBudget(_rateLimit, _clock.Elapsed.TotalSeconds) }; PeerConnected?.Invoke(PeerKey(peer)); };
         _listener.PeerDisconnectedEvent += (peer, info) => { _peers.Remove(PeerKey(peer)); PeerDisconnected?.Invoke(PeerKey(peer), WireTransport.ToReason(info.Reason)); };
         _listener.NetworkReceiveEvent += (peer, reader, _, _) => Receive(peer, reader.GetRemainingBytesSpan());
     }
@@ -62,13 +65,15 @@ public sealed class WireServer : IDisposable
     public event Action<int>? PeerConnected;
     public event Action<int, WireDisconnectReason>? PeerDisconnected;
     public event Action<int, IWireMessage>? MessageReceived;
-    /// <summary>Um jogador foi desconectado por culpa dele: "empty", "unknown_type", "wrong_direction", "malformed", "trailing_bytes", "not_authenticated" ou "auth_timeout".</summary>
+    /// <summary>Um jogador foi desconectado por culpa dele: "empty", "unknown_type", "wrong_direction", "malformed", "trailing_bytes", "too_large", "not_authenticated", "auth_timeout" ou "rate_limit".</summary>
     public event Action<int, string>? PeerRejected;
 
     /// <summary>O número do jogador na rede: o id do LiteNetLib (que começa em 0) mais 1. O 0 fica livre para "ninguém / o sistema" (avisos, scripts), como o 0 do Godot.</summary>
     private static int PeerKey(NetPeer peer) => peer.Id + 1;
 
     public int Port => _manager.LocalPort;
+    /// <summary>Quadros descartados por passarem do limite, de todos os jogadores, desde o começo.</summary>
+    public long Throttled { get; private set; }
     public int PeerCount => _manager.ConnectedPeersCount;
 
     /// <summary>Abre a porta (0 escolhe uma livre). Com <paramref name="loopbackOnly"/> só aceita conexões do próprio computador (testes; evita o aviso do Firewall).</summary>
@@ -108,11 +113,18 @@ public sealed class WireServer : IDisposable
 
     public void Disconnect(int peerId) { if (_peers.TryGetValue(peerId, out var state)) state.Peer.Disconnect(); }
 
-    private void Reject(int peerId, string reason) { PeerRejected?.Invoke(peerId, reason); Disconnect(peerId); }
+    private void Reject(int peerId, string reason)
+    {
+        if (_peers.TryGetValue(peerId, out var state)) { if (state.Cut) return; state.Cut = true; }   // o que ainda estiver na fila dele é ignorado, e o motivo é dito uma vez só
+        PeerRejected?.Invoke(peerId, reason); Disconnect(peerId);
+    }
 
     private void Receive(NetPeer peer, ReadOnlySpan<byte> frame)
     {
-        if (!_peers.TryGetValue(PeerKey(peer), out var state)) return;
+        if (!_peers.TryGetValue(PeerKey(peer), out var state) || state.Cut) return;
+        // o limite vem antes de decodificar: quem inunda não custa nem a leitura
+        var verdict = state.Budget!.Take(frame.Length, _clock.Elapsed.TotalSeconds);
+        if (verdict != WireVerdict.Accept) { Throttled++; if (verdict == WireVerdict.Disconnect) Reject(PeerKey(peer), "rate_limit"); return; }
         var decoded = WireCodec.Decode(frame, WireDirection.ClientToServer);
         if (!decoded.Ok) { Reject(PeerKey(peer), decoded.Error!); return; }
         if (!state.Authenticated && decoded.Message is not AuthenticateMessage) { Reject(PeerKey(peer), "not_authenticated"); return; }

@@ -236,11 +236,11 @@ namespace LifeVerse.Unity.Server
 
             // first person: the body is not drawn from the inside and the eyes are at head height
             follow.SetFirstPerson(true); yield return new WaitForSeconds(.4f);
-            Expect(!editor.Views.ViewOf(peer).Visible && follow.FirstPerson, "em primeira pessoa o prÃ³prio corpo some"); _checks++;
-            if (_camera != null) Expect(Mathf.Abs(follow.Focus.y - (local.GamePosition.y + FollowCamera.EyeHeight)) < .02f && Vector3.Distance(_camera.transform.position, GameSpace.ToUnity(local.GamePosition) + Vector3.up * FollowCamera.EyeHeight) < .1f, "os olhos ficam na altura da cabeÃ§a: " + _camera.transform.position);
-            if (_shots != null) { follow.Yaw = 40f; follow.Pitch = 4f; yield return Shot("firstperson"); }
+            Expect(editor.Views.ViewOf(peer).Visible && editor.Views.ViewOf(peer).FirstPersonView && !editor.Views.ViewOf(peer).HeadShown && follow.FirstPerson, "em primeira pessoa o corpo aparece sem a cabeça"); _checks++;
+            if (_camera != null) Expect(Mathf.Abs(follow.Focus.y - (local.GamePosition.y + FollowCamera.EyeHeight)) < .02f && Vector3.Distance(_camera.transform.position, GameSpace.ToUnity(local.GamePosition) + Vector3.up * FollowCamera.EyeHeight) < FollowCamera.EyesForward + .1f, "os olhos ficam na altura da cabeÃ§a: " + _camera.transform.position);
+            if (_shots != null) { viewer.Views.gameObject.SetActive(false); follow.Yaw = 40f; follow.Pitch = 4f; yield return new WaitForSeconds(.3f); yield return Shot("firstperson"); follow.Pitch = 55f; yield return new WaitForSeconds(.3f); yield return Shot("firstperson-down"); viewer.Views.gameObject.SetActive(true); }
             follow.SetFirstPerson(false); yield return new WaitForSeconds(.3f);
-            Expect(editor.Views.ViewOf(peer).Visible && !follow.FirstPerson, "de volta Ã  terceira pessoa o corpo aparece"); _checks++;
+            Expect(editor.Views.ViewOf(peer).Visible && editor.Views.ViewOf(peer).HeadShown && !follow.FirstPerson, "de volta Ã  terceira pessoa o corpo aparece"); _checks++;
 
             if (_shots != null)
             {
@@ -315,6 +315,8 @@ namespace LifeVerse.Unity.Server
                 yield return new WaitForSeconds(.6f); var spot = view.GamePosition; var from = GameSpace.ToUnity(spot.x + 1.2f, spot.y + 1.3f, spot.z - 3.4f); var at = GameSpace.ToUnity(spot.x, spot.y + 1f, spot.z);
                 viewer.Views.gameObject.SetActive(false); dressed.Views.gameObject.SetActive(false);   // every client draws everybody in this one scene: only the editor's drawing of him is photographed
                 _camera.transform.position = from; _camera.transform.LookAt(at); yield return Shot("body-custom");
+                // the body sliders on an own body: tall, broad, long legs, short arms and a larger head
+                view.Skeleton.ApplyShape(new Dictionary<string, float> { ["height"] = 1.12f, ["shoulder"] = 1.15f, ["legs"] = 1.15f, ["arms"] = .85f, ["head"] = 1.2f, ["torso"] = 1.1f }); yield return new WaitForSeconds(.4f); yield return Shot("body-shaped"); view.Skeleton.ApplyShape(new Dictionary<string, float>()); yield return null;
                 view.SetDetail(LifeVerse.Shared.Avatar.AvatarDetail.Basic); yield return Shot("body-dressed"); viewer.Views.gameObject.SetActive(true); dressed.Views.gameObject.SetActive(true);
             }
             view.SetDetail(LifeVerse.Shared.Avatar.AvatarDetail.Basic); Expect(procedural.Any(r => r.enabled) && view.Skeleton.GetComponentsInChildren<Renderer>().All(r => !r.enabled), "de longe volta o corpo simples"); _checks++;
@@ -549,7 +551,7 @@ namespace LifeVerse.Unity.Server
             // the parcels drawn over the island, and the one under the chosen spot
             stub.Routes["GET /api/v1/map/islands/" + beachId + "/parcels"] = "{\"islandId\":\"" + beachId + "\",\"size\":512,\"items\":[{\"id\":\"" + Guid.NewGuid() + "\",\"code\":\"A-1\",\"name\":\"Cais\",\"state\":\"sale\",\"area\":900,\"bounds\":{\"minX\":-200,\"minZ\":-200,\"maxX\":-20,\"maxZ\":0},\"teleport\":true,\"salePrice\":4500,\"owner\":\"Ana\"},{\"id\":\"" + Guid.NewGuid() + "\",\"name\":\"Meu\",\"state\":\"mine\",\"bounds\":{\"minX\":20,\"minZ\":20,\"maxX\":220,\"maxZ\":200},\"teleport\":true}]}";
             map.SetParcels(true); map.LoadParcels(map.Page.Items[0]); map.LoadParcels(map.Page.Items[0]); yield return Until(() => map.Canvas.Parcels.ContainsKey(beachId) && map.Canvas.Parcels[beachId].Count == 2, "os terrenos da ilha chegarem"); Expect(map.ParcelFetchesOf(beachId) == 1, "os terrenos de uma ilha são pedidos uma vez: " + map.ParcelFetchesOf(beachId));
-            map.SpotField.value = "-100 -50"; map.Choose(map.Page.Items[0], false); map.SpotField.value = "-100 -50"; map.SetParcels(true); var parcelProbe = map.Canvas.ParcelAt(beachId, -100, -50); Expect(parcelProbe != null && parcelProbe.Name == "Cais" && map.ParcelLine.Contains("Cais") && map.ParcelLine.Contains("à venda") && map.ParcelLine.Contains("4.500"), "o terreno sob o ponto escolhido aparece no cartão: " + map.ParcelLine);
+            map.SpotField.value = "-100 -50"; map.Choose(map.Page.Items[0], false); map.SpotField.value = "-100 -50"; map.SetParcels(true); var parcelProbe = map.Canvas.ParcelAt(beachId, -100, -50); Expect(parcelProbe != null && parcelProbe.Name == "Cais" && map.ParcelLine.Contains("Cais") && map.ParcelLine.Contains("à venda") && map.ParcelLine.Contains("4.500"), "o terreno sob o ponto escolhido aparece no cartão: " + map.ParcelLine); yield return Snap("ui-map-marks");
             if (SystemInfo.graphicsDeviceType != UnityEngine.Rendering.GraphicsDeviceType.Null) { map.Canvas.Fit(map.Page.Items[0]); yield return new WaitForSeconds(.4f); Expect(map.Canvas.ParcelsDrawn == 2, "os dois terrenos desenhados sobre a ilha: " + map.Canvas.ParcelsDrawn); }
             _checks++;
             yield return Snap("ui-map");
@@ -999,7 +1001,7 @@ namespace LifeVerse.Unity.Server
             Expect(app.MinimapShown && app.Hud.Map.style.visibility == UnityEngine.UIElements.Visibility.Visible, "«Mini-mapa aberto» abre o mini-mapa"); _checks++;
             Expect(app.Hud.Map.NamesShown >= 1, "o mini-mapa mostra o nome de quem está perto: " + app.Hud.Map.NamesShown); _checks++;
             app.Store.Set("world.minimap_rotate", "true"); app.SettingsApplied(); yield return new WaitForSeconds(.4f); var turned = app.Hud.Map.Heading;
-            Expect(app.Hud.Map.Rotate && app.Follow != null && Mathf.Abs(Mathf.DeltaAngle(turned, app.Follow.Yaw)) < 1f, "o mini-mapa gira com a câmera"); app.Store.Set("world.minimap_rotate", "false"); app.SettingsApplied(); _checks++;
+            Expect(app.Hud.Map.Rotate && app.Follow != null && Mathf.Abs(Mathf.DeltaAngle(turned, app.Follow.Yaw)) < 1f, "o mini-mapa gira com a câmera"); var yawKept = app.Follow.Yaw; app.Follow.Yaw = 130f; yield return new WaitForSeconds(2.4f); yield return Snap("ui-minimap-rotating"); app.Follow.Yaw = yawKept; yield return new WaitForSeconds(.6f); app.Store.Set("world.minimap_rotate", "false"); app.SettingsApplied(); _checks++;
             app.Store.Set("voice.enabled", "false"); app.SettingsApplied(); Expect(app.Voice.Off && app.Hearing.Off, "«Ativar voz» desligado: nada sai nem entra"); app.Store.Set("voice.enabled", "true"); app.SettingsApplied(); Expect(!app.Voice.Off && !app.Hearing.Off, "a voz volta"); _checks++;
             app.Store.Set("avatars.max_full", "3"); app.Store.Set("avatars.lod", "high"); app.SettingsApplied(); Expect(app.PeopleViews.Budget.MaxFull == 3 && Mathf.Abs(app.PeopleViews.Budget.FullRange - 37.5f) < .01f, "o orçamento dos avatares segue as configurações");
             app.Store.Set("avatars.max_full", "10"); app.Store.Set("avatars.lod", "medium"); app.SettingsApplied(); _checks++;
@@ -1211,6 +1213,22 @@ namespace LifeVerse.Unity.Server
             yield return new WaitForSeconds(.6f); iv.Press("Abrir"); yield return Until(() => iv.Folder == fA && iv.RowIds.Contains(fB) && iv.RowIds.Contains(i1), "abrir uma pasta mostra as subpastas e os itens"); yield return new WaitForSeconds(.3f);
             iv.Fields["Nome (para criar ou renomear)"].value = "Inverno"; iv.Press("Renomear"); iv.Press("Levar para o início"); iv.Press("Apagar a pasta");
             yield return Until(() => stub.ReceivedAny(b => b.Route == "PATCH " + inv + "/folders/" + fB && b.Body.Contains("Inverno")) && stub.ReceivedAny(b => b.Route == "PATCH " + inv + "/folders/" + fB && b.Body.Contains("\"toTop\":true")) && Sent("DELETE " + inv + "/folders/" + fB), "renomear, subir e apagar uma pasta chegarem à API"); _checks++;
+            iv.Show("arvore"); yield return Until(() => iv.RowIds.Contains(fA) && iv.RowIds.Contains(i2) && !iv.RowIds.Contains(fB), "a árvore com as pastas do alto e os itens soltos");
+            iv.ToggleNode(fA); yield return Until(() => iv.Expanded(fA) && iv.RowIds.Contains(fB) && iv.Under(fA) >= 2, "abrir uma pasta da árvore no lugar"); iv.ToggleNode(fB); yield return Until(() => iv.Expanded(fB) && iv.Under(fB) >= 1, "abrir a pasta de dentro");
+            yield return new WaitForSeconds(.3f); yield return Snap("ui-inventory-tree"); iv.ToggleNode(fA); yield return Until(() => !iv.Expanded(fA) && !iv.RowIds.Contains(fB), "fechar a pasta guarda o que estava dentro"); _checks++;
+            // a private conversation as a tab of the chat: read, answer, and a group message arriving
+            var talkTo = Guid.NewGuid(); var club = Guid.NewGuid(); var oldMessages = stub.Routes.TryGetValue("GET /api/v1/social/messages", out var oldTalk) ? oldTalk : null;
+            stub.Routes["GET /api/v1/social/messages"] = "[{\"senderUserId\":\"" + talkTo + "\",\"senderName\":\"Ana\",\"content\":\"oi, vamos construir?\",\"createdAt\":" + at + "}]"; stub.Routes["POST /api/v1/social/messages"] = "{}";
+            foreach (var earlier in app.Hud.Chat.Tabs.ToList()) app.Hud.Chat.CloseTab(earlier);   // the group messages of earlier steps opened tabs of their own
+            app.OpenConversation(talkTo, "Ana", false); var talk = app.Hud.Chat.Active; Expect(talk != null && talk.Id == talkTo, "a conversa abre numa aba"); yield return Until(() => talk.Shown.Count == 1 && talk.Shown[0].Contains("vamos construir"), "as mensagens da conversa");
+            app.Hud.Chat.Input.value = "vamos sim"; Expect(app.Hud.Chat.Submit(), "responder"); yield return Until(() => stub.ReceivedAny(b => b.Route == "POST /api/v1/social/messages" && b.Body.Contains("vamos sim") && b.Body.Contains(talkTo.ToString())), "a resposta chegar à API");
+            using (var live = System.Text.Json.JsonDocument.Parse("{\"groupId\":\"" + club + "\",\"groupName\":\"Construtores\"}")) app.Context.RaiseLive("group_message", live.RootElement.Clone(), "{}");
+            yield return Until(() => app.Hud.Chat.TabOf(club, true) is { Unread: 1 } && app.Hud.Chat.Active == talk, "a mensagem do grupo abre uma aba sem tomar a tela"); Expect(talk.Log.resolvedStyle.display == UnityEngine.UIElements.DisplayStyle.Flex && app.Hud.Chat.TabOf(club, true).Log.resolvedStyle.display == UnityEngine.UIElements.DisplayStyle.None, "só a conversa escolhida aparece"); iv.Close(); yield return Snap("ui-conversations"); iv.Open(); _checks++;
+            app.Hud.Chat.CloseTab(app.Hud.Chat.TabOf(club, true)); app.Hud.Chat.CloseTab(talk); Expect(app.Hud.Chat.Active == null && app.Hud.Chat.Tabs.Count == 0, "fechar as abas volta à conversa por perto");
+            if (oldMessages != null) stub.Routes["GET /api/v1/social/messages"] = oldMessages; else stub.Routes.Remove("GET /api/v1/social/messages");
+            // the toolbar on a side of the screen
+            app.Settings.ToolbarEdge = "left"; app.ApplyInterface(); yield return new WaitForSeconds(.4f); Expect(app.Hud.BottomBar.layout.height > app.Hud.BottomBar.layout.width * 3f && app.Hud.BottomBar.worldBound.xMin < 1f, "a barra na borda esquerda fica em coluna: " + app.Hud.BottomBar.layout); yield return Snap("ui-toolbar-side");
+            app.Settings.ToolbarEdge = "bottom"; app.ApplyInterface(); yield return null; _checks++;
             iv.Show("espaco"); yield return Until(() => iv.Actions.ContainsKey("Consertar") && iv.Lines >= 6, "o espaço e a verificação do inventário"); iv.Press("Consertar");
             yield return Until(() => iv.Status.Contains("1 item(ns) liberado(s)"), "consertar o inventário e dizer o que mudou"); _checks++;
             var packZip = System.IO.Path.Combine(Application.temporaryCachePath, "pacote.zip"); System.IO.File.WriteAllBytes(packZip, new byte[] { 0x50, 0x4B, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 });
