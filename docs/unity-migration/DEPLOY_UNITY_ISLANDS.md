@@ -2,6 +2,18 @@
 
 Este é o passo a passo para o cliente Unity jogar na produção sem tirar o Godot do ar. Cada ilha roda em um dos dois servidores (o "motor" dela); o cliente de cada motor só entra nas ilhas do seu. Nada aqui foi feito na produção: tudo foi provado de ponta a ponta numa cópia local (WSL), descrita no fim.
 
+## No servidor novo: substituir o Godot (decisão de 27/11/2026)
+
+O dono decidiu usar só o Unity. Em vez de um segundo serviço, o serviço de ilhas que já existe passa a ser o Unity:
+
+1. Publique o pacote (seção 2). **Antes disso, não mude o serviço:** a construção falharia.
+2. No serviço de ilhas, troque o Dockerfile para `island-supervisor/Dockerfile.unity`, acrescente `SERVER_URL` e `SERVER_SHA256` e mantenha `LIFEVERSE_API_URL`, `LIFEVERSE_SERVICE_KEY`, `LIFEVERSE_HOSTNAME` e as portas UDP `7800-7802` (`SUPERVISOR_PORT_START=7800`, `SUPERVISOR_MAX_ISLANDS=3`). Apague `SUPERVISOR_ENGINE`, `SUPERVISOR_GODOT_PATH`, `SUPERVISOR_PROJECT_PATH` e `LIFEVERSE_ISLAND_ID`, se existirem.
+3. Com o serviço novo no ar, passe as ilhas existentes para o Unity, no banco: `update world.islands set engine = 'unity' where deleted_at is null;`
+
+As ilhas que a API cria sozinha (as oficiais num banco vazio e a de boas-vindas) já nascem `unity` (`IslandEngines.ForNewIslands`). Depois da troca, o cliente Godot não entra mais em nenhuma ilha. A pasta `island-server/Scripts` continua necessária: o servidor Unity compila os scripts de lá.
+
+As seções abaixo descrevem a convivência dos dois motores.
+
 ## Como funciona
 
 - Cada ilha tem um motor: `godot` (o de hoje, protocolo 11) ou `unity` (LifeVerse Wire 12). Coluna `world.islands.engine`, padrão `godot`.
@@ -17,13 +29,13 @@ O push leva a migração `Phase104IslandEngine`, que a API aplica sozinha ao sub
 
 ## 2. O pacote do servidor Unity
 
-O servidor Linux não fica no git (115 MB compactado). Num computador com a Unity 6000.6.9f1 e o módulo "Linux Dedicated Server Build Support":
+O servidor Linux não fica no git (60 MB compactado; o pacote leva só o que o servidor usa, sem `StreamingAssets`, onde estão o corpo e os sons do jogo). Num computador com a Unity 6000.6.9f1 e o módulo "Linux Dedicated Server Build Support":
 
 ```powershell
 powershell -File scripts/package-unity-server.ps1
 ```
 
-O script gera `artifacts/LifeVerseServer-linux.tar.gz` e mostra o SHA-256. Suba esse arquivo para um endereço que o Easypanel consiga baixar sem login, por exemplo um anexo de release do GitHub (num repositório privado o anexo pede login, então use outro lugar, como o armazenamento de objetos que a API já usa, com um link público).
+O script gera `artifacts/LifeVerseServer-linux.tar.gz` e mostra o SHA-256. Suba esse arquivo para um endereço que o Easypanel consiga baixar sem login, por exemplo um anexo de release do GitHub (num repositório privado o anexo pede login, então use outro lugar, como o armazenamento de objetos que a API já usa, com um link público). O repositório respondia como público em 27/11/2026. Marque a release do servidor como **pré-lançamento**, para ela não virar a "latest", que a página de download do jogo pode usar (`docs/RELEASES.md`).
 
 ## 3. O serviço no Easypanel
 
@@ -35,9 +47,9 @@ Crie um serviço novo (App), por exemplo `lifeverse-islands-unity`, ao lado do s
   - `LIFEVERSE_API_URL=https://app.lifeverse.euporiagames.com`;
   - `LIFEVERSE_SERVICE_KEY`: a mesma chave de serviço que o serviço de ilhas Godot usa (`IslandServer:SharedKey` da API);
   - `LIFEVERSE_HOSTNAME`: o nome ou IP público que os jogadores alcançam (o mesmo tipo de valor do serviço Godot).
-- **Portas:** publique as portas UDP `7800-7807` (uma por ilha aberta ao mesmo tempo). O Godot usa `7777...`, então os dois cabem na mesma máquina. As portas de saúde ficam dentro do contêiner.
+- **Portas:** publique em modo host uma porta UDP por ilha aberta ao mesmo tempo e libere-as no firewall. As portas de saúde ficam dentro do contêiner. O padrão do contêiner é `7800-7807`. Ao lado de um serviço Godot que já use essas portas, mude `SUPERVISOR_PORT_START`.
 
-O padrão do contêiner é `SUPERVISOR_ENGINE=unity`, até 8 ilhas e 10 minutos de inatividade até desligar.
+O padrão do contêiner é `SUPERVISOR_ENGINE=unity`, até 8 ilhas e 10 minutos de inatividade até desligar. Deixe a ordem de atualização do serviço em `stop-first`.
 
 ## 4. Passar uma ilha para o Unity
 

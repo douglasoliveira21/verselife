@@ -128,7 +128,8 @@ Nada disto foi feito na produção. O passo a passo está em `DEPLOY_UNITY_ISLAN
 2. **Pacote do servidor Linux:**
    - rode `powershell -File scripts/package-unity-server.ps1` (gera `artifacts/LifeVerseServer-linux.tar.gz` e mostra o SHA-256);
    - suba o arquivo num endereço público, sem login.
-3. **Serviço novo no Easypanel** (`lifeverse-islands-unity`):
+   - **27/11/2026, decisão do dono:** só Unity daqui para frente. No servidor novo o serviço de ilhas Godot é **substituído** pelo Unity, nas mesmas portas `7800-7802` (passo a passo no começo de `DEPLOY_UNITY_ISLANDS.md`). As ilhas que a API cria sozinha já nascem `unity` (testes da API: 2.571 aprovados, 44 de PostgreSQL pulados).
+   - **27/11/2026:** pacote gerado (60 MB, SHA-256 `9a08579be897fbaef5740d065b8fca044156e40620ea57200022c92ffd74a72b`), com a correção de concorrência dos scripts. Ele subiu no Ubuntu do WSL contra uma API inexistente (só até a recusa da conexão). **Falta publicar.**3. **Serviço novo no Easypanel** (`lifeverse-islands-unity`):
    - Dockerfile `island-supervisor/Dockerfile.unity`;
    - argumentos de build `SERVER_URL` e `SERVER_SHA256`;
    - variáveis `LIFEVERSE_API_URL`, `LIFEVERSE_SERVICE_KEY` e `LIFEVERSE_HOSTNAME`;

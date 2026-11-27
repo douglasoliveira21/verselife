@@ -14,9 +14,10 @@ if (-not $SkipBuild) {
 }
 if (-not (Test-Path (Join-Path $build "LifeVerseServer.x86_64"))) { throw "No server build in $build" }
 $out = Join-Path $root "artifacts"; New-Item -ItemType Directory -Force $out | Out-Null
-# tar (built into Windows 10 and later) keeps the forward slashes Linux expects; the folder Unity says not to ship stays out
+# tar (built into Windows 10 and later) keeps the forward slashes Linux expects; the folder Unity says not to ship stays out, and so does StreamingAssets
+# (the built-in body and the sounds, which only the game on a screen reads): the package goes to a public address, so it carries nothing the server does not use
 $zip = Join-Path $out "LifeVerseServer-linux.tar.gz"; if (Test-Path $zip) { Remove-Item $zip }
-& tar.exe -czf $zip --exclude "*BackUpThisFolder_ButDontShipItWithYourGame*" -C $build .
+& tar.exe -czf $zip --exclude "*BackUpThisFolder_ButDontShipItWithYourGame*" --exclude "*StreamingAssets*" -C $build .
 if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
 $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "file:   $zip ($([math]::Round((Get-Item $zip).Length / 1MB)) MB)"
