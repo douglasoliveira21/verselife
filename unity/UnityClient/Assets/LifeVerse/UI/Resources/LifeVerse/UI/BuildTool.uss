@@ -1,0 +1,81 @@
+/* The pieces of the build tool beyond Theme.uss. Every colour comes from the theme's variables, so it follows day, night and high contrast. */
+.bt-window.lv-window { overflow: visible; }
+.bt-body { position: absolute; }
+.bt-part { position: absolute; margin: 0; }
+.bt-text { font-size: 13px; color: var(--lv-ink); margin: 0; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -unity-text-align: middle-left; }
+.bt-wrap { white-space: normal; }
+.bt-title { -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); color: var(--lv-sea-text); }
+.bt-soft { color: var(--lv-soft); }
+.bt-status { color: var(--lv-soft); -unity-text-align: middle-center; }
+.bt-status.lv-bad { color: var(--lv-bad); }
+
+.lv-root .lv-btn.bt-btn { margin: 0; padding: 0 6px; min-height: 0; border-radius: 8px; font-size: 13px; white-space: nowrap; overflow: hidden; -unity-text-align: middle-center; }
+.lv-root .lv-btn.bt-icon-btn { padding: 0; align-items: center; justify-content: center; }
+.lv-root .lv-btn.bt-mode { border-radius: 10px; }
+.lv-root .lv-btn.bt-shape { border-radius: 7px; }
+.lv-root .lv-btn.bt-picture { padding: 0; border-radius: 8px; border-width: 2px; border-color: var(--lv-line); -unity-background-scale-mode: scale-and-crop; }
+.lv-root .lv-btn.bt-picture:focus { border-color: var(--lv-sea-text); }
+.lv-root .lv-btn.bt-link { background-color: rgba(0, 0, 0, 0); -unity-text-align: middle-left; padding: 0; border-width: 0; }
+.lv-root .lv-btn.bt-link:hover { color: var(--lv-sea-text); }
+
+/* check boxes and options: the box and, beside it, the words */
+.lv-root .unity-toggle.bt-check, .lv-root .unity-toggle.bt-radio { margin: 0; padding: 0; flex-direction: row; align-items: center; border-width: 0; }
+.lv-root .bt-check .unity-toggle__checkmark { width: 16px; height: 16px; }
+.lv-root .bt-check .unity-toggle__text, .lv-root .bt-radio .unity-toggle__text { margin-left: 6px; font-size: 13px; white-space: nowrap; }
+.lv-root .bt-check:focus .unity-toggle__checkmark { border-width: 2px; border-color: var(--lv-sea-text); border-radius: 4px; }
+.lv-root .bt-check .unity-toggle__input.unity-base-field__input--mixed-values > .unity-toggle__checkmark { background-image: none; background-color: var(--lv-sea); border-radius: 4px; }
+.lv-root .bt-check .unity-base-field__mixed-value-label, .lv-root .bt-check .unity-toggle__mixed-values { color: var(--lv-on-fill); -unity-text-align: middle-center; margin: 0; }
+.lv-root .bt-radio .unity-toggle__checkmark { width: 15px; height: 15px; background-image: none; border-radius: 8px; border-width: 2px; border-color: var(--lv-wood); background-color: var(--lv-raised); }
+.lv-root .bt-radio .unity-toggle__input:checked > .unity-toggle__checkmark { background-image: none; border-width: 5px; border-color: var(--lv-sea-text); }
+.lv-root .bt-radio:focus .unity-toggle__checkmark { border-color: var(--lv-sun); }
+
+/* number fields */
+.bt-spinner { flex-direction: row; align-items: center; }
+.bt-arrows { width: 14px; flex-shrink: 0; margin-right: 3px; align-self: stretch; justify-content: center; }
+.lv-root .bt-arrow { height: 11px; margin: 0 0 1px 0; padding: 0; min-height: 0; border-width: 0; border-radius: 3px; background-color: var(--lv-sand); align-items: center; justify-content: center; }
+.lv-root .bt-arrow:hover { background-color: var(--lv-sand-strong); }
+.lv-root .bt-spinner > .bt-input { flex-grow: 1; flex-shrink: 1; align-self: stretch; }
+.lv-root .unity-base-text-field.bt-input { margin: 0; flex-direction: row; }
+.lv-root .bt-input > .unity-base-text-field__input { min-height: 0; height: 100%; padding: 0 6px; border-width: 1px; border-radius: 7px; font-size: 13px; }
+.lv-root .bt-bad .unity-base-text-field__input { border-color: var(--lv-bad); border-width: 2px; }
+
+/* lists */
+.lv-root .unity-base-popup-field.bt-combo { margin: 0; flex-direction: row; }
+.lv-root .bt-combo > .unity-base-popup-field__input { min-height: 0; height: 100%; padding: 0 7px 0 8px; border-radius: 9px; font-size: 13px; }
+.lv-root .bt-combo .unity-base-popup-field__arrow { width: 10px; height: 10px; margin-left: 4px; }
+
+.lv-root .unity-base-slider.bt-slider { margin: 0; }
+
+.bt-line { background-color: var(--lv-line); }
+.bt-group { background-color: var(--lv-sand); border-radius: 10px; opacity: 0.65; }
+.bt-list { background-color: var(--lv-raised); border-width: 1px; border-color: var(--lv-line); border-radius: 8px; padding: 4px; overflow: hidden; }
+.lv-root .lv-btn.bt-row { margin: 0; min-height: 26px; padding: 0 6px; border-radius: 6px; flex-direction: row; align-items: center; flex-shrink: 0; background-color: rgba(0, 0, 0, 0); -unity-text-align: middle-left; border-width: 0; }
+.lv-root .lv-btn.bt-row:hover { background-color: var(--lv-sand); }
+.lv-root .lv-btn.bt-row.bt-row-on { background-color: var(--lv-sand-strong); }
+.bt-face { border-radius: 14px; background-color: var(--lv-sea); align-items: center; justify-content: center; }
+
+.lv-root .lv-btn.bt-tab { margin: 0 0 0 2px; border-radius: 9px 9px 0 0; padding: 0; min-height: 0; font-size: 13px; border-width: 0; flex-grow: 1; flex-basis: 0; }
+.lv-root .lv-btn.bt-tab.lv-btn-selected { background-color: var(--lv-sea); color: var(--lv-on-fill); }
+.bt-tabs { flex-direction: row; align-items: flex-start; }
+.bt-tab-line { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background-color: var(--lv-sea); }
+
+/* what is not available yet */
+.bt-unavailable { opacity: 0.42; }
+
+/* the part under the tabs scrolls when the screen is short; it stays inside the window (the empty runtime theme does not clip by itself) */
+.bt-scroll { position: absolute; overflow: hidden; }
+.bt-scroll .unity-scroll-view__content-and-vertical-scroll-container, .bt-scroll .unity-scroll-view__content-viewport { flex-shrink: 1; min-height: 0; overflow: hidden; }
+.bt-scroll .unity-scroll-view__vertical-scroller { width: 5px; margin: 0; }
+.bt-scroll .unity-scroller--vertical .unity-base-slider__drag-container { width: 5px; }
+.bt-scroll .unity-scroller--vertical .unity-base-slider__dragger { width: 5px; left: 0; }
+.bt-scroll .unity-scroller--vertical .unity-base-slider__tracker { left: 0; right: 0; }
+
+/* the window's own bar: the five modes sit at the very top, with the buttons of the window beside them */
+.lv-root .bt-window > .lv-window-title.bt-bar { position: absolute; left: 0; right: 0; top: 0; height: 36px; background-color: rgba(0, 0, 0, 0); border-bottom-width: 0; justify-content: flex-end; align-items: flex-start; padding-top: 5px; }
+.lv-root .bt-window > .lv-window-title.bt-bar-folded { position: relative; height: 40px; background-color: var(--lv-sand); align-items: center; padding-top: 0; justify-content: space-between; }
+
+/* the other windows of the tool */
+.bt-dialog-body { flex-grow: 0; }
+.bt-swatch { border-width: 2px; border-color: var(--lv-line); border-radius: 8px; overflow: hidden; -unity-background-scale-mode: stretch-to-fill; }
+.bt-dot { position: absolute; width: 12px; height: 12px; border-radius: 6px; border-width: 2px; border-color: rgb(255, 255, 255); background-color: rgba(0, 0, 0, 0.35); }
+.bt-bad-words { color: var(--lv-bad); }

@@ -1,0 +1,61 @@
+/* Pieces the prototype needs beyond Theme.uss. Every colour comes from the theme's variables: no new palette. */
+.bp-w { position: absolute; margin: 0; }
+.bp-text { font-size: 13px; color: var(--lv-ink); margin: 0; padding: 0; white-space: nowrap; overflow: hidden; -unity-text-align: middle-left; }
+.bp-text-wrap { white-space: normal; }
+.bp-title { -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); color: var(--lv-sea-text); }
+.bp-soft { color: var(--lv-soft); }
+.bp-status { color: var(--lv-soft); -unity-text-align: middle-center; }
+
+.bp-row { flex-direction: row; align-items: center; }
+
+.lv-btn.bp-btn { margin: 0; padding: 0 6px; min-height: 0; border-radius: 8px; font-size: 13px; border-width: 2px; white-space: nowrap; overflow: hidden; -unity-text-align: middle-center; }
+.lv-btn.bp-icon-btn { padding: 0; align-items: center; justify-content: center; }
+.lv-btn.bp-mode { border-radius: 10px; }
+.lv-btn.bp-shape { border-radius: 7px; }
+
+.bp-check-box { width: 16px; height: 16px; flex-shrink: 0; background-image: resource("LifeVerse/UI/Skin/check"); margin-right: 6px; }
+.bp-check-on { background-image: resource("LifeVerse/UI/Skin/check-on"); }
+.bp-check-mixed { background-image: none; background-color: var(--lv-sea); border-radius: 4px; align-items: center; justify-content: center; }
+.bp-mixed-mark { width: 8px; height: 2px; background-color: var(--lv-on-fill); }
+.bp-radio { width: 15px; height: 15px; flex-shrink: 0; border-radius: 8px; border-width: 2px; border-color: var(--lv-wood); background-color: var(--lv-raised); margin-right: 6px; align-items: center; justify-content: center; }
+.bp-radio-on { border-color: var(--lv-sea-text); }
+.bp-radio-dot { width: 7px; height: 7px; border-radius: 4px; background-color: var(--lv-sea-text); }
+
+.bp-field { flex-direction: row; align-items: center; background-color: var(--lv-raised); border-width: 1px; border-color: var(--lv-line); border-radius: 7px; padding: 0 6px; overflow: hidden; }
+.bp-combo { flex-direction: row; align-items: center; background-color: var(--lv-sand); border-radius: 9px; padding: 0 7px 0 8px; overflow: hidden; }
+.bp-combo > .bp-text { flex-grow: 1; flex-shrink: 1; text-overflow: ellipsis; }
+.bp-caret { width: 10px; height: 10px; flex-shrink: 0; margin-left: 4px; background-image: resource("LifeVerse/UI/Skin/arrow-down"); }
+.bp-arrows { width: 14px; flex-shrink: 0; margin-right: 3px; align-self: stretch; justify-content: center; }
+.bp-arrow { height: 11px; margin: 1px 0; background-color: var(--lv-sand); border-radius: 3px; align-items: center; justify-content: center; }
+
+.bp-swatch { border-width: 2px; border-color: var(--lv-line); border-radius: 8px; }
+.bp-tile { align-items: center; }
+.bp-tile-picture { flex-grow: 1; align-self: stretch; border-width: 2px; border-color: var(--lv-line); border-radius: 8px; }
+.bp-line { background-color: var(--lv-line); }
+.bp-group { background-color: var(--lv-sand); border-radius: 10px; opacity: 0.65; }
+.bp-list { background-color: var(--lv-raised); border-width: 1px; border-color: var(--lv-line); border-radius: 8px; padding: 4px; overflow: hidden; }
+.bp-list-row { flex-direction: row; align-items: center; height: 26px; padding: 0 6px; border-radius: 6px; flex-shrink: 0; }
+.bp-list-row-on { background-color: var(--lv-sand); }
+
+.bp-tab { margin: 0; border-radius: 9px 9px 0 0; padding: 0; min-height: 0; font-size: 13px; background-color: var(--lv-sand); color: var(--lv-ink); border-width: 0; }
+.lv-btn.bp-tab.lv-btn-selected { background-color: var(--lv-sea); color: var(--lv-on-fill); }
+.bp-tab-line { height: 2px; background-color: var(--lv-sea); }
+
+.bp-slider-track { height: 6px; border-radius: 3px; background-color: var(--lv-sand-strong); }
+.bp-slider-knob { position: absolute; width: 16px; height: 16px; border-radius: 8px; background-color: var(--lv-sea); border-width: 3px; border-color: var(--lv-on-fill); }
+
+/* the part under the tabs, when the screen is short: it stays inside the window (the empty runtime theme does not clip by itself) */
+.bp-scroll { overflow: hidden; }
+.bp-scroll .unity-scroll-view__content-and-vertical-scroll-container, .bp-scroll .unity-scroll-view__content-viewport { flex-shrink: 1; min-height: 0; overflow: hidden; }
+/* the bar fits in the 6 px the components leave at the right edge */
+.bp-scroll .unity-scroll-view__vertical-scroller { width: 5px; margin: 0; }
+.bp-scroll .unity-scroller--vertical .unity-base-slider__drag-container { width: 5px; }
+.bp-scroll .unity-scroller--vertical .unity-base-slider__dragger { width: 5px; left: 0; }
+.bp-scroll .unity-scroller--vertical .unity-base-slider__tracker { left: 0; right: 0; }
+
+/* what is not available yet: greyed, with a clay dot that says why */
+.bp-off { opacity: 0.42; }
+.bp-why { position: absolute; width: 8px; height: 8px; border-radius: 4px; background-color: var(--lv-clay); }
+
+.bp-note { position: absolute; background-color: var(--lv-paper); border-radius: 12px; border-width: 1px; border-color: var(--lv-line); padding: 8px 12px; }
+.bp-marker { position: absolute; width: 20px; height: 20px; border-radius: 10px; background-color: #1F5FD1; border-width: 2px; border-color: #FFFFFF; color: #FFFFFF; font-size: 11px; -unity-text-align: middle-center; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); padding: 0; margin: 0; }

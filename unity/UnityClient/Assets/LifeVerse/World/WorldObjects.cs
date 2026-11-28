@@ -12,6 +12,8 @@ namespace LifeVerse.Unity.World
     {
         public Guid Id, OwnerUserId, CreatorUserId; public Guid? GroupId, ParentObjectId; public string Description = "", PermissionsJson = "{}"; public bool EditLocked; public int OwnerRights = 15, NextOwnerRights = 15;
         public string Name = "Object", PrimitiveType = "cube", MaterialJson = "{}", GeometryJson = "{}", PhysicsJson = "{}", ContentJson = "[]";
+        /// <summary>What a click on the object is meant to do ("" is touching it).</summary>
+        public string ClickAction = "";
         public float PositionX, PositionY, PositionZ, RotationX, RotationY, RotationZ, ScaleX = 1, ScaleY = 1, ScaleZ = 1, PivotX, PivotY, PivotZ;
         public int Revision = 1;
         public WorldObjectState Copy() => (WorldObjectState)MemberwiseClone();
@@ -25,7 +27,7 @@ namespace LifeVerse.Unity.World
             {
                 Id = e.GetProperty("id").GetGuid(), OwnerUserId = Optional("ownerUserId") ?? Guid.Empty, CreatorUserId = Optional("creatorUserId") ?? Guid.Empty, Description = Text("description", ""), PermissionsJson = Text("permissionsJson", "{}"), EditLocked = e.TryGetProperty("editLocked", out var locked) && locked.ValueKind == JsonValueKind.True, OwnerRights = (int)Number("ownerRights", 15), NextOwnerRights = (int)Number("nextOwnerRights", 15), GroupId = Optional("groupId"), ParentObjectId = Optional("parentObjectId"),
                 Name = Text("name", "Object"), PrimitiveType = Text("primitiveType", "cube"), MaterialJson = Text("materialJson", "{}"), GeometryJson = Text("geometryJson", "{}"),
-                PhysicsJson = Text("physicsJson", "{}"), ContentJson = Text("contentJson", "[]"),
+                PhysicsJson = Text("physicsJson", "{}"), ContentJson = Text("contentJson", "[]"), ClickAction = Text("clickAction", ""),
                 PositionX = Number("positionX"), PositionY = Number("positionY"), PositionZ = Number("positionZ"), RotationX = Number("rotationX"), RotationY = Number("rotationY"), RotationZ = Number("rotationZ"),
                 ScaleX = Number("scaleX", 1), ScaleY = Number("scaleY", 1), ScaleZ = Number("scaleZ", 1), PivotX = Number("pivotX"), PivotY = Number("pivotY"), PivotZ = Number("pivotZ"),
                 Revision = e.TryGetProperty("revision", out var r) && r.TryGetInt32(out var revision) ? revision : 1,

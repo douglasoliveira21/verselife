@@ -149,13 +149,15 @@ namespace LifeVerse.Unity.Avatar
         /// <summary>What is under a ray of the screen (an object or the ground), for the focus of the free camera; and whether the interface is under a point of the screen.</summary>
         public System.Func<Ray, Vector3?> PickPoint; public System.Func<Vector2, bool> OverInterface;
         public LifeVerse.Shared.Camera.CameraGesture Gesture { get; private set; }
+        /// <summary>What a drag of the left button alone does (the Focus tool of the build window; none otherwise).</summary>
+        public LifeVerse.Shared.Camera.CameraGesture ToolGesture;
 
         private bool FreeCamera(Mouse mouse)
         {
             var keyboard = Keyboard.current; var ctrl = keyboard != null && keyboard.ctrlKey.isPressed; var alt = keyboard != null && keyboard.altKey.isPressed; var shift = keyboard != null && keyboard.shiftKey.isPressed;
             if (mouse.leftButton.wasPressedThisFrame && Camera != null)
             {
-                var gesture = LifeVerse.Shared.Camera.CameraInputRules.Classify(ctrl, alt, shift, FreeOptions); var at = mouse.position.ReadValue();
+                var gesture = LifeVerse.Shared.Camera.CameraInputRules.Classify(ctrl, alt, shift, FreeOptions); if (gesture == LifeVerse.Shared.Camera.CameraGesture.None && !ctrl && !alt && !shift) gesture = ToolGesture; var at = mouse.position.ReadValue();
                 if (gesture != LifeVerse.Shared.Camera.CameraGesture.None && !(OverInterface?.Invoke(at) ?? false)) { Gesture = gesture; if (gesture != LifeVerse.Shared.Camera.CameraGesture.Pan || !ZoomTarget.HasValue) FocusAt(Camera.ScreenPointToRay(at)); }
             }
             if (Gesture == LifeVerse.Shared.Camera.CameraGesture.None) return false;

@@ -1,0 +1,23 @@
+{
+    "name": "LifeVerse.Unity.Prototypes.BuildEditor",
+    "rootNamespace": "LifeVerse.Unity.Prototypes.BuildEditor",
+    "references": [
+        "LifeVerse.Unity.Core",
+        "LifeVerse.Unity.World",
+        "LifeVerse.Unity.Avatar",
+        "LifeVerse.Unity.UI",
+        "Unity.RenderPipelines.HighDefinition.Runtime",
+        "Unity.RenderPipelines.Core.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_EDITOR"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

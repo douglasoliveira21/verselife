@@ -96,6 +96,10 @@ namespace LifeVerse.Unity.UI
         public bool Active { get; private set; }
         /// <summary>While on, a click on an object picks the face under the cursor (for a colour or picture on that face only).</summary>
         public bool FacePick { get; set; }
+        /// <summary>A click on the world chooses objects (off while the tool is the camera).</summary>
+        public bool Selecting { get; set; } = true;
+        /// <summary>The coloured handles are drawn and can be dragged.</summary>
+        public bool Handles { get; set; } = true;
         public int PickedFace { get; private set; } = -1;
         /// <summary>The first-use tutorial: eight small tasks that finish by themselves when the person does them.</summary>
         public LifeVerse.Shared.Building.BuildTutorial Tutorial { get; } = new LifeVerse.Shared.Building.BuildTutorial();
@@ -389,7 +393,7 @@ namespace LifeVerse.Unity.UI
 
         private void BuildHandles()
         {
-            _handles.Clear(); var camera = _camera(); if (_selected.Count == 0 || camera == null) return; var box = SelectionBounds(); var centre = box.center; var distance = Vector3.Distance(camera.transform.position, centre); var length = Mathf.Clamp(distance * .18f, .8f, 12f);
+            _handles.Clear(); var camera = _camera(); if (!Handles || _selected.Count == 0 || camera == null) return; var box = SelectionBounds(); var centre = box.center; var distance = Vector3.Distance(camera.transform.position, centre); var length = Mathf.Clamp(distance * .18f, .8f, 12f);
             if (Vector3.Dot(camera.transform.forward, centre - camera.transform.position) <= 0f) return;
             for (var axis = 0; axis < 3; axis++) _handles.Add(new Handle { Axis = axis, From = ToPanel(centre), To = ToPanel(centre + AxisOf(axis) * length), Colour = AxisColours[axis] });
         }
@@ -439,10 +443,11 @@ namespace LifeVerse.Unity.UI
         private void Press(Vector2 screen, Vector2 panel, bool add)
         {
             foreach (var h in _handles) if (DistanceToSegment(panel, h.From, h.To) < 12f && (panel - h.From).magnitude > 8f) { StartDrag(h, panel); return; }
-            var camera = _camera(); if (camera == null || Objects == null) return;
+            var camera = _camera(); if (!Selecting || camera == null || Objects == null) return;
             if (Objects.Pick(camera.ScreenPointToRay(screen), 300f, out var id, out _))
             {
-                if (FacePick && _selected.Contains(id) && Objects.PickFace(id, camera.ScreenPointToRay(screen), out var face)) { PickedFace = face; Say("Face " + face + " escolhida."); Changed?.Invoke(); return; }
+                // with the face tool one click is enough: the object is chosen too when it was not
+                if (FacePick && Objects.PickFace(id, camera.ScreenPointToRay(screen), out var face)) { if (!_selected.Contains(id)) Select(new[] { id }, add); PickedFace = face; Say("Face " + face + " escolhida."); Changed?.Invoke(); return; }
                 Select(new[] { id }, add);
             }
             else if (!add) Clear();

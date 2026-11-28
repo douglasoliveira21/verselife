@@ -26,6 +26,8 @@ namespace LifeVerse.Unity.UI
         public void SetIcon(string name) { if (_icon == null) { _icon = new Icon(name, 17) { name = "title-icon" }; _icon.style.marginRight = 8; _icon.style.alignSelf = Align.Center; _icon.style.flexShrink = 0; _bar.Insert(0, _icon); } else _icon.Name = name; }
         public string IconName => _icon?.Name;
         public event Action Closed;
+        /// <summary>The title strip, for a window that draws it its own way.</summary>
+        protected VisualElement Bar => _bar;
         protected readonly UiRoot Ui; private Vector2 _grab; private bool _dragging; private StyleLength _height; private Vector2 _sizeFrom, _pointerFrom; private bool _sizing, _sized;
 
         public FloatingWindow(UiRoot ui, string id, string title, float width = 360f, float height = -1f, Vector2? defaultPosition = null)
@@ -88,7 +90,11 @@ namespace LifeVerse.Unity.UI
             if (minimized) { _height = style.height; style.height = StyleKeyword.Auto; } else style.height = _height;
             Body.style.display = minimized ? DisplayStyle.None : DisplayStyle.Flex; if (_grip != null) _grip.style.display = minimized ? DisplayStyle.None : DisplayStyle.Flex;
             if (MinimizeButton.Q<Icon>() is { } icon) icon.Name = minimized ? "expand" : "minus"; MinimizeButton.tooltip = minimized ? "Restaurar" : "Minimizar";
+            OnMinimized(minimized);
         }
+
+        /// <summary>For a window that has more to do when it is folded or brought back.</summary>
+        protected virtual void OnMinimized(bool minimized) { }
 
         /// <summary>A new size, never smaller than the window can be used nor larger than the screen.</summary>
         public void Resize(Vector2 size)

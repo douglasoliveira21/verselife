@@ -155,7 +155,7 @@ Os itens 3.1 (avisos imobiliários), 3.2 (comprar dentro da busca), 3.3 (ícones
 - **Menu do chão (botão direito):** refeito em 27/11/2026 (ver `GODOT_PARITY_AUDIT.md`). **Os menus do botão direito sobre pessoas, objetos, o próprio avatar e itens não foram comparados com os do Godot** (`ContextInteraction.cs`); ainda faltam no chão comprar ou alugar direto do menu, "selecionar terreno" arrastando e "criar objeto aqui".
 - **Fotos (27/11/2026):** perfil, grupo e ilha têm botão para enviar uma imagem do computador ou escolher do inventário, e a busca mostra as três. Imagens que são endereços de outros sites continuam não aparecendo na busca, por escolha de privacidade. A capa de grupo (campo `coverUrl`, endereço https) segue só como endereço.
 - **3.18 Editor visual de HUD** (montar, guardar e equipar um HUD; `HudEditor.cs` no Godot, `/api/v1/huds` na API): **não foi feito**; é pouco usado, combinar com o dono antes.
-- **O dono testou os recursos novos no editor (27/11/2026) e confirmou que funcionaram.** Não foi detalhado quais prévias ele viu com arquivos do inventário (nos testes automáticos foram arquivos de teste). Falta ver no jogo gerado: o instalador de 27/11 é anterior a estes recursos.
+- **O dono testou os recursos novos no editor (27/11/2026) e confirmou que funcionaram.** Não foi detalhado quais prévias ele viu com arquivos do inventário (nos testes automáticos foram arquivos de teste). O instalador de 28/11 já traz estes recursos; falta o dono vê-los na versão instalada.
 
 - **Controles de andar (decidido em 27/11/2026: ficam como estão no Unity):** A/D andam de lado em relação à câmera e S vira o corpo e volta andando; Q abre o menu radial. No Godot, A/D giram, Q/Z dão o passo de lado e S anda de costas. A diferença é de propósito; não mudar sem o dono pedir.
 - **Corrida na diagonal (27/11/2026):** corria travada; corrigido no cliente (desenho entre os passos de movimento e correções mais suaves da ilha) e o dono confirmou no editor que ficou boa. Não precisa de deploy do servidor.
@@ -232,7 +232,7 @@ A organização continua a de um mundo como o Second Life, com tamanho das janel
 
 ## 5.2. Importação de modelos (conferida em 28/11/2026)
 
-Entrada no jogo: **Construir (B) → aba Criar → Importar um modelo 3D** (GLB, glTF com arquivos ao lado e DAE); a animação de um modelo colocado fica em **Construir → Recursos**. Corrigidos em 28/11/2026: texturas de DAE (procura por nome, TGA e BMP), controle de animação e a janela de importar. Falta:
+Entrada no jogo: **Construir (B) → modo Criar (o cubo) → Importar modelo** (ou o menu **⋯**) (GLB, glTF com arquivos ao lado e DAE); a animação de um modelo colocado fica em **Construir → Recursos**. Corrigidos em 28/11/2026: texturas de DAE (procura por nome, TGA e BMP), controle de animação e a janela de importar. Falta:
 
 - **Arquivos reais:** testar exportações do Blender, do SketchUp e de outros programas; os testes usam modelos pequenos feitos para eles.
 - **Um modelo animado numa ilha de produção**, para ver que o servidor grava o começo da animação e todos veem o mesmo ponto.
@@ -241,7 +241,7 @@ Entrada no jogo: **Construir (B) → aba Criar → Importar um modelo 3D** (GLB,
 
 ## 5.3. Scripts, anexos, HUD e animações do avatar (conferido no código em 28/11/2026)
 
-Existem: scripts Lua em objetos da ilha (**Construir → Conteúdo → Scripts do objeto**, ou botão direito no objeto → Scripts); **Anexos do corpo** (60 pontos, 8 deles na tela); painéis de script (`hud.*`); **Avatar → Animações próprias**.
+Existem: scripts Lua em objetos da ilha (**Construir → aba Conteúdo → Scripts**, ou botão direito no objeto → Scripts); **Anexos do corpo** (60 pontos, 8 deles na tela); painéis de script (`hud.*`); **Avatar → Animações próprias**.
 
 Corrigidos em 28/11/2026: os outros veem na hora a roupa, o corpo, a animação e o anexo trocados numa ilha; as animações próprias tocam em todos os estados que a janela oferece (sentar, sentar no chão, levantar, aterrissar e os gestos); **Vestir um objeto** lê o inventário inteiro e tem busca. Falta:
 
@@ -252,6 +252,23 @@ Corrigidos em 28/11/2026: os outros veem na hora a roupa, o corpo, a animação 
 - **Scripts não trocam as animações do jogo:** `avatar.playAnimation` só aceita `wave` e `dance`, com a pessoa parada.
 - **Editor de HUD** (3.18): a API tem `/api/v1/huds`, o cliente Unity não usa.
 
+## 5.4. Construção como no Second Life (Fases 1 a 3 feitas em 28/11/2026)
+
+Pesquisa e auditoria: [mapa de coordenadas](../design/build-editor-coordinate-map.md) (489 componentes, com [JSON](../design/build-editor-coordinate-map.json)) e [matriz de fidelidade](../design/build-editor-feature-parity.md) (118 funcionalidades). [Protótipos aprovados](../design/build-editor/README.md). As cinco propostas da matriz e as três decisões dos protótipos foram aceitas pelo dono.
+
+A janela do jogo já é a nova (`UI/BuildTool/`): cinco modos, cinco abas, o terreno dentro dela (`B` e `T` abrem a mesma janela) e as janelas de grade, cor, textura, mídia, luz, grupo, alinhar, guardar e limites. O que era das abas antigas e não existe no original está no menu **⋯**, à direita dos cinco modos, ou ao lado do que completa. O que ainda não existe aparece apagado, com o motivo ao passar o mouse.
+
+Falta:
+
+- **Fase 4 (editor 3D):** selecionar e mover o conjunto vinculado (o último escolhido é a raiz) e **Editar partes**; arrastar o próprio objeto (modo Mover); alças, planos e anéis; esticar de um lado só; Shift para copiar e criar clicando no mundo; atalhos do Second Life na frente dos gestos; copiar e colar propriedades; grade desenhada; destaque de faces e várias faces; pipetas.
+- **Fase 5:** objetos flexíveis; rotação, mapeamento planar e alinhamento de textura; materiais PBR como itens; notas no conteúdo; executar a ação ao clicar; desenhar os donos no chão.
+- **Mostrar o último dono:** a API já guarda e envia (`LastOwnerUserId`); a janela não mostra.
+- **Pede autorização (banco, API ou protocolo):** "Exibir na busca"; aplicar o terreno a uma área; tetraedro, semicilindro e semicone; formato do oco; gravidade e densidade.
+- **Na janela de hoje:** cobre o cartão da ilha e a área do chat (o chat fica recolhido enquanto ela está aberta); em telas baixas a parte das abas rola; o quadro do tutorial fica ao lado e passa sobre a barra do alto.
+- **Conferir com mouse e teclado de verdade:** arrastar a câmera no modo Foco, arrastar no seletor de cor, rolagem, duplo clique numa textura, dicas dos itens apagados; e ver no jogo gerado.
+- **Capturas do visualizador atual em tamanho real**, para conferir as posições.
+- **Fases 6 e 7** (multiplayer e persistência; validação final com o relatório pedido).
+
 ## 6. Build, distribuição e CI
 
 - **IL2CPP nunca verificado:** falta o Visual Studio C++ nesta máquina.
@@ -259,6 +276,7 @@ Corrigidos em 28/11/2026: os outros veem na hora a roupa, o corpo, a animação 
   - riscos: MoonSharp (reflexão), Concentus e `System.Text.Json` sendo cortados no build.
 - **Instalador:**
   - **27/11/2026:** pacote 0.7.0 gerado em `artifacts/unity-0.7.0-20261127/` (zip, instalador, `SHA256SUMS.txt`, `release.json`; a pasta `artifacts/unity-0.7.0` é de 20/11 e aponta para a API antiga). O zip extraído foi conferido contra a lista do jogo (230 arquivos) e o `LifeVerse.exe` dele passou na autoverificação sem janela nesta máquina;
+  - **28/11/2026:** pacote 0.7.0 novo em `artifacts/unity-0.7.0-20261128/`, do commit `a2adc4e` (Varanda, importação de modelos e correções do avatar). Os 230 arquivos do zip conferem com a lista do jogo, e o jogo extraído passou na autoverificação sem janela e no autoteste do mundo com janela (374). A versão continua 0.7.0, a mesma do pacote de 27/11: o aviso de atualização não distingue os dois;
   - `installer/LifeVerse.iss` com `/DEdition` gera o instalador Unity, que **nunca foi instalado** (pede administrador e regras de firewall);
   - falta testar instalar, jogar pela versão instalada e atualizar por cima;
   - `scripts/build-unity-client.ps1 -Installer`. Nesta máquina a política de execução do PowerShell bloqueia scripts: o pacote de 27/11 foi montado com os mesmos passos, um comando por vez.
@@ -269,7 +287,7 @@ Corrigidos em 28/11/2026: os outros veem na hora a roupa, o corpo, a animação 
   - os testes e o build da Unity são pulados sem os segredos `UNITY_LICENSE` e afins (licença Unity em CI), e por isso o trabalho de pacote falha ao baixar um build que não existe;
   - os testes do servidor de ilha falharam no CI do commit anterior (`177c0c1`) e passaram neste: podem ser instáveis lá;
   - o build do servidor Linux não está no CI.
-- **Avisos de licença:** o build copia `Assets/LifeVerse/Legal/THIRD-PARTY-NOTICES.txt` para junto do jogo, e um teste exige que toda DLL nova esteja nele. Falta conferir que o instalador o leva.
+- **Avisos de licença:** o build copia `Assets/LifeVerse/Legal/THIRD-PARTY-NOTICES.txt` para junto do jogo, e um teste exige que toda DLL nova esteja nele. O instalador de 28/11 o leva (aparece na compilação); falta ver o arquivo numa instalação.
 - **Assinatura do executável:** o `.exe` não é assinado, e o Controle Inteligente de Aplicativos do Windows 11 pode bloqueá-lo (aconteceu na máquina de desenvolvimento). Avaliar um certificado de assinatura de código antes de distribuir.
 - **Versão:** o cliente Unity é a 0.7.0 (`bundleVersion`), e `release.json` e `SHA256SUMS` são gerados pelo script. Falta publicar uma versão de verdade no endereço que `UpdateCheck` lê.
 

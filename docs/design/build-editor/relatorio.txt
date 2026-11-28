@@ -1,0 +1,8 @@
+03-editar-posicao-1280x720 a barra de baixo chega sob a janela: a janela termina acima dela (731 de 954)
+09-aba-geral-1280x720 a barra de baixo chega sob a janela: a janela termina acima dela (731 de 954)
+12-textura-classica-1280x720 a barra de baixo chega sob a janela: a janela termina acima dela (731 de 954)
+03-editar-posicao-1366x768 a barra de baixo chega sob a janela: a janela termina acima dela (788 de 954)
+09-aba-geral-1366x768 a barra de baixo chega sob a janela: a janela termina acima dela (788 de 954)
+12-textura-classica-1366x768 a barra de baixo chega sob a janela: a janela termina acima dela (788 de 954)
+componentes da janela de construção que não aparecem em nenhum dos 20 estados: 45: Owner Group Icon, B:, O:, G:, E:, N:, F:, pathfinding_attributes_label, pathfinding_attributes_value, advanced_dimple, sculpt texture control, sculpt mirror control, sculpt invert control, label sculpt type, sculpt type control, select_single, Probe Update Label, Probe Update Type, material_permissions_loading_label, label maskcutoff, maskcutoff, bumpytexture control, label bumpiness, combobox bumpiness, shinytexture control, label shininess, combobox shininess, label glossiness, glossiness, label environment, environment, label shinycolor, shinycolorswatch, bumpyScaleU, bumpyScaleV, bumpyRot, bumpyOffsetU, bumpyOffsetV, shinyScaleU, shinyScaleV, shinyRot, shinyOffsetU, shinyOffsetV, title_media, label_area
+problemas=0

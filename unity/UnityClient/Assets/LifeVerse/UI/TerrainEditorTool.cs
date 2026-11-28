@@ -209,44 +209,4 @@ namespace LifeVerse.Unity.UI
             painter.Stroke();
         }
     }
-
-    /// <summary>The window of the terrain tools: the tool grid, the brush, the ground materials, undo and redo, and the sea level, export and import for the island's editors.</summary>
-    public sealed class TerrainWindow : FloatingWindow
-    {
-        private readonly TerrainEditor _t; private readonly Dictionary<TerrainTool, Button> _tools = new Dictionary<TerrainTool, Button>(); private readonly List<Button> _layers = new List<Button>(); private readonly Label _status, _layerName;
-        private readonly VisualElement _levelBox, _paintBox, _islandBox; private readonly Slider _level; private readonly TextField _sea;
-        public string StatusText => _status.text;
-        public bool LevelVisible => _levelBox.style.display != DisplayStyle.None;
-        public bool PaintVisible => _paintBox.style.display != DisplayStyle.None;
-        public bool IslandVisible => _islandBox.style.display != DisplayStyle.None;
-        public int LayerButtons => _layers.Count;
-
-        public TerrainWindow(ApiContext context, TerrainEditor editor) : base(context.Ui, "terrain", "Editar terreno", 400f, 560f, new Vector2(20, 90))
-        {
-            _t = editor; Body.style.flexGrow = 1; Body.style.minHeight = 0; style.overflow = Overflow.Hidden; var scroll = new ScrollView(); scroll.style.flexGrow = 1; scroll.style.flexShrink = 1; scroll.style.minHeight = 0; Body.Add(scroll); var box = scroll.contentContainer;
-            box.Add(UiKit.Text("Ferramenta", "lv-bold", "lv-accent")); var grid = new VisualElement(); grid.style.flexDirection = FlexDirection.Row; grid.style.flexWrap = Wrap.Wrap; box.Add(grid);
-            foreach (var pair in new[] { (TerrainTool.Raise, "Elevar"), (TerrainTool.Lower, "Abaixar"), (TerrainTool.Level, "Nivelar"), (TerrainTool.Flatten, "Achatar"), (TerrainTool.Smooth, "Suavizar"), (TerrainTool.Noise, "Rugosidade"), (TerrainTool.Erode, "Erosão"), (TerrainTool.Restore, "Restaurar"), (TerrainTool.Paint, "Pintar") })
-            { var tool = pair.Item1; var button = UiKit.Button(pair.Item2, () => Select(tool)); button.style.width = 112; _tools[tool] = button; grid.Add(button); }
-            box.Add(UiKit.Text("Pincel", "lv-bold", "lv-accent")); box.Add(UiKit.Row(UiKit.Button("Redondo", () => { _t.Square = false; _t.Refresh(); }), UiKit.Button("Quadrado", () => { _t.Square = true; _t.Refresh(); })));
-            box.Add(UiKit.Slide("Tamanho (m)", 1f, TerrainMap.MaxBrushRadius, _t.Radius, v => _t.Radius = v)); box.Add(UiKit.Slide("Intensidade (%)", 1f, 100f, _t.StrengthPercent, v => _t.StrengthPercent = v)); box.Add(UiKit.Slide("Suavidade (%)", 0f, 100f, _t.SoftPercent, v => _t.SoftPercent = v));
-            _levelBox = new VisualElement(); _level = UiKit.Slide("Altura do nível (m)", TerrainMap.MinHeight + 1f, TerrainMap.MaxHeight, _t.Level, v => _t.Level = v); _levelBox.Add(_level); _levelBox.Add(UiKit.Button("Usar a altura sob o cursor", () => { if (_t.UseHoverHeight()) _level.SetValueWithoutNotify(_t.Level); })); box.Add(_levelBox);
-            _paintBox = new VisualElement(); _paintBox.Add(UiKit.Text("Material", "lv-bold", "lv-accent")); var swatches = new VisualElement(); swatches.style.flexDirection = FlexDirection.Row; swatches.style.flexWrap = Wrap.Wrap; _paintBox.Add(swatches);
-            for (var i = 0; i < TerrainView.Layers.Length; i++) { var index = i; var layer = TerrainView.Layers[i]; var swatch = new Button(() => SelectLayer(index)) { text = "" }; swatch.style.width = 84; swatch.style.height = 44; swatch.style.backgroundColor = Color.Lerp(layer.Dark, layer.Light, .5f); swatch.tooltip = layer.Name; _layers.Add(swatch); swatches.Add(swatch); }
-            _layerName = UiKit.Text(TerrainView.Layers[0].Name, "lv-body"); _paintBox.Add(_layerName); box.Add(_paintBox);
-            box.Add(UiKit.Row(UiKit.Button("Desfazer", () => _t.Undo()), UiKit.Button("Refazer", () => _t.Redo())));
-            _islandBox = new VisualElement(); _islandBox.Add(UiKit.Text("Ilha (editores da ilha)", "lv-bold", "lv-accent")); _sea = UiKit.Field("Nível do mar (m)", false, 6, "0"); _islandBox.Add(_sea);
-            _islandBox.Add(UiKit.Row(UiKit.Button("Aplicar mar", () => { if (float.TryParse(_sea.value.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out var v)) _t.ApplySeaLevel(v); else _t.Say("Digite o nível do mar em metros."); }), UiKit.Button("Exportar", () => _t.Export()), UiKit.Button("Importar…", () => new FilePickerWindow(context.Ui, "Escolha o mapa de alturas (RAW 16 bits)", new[] { ".r16", ".raw" }, path => _t.Import(path)).Open()))); box.Add(_islandBox);
-            _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
-            _t.Changed += Refresh; Closed += () => { _t.Changed -= Refresh; _t.SetActive(false); }; Refresh();
-        }
-
-        public void Select(TerrainTool tool) { _t.Tool = tool; _t.Refresh(); }
-        public void SelectLayer(int layer) { _t.Layer = Mathf.Clamp(layer, 0, TerrainView.Layers.Length - 1); _layerName.text = TerrainView.Layers[_t.Layer].Name; Refresh(); }
-
-        private void Refresh()
-        {
-            foreach (var pair in _tools) pair.Value.EnableInClassList("lv-btn-selected", pair.Key == _t.Tool); for (var i = 0; i < _layers.Count; i++) { var chosen = i == _t.Layer; _layers[i].style.borderTopWidth = _layers[i].style.borderBottomWidth = _layers[i].style.borderLeftWidth = _layers[i].style.borderRightWidth = chosen ? 4 : 1; _layers[i].style.borderTopColor = _layers[i].style.borderBottomColor = _layers[i].style.borderLeftColor = _layers[i].style.borderRightColor = chosen ? new Color(.78f, .29f, .16f) : new Color(.45f, .36f, .3f, .45f); }
-            _levelBox.style.display = _t.Tool == TerrainTool.Level ? DisplayStyle.Flex : DisplayStyle.None; _paintBox.style.display = _t.Tool == TerrainTool.Paint ? DisplayStyle.Flex : DisplayStyle.None; _islandBox.style.display = _t.IslandEditor ? DisplayStyle.Flex : DisplayStyle.None; _status.text = _t.Status; _status.EnableInClassList("lv-bad", !_t.CanSculpt);
-        }
-    }
 }

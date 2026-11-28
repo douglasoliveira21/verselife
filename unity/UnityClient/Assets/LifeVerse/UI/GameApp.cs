@@ -649,26 +649,42 @@ namespace LifeVerse.Unity.UI
         }
         public BuildEditor Builder { get; private set; }
         public TerrainEditor TerrainTools { get; private set; }
-        public BuildWindow BuildPanel { get; private set; }
-        public TerrainWindow TerrainPanel { get; private set; }
+        private BuildWindow _buildTool; private bool _chatFolded;
+        /// <summary>The build tool while it builds (null when closed or on the terrain).</summary>
+        public BuildWindow BuildPanel => _buildTool != null && _buildTool.Mode != BuildMode.Land ? _buildTool : null;
+        /// <summary>The terrain tools of the build tool while the terrain is the chosen tool.</summary>
+        public TerrainPane TerrainPanel => _buildTool != null && _buildTool.Mode == BuildMode.Land ? _buildTool.Terrain : null;
 
-        /// <summary>B: starts or ends the build mode (the panel, the selection, the gizmo).</summary>
+        /// <summary>B: opens the build tool (the window, the selection, the gizmo), or closes it; on the terrain, goes back to building.</summary>
         public void ToggleBuild()
         {
             if (Current != Phase.Playing || Builder == null) return;
-            if (Builder.Active) { BuildPanel?.Close(); BuildPanel = null; Builder.SetActive(false); return; }
-            TerrainTools.SetActive(false); TerrainPanel?.Close(); TerrainPanel = null; Builder.SetActive(true); BuildPanel = new BuildWindow(Context, Builder); BuildPanel.Open();
+            if (_buildTool == null) OpenBuildTool(BuildMode.Edit); else if (_buildTool.Mode == BuildMode.Land) _buildTool.SetMode(BuildMode.Edit); else _buildTool.Close();
         }
 
-        /// <summary>T: starts or ends the terrain tools.</summary>
+        /// <summary>T: opens the build tool on the terrain, or closes it when it is already there.</summary>
         public void ToggleTerrain()
         {
             if (Current != Phase.Playing || TerrainTools == null) return;
-            if (TerrainTools.Active) { TerrainPanel?.Close(); TerrainPanel = null; TerrainTools.SetActive(false); return; }
-            Builder.SetActive(false); BuildPanel?.Close(); BuildPanel = null; TerrainTools.SetActive(true); TerrainPanel = new TerrainWindow(Context, TerrainTools); TerrainPanel.Open();
+            if (_buildTool == null) OpenBuildTool(BuildMode.Land); else if (_buildTool.Mode != BuildMode.Land) _buildTool.SetMode(BuildMode.Land); else _buildTool.Close();
         }
 
-        private void TearDownWorld() { Plates?.Clear(); Plates = null; if (Follow != null && _island != Guid.Empty) Settings.IslandYaw[_island.ToString("N")] = Follow.Yaw; Effects = null; Texts = null; HudWorn?.Clear(); HudWorn = null; Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; BuildPanel?.Close(); TerrainPanel?.Close(); Builder?.SetActive(false); TerrainTools?.SetActive(false); BuildPanel = null; TerrainPanel = null; Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
+        private void OpenBuildTool(BuildMode mode)
+        {
+            var links = new BuildLinks
+            {
+                Terrain = TerrainTools, Camera = () => Follow, Where = () => Player != null ? Player.GamePosition : Vector3.zero,
+                Remember = (key, value) => { Store.Set(key, value); ApplySettingsToWorld(); },
+                AboutLand = () => OpenParcelHere(), ManageLand = () => new LandManagementWindow(Context, _island, Here).Open(),
+            };
+            var window = new BuildWindow(Context, Builder, links); _buildTool = window;
+            // the window is tall: the chat gives it room while it is open
+            if (!Hud.Chat.Minimized) { Hud.Chat.SetMinimized(true); _chatFolded = true; }
+            window.Closed += () => { if (_buildTool != window) return; _buildTool = null; if (_chatFolded) { _chatFolded = false; Hud.Chat.SetMinimized(false); } };
+            window.Open(); if (mode != window.Mode) window.SetMode(mode);
+        }
+
+        private void TearDownWorld() { Plates?.Clear(); Plates = null; if (Follow != null && _island != Guid.Empty) Settings.IslandYaw[_island.ToString("N")] = Follow.Yaw; Effects = null; Texts = null; HudWorn?.Clear(); HudWorn = null; Ambient = null; Sounds = null; ParcelMusic = null; Voice = null; Hearing = null; _buildTool?.Close(); _buildTool = null; _chatFolded = false; Builder?.SetActive(false); TerrainTools?.SetActive(false); Builder = null; TerrainTools = null; ScriptDialogs?.Clear(); ScriptPanels?.Clear(); if (_world != null) Destroy(_world); _world = null; Client = null; Player = null; Follow = null; }
 
         // ---- while playing ----
 
@@ -927,7 +943,7 @@ namespace LifeVerse.Unity.UI
             {
                 ContextTarget = "object"; var top = LifeVerse.Unity.World.GameSpace.ToGame(new Vector3(box.center.x, box.max.y, box.center.z)); var hit = box; var obj = id;
                 items.Add(new RadialItem("Tocar", () => TouchObject(obj))); items.Add(new RadialItem("Sentar aqui", () => SitOnObject(top))); items.Add(new RadialItem("Dar zoom", () => ZoomTo(hit)));
-                items.Add(new RadialItem("Scripts", () => new LuaEditorWindow(Context, _island, obj).Open())); items.Add(new RadialItem("Editar", () => { if (Builder != null && !Builder.Active) ToggleBuild(); Builder?.Select(new[] { obj }); }, Builder != null));
+                items.Add(new RadialItem("Scripts", () => new LuaEditorWindow(Context, _island, obj).Open())); items.Add(new RadialItem("Editar", () => { if (Builder != null && !Builder.Active) ToggleBuild(); BuildPanel?.SetMode(BuildMode.Edit); Builder?.Select(new[] { obj }); }, Builder != null));
                 items.Add(new RadialItem("Mais…", () => ClickWorld(screen)));
                 return items;
             }
