@@ -39,7 +39,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   ```
   LifeVerse.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -lifeverse-world-selfcheck
   ```
-  Espera-se `event=world_sync_check result=passed checks=372`.
+  Espera-se `event=world_sync_check result=passed checks=374`.
   - A cena inicial (`Bootstrap.unity`) **não tem luz própria**: o sol e a lua são do `IslandEnvironment`. A luz padrão da Unity que estava lá iluminava todas as ilhas, inclusive de noite. O teste de sentar ou o de pulo podem falhar por tempo: rode de novo.
 - **Verificação contra a API real, local:**
   1. Suba a API: `dotnet run --project tools/ApiLiveHost -c Release --no-build -- 5099`.
@@ -238,6 +238,19 @@ Entrada no jogo: **Construir (B) → aba Criar → Importar um modelo 3D** (GLB,
 - **Um modelo animado numa ilha de produção**, para ver que o servidor grava o começo da animação e todos veem o mesmo ponto.
 - Roupas, corpo e animações de avatar aceitam só `.glb`.
 - Um modelo recém-colocado fica parado até a pessoa ligar a animação.
+
+## 5.3. Scripts, anexos, HUD e animações do avatar (conferido no código em 28/11/2026)
+
+Existem: scripts Lua em objetos da ilha (**Construir → Conteúdo → Scripts do objeto**, ou botão direito no objeto → Scripts); **Anexos do corpo** (60 pontos, 8 deles na tela); painéis de script (`hud.*`); **Avatar → Animações próprias**.
+
+Corrigidos em 28/11/2026: os outros veem na hora a roupa, o corpo, a animação e o anexo trocados numa ilha; as animações próprias tocam em todos os estados que a janela oferece (sentar, sentar no chão, levantar, aterrissar e os gestos); **Vestir um objeto** lê o inventário inteiro e tem busca. Falta:
+
+- **Animação própria em corpo `human_a`/`human_b`:** nenhum arquivo toca; só nos corpos com esqueleto (`lifeverse_man` ou próprio).
+- **Aterrissar e levantar** só tocam quando a pessoa fica parada em seguida (andar logo depois corta a animação), e só quem tem a versão nova do jogo as vê.
+- **Ver em produção** a troca de roupa e de anexo com duas pessoas numa ilha.
+- **HUD de anexo é só figura:** não recebe clique e o objeto usado não roda scripts.
+- **Scripts não trocam as animações do jogo:** `avatar.playAnimation` só aceita `wave` e `dance`, com a pessoa parada.
+- **Editor de HUD** (3.18): a API tem `/api/v1/huds`, o cliente Unity não usa.
 
 ## 6. Build, distribuição e CI
 

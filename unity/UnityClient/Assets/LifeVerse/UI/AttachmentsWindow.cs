@@ -34,12 +34,14 @@ namespace LifeVerse.Unity.UI
         public AttachmentsWindow(ApiContext context, Action changed = null, Func<AttachmentData, FloatingWindow> edit = null, Func<AvatarAttachments> body = null) : base(context.Ui, "attachments", "Anexos do corpo", 520f, 560f, new Vector2(420, 90))
         {
             _c = context; _body = body; Closed += RevertPreviews; _changed = changed; _edit = edit; _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; Body.Add(_status);
-            _list.style.flexGrow = 1; _list.style.minHeight = 180; Body.Add(_list);
+            _list.style.flexGrow = 1; _list.style.flexBasis = 0; _list.style.minHeight = 120; Body.Add(_list);   // the list takes what the form below leaves, however much there is in it
             Body.Add(UiKit.Text("Vestir um objeto", "lv-bold", "lv-accent"));
             _item = new DropdownField("Item do inventário", new List<string> { "(carregando…)" }, 0); _point = new DropdownField("Ponto do corpo", PointNames(_profiles), 0);
             _region = new DropdownField("Região do corpo", Regions.Select(r => r.Text).ToList(), 0); _region.RegisterValueChangedCallback(_ => { _point.choices = PointNames(_profiles, RegionOf(_region.index)); _point.index = 0; });
-            Body.Add(_item); Body.Add(_region); Body.Add(_point);
+            _search = UiKit.Field("Buscar no inventário", false, 60); _search.name = "wear-search"; _search.RegisterValueChangedCallback(_ => ShowItems());
+            Body.Add(_search); Body.Add(_item); Body.Add(_region); Body.Add(_point);
             Body.Add(UiKit.Button("Vestir", Wear, "lv-btn-primary"));
+            foreach (var part in Body.Children()) if (part != _list) part.style.flexShrink = 0;   // the fields of the form are never squeezed over each other
             Reload(); LoadItems();
         }
 
@@ -69,11 +71,40 @@ namespace LifeVerse.Unity.UI
             foreach (var a in Attachments) _list.Add(RowOf(a)); if (Attachments.Count == 0) _list.Add(UiKit.Text("Você não está vestindo nenhum objeto.", "lv-muted")); _status.text = "";
         });
 
-        private void LoadItems() => this.Then(_c.Api.ApiAsync("GET", "/api/v1/inventory/items?view=all&page=1&pageSize=50"), r =>
+        /// <summary>The inventory is read a page at a time until its end (the platform gives at most 100 items per page).</summary>
+        public const int ItemsPerPage = 100, MaxItemPages = 100;
+        private readonly TextField _search; private readonly List<(Guid Id, string Name)> _inventory = new List<(Guid, string)>();
+        public TextField SearchField => _search;
+
+        private void LoadItems() { _inventory.Clear(); LoadItemPage(1); }
+
+        private void LoadItemPage(int page) => this.Then(_c.Api.ApiAsync("GET", "/api/v1/inventory/items?view=all&page=" + page + "&pageSize=" + ItemsPerPage), r =>
         {
-            _itemIds.Clear(); var names = new List<string>(); if (r.Status == 200) foreach (var row in Json.Rows(r.Body)) { var id = row.Id("id", "itemId"); if (id == Guid.Empty) continue; _itemIds.Add(id); names.Add(row.First("name", "displayName")); }
-            if (names.Count == 0) names.Add("(inventário vazio)"); _item.choices = names; _item.index = 0;
+            if (r.Status == 200) foreach (var row in Json.Rows(r.Body)) { var id = row.Id("id", "itemId"); if (id != Guid.Empty) _inventory.Add((id, row.First("name", "displayName"))); }
+            ShowItems();
+            if (r.Status == 200 && page < MaxItemPages && HasMore(r.Body)) LoadItemPage(page + 1);
         });
+
+        /// <summary>Whether a page of the inventory says there are more after it.</summary>
+        public static bool HasMore(string body)
+        {
+            try { using var document = System.Text.Json.JsonDocument.Parse(body); return document.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && document.RootElement.TryGetProperty("hasMore", out var more) && more.ValueKind == System.Text.Json.JsonValueKind.True; }
+            catch (System.Text.Json.JsonException) { return false; }
+        }
+
+        /// <summary>The items whose name has what was typed (accents and capitals do not matter); two with the same name are numbered, so that each one can be chosen.</summary>
+        private void ShowItems()
+        {
+            var chosen = _item.index >= 0 && _item.index < _itemIds.Count ? _itemIds[_item.index] : Guid.Empty; var wanted = SettingsCatalog.Fold(_search.value ?? "").Trim();
+            _itemIds.Clear(); var names = new List<string>(); var seen = new Dictionary<string, int>();
+            foreach (var (id, name) in _inventory)
+            {
+                if (wanted.Length > 0 && !SettingsCatalog.Fold(name).Contains(wanted)) continue;
+                var times = seen.TryGetValue(name, out var n) ? n + 1 : 1; seen[name] = times; _itemIds.Add(id); names.Add(times == 1 ? name : name + " (" + times + ")");
+            }
+            if (names.Count == 0) names.Add(_inventory.Count == 0 ? "(inventário vazio)" : "(nenhum item com esse nome)");
+            var at = Mathf.Max(0, _itemIds.IndexOf(chosen)); _item.choices = names; _item.SetValueWithoutNotify(names[at]); _item.index = at;
+        }
 
         private VisualElement RowOf(AttachmentData a)
         {

@@ -65,7 +65,9 @@ namespace LifeVerse.Unity.Server
             return Task.FromResult((200, System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object> { ["operation"] = operation, ["objectId"] = id, ["objectState"] = fields })));
         }
         public Task<string> LandSyncAsync(long cursor, CancellationToken ct) => Task.FromResult<string>(null);
-        public Task<(int Status, string Body)> GetAppearanceAsync(Guid avatarId, CancellationToken ct) => Task.FromResult((404, "{}"));
+        /// <summary>What the platform answers when the island asks how an avatar looks now (null: it does not know the avatar).</summary>
+        public Func<Guid, string> Appearance;
+        public Task<(int Status, string Body)> GetAppearanceAsync(Guid avatarId, CancellationToken ct) => Task.FromResult(Appearance != null ? (200, Appearance(avatarId)) : (404, "{}"));
         public Task DeregisterAsync(CancellationToken ct) => Task.CompletedTask;
         public void Dispose() { _http?.Dispose(); }
     }

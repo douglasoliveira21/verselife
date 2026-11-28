@@ -70,6 +70,8 @@ namespace LifeVerse.Unity.World
         public event Action<ReceiveChatMessage> ChatReceived;
         public event Action<string> DisconnectedBy;
         public bool SendChat(string text) => Send(new SendChatMessage(text));
+        /// <summary>After the platform accepted a change of the avatar (clothes, body, animations, worn objects): asks the island to read it again and show it to everybody here.</summary>
+        public bool RefreshAppearance() => Send(new RefreshAppearanceMessage());
         /// <summary>Asks the island to move the avatar inside it: to a parcel (its arrival point) or to a spot (x, z). The island applies the parcel's rules and answers with <see cref="TeleportResult"/>.</summary>
         public bool RequestTeleport(string parcelId, float x, float z) => Send(new RequestTeleportMessage(parcelId ?? "", x, z));
         /// <summary>The island's answer to a teleport inside it (refused with a code, or where the avatar now stands).</summary>

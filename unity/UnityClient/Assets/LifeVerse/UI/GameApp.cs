@@ -281,7 +281,7 @@ namespace LifeVerse.Unity.UI
             Hud.AddMenu("Eu", new (string, string, Action)[]
             {
                 ("Meu perfil", "user", () => Open(new ProfileHubWindow(Context, _api.UserId))), ("Avatar: visuais, corpo, roupas e animações", "avatar", () => Open(OpenAvatarStudio())), ("Meu personagem", "user", () => OpenCharacter()?.Open()),
-                ("Anexos do corpo", "pin", () => Open(new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment, () => OwnAttachments))), Line(),
+                ("Anexos do corpo", "pin", () => Open(new AttachmentsWindow(Context, OwnAttachmentsChanged, EditAttachment, () => OwnAttachments))), Line(),
                 ("Inventário", "bag", () => Hud.Toggle("inventory", () => new InventoryManagerWindow(Context, Store))), ("Carteira", "coin", () => Hud.Toggle("wallet", () => new WalletHubWindow(Context))), ("Minhas propriedades", "home", () => Open(new MyPropertiesWindow(Context))), Line(),
                 ("Controles de movimento", "run", () => Hud.Toggle("move", MovePanel)), ("Controles da câmera", "camera", () => Hud.Toggle("camera", CameraPanel)),
                 ("Configurações", "settings", () => Hud.Toggle("settings", SettingsPanel)), ("Barra de ferramentas", "layers", () => Open(ToolbarWindow())), Line(), ("Sair da ilha", "power", BackToLogin),
@@ -313,8 +313,13 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>After a change of what is worn: asks the platform for the avatar again and shows it on the own body.</summary>
-        /// <summary>Reads the person's avatar again and redraws them (after a look, a body, a garment or an animation changed in the Avatar window).</summary>
-        public void RefreshOwnAvatar() => Ui.Root.Then(Api.ApiAsync("GET", "/api/v1/users/me/avatar"), r => { if (r.Status == 200 && Client != null) PeopleViews?.ApplyAppearance(Client.SelfPeerId, r.Body); });
+        /// <summary>Reads the person's avatar again and redraws them (after a look, a body, a garment or an animation changed in the Avatar window), and tells the others on the island.</summary>
+        public void RefreshOwnAvatar() => Ui.Root.Then(Api.ApiAsync("GET", "/api/v1/users/me/avatar"), r => { if (r.Status == 200 && Client != null) { PeopleViews?.ApplyAppearance(Client.SelfPeerId, r.Body); TellIslandOfAppearance(); } });
+
+        private void TellIslandOfAppearance() { if (Client != null && Client.Authenticated) Client.RefreshAppearance(); }
+
+        /// <summary>The person put on, took off or moved a worn object (the platform has accepted it): it shows on their screen and body, and the others on the island see it.</summary>
+        public void OwnAttachmentsChanged() { RefreshOwnAttachments(); TellIslandOfAppearance(); }
 
         public void RefreshOwnAttachments() => Ui.Root.Then(Api.ApiAsync("GET", AttachmentsWindow.Route), r =>
         {
@@ -328,7 +333,7 @@ namespace LifeVerse.Unity.UI
             holder.Then(Api.ApiAsync("GET", "/api/v1/users/me/avatar"), r =>
             {
                 holder.Close(); var draft = r.Status == 200 ? CharacterDraft.FromResponse(r.Body) : CharacterDraft.Starter(Login.User.value.Trim());
-                var window = new CharacterWindow(Context, draft); window.Saved += () => { var view = PeopleViews?.ViewOf(Client.SelfPeerId); view?.ApplyAppearance(AvatarAppearance.Parse(draft.ToAppearanceJson())); }; window.Open();
+                var window = new CharacterWindow(Context, draft); window.Saved += () => { var view = PeopleViews?.ViewOf(Client.SelfPeerId); view?.ApplyAppearance(AvatarAppearance.Parse(draft.ToAppearanceJson())); TellIslandOfAppearance(); }; window.Open();
             });
             return holder;
         }
@@ -387,7 +392,7 @@ namespace LifeVerse.Unity.UI
         public FloatingWindow EditAttachment(AttachmentData a)
         {
             if (OwnAttachments?.HolderOf(a.Id) == null) { Notices.Show("Este objeto ainda não apareceu no corpo.", NoticeKind.Info); return null; }
-            AttachmentEditing?.Close(); AttachmentEditing = new AttachmentEditor(Context, a, () => OwnAttachments, () => Follow != null ? Follow.Camera : null, () => Follow, RefreshOwnAttachments); return AttachmentEditing;
+            AttachmentEditing?.Close(); AttachmentEditing = new AttachmentEditor(Context, a, () => OwnAttachments, () => Follow != null ? Follow.Camera : null, () => Follow, OwnAttachmentsChanged); return AttachmentEditing;
         }
 
         /// <summary>"Indicadores de fala": who is talking shows it over the head.</summary>

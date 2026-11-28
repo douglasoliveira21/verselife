@@ -23,6 +23,23 @@ namespace LifeVerse.Unity.Avatar
         private readonly List<Bone> _bones = new List<Bone>(); private readonly Dictionary<string, Bone> _byName = new Dictionary<string, Bone>();
         private Transform _content; private Renderer[] _renderers = Array.Empty<Renderer>(); private float _unit = 1f;
         private SkeletonClip _current, _previous; private float _time, _previousTime, _blend = 1f;
+        private bool _loops = true, _previousLoops = true; private string _activity, _moment, _ownState; private float _momentLeft;
+        /// <summary>The state whose own animation (the person's) is on the bones now, or "" when the game's plays.</summary>
+        public string OwnState => _ownState ?? "";
+
+        /// <summary>
+        /// What the person is doing, in the words of the states an animation can replace (<see cref="LifeVerse.Shared.Avatar.AnimationStates"/>), or null for what none replaces (typing, floating still in the water).
+        /// A gesture counts unless the person is flying, swimming or seated, as on the simple body.
+        /// </summary>
+        public static string ActivityOf(NetworkMotionState motion, AvatarView.Gesture gesture, float speed)
+        {
+            if (gesture != AvatarView.Gesture.None && motion != NetworkMotionState.Fly && motion != NetworkMotionState.Swim && motion != NetworkMotionState.Sit) return gesture.ToString();   // the gestures are named as their states
+            return motion switch
+            {
+                NetworkMotionState.Idle => "Idle", NetworkMotionState.Walk => "Walk", NetworkMotionState.Run => "Run", NetworkMotionState.Jump => "Jump", NetworkMotionState.Fall => "Fall",
+                NetworkMotionState.Fly => speed > .5f ? "FlyMove" : "FlyIdle", NetworkMotionState.Swim => speed > .3f ? "Swim" : null, NetworkMotionState.Sit => "Sit", NetworkMotionState.Wave => "Wave", NetworkMotionState.Dance => "Dance", _ => null,
+            };
+        }
         private readonly HandFingers _fingers = new HandFingers();
         /// <summary>The fingers of the body, when its hands have finger bones.</summary>
         public HandFingers Fingers => _fingers;
@@ -179,22 +196,35 @@ namespace LifeVerse.Unity.Avatar
         public void Tick(float delta, NetworkMotionState motion, AvatarView.Gesture gesture, float speed, float phase, PoseValues pose, float headPitch, bool fullClips)
         {
             if (_content == null) return;
-            var state = DefaultClips.StateOf(motion, speed, gesture != AvatarView.Gesture.None); var wanted = state != null && Overrides.TryGetValue(state, out var own) && own != null ? own : DefaultClips.For(state);   // the person's own clip for this state, else the game's
-            if (wanted != _current) { _previous = _current; _previousTime = _time; _current = wanted; _time = 0f; _blend = _previous == null && _current == null ? 1f : 0f; }
+            var activity = ActivityOf(motion, gesture, speed);
+            // landing and getting up are moments between two states: they play once, while the person stays still
+            if (activity != _activity)
+            {
+                _moment = activity != "Idle" ? null : _activity == "Jump" || _activity == "Fall" ? "Landing" : _activity == "Sit" || _activity == "SitFloor" ? "StandUp" : null;
+                if (_moment != null && Overrides.TryGetValue(_moment, out var once) && once != null) _momentLeft = once.Duration; else _moment = null;
+                _activity = activity;
+            }
+            else if (_moment != null && (_momentLeft -= delta) <= 0f) _moment = null;
+            // the person's own clip for this state, else the game's
+            var state = _moment ?? activity; SkeletonClip wanted; var loops = true; string mine = null;
+            if (state != null && Overrides.TryGetValue(state, out var own) && own != null) { wanted = own; mine = state; loops = !LifeVerse.Shared.Avatar.AnimationStates.All.TryGetValue(state, out var repeats) || repeats; }
+            else wanted = DefaultClips.For(DefaultClips.StateOf(motion, speed, gesture != AvatarView.Gesture.None));
+            if (wanted != _current || !loops && mine != _ownState) { _previous = _current; _previousTime = _time; _previousLoops = _loops; _current = wanted; _loops = loops; _time = 0f; _blend = _previous == null && _current == null ? 1f : 0f; }
+            _ownState = mine;
             _time += delta; _previousTime += delta; _blend = Mathf.Min(1f, _blend + delta / BlendSeconds);
             Dictionary<string, Quaternion> deltas;
             Vector3 hipsOffset = Vector3.zero;
             if (_current != null)
             {
-                var now = _current.SampleDeltas(_time); deltas = new Dictionary<string, Quaternion>(now.Count);
-                Dictionary<string, System.Numerics.Quaternion> before = _blend < 1f && _previous != null ? _previous.SampleDeltas(_previousTime) : null;
+                var now = _current.SampleDeltas(_time, _loops); deltas = new Dictionary<string, Quaternion>(now.Count);
+                Dictionary<string, System.Numerics.Quaternion> before = _blend < 1f && _previous != null ? _previous.SampleDeltas(_previousTime, _previousLoops) : null;
                 foreach (var pair in now)
                 {
                     var q = ToUnity(pair.Value);
                     if (before != null && before.TryGetValue(pair.Key, out var b)) q = Quaternion.Slerp(ToUnity(b), q, Mathf.SmoothStep(0f, 1f, _blend));
                     deltas[pair.Key] = q;
                 }
-                var offset = _current.SampleHipsOffset(_time); hipsOffset = new Vector3(0f, offset.Y, 0f);
+                var offset = _current.SampleHipsOffset(_time, _loops); hipsOffset = new Vector3(0f, offset.Y, 0f);
             }
             else { deltas = Procedural(pose, headPitch); hipsOffset = new Vector3(0f, -pose.Drop / Mathf.Max(_unit, 1e-4f), 0f); }
             Apply(deltas, hipsOffset); _gesture = gesture; _motion = motion; _fingers.Apply(side => HandShape.For(_motion, _gesture, side, HoldsHand != null && HoldsHand(side)), delta);

@@ -598,3 +598,13 @@ A pedido do dono, a interface do cliente Unity **deixou de imitar a do Godot** e
 - **Verificado:** EditMode 251/251; autoteste do mundo 372 (no editor, com fotos), incluindo a animação de ponta a ponta pelo servidor da ilha de teste; em foto, os cinco casos de textura de DAE usados na conferência anterior. **O clique simulado do menu do chão falhou numa rodada** e passou na repetição.
 - **Não verificado:** arquivos de Blender ou SketchUp, a API real e a produção (o carimbo de início da animação é do servidor real), o jogo gerado e mouse de verdade.
 
+### Scripts, anexos, HUD e animações (28/11/2026, perguntas do dono)
+- **Feito:** só leitura do código; nada mudou no jogo. O que se achou está em `FALTA_FAZER.md` §5.3.
+- **Verificado:** pelo código. O autoteste do mundo do mesmo dia (372) passa pelo editor de scripts, pelos anexos no corpo e na tela e pelo painel de script (com mensagens simuladas). **Não verificado:** um script rodando num servidor de ilha nesta rodada, e os defeitos apontados em jogo.
+
+### Avisar a ilha, animações próprias e inventário em Vestir (28/11/2026, "corrigir os defeitos")
+- **Feito:** depois que a API aceita a troca (aparência, personagem, estúdio do avatar ou anexo), o cliente manda `RefreshAppearance` e a ilha mostra a todos (o servidor já espaçava pedidos seguidos sem perder o último); as animações próprias tocam também sentado, no chão, nos gestos, ao aterrissar e ao levantar, e as que não se repetem tocam uma vez (`SkeletalBody.ActivityOf`); **Anexos do corpo** lê o inventário de 100 em 100 até o fim, tem busca sem depender de acento e numera nomes repetidos.
+- **Defeito achado na foto e corrigido:** em 720p os campos de **Vestir um objeto** apareciam uns sobre os outros.
+- **Verificado:** EditMode 254/254; autoteste do mundo 374 (no editor, com fotos), com um segundo jogador recebendo a aparência nova e o inventário em duas páginas no servidor de teste; verificação ao vivo contra a API local, 32 passos, com a janela listando todos os itens. Numa rodada o clique simulado do botão direito no chão falhou e, em outra, o editor parou de avançar (causa não confirmada); as repetições passaram.
+- **Não verificado:** duas pessoas numa ilha de produção, um arquivo de animação feito pela pessoa tocando em jogo (os testes usam os clipes do próprio jogo no lugar), o jogo gerado, mouse de verdade e inventário com mais de 100 itens na API real.
+

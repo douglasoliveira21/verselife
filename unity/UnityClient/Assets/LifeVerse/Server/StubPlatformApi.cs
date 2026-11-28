@@ -96,6 +96,7 @@ namespace LifeVerse.Unity.Server
             else if (request.HttpMethod == "GET" && path == "/health") { status = Healthy ? 200 : 503; json = Healthy ? "Healthy" : "Unhealthy"; }   // public, like the API's health check
             else if (!authorized) status = 401;
             else if (request.HttpMethod == "PUT" && path == "/api/v1/users/me/avatar") { AvatarSaved = true; lock (Bodies) Bodies.Add(("PUT " + path, body)); json = "{}"; }
+            else if (request.Url.Query.Length > 0 && Routes.TryGetValue(request.HttpMethod + " " + request.Url.PathAndQuery, out var exact)) json = exact;   // an answer for one page or filter
             else if (Routes.TryGetValue(request.HttpMethod + " " + path, out var canned)) { json = canned; if (body.Length > 0) lock (Bodies) Bodies.Add((request.HttpMethod + " " + path, body)); }
             else if (path.EndsWith("/entry-token") && request.HttpMethod == "POST")
             {
