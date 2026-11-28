@@ -26,6 +26,7 @@ namespace LifeVerse.Unity.UI
         private void BuildResources()
         {
             var tab = _tabs["Recursos"];
+            BuildAnimation(tab);
             tab.Add(UiKit.Text("Luz", "lv-bold"));
             _lightOn = UiKit.Check("O objeto ilumina em volta", false, v => { if (v) EditMaterial(m => { if (m["light"] is not JsonObject) m["light"] = new JsonObject { ["color"] = "#FFE0A8", ["energy"] = 1.5, ["range"] = 8.0, ["falloff"] = 1.0, ["shadow"] = false }; }); else EditMaterial(m => { m.Remove("light"); m.Remove("projector"); m.Remove("projectorBuiltin"); m.Remove("projectorTexture"); }); });
             _lightColour = Controls.ColourField("Cor da luz", "#FFE0A8", value => EditLight(l => l["color"] = value), LightColours);
@@ -115,6 +116,7 @@ namespace LifeVerse.Unity.UI
         private void RefreshResources(WorldObjectState first)
         {
             if (_lightOn == null || first == null) return;
+            RefreshAnimation(first);
             var light = WorldObjects.ReadLight(first.MaterialJson); var reflection = WorldObjects.ReadReflection(first.MaterialJson);
             _lightOn.SetValueWithoutNotify(light != null); foreach (var e in new VisualElement[] { _lightColour, _lightEnergy, _lightRange, _lightFalloff, _lightShadow, _lightFace, _lightCone, _projFov, _projFocus, _projAmbiance }) e.SetEnabled(light != null);
             var faces = new List<string> { "O objeto inteiro" }; faces.AddRange(_faceIds.Select(i => "Só a " + FaceName(i).ToLowerInvariant())); if (!faces.SequenceEqual(_lightFace.choices)) _lightFace.choices = faces;

@@ -123,6 +123,11 @@ namespace LifeVerse.Unity.UI
         }
 
         private WorldObjects Objects => _client()?.Objects;
+
+        /// <summary>The animation clips of the model of an object, whether the model has arrived, and the clip on screen with the point reached and its length (seconds).</summary>
+        public IReadOnlyList<string> ClipsOf(Guid id) => Objects?.ClipsOf(id) ?? Array.Empty<string>();
+        public bool ModelLoaded(Guid id) => Objects != null && Objects.ModelLoadedOf(id);
+        public (float Position, float Length) ClipPoint(Guid id) => Objects?.ClipPointOf(id) ?? (0f, 0f);
         private Guid Me => _c.Api.UserId;
         public WorldObjectState StateOf(Guid id) => Objects?.StateOf(id);
         // edits made before the island has answered the last one (a slider being dragged) build on what was just sent, with the next revision, or the island would refuse each of them for being based on an old one

@@ -585,3 +585,16 @@ A pedido do dono, a interface do cliente Unity **deixou de imitar a do Godot** e
 - **Defeitos achados pelas fotos e corrigidos:** falas passando por cima das abas da conversa; posição colada no número de pessoas; mini-mapa sob a barra em tela estreita; folha de menus cortada em tela baixa; e um antigo, que a folha revelou: depois da barra de lado, quatro botões ficavam sem dica.
 - **Verificado:** EditMode 246/246 (com contraste de pelo menos 4,5:1 medido para as cores de texto do dia e da noite); autoteste do mundo 370 no editor, com fotos; `-lifeverse-ui-shots` 14 verificações em 1280×720, 1366×768, 1920×1080 e 2560×1080. **O autoteste falhou algumas vezes** no clique simulado do menu do chão (passou nas repetições) e uma vez na abertura do criador de personagem.
 - **Não verificado:** mouse e teclado de verdade, o player gerado, a API real e a produção, 1440p, 4K, 32:9, desempenho e animações em movimento.
+
+### Importação de modelos, texturas e animações (28/11/2026, "está tudo funcional?")
+- **Feito:** nenhuma mudança no jogo; conferência com arquivos criados para o teste, por uma sonda temporária no editor (removida) e pela API local em memória.
+- **Passou:** DAE com eixo Z, centímetros, polylist, textura em pé, esqueleto de 2 ossos e animação (a malha dobra, vista em foto); glTF com `.bin` e imagem ao lado (nome com espaço) e animação; os GLB de `tests/fixtures`; a API local aceitou os modelos convertidos e devolveu os mesmos bytes.
+- **Falhou:** DAE com a textura em caminho de outro computador, só pelo nome com o arquivo numa subpasta, ou em TGA (o modelo entra sem textura, com aviso).
+- **Não verificado:** colocar um modelo com textura numa ilha de verdade, o jogo gerado, a produção, arquivos exportados por Blender ou SketchUp e a importação de corpo, roupa e animação de avatar.
+
+### Correções da importação de modelos (28/11/2026, "sim, corrigir")
+- **Feito:** as texturas de um `.dae` são procuradas pelo nome na pasta do modelo e até 3 níveis abaixo quando o caminho gravado não serve (nada fora da pasta nem da internet é lido), e TGA e BMP viram PNG (`DaeUploadPackager`, `PictureConverter`); **Construir → Recursos → Animação do modelo** liga a animação, escolhe o clipe, toca, pausa, repete e muda a velocidade; a janela de importar rola o conteúdo, cabe na tela e a prévia não mostra mais o céu da ilha atrás do modelo.
+- **Defeito do teste achado e corrigido:** o autoteste falhava às vezes em "o criador de personagem abrir sozinho" porque o servidor de teste ainda anunciava a atualização obrigatória de um passo anterior e, conforme o tempo, o jogo novo recusava o login.
+- **Verificado:** EditMode 251/251; autoteste do mundo 372 (no editor, com fotos), incluindo a animação de ponta a ponta pelo servidor da ilha de teste; em foto, os cinco casos de textura de DAE usados na conferência anterior. **O clique simulado do menu do chão falhou numa rodada** e passou na repetição.
+- **Não verificado:** arquivos de Blender ou SketchUp, a API real e a produção (o carimbo de início da animação é do servidor real), o jogo gerado e mouse de verdade.
+

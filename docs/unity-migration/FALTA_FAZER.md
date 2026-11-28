@@ -39,7 +39,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   ```
   LifeVerse.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -lifeverse-world-selfcheck
   ```
-  Espera-se `event=world_sync_check result=passed checks=370`.
+  Espera-se `event=world_sync_check result=passed checks=372`.
   - A cena inicial (`Bootstrap.unity`) **não tem luz própria**: o sol e a lua são do `IslandEnvironment`. A luz padrão da Unity que estava lá iluminava todas as ilhas, inclusive de noite. O teste de sentar ou o de pulo podem falhar por tempo: rode de novo.
 - **Verificação contra a API real, local:**
   1. Suba a API: `dotnet run --project tools/ApiLiveHost -c Release --no-build -- 5099`.
@@ -89,7 +89,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   - toggles de abas escondidas não disparam eventos de mudança;
   - para dar exemplo de opção indisponível, use uma que o Godot também não tenha (`graphics.vegetation`), nunca uma que o Unity possa ganhar depois;
   - os testes de sentar antigo e de pulo às vezes falham: rode de novo;
-  - o clique no menu do chão usa um mouse simulado e falha de vez em quando ("«Sobre este terreno» abrir uma janela"), ao que parece quando a janela do editor perde o foco ou o mouse de verdade se mexe (a causa não foi confirmada): rode de novo sem mexer no computador. A abertura sozinha do criador de personagem falhou uma vez e não se repetiu.
+  - o clique no menu do chão usa um mouse simulado e falha de vez em quando ("«Sobre este terreno» abrir uma janela"), ao que parece quando a janela do editor perde o foco ou o mouse de verdade se mexe (a causa não foi confirmada): rode de novo sem mexer no computador.
 - **Banco:** uma coluna `jsonb` volta reescrita pelo PostgreSQL (`{"a": 1}`, com espaço) e não aceita operações de texto. Para ler um valor, interprete o JSON; para filtrar numa consulta, use `JsonColumn.Text(coluna)`. Os testes em memória não pegam nenhum dos dois erros.
 - **Heredoc:** um heredoc no Bash estraga barras invertidas. Use `chr(92)` em Python ou a ferramenta de edição.
 - **WSL:** servidores esquecidos no WSL prendem as portas 17777 e 17070 do Windows.
@@ -229,6 +229,15 @@ A organização continua a de um mundo como o Second Life, com tamanho das janel
 - **Barra de ferramentas:** é uma só (o Second Life permite várias, cada uma com os seus botões).
 - **Conversas:** o histórico é o que a API guarda; o nome de quem escreve num grupo depende de a notificação ao vivo trazê-lo.
 - **Verificado só no editor** (1280×720, 1366×768, 1920×1080 e 2560×1080).
+
+## 5.2. Importação de modelos (conferida em 28/11/2026)
+
+Entrada no jogo: **Construir (B) → aba Criar → Importar um modelo 3D** (GLB, glTF com arquivos ao lado e DAE); a animação de um modelo colocado fica em **Construir → Recursos**. Corrigidos em 28/11/2026: texturas de DAE (procura por nome, TGA e BMP), controle de animação e a janela de importar. Falta:
+
+- **Arquivos reais:** testar exportações do Blender, do SketchUp e de outros programas; os testes usam modelos pequenos feitos para eles.
+- **Um modelo animado numa ilha de produção**, para ver que o servidor grava o começo da animação e todos veem o mesmo ponto.
+- Roupas, corpo e animações de avatar aceitam só `.glb`.
+- Um modelo recém-colocado fica parado até a pessoa ligar a animação.
 
 ## 6. Build, distribuição e CI
 

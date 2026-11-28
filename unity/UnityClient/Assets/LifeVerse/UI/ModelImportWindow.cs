@@ -26,7 +26,11 @@ namespace LifeVerse.Unity.UI
             Texture = new RenderTexture(width * 2, height * 2, 24, RenderTextureFormat.ARGB32) { name = "Model preview" }; Image.image = Texture;
             _stage = new GameObject("Model preview stage"); _stage.transform.position = new Vector3(aside, StageY, 0);
             var cam = new GameObject("Camera"); cam.transform.SetParent(_stage.transform, false); cam.transform.localPosition = new Vector3(0f, .25f, -3.2f); cam.transform.localRotation = Quaternion.Euler(5f, 0f, 0f);
-            var camera = cam.AddComponent<Camera>(); camera.targetTexture = Texture; camera.clearFlags = CameraClearFlags.SolidColor; camera.backgroundColor = new Color(.1f, .15f, .18f); camera.fieldOfView = 35f; camera.nearClipPlane = .1f; camera.farClipPlane = 30f; cam.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
+            var camera = cam.AddComponent<Camera>(); camera.targetTexture = Texture; camera.clearFlags = CameraClearFlags.SolidColor; camera.backgroundColor = new Color(.1f, .15f, .18f); camera.fieldOfView = 35f; camera.nearClipPlane = .1f; camera.farClipPlane = 30f; var data = cam.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
+            // neither the sky of the island (HDRP does not read the clear flags of the camera) nor its fog belong in the little picture
+            data.clearColorMode = UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData.ClearColorMode.Color; data.backgroundColorHDR = new Color(.1f, .15f, .18f, 1f);
+            data.customRenderingSettings = true; data.renderingPathCustomFrameSettingsOverrideMask.mask[(uint)UnityEngine.Rendering.HighDefinition.FrameSettingsField.AtmosphericScattering] = true;
+            data.renderingPathCustomFrameSettings.SetEnabled(UnityEngine.Rendering.HighDefinition.FrameSettingsField.AtmosphericScattering, false);
             var lightObject = new GameObject("Key light"); lightObject.transform.SetParent(_stage.transform, false); lightObject.transform.rotation = Quaternion.Euler(35f, 150f, 0f); var light = lightObject.AddComponent<Light>(); light.type = LightType.Directional; light.intensity = 3.5f;
             var hd = lightObject.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalLightData>(); hd.SetIntensity(30000f, UnityEngine.Rendering.LightUnit.Lux);
             Image.schedule.Execute(() => { if (_model != null) _model.transform.Rotate(0f, 40f * Time.unscaledDeltaTime * .03f * 30f, 0f, Space.World); }).Every(30);
@@ -81,18 +85,23 @@ namespace LifeVerse.Unity.UI
         public ModelImportWindow(ApiContext context, BuildEditor editor) : base(context.Ui, "model-import", "Importar um modelo 3D", 460f, 640f, new Vector2(120, 40))
         {
             _c = context; _b = editor; Body.style.flexGrow = 1; Body.style.minHeight = 0; style.overflow = Overflow.Hidden;
-            Body.Add(UiKit.Text("GLB, glTF (com as imagens e os dados ao lado) ou COLLADA (.dae). O modelo vira um arquivo só, que a plataforma confere de novo ao receber.", "lv-muted", "lv-small")); Body.Add(UiKit.Button("Escolher o arquivo…", () => new FilePickerWindow(_c.Ui, "Escolha o modelo", Uploads.ModelFilter, Load).Open(), "lv-btn-primary"));
-            _file = UiKit.Text("Nenhum arquivo escolhido.", "lv-bold"); Body.Add(_file); _preview = new ModelPreview(300, 220); _preview.Image.style.alignSelf = Align.Center; _preview.Image.style.marginTop = 6; _preview.Image.style.flexShrink = 0; Body.Add(_preview.Image);
+            // what the file holds scrolls; the answer and the buttons stay in sight, however low the screen is
+            var scroll = new ScrollView { name = "model-contents" }; scroll.style.flexGrow = 1; scroll.style.flexShrink = 1; scroll.style.minHeight = 0; Body.style.overflow = Overflow.Hidden; Body.Add(scroll); _contents = scroll;
+            var about = UiKit.Text("GLB, glTF (com as imagens e os dados ao lado) ou COLLADA (.dae, com as imagens na mesma pasta ou numa pasta dentro dela). O modelo vira um arquivo só, que a plataforma confere de novo ao receber.", "lv-muted", "lv-small"); about.style.whiteSpace = WhiteSpace.Normal; scroll.Add(about); scroll.Add(UiKit.Button("Escolher o arquivo…", () => new FilePickerWindow(_c.Ui, "Escolha o modelo", Uploads.ModelFilter, Load).Open(), "lv-btn-primary"));
+            _file = UiKit.Text("Nenhum arquivo escolhido.", "lv-bold"); scroll.Add(_file); _preview = new ModelPreview(300, 220); _preview.Image.style.alignSelf = Align.Center; _preview.Image.style.marginTop = 6; _preview.Image.style.flexShrink = 0; scroll.Add(_preview.Image);
             _size = Row("Medidas"); _triangles = Row("Triângulos"); _materials = Row("Materiais"); _textures = Row("Imagens"); _parts = Row("Partes"); _animations = Row("Animações");
-            _problem = UiKit.Text("", "lv-small", "lv-bad"); _problem.style.whiteSpace = WhiteSpace.Normal; _problem.style.flexShrink = 0; Body.Add(_problem);
-            _worldSize = UiKit.Field("Tamanho no mundo (metros, a maior medida)", false, 6, PlacementSize.ToString("0.##", CultureInfo.InvariantCulture)); Body.Add(_worldSize);
-            _shape = new DropdownField("Colisão", Shapes.Select(s => s.Label).ToList(), Math.Max(0, Array.FindIndex(Shapes, s => s.Id == CollisionShape))); Body.Add(_shape);
+            _problem = UiKit.Text("", "lv-small", "lv-bad"); _problem.style.whiteSpace = WhiteSpace.Normal; _problem.style.flexShrink = 0; scroll.Add(_problem);
+            _worldSize = UiKit.Field("Tamanho no mundo (metros, a maior medida)", false, 6, PlacementSize.ToString("0.##", CultureInfo.InvariantCulture)); scroll.Add(_worldSize);
+            _shape = new DropdownField("Colisão", Shapes.Select(s => s.Label).ToList(), Math.Max(0, Array.FindIndex(Shapes, s => s.Id == CollisionShape))); scroll.Add(_shape);
             _status = UiKit.Text("", "lv-small", "lv-muted"); _status.style.whiteSpace = WhiteSpace.Normal; _status.style.flexShrink = 0; Body.Add(_status);
             _place = UiKit.Button("Colocar na ilha", Place, "lv-btn-primary"); _place.SetEnabled(false); Body.Add(UiKit.Row(_place, UiKit.Button("Fechar", Close)));
             Closed += () => _preview.Dispose();
+            schedule.Execute(FitScreen);
         }
 
-        private Label Row(string name) { var value = UiKit.Text("—", "lv-body"); var row = UiKit.Row(UiKit.Text(name, "lv-muted"), UiKit.Spacer(), value); row.style.flexShrink = 0; Body.Add(row); return value; }
+        private readonly ScrollView _contents;
+
+        private Label Row(string name) { var value = UiKit.Text("—", "lv-body"); var row = UiKit.Row(UiKit.Text(name, "lv-muted"), UiKit.Spacer(), value); row.style.flexShrink = 0; _contents.Add(row); return value; }
 
         /// <summary>Reads a file of the person's computer: GLB as it is, glTF gathered with what it points to, DAE converted.</summary>
         public void Load(string path)
@@ -106,12 +115,7 @@ namespace LifeVerse.Unity.UI
             FileName = Path.GetFileName(path); _file.text = FileName; _status.text = ""; Warnings = new List<string>(); var extension = Path.GetExtension(path).ToLowerInvariant(); byte[] glb; string error;
             if (extension == ".glb") { glb = bytes; error = null; }
             else if (extension == ".gltf") { if (!GltfUploadPackager.TryPack(path, bytes, out glb, out error)) { Fail(error); return; } }
-            else if (extension == ".dae")
-            {
-                var folder = Path.GetFullPath(Path.GetDirectoryName(path) ?? ".");
-                Func<string, byte[]> readImage = name => { try { var full = Path.GetFullPath(Path.Combine(folder, Uri.UnescapeDataString(name ?? "").Replace('/', Path.DirectorySeparatorChar))); return full.StartsWith(folder + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? File.ReadAllBytes(full) : null; } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException) { return null; } };   // only pictures beside the model
-                if (!ColladaConverter.TryConvert(bytes, readImage, out glb, out error, out var warnings)) { Fail(error); return; } Warnings = warnings;
-            }
+            else if (extension == ".dae") { if (!DaeUploadPackager.TryPack(path, bytes, out glb, out error, out var warnings)) { Fail(error); return; } Warnings = warnings; }   // only pictures inside the model's folder
             else { Fail("Use um arquivo .glb, .gltf ou .dae."); return; }
             Glb = glb; var report = ModelInspector.Inspect(glb); Report = report; var pt = CultureInfo.GetCultureInfo("pt-BR");
             _size.text = ModelInspector.SizeText(report.Size); _triangles.text = report.Triangles.ToString("N0", pt); _materials.text = report.Materials.ToString(pt); _textures.text = report.Textures.ToString(pt); _parts.text = report.Parts.ToString(pt); _animations.text = report.Animations.ToString(pt);
@@ -142,7 +146,7 @@ namespace LifeVerse.Unity.UI
                 PlacedAsset = Uploaded.AssetId; _status.text = "Modelo enviado. Pedindo à ilha para colocá-lo…";
                 var state = BuildCommands.NewState("mesh", _b != null ? _b.PlacePoint(0f) : Vector3.zero); state.Name = name.Length == 0 ? "Modelo" : name; state.MaterialJson = "{}"; state.PhysicsJson = System.Text.Json.JsonSerializer.Serialize(new { collision = CollisionShape != "none", shape = CollisionShape });
                 state.GeometryJson = System.Text.Json.JsonSerializer.Serialize(new { assetId = PlacedAsset.ToString().ToLowerInvariant() }); state.ScaleX = state.ScaleY = state.ScaleZ = ScaleFor(meters); state.PositionY += meters / 2f;
-                if (_b == null || !_b.CreateState(state, made => { _status.text = "\"" + made.Name + "\" colocado."; _status.RemoveFromClassList("lv-bad"); })) { _status.text = "O modelo foi guardado no inventário, mas não deu para colocá-lo agora."; _place.SetEnabled(true); }
+                var moves = Report.Animations > 0; if (_b == null || !_b.CreateState(state, made => { _status.text = "\"" + made.Name + "\" colocado." + (moves ? " Para animar: aba Recursos, com o objeto selecionado." : ""); _status.RemoveFromClassList("lv-bad"); })) { _status.text = "O modelo foi guardado no inventário, mas não deu para colocá-lo agora."; _place.SetEnabled(true); }
             });
         }
     }

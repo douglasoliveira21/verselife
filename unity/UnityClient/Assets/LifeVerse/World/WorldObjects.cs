@@ -601,6 +601,14 @@ namespace LifeVerse.Unity.World
         /// <summary>The clips of an object's model, and the one that plays now (for the editor and the tests).</summary>
         public IReadOnlyList<string> ClipsOf(Guid id) => _objects.TryGetValue(id, out var entry) && entry.Model != null ? ModelAnimations.Clips(entry.Model) : Array.Empty<string>();
         public string ClipPlayingOf(Guid id) => _objects.TryGetValue(id, out var entry) ? entry.ClipPlaying ?? "" : "";
+        public bool ModelLoadedOf(Guid id) => _objects.TryGetValue(id, out var entry) && entry.Model != null;
+        /// <summary>Where the clip on screen is (within its length: a loop starts over, a single play stops at the end), and that length.</summary>
+        public (float Position, float Length) ClipPointOf(Guid id)
+        {
+            if (!_objects.TryGetValue(id, out var entry) || entry.Model == null || string.IsNullOrEmpty(entry.ClipPlaying)) return (0f, 0f);
+            var player = ModelAnimations.PlayerOf(entry.Model); if (player == null) return (0f, 0f); var state = player[entry.ClipPlaying];
+            return (state.wrapMode == WrapMode.Loop && state.length > 0f ? Mathf.Repeat(state.time, state.length) : Mathf.Clamp(state.time, 0f, state.length), state.length);
+        }
         public float ClipTimeOf(Guid id) { if (!_objects.TryGetValue(id, out var entry) || entry.Model == null || string.IsNullOrEmpty(entry.ClipPlaying)) return 0f; var player = ModelAnimations.PlayerOf(entry.Model); return player != null ? player[entry.ClipPlaying].time : 0f; }
 
         private static Guid? ModelAssetOf(string geometryJson)
