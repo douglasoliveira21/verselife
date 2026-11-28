@@ -35,7 +35,7 @@ namespace LifeVerse.Unity.Tests.EditMode
         public void TheInterfaceScaleIsAutomaticFromTheScreenHeightOrChosen()
         {
             var s = new UserSettings { AutoScale = true };
-            Assert.AreEqual(1f, s.EffectiveScale(1080f), 1e-5f); Assert.AreEqual(1.5f, s.EffectiveScale(2160f), 1e-5f, "o máximo"); Assert.AreEqual(.75f, s.EffectiveScale(500f), 1e-5f, "o mínimo");
+            Assert.AreEqual(1f, s.EffectiveScale(1080f), 1e-5f); Assert.AreEqual(1.5f, s.EffectiveScale(2160f), 1e-5f, "o máximo"); Assert.AreEqual(UserSettings.MinAutoScale, s.EffectiveScale(500f), 1e-5f, "o mínimo");
             s.AutoScale = false; s.InterfaceScale = 1.25f; Assert.AreEqual(1.25f, s.EffectiveScale(500f), 1e-5f); s.LargeText = true; Assert.AreEqual(1.25f * 1.15f, s.EffectiveScale(500f), 1e-5f);
         }
 

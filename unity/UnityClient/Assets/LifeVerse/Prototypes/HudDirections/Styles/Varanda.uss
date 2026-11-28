@@ -1,0 +1,152 @@
+/* 3 · Varanda — warm paper, deck wood and sea colours. A serif for places, a humanist letter for talk; round only where a person or a button is. */
+.vr {
+    --vr-paper: #F8F1E4;
+    --vr-sand: #EBDFC9;
+    --vr-ink: #2E2420;
+    --vr-soft: #55443A;
+    --vr-clay: #B4472F;
+    --vr-sea: #146B64;
+    --vr-sun: #E39A2D;
+    --vr-wood: #9C6B45;
+    color: var(--vr-ink);
+    font-size: 16px;
+}
+Label { margin: 0; padding: 0; }
+.vr-row { flex-direction: row; align-items: center; }
+.vr-wrap { flex-wrap: wrap; }
+.vr-grow { flex-grow: 1; }
+.vr-soft { color: var(--vr-soft); font-size: 15px; }
+.vr-strong { font-size: 15px; }
+.vr-paper { background-color: var(--vr-paper); border-bottom-width: 3px; border-color: var(--vr-sand); border-radius: 12px; }
+
+.vr-tap { width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 17px; border-width: 2px; border-color: rgba(0, 0, 0, 0); transition-duration: 200ms; transition-property: scale, background-color; transition-timing-function: ease-out-back; }
+.vr-tap:hover { background-color: var(--vr-sand); scale: 1.1; }
+.vr-tap:focus, .vr-tap.is-focus { border-color: var(--vr-sea); }
+.vr-tap.is-small { width: 28px; height: 28px; background-color: var(--vr-sand); margin-right: 6px; }
+.vr-tap.is-round { width: 28px; height: 28px; background-color: var(--vr-sand); margin-left: 5px; }
+.vr-tap.is-tiny { width: 20px; height: 20px; margin-left: 4px; color: var(--vr-paper); }
+
+.vr-face { width: 32px; height: 32px; border-radius: 16px; align-items: center; justify-content: center; flex-shrink: 0; }
+.vr-initial { color: #FFFFFF; font-size: 15px; }
+.vr-face.is-stacked { width: 30px; height: 30px; margin-right: -7px; border-width: 2px; border-color: var(--vr-paper); }
+.vr-face.is-tiny { width: 22px; height: 22px; margin-right: 6px; border-width: 2px; border-color: var(--vr-paper); }
+.vr-face.is-tiny .vr-initial { font-size: 12px; }
+.vr-face.is-small { width: 28px; height: 28px; margin-right: 8px; align-self: flex-end; border-width: 2px; border-color: var(--vr-paper); }
+.vr-face.is-big { width: 66px; height: 66px; border-radius: 33px; }
+.vr-face.is-big .vr-initial { font-size: 30px; }
+
+.vr-sign { padding: 10px 18px 10px 18px; border-left-width: 7px; border-left-color: var(--vr-clay); }
+.vr-place { font-size: 27px; color: var(--vr-ink); }
+.vr-who-here { margin-top: 6px; }
+.vr-who-here .vr-strong { margin-left: 16px; }
+.vr-coords { margin-left: 16px; font-size: 14px; }
+.vr-links { margin-top: 10px; }
+.vr-link { height: 28px; margin-left: 8px; padding: 0 8px; border-radius: 8px; border-width: 2px; border-color: rgba(0, 0, 0, 0); transition-duration: 200ms; transition-property: background-color; }
+.vr-link:hover { background-color: var(--vr-sand); }
+.vr-link:focus { border-color: var(--vr-sea); }
+.vr-link-text { margin-left: 6px; font-size: 15px; color: var(--vr-sea); }
+
+.vr-pill { height: 50px; margin-left: 10px; padding: 0 8px 0 14px; border-radius: 25px; }
+.vr-search { width: 262px; }
+.vr-search .vr-soft { margin-left: 10px; }
+.vr-search:focus { border-color: var(--vr-sea); }
+.vr-money { font-size: 19px; margin: 0 12px 0 8px; }
+.vr-buy { height: 34px; padding: 0 16px; border-radius: 17px; background-color: var(--vr-clay); transition-duration: 200ms; transition-property: scale; }
+.vr-buy:hover { scale: 1.05; }
+.vr-buy-text { color: #FFF8EC; font-size: 15px; }
+.vr-pill .vr-bell { margin-left: -6px; margin-right: 8px; }
+.vr-clock { font-size: 18px; margin-right: 14px; }
+.vr-online { width: 10px; height: 10px; border-radius: 5px; background-color: #1F9560; margin-right: 7px; flex-shrink: 0; }
+.vr-pill > .vr-row > .vr-soft { margin-right: 8px; }
+.vr-badge { position: absolute; right: -1px; top: -2px; min-width: 17px; height: 17px; border-radius: 9px; background-color: var(--vr-clay); color: #FFF8EC; font-size: 12px; -unity-text-align: middle-center; }
+.vr-badge.is-inline { position: relative; right: 0; top: 0; margin-left: 6px; }
+
+.vr-postcard { background-color: #FFFDF7; padding: 9px 9px 6px 9px; border-radius: 6px; border-bottom-width: 3px; border-color: var(--vr-sand); }
+.vr-picture { overflow: hidden; }
+.vr-north { font-size: 14px; color: #FFFFFF; }
+.vr-postcard-foot { height: 36px; }
+.vr-caption { font-size: 15px; -unity-font-style: italic; color: var(--vr-ink); }
+
+.vr-chat { width: 396px; }
+.vr-heads { margin-bottom: 8px; }
+.vr-head { height: 32px; padding: 0 8px 0 5px; margin-right: 5px; border-radius: 16px; background-color: var(--vr-paper); border-width: 2px; border-color: rgba(0, 0, 0, 0); }
+.vr-head > Glyph { margin-right: 5px; margin-left: 3px; }
+.vr-head.is-on { background-color: var(--vr-sea); color: var(--vr-paper); }
+.vr-head:focus { border-color: var(--vr-sun); }
+.vr-head-text { font-size: 14px; white-space: nowrap; }
+.vr-fold { background-color: var(--vr-paper); }
+.vr-said-row { align-items: flex-end; margin-bottom: 6px; }
+.vr-said-row.is-mine { justify-content: flex-end; }
+.vr-bubble { background-color: var(--vr-paper); border-radius: 14px; border-bottom-left-radius: 3px; padding: 6px 12px 5px 12px; max-width: 290px; flex-shrink: 1; }
+.vr-bubble.is-mine { background-color: var(--vr-clay); color: #FFF8EC; border-bottom-left-radius: 14px; border-bottom-right-radius: 3px; }
+.vr-by { font-size: 14px; }
+.vr-said { font-size: 16px; white-space: normal; }
+.vr-when { font-size: 12px; opacity: 0.75; align-self: flex-end; }
+.vr-field { height: 46px; padding: 0 5px 0 18px; border-radius: 23px; margin-top: 2px; }
+.vr-field.is-active { border-width: 2px; border-color: var(--vr-sea); }
+.vr-typed { font-size: 16px; }
+.vr-send { background-color: var(--vr-sea); color: var(--vr-paper); }
+.vr-send:hover { background-color: #0F534D; }
+
+.vr-dock-wrap { position: absolute; left: 0; right: 0; align-items: center; }
+.vr-dock { height: 84px; padding: 0 14px 6px 14px; background-color: var(--vr-paper); border-radius: 22px; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+.vr-deck { position: absolute; left: 0; right: 0; bottom: 0; height: 8px; background-color: var(--vr-wood); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; }
+.vr-action { width: 76px; height: 68px; align-items: center; justify-content: center; border-radius: 14px; border-width: 2px; border-color: rgba(0, 0, 0, 0); color: var(--vr-ink); transition-duration: 220ms; transition-property: translate, background-color; transition-timing-function: ease-out-back; }
+.vr-action:hover, .vr-action.is-hover { background-color: var(--vr-sand); translate: 0 -6px; }
+.vr-action:focus, .vr-action.is-focus { border-color: var(--vr-sea); }
+.vr-action.is-on { background-color: var(--vr-sea); color: var(--vr-paper); }
+.vr-action-text { font-size: 14px; margin-top: 4px; white-space: nowrap; }
+.vr-me { width: 108px; height: 84px; align-items: center; justify-content: flex-end; padding-bottom: 11px; border-radius: 14px; border-width: 2px; border-color: rgba(0, 0, 0, 0); }
+.vr-me:focus { border-color: var(--vr-sea); }
+.vr-medal { position: absolute; top: -34px; width: 84px; height: 84px; border-radius: 42px; background-color: var(--vr-paper); align-items: center; justify-content: center; }
+.vr-medal .vr-face { border-width: 4px; border-color: #1F9560; }
+.vr-me-text { font-size: 14px; margin-right: 3px; }
+.vr-divider { width: 2px; height: 46px; background-color: var(--vr-sand); margin: 0 6px; }
+.vr-tip { position: absolute; top: -34px; background-color: var(--vr-ink); border-radius: 8px; padding: 4px 10px; }
+.vr-tip-text { color: var(--vr-paper); font-size: 14px; white-space: nowrap; }
+.vr-presences { width: 188px; padding: 8px 8px; align-self: center; position: absolute; }
+.vr-pop-title { font-size: 16px; margin: 0 8px 4px 8px; }
+.vr-option { height: 32px; padding: 0 10px; border-radius: 8px; }
+.vr-option:hover, .vr-option.is-on { background-color: var(--vr-sand); }
+.vr-option .vr-online { margin-right: 10px; }
+.vr-option-text { font-size: 15px; }
+
+.vr-toasts { align-items: flex-end; }
+.vr-toast { background-color: var(--vr-paper); height: 44px; margin-bottom: 8px; padding-right: 18px; border-radius: 6px; border-bottom-width: 3px; border-color: var(--vr-sand); }
+.vr-stamp { width: 44px; height: 41px; align-items: center; justify-content: center; border-top-left-radius: 6px; margin-right: 12px; }
+.vr-on-colour { color: #FFF8EC; }
+.vr-toast-text { font-size: 16px; }
+
+.vr-plate { align-items: center; translate: -50% -100%; }
+.vr-plate-tag { height: 28px; padding: 0 12px 0 3px; background-color: var(--vr-paper); border-radius: 14px; }
+.vr-plate-name { font-size: 15px; }
+.vr-plate-tail { width: 7px; height: 7px; rotate: 45deg; background-color: var(--vr-paper); margin-top: -4px; }
+
+.vr-veil { background-color: rgba(40, 26, 18, 0.46); }
+.vr-sheet-holder { position: absolute; left: 0; right: 0; align-items: center; }
+.vr-sheet { width: 1290px; padding: 16px 24px 14px 24px; border-radius: 18px; }
+.vr-sheet-head { height: 38px; border-bottom-width: 2px; border-color: var(--vr-sand); padding-bottom: 6px; height: 46px; }
+.vr-sheet-title { font-size: 26px; margin-right: 16px; }
+.vr-close { margin-left: 10px; color: var(--vr-clay); }
+.vr-columns { align-items: flex-start; justify-content: space-between; margin-top: 10px; margin-bottom: 8px; }
+.vr-column { width: 168px; }
+.vr-column.is-wide { width: 232px; }
+.vr-column.is-double { width: 430px; }
+.vr-heading { font-size: 18px; color: var(--vr-clay); margin-bottom: 4px; }
+.vr-heading.is-second { margin-top: 12px; }
+.vr-item { min-height: 28px; padding: 0 7px; margin-left: -7px; border-radius: 8px; border-width: 2px; border-color: rgba(0, 0, 0, 0); transition-duration: 160ms; transition-property: background-color; }
+.vr-item.is-half { width: 214px; margin-right: 6px; }
+.vr-item:hover { background-color: var(--vr-sand); }
+.vr-item:focus, .vr-item.is-focus { border-color: var(--vr-sea); }
+.vr-item-text { font-size: 16px; color: var(--vr-ink); white-space: normal; flex-shrink: 1; flex-grow: 1; }
+.vr-item-key { font-size: 13px; color: var(--vr-soft); margin-left: 6px; }
+.vr-own { border-top-width: 2px; border-color: var(--vr-sand); padding-top: 8px; }
+.vr-own-hint { margin-left: 14px; }
+.vr-chip { height: 32px; padding: 0 12px 0 8px; margin: 0 6px 6px 0; border-radius: 16px; background-color: var(--vr-sand); color: var(--vr-ink); }
+.vr-chip.is-on { background-color: var(--vr-sea); color: var(--vr-paper); }
+.vr-chip-text { font-size: 14px; margin-left: 6px; }
+.vr-options { margin-top: 2px; }
+.vr-options-title { margin-right: 10px; }
+.vr-segments { margin-right: 34px; background-color: var(--vr-sand); border-radius: 15px; padding: 2px; }
+.vr-segment { font-size: 14px; padding: 3px 14px; border-radius: 13px; }
+.vr-segment.is-on { background-color: var(--vr-paper); color: var(--vr-sea); }

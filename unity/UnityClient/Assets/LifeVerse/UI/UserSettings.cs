@@ -137,6 +137,8 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>The scale the interface is drawn with: chosen, or from the screen height when automatic (1080 px is 1).</summary>
-        public float EffectiveScale(float screenHeight) => (AutoScale ? Mathf.Clamp(screenHeight / 1080f, MinScale, MaxScale) : InterfaceScale) * (LargeText ? 1.15f : 1f);
+        /// <summary>The smallest automatic scale: below this the words of the interface get hard to read on a small window (a chosen scale may still go down to <see cref="MinScale"/>).</summary>
+        public const float MinAutoScale = .85f;
+        public float EffectiveScale(float screenHeight) => (AutoScale ? Mathf.Clamp(screenHeight / 1080f, MinAutoScale, MaxScale) : InterfaceScale) * (LargeText ? 1.15f : 1f);
     }
 }

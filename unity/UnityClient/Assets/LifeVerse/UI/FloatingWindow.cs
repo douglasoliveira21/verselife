@@ -13,7 +13,7 @@ namespace LifeVerse.Unity.UI
     public class FloatingWindow : VisualElement
     {
         /// <summary>The height of the bars at the top of the screen (a window opens under them) and of the toolbar at the bottom (a tall window ends above it).</summary>
-        public const float TopInset = 74f, BottomInset = 68f, MinWidth = 260f, MinHeight = 170f;
+        public const float TopInset = 84f, BottomInset = 108f, MinWidth = 260f, MinHeight = 170f;
         public string Id { get; }
         public VisualElement Body { get; }
         public Label Title { get; }

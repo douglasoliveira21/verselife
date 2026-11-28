@@ -17,7 +17,7 @@ namespace LifeVerse.Unity.UI
 
         public Captions()
         {
-            name = "captions"; pickingMode = PickingMode.Ignore; style.position = Position.Absolute; style.left = 0; style.right = 0; style.bottom = FloatingWindow.BottomInset + 12f; style.alignItems = Align.Center;
+            name = "captions"; pickingMode = PickingMode.Ignore; style.position = Position.Absolute; style.left = 0; style.right = 0; style.bottom = FloatingWindow.BottomInset + 34f; style.alignItems = Align.Center;
         }
 
         public void Say(string text, float now)

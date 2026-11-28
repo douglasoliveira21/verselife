@@ -132,9 +132,9 @@ namespace LifeVerse.Unity.UI
                 if (Pose == null) return; var size = contentRect.size; if (size.x < 10f || size.y < 10f) return;
                 var scale = Mathf.Min(size.x, size.y) / 2.3f; var painter = context.painter2D;
                 Vector2 At(Numerics.Vector3 p) => new Vector2(size.x / 2f + p.X * scale, size.y - 14f - p.Y * scale);
-                painter.strokeColor = new Color(.25f, .89f, .83f); painter.lineWidth = 4f; painter.lineCap = LineCap.Round;
+                painter.strokeColor = new Color(.08f, .45f, .41f); painter.lineWidth = 4f; painter.lineCap = LineCap.Round;
                 foreach (var (from, to) in StickFigure.Lines()) { painter.BeginPath(); painter.MoveTo(At(Pose[from])); painter.LineTo(At(Pose[to])); painter.Stroke(); }
-                painter.fillColor = Color.white; painter.BeginPath(); painter.Arc(At(Pose["head"]), .11f * scale, 0f, 360f); painter.Fill();
+                painter.fillColor = new Color(.71f, .28f, .18f); painter.BeginPath(); painter.Arc(At(Pose["head"]), .11f * scale, 0f, 360f); painter.Fill();
             }
         }
 

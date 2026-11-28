@@ -37,8 +37,8 @@ namespace LifeVerse.Unity.UI
 
         public RadialMenu()
         {
-            name = "radial"; style.position = Position.Absolute; style.left = style.top = style.right = style.bottom = 0; pickingMode = PickingMode.Position; focusable = true;
-            generateVisualContent += Draw;
+            name = "radial"; AddToClassList("lv-radial"); style.position = Position.Absolute; style.left = style.top = style.right = style.bottom = 0; pickingMode = PickingMode.Position; focusable = true;
+            generateVisualContent += Draw; RegisterCallback<CustomStyleResolvedEvent>(_ => MarkDirtyRepaint());
             RegisterCallback<PointerMoveEvent>(e => SetHover(SliceAt(e.localPosition)));
             RegisterCallback<PointerDownEvent>(e => { if (e.button == 0) Choose(SliceAt(e.localPosition), e.localPosition); else Close(); e.StopPropagation(); });
             RegisterCallback<KeyDownEvent>(OnKey);
@@ -72,14 +72,15 @@ namespace LifeVerse.Unity.UI
             for (var i = 0; i < items.Count; i++)
             {
                 var p = RadialMath.LabelPosition(i, items.Count, (Inner + Outer) / 2f); var label = new Label((i + 1) + "  " + items[i].Label); label.pickingMode = PickingMode.Ignore; label.style.position = Position.Absolute; label.style.width = 120; label.style.height = 24; label.style.unityTextAlign = TextAnchor.MiddleCenter;
-                label.style.left = _centre.x + p.X - 60; label.style.top = _centre.y + p.Y - 12; label.style.fontSize = 13; label.style.color = items[i].Enabled ? Color.white : new Color(.48f, .52f, .55f); Add(label); _labels.Add(label);
+                label.style.left = _centre.x + p.X - 60; label.style.top = _centre.y + p.Y - 12; label.style.fontSize = 14; label.AddToClassList("lv-radial-label"); label.AddToClassList("lv-bold"); label.EnableInClassList("lv-radial-off", !items[i].Enabled); Add(label); _labels.Add(label);
             }
-            if (_pages.Count > 1) { var more = new Label("Próxima ▸ (" + (_page + 1) + "/" + _pages.Count + ")"); more.pickingMode = PickingMode.Ignore; more.style.position = Position.Absolute; more.style.left = _centre.x - 40; more.style.top = _centre.y - 10; more.style.fontSize = 11; more.style.width = 80; more.style.unityTextAlign = TextAnchor.MiddleCenter; more.style.color = new Color(.66f, .7f, .74f); Add(more); _labels.Add(more); }
+            if (_pages.Count > 1) { var more = new Label("Próxima ▸ (" + (_page + 1) + "/" + _pages.Count + ")"); more.pickingMode = PickingMode.Ignore; more.style.position = Position.Absolute; more.style.left = _centre.x - 40; more.style.top = _centre.y - 10; more.style.fontSize = 11; more.style.width = 80; more.style.unityTextAlign = TextAnchor.MiddleCenter; more.AddToClassList("lv-radial-label"); Add(more); _labels.Add(more); }
         }
 
         private void SetHover(int index)
         {
             if (index == _hover) return; _hover = index; MarkDirtyRepaint();
+            for (var i = 0; i < _labels.Count; i++) _labels[i].EnableInClassList("lv-radial-hot", i == index && i < Slices.Count && Slices[i].Enabled);
             if (_tip == null) { _tip = new Label { pickingMode = PickingMode.Ignore }; _tip.AddToClassList("lv-glass"); _tip.AddToClassList("lv-small"); _tip.style.position = Position.Absolute; _tip.style.maxWidth = 260; _tip.style.whiteSpace = WhiteSpace.Normal; _tip.style.unityTextAlign = TextAnchor.MiddleCenter; }
             if (_tip.parent != this) Add(_tip);
             var show = Tooltips && index >= 0 && index < Slices.Count; _tip.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
@@ -102,13 +103,16 @@ namespace LifeVerse.Unity.UI
             else if (e.keyCode >= KeyCode.Alpha1 && e.keyCode <= KeyCode.Alpha8) { Choose(RadialMath.SliceForKey(e.keyCode - KeyCode.Alpha0, Slices.Count)); e.StopPropagation(); }
         }
 
+        private static readonly CustomStyleProperty<Color> FillProperty = new CustomStyleProperty<Color>("--lv-radial-fill"), HoverProperty = new CustomStyleProperty<Color>("--lv-radial-hover"), LineProperty = new CustomStyleProperty<Color>("--lv-radial-line");
+
         private void Draw(MeshGenerationContext context)
         {
             var count = Slices.Count; if (count == 0) return; var painter = context.painter2D;
+            var paper = customStyle.TryGetValue(FillProperty, out var p) ? p : new Color(.97f, .95f, .89f); var chosen = customStyle.TryGetValue(HoverProperty, out var h) ? h : new Color(.08f, .42f, .39f); var wood = customStyle.TryGetValue(LineProperty, out var w) ? w : new Color(.61f, .42f, .27f); var sun = new Color(.89f, .6f, .18f);
             for (var i = 0; i < count; i++)
             {
                 var centre = AngleOf(i, count); var half = Mathf.PI / count; var enabled = Slices[i].Enabled;
-                painter.fillColor = i == _hover && enabled ? Color.Lerp(new Color(.14f, .17f, .22f, Mathf.Max(Opacity, .5f)), new Color(.08f, .58f, .54f, .97f), Mathf.Clamp01(.25f + Glow)) : new Color(.12f, .15f, .2f, Opacity); painter.strokeColor = i == _hover && enabled ? new Color(.25f, .89f, .83f, 1f) : new Color(.39f, .44f, .53f, 1f); painter.lineWidth = 1.5f;
+                var hot = i == _hover && enabled; painter.fillColor = hot ? chosen : new Color(paper.r, paper.g, paper.b, Opacity); painter.strokeColor = hot ? Color.Lerp(wood, sun, Glow) : wood; painter.lineWidth = hot ? 1.5f + 2f * Glow : 1.5f;
                 painter.BeginPath(); painter.Arc(_centre, Outer, new Angle(centre - half + .01f, AngleUnit.Radian), new Angle(centre + half - .01f, AngleUnit.Radian)); painter.Arc(_centre, Inner, new Angle(centre + half - .01f, AngleUnit.Radian), new Angle(centre - half + .01f, AngleUnit.Radian), ArcDirection.CounterClockwise); painter.ClosePath(); painter.Fill(); painter.Stroke();
             }
         }

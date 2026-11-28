@@ -10,14 +10,15 @@ namespace LifeVerse.Unity.UI
         public static Label Text(string text, params string[] classes) { var label = new Label(text); foreach (var c in classes) label.AddToClassList(c); label.pickingMode = PickingMode.Ignore; return label; }
 
         /// <summary>The icon a button draws before its words (see <see cref="WithIcon"/>).</summary>
-        public sealed class ButtonIcon { public string Name; public float Size; public bool Only, Stacked, Alert; }
+        public sealed class ButtonIcon { public string Name; public float Size; public bool Only, Stacked, Alert; /// <summary>The Varanda icon drawn instead of the line one (the bar and the sheet).</summary>
+            public string Art; }
 
         /// <summary>Puts an icon before the words of a button. It is drawn by the button itself (a child element would stop the button from measuring its words), and the words stay its text.</summary>
         public static Button WithIcon(Button button, string icon, float size = 16f)
         {
             var mark = new ButtonIcon { Name = icon, Size = size }; button.userData = mark;
             button.style.paddingLeft = 8 + size + 5; button.style.flexShrink = 0; button.style.whiteSpace = WhiteSpace.NoWrap; button.AddToClassList("lv-btn-icon");
-            button.generateVisualContent += context => Draw(context, button, mark);
+            button.generateVisualContent += context => Draw(context, button, mark); button.RegisterCallback<CustomStyleResolvedEvent>(_ => button.MarkDirtyRepaint());
             return button;
         }
 
@@ -25,20 +26,20 @@ namespace LifeVerse.Unity.UI
         public static Button Stacked(Button button, string icon, float size = 22f)
         {
             var mark = new ButtonIcon { Name = icon, Size = size, Stacked = true }; button.userData = mark; button.style.whiteSpace = WhiteSpace.NoWrap; button.AddToClassList("lv-btn-icon");
-            button.generateVisualContent += context => Draw(context, button, mark);
+            button.generateVisualContent += context => Draw(context, button, mark); button.RegisterCallback<CustomStyleResolvedEvent>(_ => button.MarkDirtyRepaint());
             return button;
         }
 
         private static void Draw(MeshGenerationContext context, Button button, ButtonIcon mark)
         {
-            var box = button.contentRect; var colour = mark.Only ? new Color(.9f, .93f, .95f) : button.resolvedStyle.color;
+            var box = button.contentRect; var (ink, accent, surface) = VarandaIcons.ColoursOf(button); var colour = mark.Only ? ink : button.resolvedStyle.color;
             Rect at;
             if (mark.Only) at = new Rect((button.layout.width - mark.Size) / 2f, (button.layout.height - mark.Size) / 2f, mark.Size, mark.Size);
             else if (mark.Stacked) at = new Rect((button.layout.width - mark.Size) / 2f, 8f, mark.Size, mark.Size);
             else at = new Rect(box.x - mark.Size - 5f, box.y + (box.height - mark.Size) / 2f, mark.Size, mark.Size);
-            Icon.DrawInto(context, mark.Name, at, colour);
+            if (VarandaIcons.Has(mark.Art)) VarandaIcons.Draw(context, mark.Art, at, mark.Stacked ? ink : colour, accent, surface); else Icon.DrawInto(context, mark.Name, at, colour);
             if (!mark.Alert) return;
-            var painter = context.painter2D; painter.fillColor = new Color(.9f, .28f, .3f); painter.BeginPath(); painter.Arc(new Vector2(at.xMax + 2f, at.y + 2f), 4.5f, new Angle(0f), new Angle(360f)); painter.Fill();
+            var painter = context.painter2D; painter.fillColor = new Color(.84f, .24f, .17f); painter.BeginPath(); painter.Arc(new Vector2(at.xMax + 2f, at.y + 2f), 4.5f, new Angle(0f), new Angle(360f)); painter.Fill();
         }
 
         /// <summary>Puts a red dot on the icon of a button (something waits there), or takes it away.</summary>

@@ -25,7 +25,7 @@ namespace LifeVerse.Unity.UI
         public int Suppressed { get; private set; }
         public event Action Changed;
 
-        public NotificationCenter(UiRoot ui) { _ui = ui; var corner = _ui.ToastLayer; corner.style.alignItems = Align.FlexEnd; corner.style.justifyContent = Justify.FlexEnd; corner.style.paddingBottom = FloatingWindow.BottomInset; corner.style.paddingRight = 10; }   // as in the viewer: over the toolbar, on the right
+        public NotificationCenter(UiRoot ui) { _ui = ui; var corner = _ui.ToastLayer; corner.style.alignItems = Align.FlexEnd; corner.style.justifyContent = Justify.FlexStart; corner.style.paddingTop = FloatingWindow.TopInset + 8f; corner.style.paddingRight = Hud.Edge; }   // under the pills at the top, on the right
 
         public Notice Show(string text, NoticeKind kind = NoticeKind.Info, float seconds = 5f)
         {
@@ -35,7 +35,7 @@ namespace LifeVerse.Unity.UI
             _lastText = text; _lastTime = now; _history.Add(notice); if (_history.Count > MaxHistory) _history.RemoveAt(0); Unread++;
             if (DoNotDisturb && kind != NoticeKind.Bad) { Suppressed++; Changed?.Invoke(); return notice; }
             var toast = new VisualElement(); toast.AddToClassList("lv-toast"); toast.AddToClassList(kind == NoticeKind.Good ? "lv-toast-good" : kind == NoticeKind.Warn ? "lv-toast-warn" : kind == NoticeKind.Bad ? "lv-toast-bad" : "lv-toast-info");
-            toast.style.flexDirection = FlexDirection.Row; toast.style.alignItems = Align.Center; var mark = new Icon(kind == NoticeKind.Good ? "check" : kind == NoticeKind.Warn ? "alert" : kind == NoticeKind.Bad ? "error" : "info", 18); mark.style.marginRight = 8; toast.Add(mark);
+            var stamp = new VisualElement { name = "stamp", pickingMode = PickingMode.Ignore }; stamp.AddToClassList("lv-stamp"); stamp.Add(new Icon(kind == NoticeKind.Good ? "check" : kind == NoticeKind.Warn ? "alert" : kind == NoticeKind.Bad ? "error" : "info", 19)); toast.Add(stamp);
             var label = UiKit.Text(text); label.style.whiteSpace = WhiteSpace.Normal; label.style.flexShrink = 1; toast.Add(label); toast.pickingMode = PickingMode.Ignore;
             _ui.ToastLayer.Add(toast); _visible.Enqueue(toast);
             while (_visible.Count > Mathf.Clamp(MaxShown, 1, 8)) _visible.Dequeue().RemoveFromHierarchy();

@@ -48,6 +48,7 @@ namespace LifeVerse.Unity.UI
             new SettingDef("camera.allow_detached", "Camera", "Câmera livre", "Permitir a câmera desacoplada", "ALT + V solta a câmera do avatar: as teclas de andar a movem pelo mundo e o avatar fica parado. Ela não passa do alcance abaixo. Esc ou ALT + V de novo a devolvem.", "Bool", "false") { Group = "Câmera livre", Keywords = new[] { "desacoplada", "solta", "câmera" } },
             new SettingDef("camera.detached_range", "Camera", "Câmera livre", "Alcance da câmera desacoplada", "A que distância do avatar a câmera desacoplada pode ir (metros).", "Int", "60") { Min = 5, Max = 200, Step = 5, Group = "Câmera livre", Keywords = new[] { "desacoplada", "alcance" } },
             new SettingDef("camera.detached_speed", "Camera", "Câmera livre", "Velocidade da câmera desacoplada", "Quantos metros por segundo ela anda (Shift anda três vezes mais).", "Float", "8") { Min = 1, Max = 60, Step = 1, Group = "Câmera livre", Keywords = new[] { "desacoplada", "velocidade" } },
+            new SettingDef("interface.appearance", "Interface", "Geral", "Aparência da interface", "Papel claro ou escuro. Automática acompanha o céu que você vê: clara de dia, escura à noite.", "Choice", "auto") { Group = "Tamanho e modo", Column = 0, Choices = new[] { ("auto", "Automática (segue o céu)"), ("day", "Sempre clara"), ("night", "Sempre escura") }, Keywords = new[] { "tema", "noite", "dia", "escuro", "claro", "cores" } },
             new SettingDef("account.sync", "General", "Conta", "Guardar as configurações na conta", "Leva as configurações e as teclas para outros computadores em que você entrar.", "Bool", "false") { Group = "Conta", Keywords = new[] { "sincronizar", "nuvem", "conta" } },
         };
 
@@ -77,6 +78,7 @@ namespace LifeVerse.Unity.UI
             "world.minimap_open", "world.minimap_rotate", "world.minimap_names", "world.minimap_buildings", "world.map_parcels", "world.map_friends", "world.map_names", "world.map_events", "world.map_favorites", "world.map_featured",
             "interface.radial_speed", "interface.radial_tooltips", "general.keep_on_top", "general.download_update", "avatar.show_titles", "avatar.default_animations", "avatar.open_mirror", "privacy.external_media", "build.space", "build.import_collision",
             "audio.interface", "network.ping", "perf.object_lod", "perf.resource_cache", "network.download_limit", "metrics.cpu_gpu", "advanced.verify_files", "accessibility.captions",
+            "interface.appearance",
             "accessibility.keyboard", "camera.focus_double_click", "camera.allow_detached", "camera.detached_range", "camera.detached_speed",
             "privacy.online_visibility", "privacy.private_messages", "privacy.group_invites", "privacy.friend_requests", "privacy.blocked", "account.sessions",
         };
@@ -91,7 +93,7 @@ namespace LifeVerse.Unity.UI
         public static readonly Dictionary<string, string> UnityCannot = new Dictionary<string, string>
         {
             ["audio.output_device"] = "Neste cliente o som sai sempre pelo dispositivo padrão do Windows: o motor não deixa escolher outro. Troque a saída nas configurações de som do Windows.",
-            ["interface.side_bar"] = "Este cliente não tem a barra lateral: os mesmos atalhos ficam na barra de ferramentas e nos menus do topo (Eu, Comunicar, Mundo, Conteúdo).",
+            ["interface.side_bar"] = "Este cliente não tem a barra lateral: os mesmos atalhos ficam na barra de ferramentas e no botão Mais (Eu, Comunicar, Mundo, Conteúdo).",
         };
 
         private static List<SettingDef> _all;

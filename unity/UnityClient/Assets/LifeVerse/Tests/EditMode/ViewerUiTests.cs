@@ -20,7 +20,7 @@ namespace LifeVerse.Unity.Tests.EditMode
         {
             var theme = File.ReadAllText(Path.Combine(Application.dataPath, "LifeVerse/UI/Resources/LifeVerse/UI/Theme.uss"));
             var asked = System.Text.RegularExpressions.Regex.Matches(theme, "resource\\(\"(LifeVerse/UI/Skin/[a-z0-9-]+)\"\\)").Cast<System.Text.RegularExpressions.Match>().Select(m => m.Groups[1].Value).Distinct().ToList();
-            Assert.Greater(asked.Count, 25);
+            Assert.GreaterOrEqual(asked.Count, 5);
             foreach (var path in asked)
             {
                 var texture = Resources.Load<Texture2D>(path); Assert.IsNotNull(texture, path);
@@ -40,7 +40,7 @@ namespace LifeVerse.Unity.Tests.EditMode
             hud.SetIsland("Praia"); hud.SetPosition(new Vector3(1.4f, 2.6f, -3f)); Assert.AreEqual("Praia", hud.IslandText); Assert.AreEqual("1, 3, -3", hud.PositionText); hud.SetPosition(null); Assert.AreEqual("", hud.PositionText);
             string asked = null; hud.SearchAsked = text => asked = text; hud.Search.value = "  praia  "; hud.RunSearch(); Assert.AreEqual("praia", asked); Assert.AreEqual("", hud.Search.value);
             Assert.AreEqual("Disponível", Hud.PresenceWords("online")); Assert.AreEqual("Ocupado", Hud.PresenceWords("busy")); Assert.AreEqual("online", hud.Presence.value, "the value stays the platform's");
-            Assert.IsFalse(Hud.DefaultHidden.Contains("chat"), "the chat button is on the bar, as in the viewer"); Assert.IsFalse(Hud.DefaultHidden.Contains("move"));
+            Assert.IsFalse(Hud.DefaultHidden.Contains("chat"), "the chat button is on the bar"); Assert.IsFalse(Hud.DefaultHidden.Contains(Hud.FixedTool), "and so is the button of the menus");
         }
 
         [Test]

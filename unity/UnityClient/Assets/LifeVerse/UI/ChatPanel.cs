@@ -34,23 +34,27 @@ namespace LifeVerse.Unity.UI
         public TextField Input => _input;
         /// <summary>The hour before each message, and for how long the messages stay on screen after one arrives (when the person is not writing); 0 keeps them.</summary>
         public bool ShowTime = true; public float VisibleSeconds = 6f;
+        /// <summary>Whether a line of the nearby chat was said by this person (the game knows which peer is its own).</summary>
+        public Func<int, bool> IsMine;
         private float _lastMessage; private bool _hovered, _watching;
         public bool LogShown => _log.style.opacity.value > .5f;
-        private void ShowLog() { _log.style.opacity = 1f; SetFrame(true); if (!_watching) { _watching = true; RegisterCallback<PointerEnterEvent>(_ => { _hovered = true; ShowLog(); }); RegisterCallback<PointerLeaveEvent>(_ => { _hovered = false; _lastMessage = Time.unscaledTime; }); schedule.Execute(FadeIfIdle).Every(250); } }
-        private void FadeIfIdle() { if (VisibleSeconds <= 0f || Typing || _hovered || Minimized || Active != null) { _log.style.opacity = 1f; SetFrame(true); return; } if (Time.unscaledTime - _lastMessage > VisibleSeconds) { _log.style.opacity = 0f; SetFrame(false); } }
-        /// <summary>The window around the chat: gone while nothing is being said, as the nearby chat of the viewer, and back with a message, the mouse or the keyboard.</summary>
+        private void ShowLog() { Reveal(true); SetFrame(true); if (!_watching) { _watching = true; RegisterCallback<PointerEnterEvent>(_ => { _hovered = true; ShowLog(); }); RegisterCallback<PointerLeaveEvent>(_ => { _hovered = false; _lastMessage = Time.unscaledTime; }); schedule.Execute(FadeIfIdle).Every(250); } }
+        private void FadeIfIdle() { if (VisibleSeconds <= 0f || Typing || _hovered || Minimized || Active != null) { Reveal(true); SetFrame(true); return; } if (Time.unscaledTime - _lastMessage > VisibleSeconds) { Reveal(false); SetFrame(false); } }
+        // what is hidden also lets the clicks through to the world
+        private static void Put(VisualElement element, bool shown) { element.style.opacity = shown ? 1f : 0f; element.style.visibility = shown ? Visibility.Visible : Visibility.Hidden; }
+        private void Reveal(bool shown) => Put(_log, shown);
+        /// <summary>The heads of the conversations: gone, with the bubbles, while nothing is being said (only the line to write in stays), and back with a message, the mouse or the keyboard.</summary>
         public bool FrameShown { get; private set; } = true;
-        private readonly VisualElement _title;
-        private void SetFrame(bool shown) { FrameShown = shown; style.unityBackgroundImageTintColor = new Color(1f, 1f, 1f, shown ? Mathf.Clamp(_settings.ChatOpacity, .3f, 1f) : 0f); if (_title != null) _title.style.opacity = shown ? 1f : 0f; }
+        private void SetFrame(bool shown) { FrameShown = shown; if (_tabBar != null) Put(_tabBar, shown); }
         private readonly Button _minimize;
         /// <summary>Minimized, the chat keeps only the line to write in (the messages stay and come back).</summary>
         public bool Minimized { get; private set; }
-        public const float OpenHeight = 250f, FoldedHeight = 76f;
-        public void SetMinimized(bool minimized) { Minimized = minimized; if (!minimized && Active != null) Active.Unread = 0; ShowLogs(); style.height = minimized ? FoldedHeight : OpenHeight; if (_minimize.Q<Icon>() is { } icon) icon.Name = minimized ? "expand" : "minus"; _minimize.tooltip = minimized ? "Mostrar as mensagens" : "Minimizar o chat"; }
+        public const float OpenHeight = 320f, FoldedHeight = 92f;
+        public void SetMinimized(bool minimized) { Minimized = minimized; if (!minimized && Active != null) Active.Unread = 0; ShowLogs(); style.height = minimized ? FoldedHeight : OpenHeight; if (_minimize.Q<Icon>() is { } icon) icon.Name = minimized ? "expand" : "minus"; ShowLog(); _minimize.tooltip = minimized ? "Mostrar as mensagens" : "Minimizar o chat"; }
         // ---- conversations: one tab each, beside the nearby chat, as the viewer's conversations ----
         public const int MaxTabs = 6;
         private readonly List<ChatTab> _tabs = new List<ChatTab>();
-        private VisualElement _tabBar; private Button _nearby; private Label _heading;
+        private VisualElement _tabBar, _spacer; private Button _nearby;
         public IReadOnlyList<ChatTab> Tabs => _tabs;
         /// <summary>The conversation on screen (null: the nearby chat).</summary>
         public ChatTab Active { get; private set; }
@@ -68,11 +72,11 @@ namespace LifeVerse.Unity.UI
             {
                 if (_tabs.Count >= MaxTabs) CloseTab(_tabs.Find(t => t != Active));
                 tab = new ChatTab { Id = id, Group = group, Name = string.IsNullOrWhiteSpace(name) ? (group ? "Grupo" : "Mensagem") : name };
-                var mine = tab; tab.Header = new VisualElement(); tab.Header.style.flexDirection = FlexDirection.Row; tab.Header.style.flexShrink = 1;
-                tab.Choose = UiKit.Button(tab.Name, () => Select(mine)); tab.Choose.name = "tab-" + id; tab.Choose.style.flexShrink = 1; tab.Choose.style.maxWidth = 120; tab.Choose.style.overflow = Overflow.Hidden; tab.Choose.style.textOverflow = TextOverflow.Ellipsis; tab.Choose.style.whiteSpace = WhiteSpace.NoWrap; tab.Choose.style.marginRight = 0;
-                tab.Close = UiKit.Button("×", () => CloseTab(mine)); tab.Close.tooltip = "Fechar a conversa"; tab.Close.style.paddingLeft = tab.Close.style.paddingRight = 5; tab.Close.style.marginLeft = 0;
-                tab.Header.Add(tab.Choose); tab.Header.Add(tab.Close); _tabBar.Add(tab.Header);
-                tab.Log = new ScrollView(ScrollViewMode.Vertical); tab.Log.AddToClassList("lv-chat-log"); tab.Log.style.flexGrow = 1; tab.Log.style.flexShrink = 1; tab.Log.style.minHeight = 0; tab.Log.style.display = DisplayStyle.None; Insert(IndexOf(_log) + 1, tab.Log); _tabs.Add(tab);
+                var mine = tab; tab.Header = new VisualElement(); tab.Header.AddToClassList("lv-chat-head");
+                tab.Choose = UiKit.Button(tab.Name, () => Select(mine)); tab.Choose.name = "tab-" + id; tab.Choose.style.flexShrink = 1; tab.Choose.style.maxWidth = 130; tab.Choose.style.overflow = Overflow.Hidden; tab.Choose.style.textOverflow = TextOverflow.Ellipsis;
+                tab.Close = UiKit.Button("", () => CloseTab(mine)); tab.Close.tooltip = "Fechar a conversa"; tab.Close.AddToClassList("lv-chat-close"); tab.Close.Add(new Icon("close", 11));
+                tab.Header.Add(tab.Choose); tab.Header.Add(tab.Close); _tabBar.Insert(_tabBar.IndexOf(_spacer), tab.Header);
+                tab.Log = new ScrollView(ScrollViewMode.Vertical) { verticalScrollerVisibility = ScrollerVisibility.Hidden }; tab.Log.AddToClassList("lv-chat-log"); tab.Log.style.flexGrow = 0; tab.Log.style.flexShrink = 1; tab.Log.style.minHeight = 0; tab.Log.style.display = DisplayStyle.None; Insert(IndexOf(_log) + 1, tab.Log); _tabs.Add(tab);
             }
             else if (!string.IsNullOrWhiteSpace(name)) tab.Name = name;
             if (select) Select(tab); else { ShowLogs(); Refresh(); }
@@ -106,9 +110,8 @@ namespace LifeVerse.Unity.UI
             if (tab == null || !_tabs.Contains(tab)) return; tab.Log.Clear(); tab.Shown.Clear();
             foreach (var line in lines)
             {
-                var label = new Label { enableRichText = true }; label.AddToClassList("lv-chat-line"); label.style.fontSize = _settings.ChatFontSize;
-                var when = ShowTime && line.Time is { } at ? "<color=#77829A>" + at.ToLocalTime().ToString("HH:mm") + "</color> " : "";
-                label.text = when + "<color=" + (line.Mine ? "#FFC45C" : "#3FE3D3") + "><b>" + Escape(line.Who) + "</b></color>  " + Escape(line.Text); tab.Log.Add(label); tab.Shown.Add(line.Who + ": " + line.Text);
+                var when = ShowTime && line.Time is { } at ? at.ToLocalTime().ToString("HH:mm") : null;
+                tab.Log.Add(Bubble(line.Who, line.Text, when, line.Mine, false)); tab.Shown.Add(line.Who + ": " + line.Text);
             }
             var log = tab.Log; schedule.Execute(() => log.scrollOffset = new Vector2(0, float.MaxValue / 2f)).StartingIn(30);
         }
@@ -121,9 +124,9 @@ namespace LifeVerse.Unity.UI
 
         private void Refresh()
         {
-            _tabBar.style.display = _tabs.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None; _nearby.EnableInClassList("lv-btn-selected", Active == null);
+            _nearby.EnableInClassList("lv-btn-selected", Active == null);
             foreach (var tab in _tabs) { tab.Choose.text = tab.Unread > 0 ? tab.Name + " (" + tab.Unread + ")" : tab.Name; tab.Choose.EnableInClassList("lv-btn-selected", Active == tab); tab.Choose.EnableInClassList("lv-btn-secondary", tab.Unread > 0); tab.Choose.tooltip = (tab.Group ? "Grupo " : "Conversa com ") + tab.Name; }
-            _heading.text = Active == null ? "Conversa por perto" : (Active.Group ? "Grupo: " : "Conversa com ") + Active.Name;
+            _input.textEdition.placeholder = Active == null ? "Diga olá…  (Enter)" : Active.Group ? "Escreva ao grupo…" : "Escreva para " + Active.Name + "…";
         }
 
         /// <summary>The button beside the field that says what was written.</summary>
@@ -131,15 +134,15 @@ namespace LifeVerse.Unity.UI
 
         public ChatPanel(UserSettings settings)
         {
-            _settings = settings; name = "chat"; AddToClassList("lv-window"); AddToClassList("lv-chat"); style.width = 420; style.height = OpenHeight; pickingMode = PickingMode.Position;
-            var title = _title = new VisualElement { name = "chat-title" }; title.AddToClassList("lv-window-title"); var mark = new Icon("chat", 16); mark.style.marginRight = 7; title.Add(mark); _heading = UiKit.Text("Conversa por perto", "lv-title-text"); title.Add(_heading);
-            _minimize = UiKit.Button("", () => SetMinimized(!Minimized), "lv-window-button"); _minimize.tooltip = "Minimizar o chat"; _minimize.name = "chat-minimize"; _minimize.Add(new Icon("minus", 13)); title.Add(_minimize); Add(title);
-            _tabBar = new VisualElement { name = "chat-tabs" }; _tabBar.AddToClassList("lv-tabs"); _tabBar.AddToClassList("lv-chat-tabs"); _tabBar.style.flexWrap = Wrap.NoWrap; _tabBar.style.display = DisplayStyle.None;
-            _nearby = UiKit.Button("Por perto", () => Select(null)); _nearby.name = "tab-nearby"; _nearby.AddToClassList("lv-btn-selected"); _tabBar.Add(_nearby); Add(_tabBar);
-            _log = new ScrollView(ScrollViewMode.Vertical); _log.AddToClassList("lv-chat-log"); _log.style.flexGrow = 1; _log.style.flexShrink = 1; _log.style.minHeight = 0; _log.verticalScrollerVisibility = ScrollerVisibility.Auto; Add(_log);
-            var entry = new VisualElement { name = "chat-entry" }; entry.AddToClassList("lv-chat-entry");
-            _input = UiKit.Field("", false, MaxLength); _input.textEdition.placeholder = "Escreva e aperte Enter…"; entry.Add(_input);
-            SendButton = UiKit.Button("", () => Submit(), "lv-btn-primary"); SendButton.name = "chat-send"; SendButton.tooltip = "Enviar"; SendButton.style.width = 36; SendButton.style.paddingLeft = SendButton.style.paddingRight = 0; SendButton.style.alignItems = Align.Center; SendButton.style.justifyContent = Justify.Center; SendButton.Add(new Icon("send", 15)); entry.Add(SendButton); Add(entry);
+            _settings = settings; name = "chat"; AddToClassList("lv-chat"); style.width = 400; style.height = OpenHeight; pickingMode = PickingMode.Ignore;
+            _tabBar = new VisualElement { name = "chat-tabs", pickingMode = PickingMode.Ignore }; _tabBar.AddToClassList("lv-chat-tabs");
+            _nearby = UiKit.Button("Por perto", () => Select(null)); _nearby.name = "tab-nearby"; _nearby.AddToClassList("lv-btn-selected"); _tabBar.Add(_nearby);
+            _spacer = new VisualElement { pickingMode = PickingMode.Ignore }; _tabBar.Add(_spacer);
+            _minimize = UiKit.Button("", () => SetMinimized(!Minimized)); _minimize.AddToClassList("lv-chat-fold"); _minimize.tooltip = "Minimizar o chat"; _minimize.name = "chat-minimize"; _minimize.Add(new Icon("minus", 13)); _tabBar.Add(_minimize); Add(_tabBar);
+            _log = new ScrollView(ScrollViewMode.Vertical); _log.AddToClassList("lv-chat-log"); _log.style.flexGrow = 0; _log.style.flexShrink = 1; _log.style.minHeight = 0; _log.verticalScrollerVisibility = ScrollerVisibility.Hidden; Add(_log);   // the wheel scrolls; a bar would hang over the world
+            var entry = new VisualElement { name = "chat-entry" }; entry.AddToClassList("lv-paper"); entry.AddToClassList("lv-chat-entry");
+            _input = UiKit.Field("", false, MaxLength); _input.textEdition.placeholder = "Diga olá…  (Enter)"; entry.Add(_input);
+            SendButton = UiKit.Button("", () => Submit(), "lv-btn-primary"); SendButton.name = "chat-send"; SendButton.tooltip = "Enviar"; SendButton.Add(new Icon("send", 16)); entry.Add(SendButton); Add(entry);
             _input.RegisterCallback<FocusInEvent>(e => SetTyping(true)); _input.RegisterCallback<FocusOutEvent>(e => SetTyping(false));
             _input.RegisterCallback<KeyDownEvent>(OnKey, TrickleDown.TrickleDown);
             ApplySettings();
@@ -148,7 +151,8 @@ namespace LifeVerse.Unity.UI
         public void ApplySettings()
         {
             SetFrame(FrameShown);
-            foreach (var child in _log.contentContainer.Children()) child.style.fontSize = _settings.ChatFontSize;
+            this.Query<Label>(className: "lv-chat-text").ForEach(l => l.style.fontSize = _settings.ChatFontSize);
+            this.Query<VisualElement>(className: "lv-bubble-back").ForEach(b => b.style.opacity = Mathf.Clamp(_settings.ChatOpacity, .3f, 1f));
         }
 
         private void SetTyping(bool typing) { if (Typing == typing) return; Typing = typing; TypingChanged?.Invoke(typing); }
@@ -195,13 +199,24 @@ namespace LifeVerse.Unity.UI
         {
             if (line.Text.Length == 0) return;
             _lines.Add(line); if (_lines.Count > MaxLines) { _lines.RemoveAt(0); if (_log.contentContainer.childCount > 0) _log.contentContainer.RemoveAt(0); }
-            var label = new Label(); label.AddToClassList("lv-chat-line"); label.style.fontSize = _settings.ChatFontSize; label.enableRichText = true;
-            var when = line.Time.ToLocalTime().ToString("HH:mm"); _lastMessage = Time.unscaledTime; ShowLog();
-            label.text = line.System ? "<color=#A6B1C4><i>" + Escape(line.Text) + "</i></color>" : (ShowTime ? "<color=#77829A>" + when + "</color> " : "") + "<color=#3FE3D3><b>" + Escape(line.Name) + "</b></color>  " + Escape(line.Text);
-            _log.Add(label); schedule.Execute(() => _log.scrollOffset = new Vector2(0, float.MaxValue / 2f)).StartingIn(30);
+            _lastMessage = Time.unscaledTime; ShowLog();
+            _log.Add(Bubble(line.Name, line.Text, ShowTime && !line.System ? line.Time.ToLocalTime().ToString("HH:mm") : null, !line.System && IsMine != null && IsMine(line.PeerId), line.System));
+            schedule.Execute(() => _log.scrollOffset = new Vector2(0, float.MaxValue / 2f)).StartingIn(30);
         }
 
-        private static string Escape(string text) => text.Replace("<", "‹").Replace(">", "›");
+        /// <summary>One thing said, as a speech bubble: the others' with their face and name, one's own at the right, what the game tells in the middle.</summary>
+        private VisualElement Bubble(string who, string text, string when, bool mine, bool system)
+        {
+            var line = new VisualElement(); line.AddToClassList("lv-chat-line"); line.EnableInClassList("lv-chat-mine", mine); line.EnableInClassList("lv-chat-system", system);
+            if (!mine && !system) line.Add(Faces.Make(who, "lv-face-small"));
+            var bubble = new VisualElement(); bubble.AddToClassList("lv-bubble"); line.Add(bubble);
+            var back = new VisualElement { pickingMode = PickingMode.Ignore }; back.AddToClassList("lv-bubble-back"); back.style.opacity = Mathf.Clamp(_settings.ChatOpacity, .3f, 1f); bubble.Add(back);
+            Label Words(string words, string kind) { var label = new Label(words) { enableRichText = false }; label.AddToClassList(kind); bubble.Add(label); return label; }
+            if (!mine && !system) Words(who, "lv-chat-by");
+            Words(text, "lv-chat-text").style.fontSize = _settings.ChatFontSize;
+            if (when != null) Words(when, "lv-chat-when");
+            return line;
+        }
 
         /// <summary>Focuses the field (the Enter key of the game opens the chat).</summary>
         public void Focus() => _input.Focus();

@@ -86,6 +86,7 @@ namespace LifeVerse.Unity.UI
         };
 
         /// <summary>The picture of a kind of item.</summary>
+        private static Icon Tinted(Icon icon, string kind) { icon.AddToClassList(kind); return icon; }
         public static string IconOfCategory(string category) => category switch
         {
             "objects" => "cube", "textures" => "texture", "sounds" => "volume", "animations" => "play", "clothing" => "avatar", "accessories" => "star", "models" => "cube", "scripts" => "code", "packages" => "home", "packs" => "folder", _ => "bag",
@@ -144,7 +145,7 @@ namespace LifeVerse.Unity.UI
         {
             var id = G(item, "itemId"); var box = new Toggle(); Toggles["item:" + id] = box; var name = S(item, "name");
             var flags = (Flag(item, "favorite") ? "★ " : "") + (Flag(item, "hasUpdate") ? "versão nova · " : "") + (S(item, "origin") is "returned" or "recovered" ? "devolvido · " : "");
-            var cells = new List<VisualElement> { box, new Icon(IconOfCategory(S(item, "category")), 18, new Color(.62f, .72f, .88f)) { name = "kind-icon" }, UiKit.Text(name, "lv-bold"), UiKit.Text(flags + CategoryWords(S(item, "category")) + " · " + Size(I(item, "size")) + (Has(item, "folderId") && _folders.Count > 0 ? " · " + PathOf(G(item, "folderId")) : ""), "lv-small", "lv-muted"), UiKit.Spacer() };
+            var cells = new List<VisualElement> { box, Tinted(new Icon(IconOfCategory(S(item, "category")), 18) { name = "kind-icon" }, "lv-accent"), UiKit.Text(name, "lv-bold"), UiKit.Text(flags + CategoryWords(S(item, "category")) + " · " + Size(I(item, "size")) + (Has(item, "folderId") && _folders.Count > 0 ? " · " + PathOf(G(item, "folderId")) : ""), "lv-small", "lv-muted"), UiKit.Spacer() };
             if (view == "trash") { cells.Add(Btn("Restaurar", () => Change("POST", Inv + "/items/" + id + "/restore", "{}", name + " voltou da lixeira.", reload))); cells.Add(Sure("Apagar de vez", () => "Apagar " + name + " para sempre?", () => Change("DELETE", Inv + "/items/" + id + "/purge", null, name + " foi apagado.", reload))); }
             else cells.Add(Btn("Detalhes", () => Detail(item, reload)));
             var row = Row(id, cells.ToArray()); if (view == "trash") return;
@@ -263,7 +264,7 @@ namespace LifeVerse.Unity.UI
             foreach (var f in _folders.Where(x => (Guid.TryParse(S(x, "parentId"), out var p) ? p : (Guid?)null) == folder).OrderBy(x => S(x, "name")))
             {
                 var id = G(f, "id"); var arrow = UiKit.Button("", () => ToggleNode(id), "lv-btn-flat"); arrow.name = "tree-" + id; arrow.AddToClassList("lv-nav-icon"); arrow.tooltip = "Abrir ou fechar a pasta"; var picture = new Icon(_expanded.Contains(id) ? "caret-down" : "caret-right", 12); arrow.Add(picture);
-                var row = UiKit.Row(arrow, new Icon(_expanded.Contains(id) ? "folder-open" : "folder", 17, new Color(.96f, .76f, .36f)), UiKit.Text(S(f, "name"), "lv-bold"), UiKit.Text(I(f, "itemCount") + " itens", "lv-small", "lv-muted"));
+                var row = UiKit.Row(arrow, Tinted(new Icon(_expanded.Contains(id) ? "folder-open" : "folder", 17), "lv-sun"), UiKit.Text(S(f, "name"), "lv-bold"), UiKit.Text(I(f, "itemCount") + " itens", "lv-small", "lv-muted"));
                 foreach (var cell in row.Children().Skip(1)) cell.style.marginRight = 8; row.AddToClassList("lv-row"); row.userData = "drop-folder:" + id; into.Add(row); RowIds.Add(id);
                 var under = new VisualElement(); under.style.marginLeft = 22; into.Add(under); _nodes[id] = under;
                 if (_expanded.Contains(id)) { TreeNode(under, id); TreeItems(under, id); }
@@ -276,7 +277,7 @@ namespace LifeVerse.Unity.UI
             foreach (var item in Arr(root, "items"))
             {
                 var id = G(item, "itemId"); var name = S(item, "name"); var data = item;
-                var row = UiKit.Row(new Icon(IconOfCategory(S(item, "category")), 16, new Color(.62f, .72f, .88f)), UiKit.Text(name), UiKit.Text(CategoryWords(S(item, "category")), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Detalhes", () => Detail(data, () => Show("arvore"))));
+                var row = UiKit.Row(Tinted(new Icon(IconOfCategory(S(item, "category")), 16), "lv-accent"), UiKit.Text(name), UiKit.Text(CategoryWords(S(item, "category")), "lv-small", "lv-muted"), UiKit.Spacer(), Btn("Detalhes", () => Detail(data, () => Show("arvore"))));
                 foreach (var cell in row.Children()) cell.style.marginRight = 8; row.AddToClassList("lv-row"); into.Add(row); RowIds.Add(id);
                 row.RegisterCallback<PointerDownEvent>(e => { if (e.button == 1) { ToggleQuick(row, data, () => Show("arvore")); e.StopPropagation(); } });
                 Draggable(row, id, name, () => Show("arvore"));
@@ -339,7 +340,7 @@ namespace LifeVerse.Unity.UI
         {
             var used = I(s, "usedBytes"); var quota = I(s, "quotaBytes"); var share = quota > 0 ? used * 100 / quota : 0;
             Title("Espaço"); Line(Size(used) + " de " + Size(quota) + " (" + share + "%)", share >= 90 ? "lv-bad" : "lv-bold");
-            var bar = new VisualElement(); bar.style.height = 8; bar.style.backgroundColor = new Color(1, 1, 1, .1f); var fill = new VisualElement(); fill.style.height = 8; fill.style.width = Length.Percent(Mathf.Clamp(share, 0, 100)); fill.style.backgroundColor = share >= 90 ? new Color(.9f, .35f, .3f) : new Color(.07f, .6f, .56f); bar.Add(fill); _page.Add(bar);
+            var bar = new VisualElement(); bar.AddToClassList("lv-meter"); var fill = new VisualElement(); fill.AddToClassList("lv-meter-fill"); fill.style.width = Length.Percent(Mathf.Clamp(share, 0, 100)); fill.EnableInClassList("lv-meter-high", share >= 90); bar.Add(fill); _page.Add(bar);
             Line(I(s, "items") + " itens · " + I(s, "assets") + " arquivos · " + Size(I(s, "inBinBytes")) + " na lixeira · " + Size(I(s, "olderVersionsBytes")) + " em versões antigas", "lv-small", "lv-muted");
             foreach (var c in Arr(s, "byCategory").OrderByDescending(c => I(c, "bytes"))) Line(CategoryWords(S(c, "category")) + ": " + Size(I(c, "bytes")) + " em " + I(c, "assets") + " arquivo(s)", "lv-small");
             Get(Inv + "/integrity", report =>

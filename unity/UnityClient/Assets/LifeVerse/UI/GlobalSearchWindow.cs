@@ -60,8 +60,8 @@ namespace LifeVerse.Unity.UI
         /// <summary>Marks a result (kept inside the list) and brings it into view.</summary>
         public void Mark(int index)
         {
-            if (_rows.Count == 0) { Marked = -1; return; } if (Marked >= 0 && Marked < _rows.Count) _rows[Marked].Row.style.backgroundColor = StyleKeyword.Null;
-            Marked = Mathf.Clamp(index, 0, _rows.Count - 1); var row = _rows[Marked].Row; row.style.backgroundColor = new Color(.07f, .6f, .56f, .25f); _page.ScrollTo(row);
+            if (_rows.Count == 0) { Marked = -1; return; } if (Marked >= 0 && Marked < _rows.Count) _rows[Marked].Row.RemoveFromClassList("lv-marked");
+            Marked = Mathf.Clamp(index, 0, _rows.Count - 1); var row = _rows[Marked].Row; row.AddToClassList("lv-marked"); _page.ScrollTo(row);
         }
 
         // ---- the small pictures of the results: an image of the API or an asset; otherwise the icon of the kind ----
@@ -85,7 +85,7 @@ namespace LifeVerse.Unity.UI
 
         private VisualElement Thumb(JsonElement item)
         {
-            var box = new VisualElement { pickingMode = PickingMode.Ignore }; box.style.width = 40; box.style.height = 40; box.style.flexShrink = 0; box.style.marginRight = 8; box.style.backgroundColor = new Color(1f, 1f, 1f, .06f);
+            var box = new VisualElement { pickingMode = PickingMode.Ignore }; box.style.width = 40; box.style.height = 40; box.style.flexShrink = 0; box.style.marginRight = 8; box.AddToClassList("lv-thumb");
             box.style.borderTopLeftRadius = box.style.borderTopRightRadius = box.style.borderBottomLeftRadius = box.style.borderBottomRightRadius = 8; box.style.alignItems = Align.Center; box.style.justifyContent = Justify.Center;
             var icon = new Icon(IconOfKind(S(item, "kind")), 22); box.Add(icon);
             var island = G(item, "islandId"); var path = ThumbPath(S(item, "thumbnailUrl"), island != Guid.Empty ? island : S(item, "kind") == "island" ? G(item, "id") : Guid.Empty, S(item, "kind") == "group" ? G(item, "id") : Guid.Empty);

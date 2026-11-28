@@ -63,7 +63,7 @@ namespace LifeVerse.Unity.UI
             Email = UiKit.Field("E-mail", false, 128); Email.name = "email"; _emailRow = Column(180f, Email, Under(null)); _emailRow.style.display = DisplayStyle.None;
             Password = UiKit.Field("Senha", true, 128); Password.name = "password";
             RememberPassword = UiKit.Check("Lembrar a senha neste PC", false, on => { if (on) Remember.value = true; }); RememberPassword.name = "remember-password"; RememberPassword.tooltip = "A senha fica guardada pelo Windows, só para a sua conta deste computador. Desmarque para esquecer."; RememberPassword.style.display = SavedLogin.Available ? DisplayStyle.Flex : DisplayStyle.None;
-            Column(188f, Password, Under(RememberPassword));
+            Column(222f, Password, Under(RememberPassword));
             Islands = new DropdownField("Começar em", new System.Collections.Generic.List<string> { "Carregando as ilhas…" }, 0) { name = "islands" }; Islands.RegisterValueChangedCallback(e => { if (Islands.index >= 0 && Islands.index < _islandIds.Count) Island.value = _islandIds[Islands.index] == Guid.Empty ? "" : _islandIds[Islands.index].ToString(); });
             Column(232f, Islands, Under(null));
             Island = UiKit.Field("Código da ilha (opcional)", false, 64, settings.LastIsland); Island.name = "island"; Island.tooltip = "Em branco, o servidor escolhe: onde você parou ou a ilha de boas-vindas.";

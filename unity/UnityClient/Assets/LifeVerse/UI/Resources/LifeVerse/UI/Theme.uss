@@ -1,52 +1,119 @@
 /*
- * O visual do LifeVerse, inspirado no visualizador do Second Life: barras escuras com relevo, janelas flutuantes com barra de título, botões com volume e um verde-água de destaque
- * (dourado para dinheiro e inventário). As texturas (Skin/*.png) são desenhadas por unity/tools/ui-skin/generate.py em dobro do tamanho: por isso "-unity-slice-scale: 0.5px".
- * O tema padrão do runtime está vazio: todo o visual (inclusive o dos controles do UI Toolkit) vem daqui.
- *
- * Cores: texto #E8EDF5 · apagado #A6B1C4 · fraco #77829A · destaque #3FE3D3 · ouro #FFC45C · bom #4ADE80 · aviso #FBBF24 · erro #FF7B7B
+ * O visual do LifeVerse: "Varanda", o lugar onde as pessoas se encontram. Papel quente, madeira de deck, terracota e verde-mar; Fraunces para os nomes de lugares e títulos,
+ * Nunito Sans para o resto; redondo só onde há uma pessoa ou um botão. De dia o papel é claro; à noite (classe lv-night, ver UiAppearance) ele escurece e aquece,
+ * com as mesmas formas, letras e desenhos. Todas as cores saem das variáveis abaixo: mude aqui, não nas telas.
+ * O tema padrão do runtime está vazio: todo o visual (inclusive o dos controles do UI Toolkit) vem daqui. As poucas texturas (Skin/*.png: a marca das caixas de marcar,
+ * a seta, o canto de redimensionar e a sombra das janelas) são desenhadas por unity/tools/ui-skin/generate.py.
  */
+
+/* ------------------------------------------------ cores ------------------------------------------------ */
+.lv-root, .unity-base-dropdown {
+    --lv-paper: #F8F1E4;
+    --lv-raised: #FFFCF5;
+    --lv-sand: #EBDFC9;
+    --lv-sand-strong: #DDCBAA;
+    --lv-line: #D9C7A6;
+    --lv-ink: #2E2420;
+    --lv-soft: #55443A;
+    --lv-faint: #75604F;
+    --lv-clay: #B4472F;
+    --lv-clay-hover: #99381F;
+    --lv-sea: #146B64;
+    --lv-sea-hover: #0F534D;
+    --lv-sun: #E39A2D;
+    --lv-wood: #9C6B45;
+    --lv-on-fill: #FFF8EC;
+    --lv-clay-text: #A83F28;
+    --lv-sea-text: #11625B;
+    --lv-good: #176B42;
+    --lv-warn: #835400;
+    --lv-bad: #A82019;
+    --lv-gold: #835400;
+    --lv-veil: rgba(40, 26, 18, 0.46);
+}
+.lv-root.lv-night, .lv-night .unity-base-dropdown {
+    --lv-paper: #2C2320;
+    --lv-raised: #1F1816;
+    --lv-sand: #43362E;
+    --lv-sand-strong: #57473C;
+    --lv-line: #5A4A3E;
+    --lv-ink: #F2E8D9;
+    --lv-soft: #D5C5B2;
+    --lv-faint: #B6A390;
+    --lv-clay: #A8432D;
+    --lv-clay-hover: #C0503A;
+    --lv-sea: #146B64;
+    --lv-sea-hover: #1A8078;
+    --lv-sun: #E8AC4C;
+    --lv-wood: #77502F;
+    --lv-on-fill: #FFF8EC;
+    --lv-clay-text: #F29B7E;
+    --lv-sea-text: #7AD3C6;
+    --lv-good: #6FD79E;
+    --lv-warn: #F2C062;
+    --lv-bad: #FF9A8E;
+    --lv-gold: #F2C062;
+    --lv-veil: rgba(8, 5, 3, 0.62);
+}
+/* contraste alto: o texto vai ao extremo e os contornos aparecem */
+.lv-root.lv-high-contrast, .lv-high-contrast .unity-base-dropdown { --lv-ink: #000000; --lv-soft: #1A100A; --lv-faint: #2C1D13; --lv-line: #5E4430; --lv-paper: #FFFBF2; }
+.lv-root.lv-night.lv-high-contrast, .lv-night.lv-high-contrast .unity-base-dropdown { --lv-ink: #FFFFFF; --lv-soft: #FFF4E4; --lv-faint: #EBDCC8; --lv-line: #C4AC93; --lv-paper: #171110; }
 
 .lv-root {
     flex-grow: 1;
-    -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular");
-    font-size: 13px;
-    color: #E8EDF5;
+    -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Medium");
+    font-size: 14px;
+    color: var(--lv-ink);
+    --lv-icon-ink: var(--lv-ink);
+    --lv-icon-accent: var(--lv-clay-text);
+    --lv-icon-surface: var(--lv-paper);
 }
+.lv-root Label, .lv-root Button, .lv-root TextField, .lv-root Toggle { -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Medium"); }
+.lv-root.lv-reduce-motion * { transition-duration: 0s; }
 
-.lv-root Label, .lv-root Button, .lv-root TextField, .lv-root Toggle { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular"); }
-
-.lv-muted { color: #A6B1C4; }
-.lv-dim { color: #77829A; }
-.lv-small { font-size: 12px; }
-.lv-body { font-size: 13px; }
-.lv-root .lv-title-text { font-size: 17px; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); color: #FFFFFF; }
-.lv-root .lv-bold { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
-.lv-accent { color: #3FE3D3; }
-.lv-gold { color: #FFC45C; }
-.lv-good { color: #4ADE80; }
-.lv-warn { color: #FBBF24; }
-.lv-bad { color: #FF7B7B; }
+.lv-muted { color: var(--lv-soft); }
+.lv-dim { color: var(--lv-faint); }
+.lv-small { font-size: 13px; }
+.lv-body { font-size: 14px; }
+.lv-root .lv-title-text { font-size: 18px; -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-SemiBold"); color: var(--lv-ink); }
+.lv-root .lv-bold { -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); }
+.lv-root .lv-serif { -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-Medium"); }
+.lv-accent { color: var(--lv-sea-text); }
+.lv-clay { color: var(--lv-clay-text); }
+.lv-sun { color: var(--lv-sun); }
+.lv-gold { color: var(--lv-gold); }
+.lv-good { color: var(--lv-good); }
+.lv-warn { color: var(--lv-warn); }
+.lv-bad { color: var(--lv-bad); }
 .lv-root .lv-mono { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Medium"); }
 
 /* ------------------------------------------------ painéis ------------------------------------------------ */
-.lv-glass {
-    background-image: resource("LifeVerse/UI/Skin/panel");
-    -unity-slice-left: 16; -unity-slice-top: 16; -unity-slice-right: 16; -unity-slice-bottom: 16; -unity-slice-scale: 0.5px;
-    padding: 10px;
-}
-.lv-inset {
-    background-image: resource("LifeVerse/UI/Skin/inset");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-    padding: 6px;
-}
+.lv-paper, .lv-glass { background-color: var(--lv-paper); border-radius: 12px; border-width: 0 0 3px 0; border-color: var(--lv-sand); }
+.lv-glass { padding: 10px 12px; }
+.lv-inset { background-color: var(--lv-sand); border-radius: 8px; padding: 6px; }
+
+/* ------------------------------------------------ rostos ------------------------------------------------ */
+.lv-face { width: 32px; height: 32px; border-radius: 16px; align-items: center; justify-content: center; flex-shrink: 0; }
+.lv-root .lv-face-initial { color: #FFFFFF; font-size: 14px; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); margin: 0; padding: 0; -unity-text-align: middle-center; }
+.lv-face-stacked { width: 28px; height: 28px; border-radius: 14px; margin-right: -7px; border-width: 2px; border-color: var(--lv-paper); }
+.lv-face-small { width: 28px; height: 28px; border-radius: 14px; margin-right: 8px; align-self: flex-end; border-width: 2px; border-color: var(--lv-paper); }
+.lv-face-tiny { width: 22px; height: 22px; border-radius: 11px; margin-right: 6px; }
+.lv-face-tiny > .lv-face-initial { font-size: 11px; }
+.lv-face-big { width: 60px; height: 60px; border-radius: 30px; border-width: 4px; }
+.lv-face-big > .lv-face-initial { font-size: 27px; }
+.lv-presence-online { border-color: #1F9560; }
+.lv-presence-away { border-color: #E39A2D; }
+.lv-presence-busy { border-color: #D6453D; }
+.lv-presence-invisible { border-color: #8C8078; }
 
 /* ------------------------------------------------ janelas ------------------------------------------------ */
 .lv-window {
     position: absolute;
-    background-image: resource("LifeVerse/UI/Skin/window");
-    -unity-slice-left: 18; -unity-slice-top: 18; -unity-slice-right: 18; -unity-slice-bottom: 18; -unity-slice-scale: 0.5px;
-    min-width: 220px; min-height: 34px;
-    padding: 1px;
+    background-color: var(--lv-paper);
+    border-radius: 14px;
+    border-width: 1px; border-color: var(--lv-line);
+    min-width: 220px; min-height: 36px;
+    padding: 0;
 }
 .lv-window-shadow {
     position: absolute; left: -14px; top: -9px; right: -14px; bottom: -19px;
@@ -55,120 +122,116 @@
 }
 .lv-window-title {
     flex-direction: row; align-items: center; flex-shrink: 0;
-    height: 34px; padding: 0 5px 0 11px;
-    background-image: resource("LifeVerse/UI/Skin/titlebar");
-    -unity-slice-left: 18; -unity-slice-top: 18; -unity-slice-right: 18; -unity-slice-bottom: 8; -unity-slice-scale: 0.5px;
+    height: 40px; padding: 0 7px 0 14px;
+    background-color: var(--lv-sand); border-top-left-radius: 13px; border-top-right-radius: 13px;
+    border-bottom-width: 3px; border-bottom-color: var(--lv-line);
 }
-.lv-window-front > .lv-window-title { background-image: resource("LifeVerse/UI/Skin/titlebar-front"); }
-.lv-window-title > .lv-title-text.lv-title-text { font-size: 14px; flex-grow: 1; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; -unity-text-align: middle-left; }
-.lv-window-body { padding: 10px 12px 12px 12px; flex-grow: 1; }
+.lv-window-front { border-color: var(--lv-wood); }
+.lv-window-front > .lv-window-title { border-bottom-color: var(--lv-wood); }
+.lv-window-title > .lv-icon { color: var(--lv-clay-text); }
+.lv-window-title > .lv-title-text.lv-title-text { font-size: 16px; flex-grow: 1; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; -unity-text-align: middle-left; }
+.lv-window-body { padding: 12px 14px 14px 14px; flex-grow: 1; }
 .lv-window-grip {
-    position: absolute; right: 2px; bottom: 2px; width: 14px; height: 14px;
-    background-image: resource("LifeVerse/UI/Skin/grip"); opacity: 0.7;
+    position: absolute; right: 3px; bottom: 3px; width: 14px; height: 14px;
+    background-image: resource("LifeVerse/UI/Skin/grip"); opacity: 0.8;
 }
 .lv-window-grip:hover { opacity: 1; }
 .lv-btn.lv-close, .lv-btn.lv-window-button {
-    width: 24px; height: 22px; min-height: 22px; padding: 0; margin: 0 0 0 2px; align-items: center; justify-content: center; flex-shrink: 0;
-    background-image: none; border-radius: 5px; background-color: rgba(0, 0, 0, 0.18);
+    width: 26px; height: 26px; min-height: 26px; padding: 0; margin: 0 0 0 4px; align-items: center; justify-content: center; flex-shrink: 0;
+    border-radius: 13px; background-color: var(--lv-paper); color: var(--lv-ink);
 }
-.lv-btn.lv-window-button:hover { background-color: rgba(255, 255, 255, 0.18); }
-.lv-btn.lv-close:hover { background-color: #C0392B; }
+.lv-btn.lv-window-button:hover { background-color: var(--lv-raised); }
+.lv-btn.lv-close:hover { background-color: var(--lv-clay); color: var(--lv-on-fill); }
 
 /* ------------------------------------------------ botões ------------------------------------------------ */
 .lv-btn {
-    background-image: resource("LifeVerse/UI/Skin/btn");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-    background-color: rgba(0, 0, 0, 0); color: #F2F5FA;
-    border-width: 0; border-radius: 0;
-    padding: 5px 14px; margin: 2px; min-height: 28px;
+    background-color: var(--lv-sand); color: var(--lv-ink);
+    border-width: 2px; border-color: rgba(0, 0, 0, 0); border-radius: 15px;
+    padding: 4px 13px; margin: 2px; min-height: 30px;
     -unity-text-align: middle-center;
+    transition-property: background-color, scale, translate; transition-duration: 140ms;
 }
-.lv-btn:hover { background-image: resource("LifeVerse/UI/Skin/btn-hover"); color: #FFFFFF; }
-.lv-btn:active { background-image: resource("LifeVerse/UI/Skin/btn-down"); }
-.lv-btn:disabled { background-image: resource("LifeVerse/UI/Skin/btn-disabled"); color: #6F7A8F; }
-.lv-btn-primary { background-image: resource("LifeVerse/UI/Skin/btn-primary"); }
-.lv-btn-primary:hover { background-image: resource("LifeVerse/UI/Skin/btn-primary-hover"); color: #FFFFFF; }
-.lv-btn-primary:active { background-image: resource("LifeVerse/UI/Skin/btn-primary-down"); }
-.lv-btn-secondary { background-image: resource("LifeVerse/UI/Skin/btn-gold"); }
-.lv-btn-secondary:hover { background-image: resource("LifeVerse/UI/Skin/btn-gold-hover"); }
-.lv-btn-selected, .lv-btn-selected:hover { background-image: resource("LifeVerse/UI/Skin/btn-selected"); color: #FFFFFF; }
-.lv-btn-flat { background-image: none; }
-.lv-btn-flat:hover { background-image: resource("LifeVerse/UI/Skin/btn-flat-hover"); }
-.lv-btn-flat:active { background-image: resource("LifeVerse/UI/Skin/btn-flat-hover"); }
-.lv-btn-flat:disabled { background-image: none; opacity: 0.45; }
-.lv-btn-flat.lv-btn-selected { background-image: resource("LifeVerse/UI/Skin/btn-selected"); }
-.lv-btn-flat.lv-btn-primary { background-image: resource("LifeVerse/UI/Skin/btn-primary"); }
-.lv-btn-flat.lv-btn-primary:hover { background-image: resource("LifeVerse/UI/Skin/btn-primary-hover"); }
+.lv-btn:hover { background-color: var(--lv-sand-strong); }
+.lv-btn:active { scale: 0.97; }
+.lv-btn:focus { border-color: var(--lv-sea-text); }
+.lv-btn:disabled { opacity: 0.45; }
+.lv-btn-primary { background-color: var(--lv-sea); color: var(--lv-on-fill); }
+.lv-btn-primary:hover { background-color: var(--lv-sea-hover); color: var(--lv-on-fill); }
+.lv-btn-secondary { background-color: var(--lv-clay); color: var(--lv-on-fill); }
+.lv-btn-secondary:hover { background-color: var(--lv-clay-hover); color: var(--lv-on-fill); }
+.lv-btn-selected, .lv-btn-selected:hover { background-color: var(--lv-sea); color: var(--lv-on-fill); }
+.lv-btn-flat { background-color: rgba(0, 0, 0, 0); }
+.lv-btn-flat:hover { background-color: var(--lv-sand); }
+.lv-btn-flat.lv-btn-selected, .lv-btn-flat.lv-btn-selected:hover { background-color: var(--lv-sea); color: var(--lv-on-fill); }
+.lv-btn-flat.lv-btn-primary { background-color: var(--lv-sea); }
+.lv-btn-flat.lv-btn-primary:hover { background-color: var(--lv-sea-hover); }
 /* abas no alto de uma janela */
-.lv-tabs { flex-direction: row; flex-wrap: wrap; flex-shrink: 0; padding-bottom: 3px; margin-bottom: 6px; border-bottom-width: 1px; border-bottom-color: rgba(63, 227, 211, 0.35); }
-.lv-tabs .lv-btn { background-image: resource("LifeVerse/UI/Skin/tab"); margin: 1px 3px 1px 0; padding: 3px 12px; min-height: 26px; color: #C3CCDC; }
-.lv-tabs .lv-btn:hover { background-image: resource("LifeVerse/UI/Skin/btn-hover"); color: #FFFFFF; }
-.lv-tabs .lv-btn.lv-btn-selected, .lv-tabs .lv-btn.lv-btn-primary { background-image: resource("LifeVerse/UI/Skin/btn-selected"); color: #FFFFFF; }
+.lv-tabs { flex-direction: row; flex-wrap: wrap; flex-shrink: 0; padding-bottom: 5px; margin-bottom: 8px; border-bottom-width: 2px; border-bottom-color: var(--lv-sand); }
+.lv-tabs .lv-btn { margin: 1px 4px 1px 0; padding: 2px 13px; min-height: 28px; }
+.lv-tabs .lv-btn.lv-btn-selected, .lv-tabs .lv-btn.lv-btn-primary { background-color: var(--lv-sea); color: var(--lv-on-fill); }
 /* listas de nomes que se clicam */
-.lv-list .lv-btn.lv-btn-flat { -unity-text-align: middle-left; margin: 0; min-height: 24px; padding-top: 2px; padding-bottom: 2px; }
+.lv-list .lv-btn.lv-btn-flat { -unity-text-align: middle-left; margin: 0; min-height: 26px; padding-top: 2px; padding-bottom: 2px; border-radius: 8px; }
 
 /* ------------------------------------------------ campos ------------------------------------------------ */
 .unity-base-field { flex-direction: row; align-items: center; margin: 3px 2px; }
-.unity-base-field__label { color: #A6B1C4; min-width: 128px; flex-shrink: 0; margin: 0 8px 0 0; -unity-text-align: middle-left; font-size: 12px; }
+.unity-base-field__label { color: var(--lv-soft); min-width: 128px; flex-shrink: 0; margin: 0 8px 0 0; -unity-text-align: middle-left; font-size: 13px; }
 .unity-base-field__input { flex-grow: 1; flex-shrink: 1; }
 
 /* campos de texto: o nome em cima */
 .unity-base-text-field { flex-direction: column; align-items: stretch; }
 .unity-base-text-field > .unity-base-field__label { min-width: 0; margin: 0 0 2px 1px; }
 .unity-base-text-field__input {
-    background-image: resource("LifeVerse/UI/Skin/field");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-    color: #F2F5FA; padding: 5px 10px; min-height: 29px; -unity-text-align: middle-left;
-    --unity-cursor-color: #3FE3D3; --unity-selection-color: rgba(63, 227, 211, 0.35);
+    background-color: var(--lv-raised); border-width: 2px; border-color: var(--lv-line); border-radius: 10px;
+    color: var(--lv-ink); padding: 3px 10px; min-height: 31px; -unity-text-align: middle-left;
+    --unity-cursor-color: #E39A2D; --unity-selection-color: rgba(20, 107, 100, 0.35);
     white-space: nowrap; overflow: hidden; justify-content: center;
 }
 .unity-base-text-field__input > .unity-text-element { margin: 0; padding: 0; -unity-text-align: middle-left; }
-.unity-base-text-field__input--placeholder, .unity-base-text-field__input--placeholder > .unity-text-element, .unity-text-element--placeholder { color: #77829A; }
-TextField:focus .unity-base-text-field__input, .unity-base-text-field:focus > .unity-base-text-field__input { background-image: resource("LifeVerse/UI/Skin/field-focus"); }
+.unity-base-text-field__input--placeholder, .unity-base-text-field__input--placeholder > .unity-text-element, .unity-text-element--placeholder { color: var(--lv-faint); }
+TextField:focus .unity-base-text-field__input, .unity-base-text-field:focus > .unity-base-text-field__input { border-color: var(--lv-sea-text); }
 .unity-base-text-field:disabled { opacity: 0.55; }
 .unity-base-text-field__input--multiline, .unity-text-field__input--multiline { -unity-text-align: upper-left; white-space: normal; justify-content: flex-start; }
 .unity-base-text-field__input--multiline > .unity-text-element { -unity-text-align: upper-left; }
-.unity-text-element--inner-input-field-component { color: #F2F5FA; }
+.unity-text-element--inner-input-field-component { color: var(--lv-ink); }
 
 /* listas de escolha: o nome em cima, o valor numa caixa com a seta à direita */
 .unity-popup-field, .unity-base-popup-field { flex-direction: column; align-items: stretch; }
 .unity-popup-field > .unity-base-field__label, .unity-base-popup-field > .unity-base-field__label { min-width: 0; margin: 0 0 2px 1px; }
 .unity-base-popup-field__input, .unity-popup-field__input {
     flex-direction: row; align-items: center;
-    background-image: resource("LifeVerse/UI/Skin/btn");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-    color: #F2F5FA; padding: 4px 8px 4px 11px; min-height: 29px; flex-grow: 1;
+    background-color: var(--lv-sand); border-width: 2px; border-color: rgba(0, 0, 0, 0); border-radius: 15px;
+    color: var(--lv-ink); padding: 2px 9px 2px 12px; min-height: 30px; flex-grow: 1;
 }
-.unity-base-popup-field__input:hover { background-image: resource("LifeVerse/UI/Skin/btn-hover"); }
+.unity-base-popup-field__input:hover { background-color: var(--lv-sand-strong); }
+.unity-base-popup-field:focus > .unity-base-popup-field__input { border-color: var(--lv-sea-text); }
 .unity-base-popup-field__text { flex-grow: 1; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; padding: 0; -unity-text-align: middle-left; }
 .unity-base-popup-field__arrow { width: 12px; height: 12px; margin-left: 8px; flex-shrink: 0; background-image: resource("LifeVerse/UI/Skin/arrow-down"); }
 
 /* a lista aberta de uma escolha */
-.unity-base-dropdown { position: absolute; left: 0; top: 0; right: 0; bottom: 0; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular"); font-size: 13px; color: #E8EDF5; }
-.unity-base-dropdown Label { -unity-font: resource("LifeVerse/UI/Fonts/Inter-Regular"); color: #E8EDF5; }
+.unity-base-dropdown { position: absolute; left: 0; top: 0; right: 0; bottom: 0; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Medium"); font-size: 14px; color: var(--lv-ink); }
+.unity-base-dropdown Label { -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Medium"); color: var(--lv-ink); }
 .unity-base-dropdown__container-outer {
     position: absolute;
-    background-image: resource("LifeVerse/UI/Skin/panel-solid");
-    -unity-slice-left: 14; -unity-slice-top: 14; -unity-slice-right: 14; -unity-slice-bottom: 14; -unity-slice-scale: 0.5px;
+    background-color: var(--lv-paper); border-radius: 12px; border-width: 1px 1px 3px 1px; border-color: var(--lv-line);
     padding: 5px; max-height: 320px;
 }
-.unity-base-dropdown__item { flex-direction: row; align-items: center; height: 26px; padding: 0 10px 0 6px; color: #E8EDF5; flex-shrink: 0; }
-.unity-base-dropdown__item:hover { background-color: #15837C; }
-.unity-base-dropdown__item:checked Label { color: #3FE3D3; }
-.unity-base-dropdown__checkmark { width: 8px; height: 8px; margin-right: 8px; border-radius: 4px; }
-.unity-base-dropdown__item:checked .unity-base-dropdown__checkmark { background-color: #3FE3D3; }
+.unity-base-dropdown__item { flex-direction: row; align-items: center; height: 30px; padding: 0 12px 0 8px; border-radius: 8px; color: var(--lv-ink); flex-shrink: 0; }
+.unity-base-dropdown__item:hover { background-color: var(--lv-sand); }
+.unity-base-dropdown__item:checked Label { color: var(--lv-sea-text); }
+.unity-base-dropdown__checkmark { width: 9px; height: 9px; margin-right: 9px; border-radius: 5px; }
+.unity-base-dropdown__item:checked .unity-base-dropdown__checkmark { background-color: var(--lv-sea-text); }
 .unity-base-dropdown__item-content { flex-direction: row; align-items: center; flex-grow: 1; }
 .unity-base-dropdown__label { margin: 0; padding: 0; }
-.unity-base-dropdown__separator { height: 1px; background-color: #3B4557; margin: 4px 2px; }
+.unity-base-dropdown__separator { height: 2px; background-color: var(--lv-sand); margin: 4px 2px; }
 
 /* caixas de marcar: a caixa e, ao lado, o texto */
-.unity-toggle { flex-direction: row; align-items: center; margin: 3px 2px; }
-.unity-toggle > .unity-base-field__label { min-width: 0; margin-right: 10px; font-size: 13px; color: #D3DAE6; }
+.unity-toggle { flex-direction: row; align-items: center; margin: 3px 2px; border-width: 2px; border-color: rgba(0, 0, 0, 0); border-radius: 8px; }
+.unity-toggle:focus { border-color: var(--lv-sea-text); }
+.unity-toggle > .unity-base-field__label { min-width: 0; margin-right: 10px; font-size: 14px; color: var(--lv-ink); }
 .unity-toggle__input { flex-direction: row; align-items: center; flex-grow: 0; }
 .unity-toggle__checkmark { width: 18px; height: 18px; flex-shrink: 0; background-image: resource("LifeVerse/UI/Skin/check"); }
 .unity-toggle__input:checked > .unity-toggle__checkmark, .unity-toggle:checked > .unity-toggle__input > .unity-toggle__checkmark { background-image: resource("LifeVerse/UI/Skin/check-on"); }
 .unity-toggle__text { margin-left: 8px; }
-.unity-toggle:hover .unity-toggle__checkmark { -unity-background-image-tint-color: #CFFFF9; }
 .unity-toggle:disabled { opacity: 0.5; }
 .lv-toggle { margin: 4px 2px; }
 
@@ -176,183 +239,234 @@ TextField:focus .unity-base-text-field__input, .unity-base-text-field:focus > .u
 .unity-base-slider { margin: 4px 2px; }
 .unity-base-slider__input { flex-direction: row; align-items: center; margin: 0; }
 .unity-base-slider__drag-container { flex-grow: 1; height: 20px; justify-content: center; }
-.unity-base-slider__tracker {
-    position: absolute; left: 0; right: 0; top: 7px; height: 7px;
-    background-image: resource("LifeVerse/UI/Skin/track");
-    -unity-slice-left: 8; -unity-slice-top: 6; -unity-slice-right: 8; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
-}
-.unity-base-slider__dragger { position: absolute; width: 17px; height: 17px; top: 2px; margin: 0; background-image: resource("LifeVerse/UI/Skin/knob"); }
-.unity-base-slider__dragger:hover { -unity-background-image-tint-color: #A6FFF4; }
+.unity-base-slider__tracker { position: absolute; left: 0; right: 0; top: 7px; height: 6px; background-color: var(--lv-sand-strong); border-radius: 3px; }
+.unity-base-slider__dragger { position: absolute; width: 18px; height: 18px; top: 1px; margin: 0; background-color: var(--lv-sea); border-width: 3px; border-color: var(--lv-on-fill); border-radius: 9px; }
+.unity-base-slider__dragger:hover { background-color: var(--lv-clay); }
+.unity-base-slider:focus .unity-base-slider__dragger { border-color: var(--lv-sun); }
 .unity-base-slider__dragger-border { width: 0; height: 0; }
 
 /* barras de rolagem finas */
 .unity-scroll-view__content-and-vertical-scroll-container { flex-direction: row; flex-grow: 1; }
-.unity-scroll-view__content-viewport { flex-grow: 1; }
+.unity-scroll-view__content-viewport { flex-grow: 1; overflow: hidden; }
+/* what does not fit scrolls instead of pushing past its box */
+.lv-sheet .unity-scroll-view__content-and-vertical-scroll-container, .lv-sheet .unity-scroll-view__content-viewport { flex-shrink: 1; min-height: 0; }
 .unity-scroll-view__vertical-scroller { width: 9px; margin-left: 3px; }
 .unity-scroll-view__horizontal-scroller { height: 9px; margin-top: 3px; }
 .unity-scroller .unity-base-slider { margin: 0; flex-grow: 1; }
 .unity-scroller--vertical .unity-base-slider__input { flex-direction: column; flex-grow: 1; }
 .unity-scroller--vertical .unity-base-slider__drag-container { height: auto; width: 9px; flex-grow: 1; justify-content: flex-start; }
-.unity-scroller--vertical .unity-base-slider__tracker { left: 1px; right: 1px; top: 0; bottom: 0; height: auto; background-image: none; background-color: rgba(0, 0, 0, 0.35); border-radius: 4px; }
-.unity-scroller--vertical .unity-base-slider__dragger {
-    width: 7px; left: 1px; top: 0;
-    background-image: resource("LifeVerse/UI/Skin/thumb");
-    -unity-slice-left: 7; -unity-slice-top: 8; -unity-slice-right: 7; -unity-slice-bottom: 8; -unity-slice-scale: 0.5px;
-}
+.unity-scroller--vertical .unity-base-slider__tracker { left: 1px; right: 1px; top: 0; bottom: 0; height: auto; background-color: var(--lv-sand); border-radius: 4px; }
+.unity-scroller--vertical .unity-base-slider__dragger { width: 7px; left: 1px; top: 0; background-color: var(--lv-wood); border-width: 0; border-radius: 4px; }
 .unity-scroller--horizontal .unity-base-slider__drag-container { height: 9px; }
-.unity-scroller--horizontal .unity-base-slider__tracker { top: 1px; bottom: 1px; height: auto; background-image: none; background-color: rgba(0, 0, 0, 0.35); border-radius: 4px; }
-.unity-scroller--horizontal .unity-base-slider__dragger { height: 7px; top: 1px; background-image: none; background-color: #8592A9; border-radius: 3px; }
+.unity-scroller--horizontal .unity-base-slider__tracker { top: 1px; bottom: 1px; height: auto; background-color: var(--lv-sand); border-radius: 4px; }
+.unity-scroller--horizontal .unity-base-slider__dragger { height: 7px; top: 1px; background-color: var(--lv-wood); border-width: 0; border-radius: 4px; }
 .unity-scroller__low-button, .unity-scroller__high-button { display: none; }
 /* itens de uma lista rolável não encolhem (senão se sobrepõem) */
 .unity-scroll-view__content-container > * { flex-shrink: 0; }
 .unity-scroll-view__content-container { flex-shrink: 0; }
 
 /* ------------------------------------------------ listas, seções, abas ------------------------------------------------ */
-.lv-row {
-    background-image: resource("LifeVerse/UI/Skin/row");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-    padding: 5px 9px; margin: 2px 0;
-}
-.lv-row:hover { background-image: resource("LifeVerse/UI/Skin/row-hover"); }
-.lv-divider { height: 1px; background-color: rgba(255, 255, 255, 0.13); margin: 8px 0; flex-shrink: 0; }
+.lv-row { background-color: var(--lv-raised); border-radius: 10px; border-bottom-width: 2px; border-color: var(--lv-sand); padding: 5px 10px; margin: 2px 0; }
+.lv-row:hover { background-color: var(--lv-sand); }
+.lv-divider { height: 2px; background-color: var(--lv-sand); margin: 8px 0; flex-shrink: 0; }
 .lv-root .lv-heading {
-    -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); color: #3FE3D3; font-size: 13px;
-    margin: 10px 0 5px 0; padding: 0 0 3px 0; border-bottom-width: 1px; border-bottom-color: rgba(63, 227, 211, 0.35);
+    -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-Medium"); color: var(--lv-clay-text); font-size: 15px;
+    margin: 10px 0 5px 0; padding: 0 0 3px 0; border-bottom-width: 2px; border-bottom-color: var(--lv-sand);
 }
-.lv-sidebar {
-    background-image: resource("LifeVerse/UI/Skin/inset");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-    padding: 4px; flex-shrink: 0;
-}
-.lv-btn.lv-tab { margin: 1px 0; padding-top: 4px; padding-bottom: 4px; -unity-text-align: middle-left; color: #C3CCDC; white-space: normal; min-height: 29px; }
-.lv-btn.lv-tab:hover { color: #FFFFFF; background-image: resource("LifeVerse/UI/Skin/tab"); }
-.lv-btn.lv-tab.lv-btn-selected { color: #FFFFFF; background-image: resource("LifeVerse/UI/Skin/tab-selected"); }
-.lv-summary {
-    background-image: resource("LifeVerse/UI/Skin/row");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-    padding: 5px 10px; margin: 0 0 4px 0; color: #D8E2F0;
-}
+.lv-sidebar { background-color: var(--lv-sand); border-radius: 12px; padding: 5px; flex-shrink: 0; }
+.lv-btn.lv-tab { margin: 1px 0; padding-top: 4px; padding-bottom: 4px; -unity-text-align: middle-left; white-space: normal; min-height: 31px; border-radius: 9px; background-color: rgba(0, 0, 0, 0); }
+.lv-btn.lv-tab:hover { background-color: var(--lv-paper); }
+.lv-btn.lv-tab.lv-btn-selected { color: var(--lv-on-fill); background-color: var(--lv-sea); }
+.lv-summary { background-color: var(--lv-sand); border-radius: 10px; padding: 6px 12px; margin: 0 0 4px 0; color: var(--lv-ink); }
+/* fundos próprios */
+.lv-thumb { background-color: var(--lv-sand); border-radius: 8px; }
+.lv-meter { height: 8px; border-radius: 4px; background-color: var(--lv-sand); }
+.lv-meter-fill { height: 8px; border-radius: 4px; background-color: var(--lv-sea); }
+.lv-meter-fill.lv-meter-high { background-color: var(--lv-clay); }
+.lv-chart { background-color: var(--lv-raised); border-radius: 8px; }
+.lv-marked { background-color: var(--lv-sand-strong); }
+/* o editor de código fica escuro nos dois modos: as cores da sintaxe foram feitas para o escuro */
+.lv-code { background-color: #191412; border-radius: 10px; color: #EFE6D8; }
+.lv-code Label, .lv-code .unity-text-element--inner-input-field-component { color: #EFE6D8; }
+.lv-code .unity-base-text-field__input { background-color: rgba(0, 0, 0, 0); color: #EFE6D8; }
 
-/* ------------------------------------------------ barras do jogo ------------------------------------------------ */
-.lv-bar { flex-direction: row; align-items: center; }
-.lv-menubar {
-    height: 30px; padding: 0 10px;
-    background-image: resource("LifeVerse/UI/Skin/menubar");
-    -unity-slice-left: 4; -unity-slice-top: 6; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
-}
-.lv-navbar {
-    height: 38px; padding: 0 10px;
-    background-image: resource("LifeVerse/UI/Skin/navbar");
-    -unity-slice-left: 4; -unity-slice-top: 6; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
-}
+/* ------------------------------------------------ a placa do lugar e os atalhos do alto ------------------------------------------------ */
+.lv-topbar { position: absolute; left: 0; top: 0; right: 0; flex-direction: row; justify-content: space-between; align-items: flex-start; padding: 22px 24px 0 24px; }
+.lv-sign { padding: 8px 16px 10px 16px; border-left-width: 7px; border-left-color: var(--lv-clay); min-width: 300px; max-width: 460px; flex-shrink: 1; }
+.lv-address { flex-direction: row; align-items: center; border-radius: 8px; padding: 0 6px; margin-left: -6px; overflow: hidden; }
+.lv-address:hover { background-color: var(--lv-sand); }
+.lv-root .lv-place { font-size: 25px; -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-SemiBold"); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; margin: 0; padding: 0; }
+.lv-who { flex-direction: row; align-items: center; margin-top: 3px; }
+.lv-who-faces { flex-direction: row; align-items: center; margin-right: 15px; }
+.lv-who Label { white-space: nowrap; margin: 0; padding: 0; }
+.lv-people { font-size: 14px; }
+.lv-who .lv-position { font-size: 13px; color: var(--lv-soft); margin-left: 14px; }
+.lv-links { flex-direction: row; align-items: center; margin-top: 8px; }
+.lv-btn.lv-round { width: 28px; height: 28px; min-height: 28px; padding: 0; margin: 0 6px 0 0; border-radius: 14px; align-items: center; justify-content: center; flex-shrink: 0; }
+.lv-btn.lv-link { min-height: 28px; height: 28px; margin: 0 0 0 2px; padding-top: 0; padding-bottom: 0; border-radius: 9px; color: var(--lv-sea-text); background-color: rgba(0, 0, 0, 0); font-size: 14px; }
+.lv-btn.lv-link:hover { background-color: var(--lv-sand); }
+
+.lv-pills { flex-direction: row; align-items: center; justify-content: flex-end; flex-shrink: 1; margin-left: 12px; }
+.lv-pill { flex-direction: row; align-items: center; height: 48px; margin-left: 10px; padding: 0 8px 0 12px; border-radius: 24px; }
+.lv-search { padding-left: 6px; padding-right: 6px; flex-shrink: 1; }
+.lv-search > .unity-base-text-field { width: 214px; margin: 0 2px 0 0; flex-shrink: 1; }
+.lv-search .unity-base-text-field__input { background-color: rgba(0, 0, 0, 0); border-color: rgba(0, 0, 0, 0); border-radius: 18px; min-height: 34px; }
+.lv-search .unity-base-text-field:focus > .unity-base-text-field__input { background-color: var(--lv-raised); border-color: var(--lv-sea-text); }
+.lv-pill Label { white-space: nowrap; margin: 0; padding: 0; }
+.lv-root .lv-money { font-size: 17px; margin: 0 10px 0 7px; }
+.lv-btn.lv-buy { min-height: 32px; height: 32px; padding: 0 12px; margin: 0; }
+.lv-pill .lv-btn.lv-round { width: 34px; height: 34px; min-height: 34px; border-radius: 17px; background-color: rgba(0, 0, 0, 0); }
+.lv-pill .lv-btn.lv-round:hover { background-color: var(--lv-sand); }
+.lv-bell { margin-left: -6px; margin-right: 6px; }
+.lv-root .lv-badge { position: absolute; right: -1px; top: -1px; min-width: 17px; height: 17px; border-radius: 9px; padding: 0 4px; background-color: var(--lv-clay); color: var(--lv-on-fill); font-size: 11px; -unity-text-align: middle-center; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); }
+.lv-root .lv-clock { font-size: 16px; margin-right: 14px; }
+.lv-pill .lv-connection { font-size: 13px; margin-right: 10px; }
+
+/* ------------------------------------------------ a barra: a varanda ------------------------------------------------ */
+.lv-dock-wrap { position: absolute; align-items: center; justify-content: flex-end; }
 .lv-toolbar {
-    justify-content: center; align-items: center; height: 62px; padding: 3px 8px 1px 8px;
-    background-image: resource("LifeVerse/UI/Skin/toolbar");
-    -unity-slice-left: 4; -unity-slice-top: 22; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
+    flex-direction: row; align-items: center; height: 84px; padding: 0 12px;
+    background-color: var(--lv-paper); border-radius: 22px; border-bottom-left-radius: 9px; border-bottom-right-radius: 9px;
+    border-bottom-width: 8px; border-color: var(--lv-wood); max-width: 100%;
 }
-.lv-menubar .lv-btn { min-height: 24px; height: 24px; padding-top: 0; padding-bottom: 0; margin: 0 1px; font-size: 13px; }
-.lv-menubar .lv-btn.lv-money { min-height: 22px; height: 22px; margin-left: 6px; }
-.lv-navbar .lv-btn { min-height: 28px; height: 28px; padding: 0 9px; margin: 0 2px; }
-.lv-nav-icon { width: 30px; padding: 0; align-items: center; justify-content: center; }
-.lv-address {
-    flex-direction: row; align-items: center; flex-grow: 1; flex-shrink: 1; height: 28px; margin: 0 8px; padding: 0 5px 0 9px; overflow: hidden;
-    background-image: resource("LifeVerse/UI/Skin/field");
-    -unity-slice-left: 12; -unity-slice-top: 12; -unity-slice-right: 12; -unity-slice-bottom: 12; -unity-slice-scale: 0.5px;
-}
-.lv-address:hover { background-image: resource("LifeVerse/UI/Skin/field-focus"); }
-.lv-address Label { white-space: nowrap; margin: 0; padding: 0; }
-.lv-separator { width: 1px; height: 18px; background-color: rgba(255, 255, 255, 0.16); margin: 0 10px; flex-shrink: 0; }
-
-/* os botões da barra de baixo: o desenho em cima, o nome embaixo */
 .lv-btn.lv-tool {
-    background-image: resource("LifeVerse/UI/Skin/tool");
-    height: 54px; min-width: 64px; margin: 0 2px; padding-left: 7px; padding-right: 7px; padding-bottom: 3px;
-    font-size: 11px; color: #D5DCE8; -unity-text-align: lower-center; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis;
+    background-color: rgba(0, 0, 0, 0); border-radius: 14px;
+    width: 76px; min-width: 52px; height: 66px; margin: 0 1px; padding: 40px 2px 2px 2px;
+    font-size: 13px; -unity-text-align: middle-center; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis;
+    --lv-icon-ink: var(--lv-ink); --lv-icon-accent: var(--lv-clay-text); --lv-icon-surface: var(--lv-paper);
+    transition-property: background-color, translate; transition-duration: 200ms; transition-timing-function: ease-out-back;
 }
-.lv-btn.lv-tool:hover { background-image: resource("LifeVerse/UI/Skin/tool-hover"); color: #FFFFFF; }
-.lv-btn.lv-tool:active { background-image: resource("LifeVerse/UI/Skin/tool-open"); }
-.lv-btn.lv-tool.lv-btn-open { background-image: resource("LifeVerse/UI/Skin/tool-open"); color: #FFFFFF; }
-.lv-btn.lv-tool.lv-btn-open-orange { background-image: resource("LifeVerse/UI/Skin/tool-open-orange"); color: #FFFFFF; }
-.lv-btn.lv-tool.lv-tool-compact { height: 40px; min-width: 40px; padding: 0; }
+.lv-root .lv-btn.lv-tool { -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Bold"); }
+.lv-btn.lv-tool:hover { background-color: var(--lv-sand); translate: 0 -5px; --lv-icon-surface: var(--lv-sand); }
+.lv-btn.lv-tool.lv-btn-open { background-color: var(--lv-sea); color: var(--lv-on-fill); --lv-icon-ink: var(--lv-on-fill); --lv-icon-accent: var(--lv-sun); --lv-icon-surface: var(--lv-sea); }
+.lv-btn.lv-tool.lv-btn-open-orange { background-color: var(--lv-clay); color: var(--lv-on-fill); --lv-icon-ink: var(--lv-on-fill); --lv-icon-accent: var(--lv-sun); --lv-icon-surface: var(--lv-clay); }
+.lv-btn.lv-tool.lv-tool-compact { width: 46px; min-width: 40px; height: 46px; padding: 0; color: rgba(0, 0, 0, 0); }
 .lv-btn.lv-tool.lv-dragging { opacity: 0.6; }
-/* a barra de ferramentas numa borda lateral: uma coluna só de desenhos */
-.lv-toolbar.lv-toolbar-side { flex-direction: column; justify-content: center; height: auto; width: 54px; padding: 4px 3px; }
-.lv-toolbar-side .lv-btn.lv-tool { width: 44px; min-width: 40px; height: 40px; min-height: 26px; margin: 1px 0; flex-shrink: 1; }
-/* as conversas, em abas */
-.lv-chat-tabs { margin: 2px 4px 0 4px; flex-shrink: 0; overflow: hidden; }
-.lv-chat-tabs .lv-btn { min-height: 22px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
+.lv-dock-divider { width: 2px; height: 44px; background-color: var(--lv-sand); margin: 0 6px; flex-shrink: 0; }
+/* o próprio rosto, no meio da barra, com a presença embaixo */
+.lv-me { width: 116px; height: 76px; align-items: center; justify-content: flex-end; flex-shrink: 0; margin: 0 4px; }
+.lv-medal { position: absolute; top: -32px; width: 76px; height: 76px; border-radius: 38px; background-color: var(--lv-paper); align-items: center; justify-content: center; }
+.lv-me > .unity-base-popup-field { margin: 0; width: 112px; }
+.lv-me .unity-base-popup-field__input { background-color: rgba(0, 0, 0, 0); min-height: 24px; height: 24px; padding: 0 5px; border-radius: 12px; justify-content: center; font-size: 13px; }
+.lv-me .unity-base-popup-field__input:hover { background-color: var(--lv-sand); }
+.lv-me .unity-base-popup-field__text { flex-grow: 0; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Bold"); }
+.lv-me .unity-base-popup-field__arrow { margin-left: 4px; width: 10px; height: 10px; }
+/* a barra numa borda lateral: uma coluna só de desenhos */
+.lv-toolbar.lv-toolbar-side { flex-direction: column; justify-content: center; height: auto; max-height: 100%; width: 66px; padding: 8px 0; border-radius: 18px; border-bottom-width: 8px; }
+.lv-toolbar.lv-toolbar-side.lv-toolbar-left { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.lv-toolbar.lv-toolbar-side.lv-toolbar-right { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.lv-toolbar-side .lv-btn.lv-tool { width: 48px; min-width: 40px; height: 46px; min-height: 26px; margin: 1px 0; flex-shrink: 1; }
+.lv-toolbar-side .lv-dock-divider { width: 40px; height: 2px; margin: 4px 0; }
+.lv-toolbar-side .lv-me { width: 62px; height: 58px; justify-content: center; margin: 4px 0; }
+.lv-toolbar-side .lv-medal { position: relative; top: 0; width: 54px; height: 54px; border-radius: 27px; }
+.lv-toolbar-side .lv-me .lv-face-big { width: 46px; height: 46px; border-radius: 23px; }
+/* de lado não há largura para as palavras: o menu da presença abre pela seta sobre o rosto */
+.lv-toolbar-side .lv-me > .unity-base-popup-field { position: absolute; right: 0; bottom: 0; width: 22px; }
+.lv-toolbar-side .lv-me .unity-base-popup-field__input { width: 22px; height: 22px; min-height: 22px; padding: 0; background-color: var(--lv-sand); }
+.lv-toolbar-side .lv-me .unity-base-popup-field__text { display: none; }
+.lv-toolbar-side .lv-me .unity-base-popup-field__arrow { margin-left: 0; }
 
-/* legendas, sobre a barra de ferramentas */
-.lv-caption { background-color: rgba(5, 8, 12, 0.82); color: #FFFFFF; font-size: 14px; padding: 3px 12px; margin-top: 3px; border-radius: 6px; }
+/* ------------------------------------------------ "Tudo da ilha" e os menus ------------------------------------------------ */
+.lv-veil { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: var(--lv-veil); align-items: center; justify-content: flex-end; padding: 16px 16px 118px 16px; }
+.lv-sheet { width: 1240px; max-width: 100%; max-height: 100%; padding: 14px 24px; border-radius: 18px; flex-shrink: 1; }
+.lv-sheet-head { flex-direction: row; align-items: center; height: 44px; flex-shrink: 0; border-bottom-width: 2px; border-color: var(--lv-sand); padding-bottom: 6px; }
+.lv-root .lv-sheet-title { font-size: 25px; margin-right: 14px; -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-SemiBold"); }
+.lv-columns { flex-direction: row; align-items: flex-start; justify-content: space-between; margin: 10px 0 8px 0; }
+.lv-column { width: 176px; flex-shrink: 1; }
+.lv-column.lv-column-double { width: 400px; }
+.lv-column-items { flex-direction: column; }
+.lv-column-double > .lv-column-items { flex-direction: row; flex-wrap: wrap; }
+.lv-root .lv-btn.lv-sheet-heading { -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-Medium"); font-size: 17px; color: var(--lv-clay-text); background-color: rgba(0, 0, 0, 0); -unity-text-align: middle-left; margin: 0; padding: 0 4px; min-height: 28px; border-radius: 8px; }
+.lv-column .lv-sheet-heading-second { margin-top: 10px; }
+.lv-btn.lv-sheet-item { flex-direction: row; align-items: center; margin: 0; padding: 1px 4px; min-height: 29px; border-radius: 8px; background-color: rgba(0, 0, 0, 0); }
+.lv-btn.lv-sheet-item:hover { background-color: var(--lv-sand); }
+.lv-column-double .lv-btn.lv-sheet-item { width: 198px; margin-right: 2px; }
+.lv-root .lv-sheet-word { font-size: 14px; -unity-text-align: middle-left; white-space: normal; flex-grow: 1; flex-shrink: 1; margin: 0; padding: 0; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Bold"); }
+.lv-sheet-key { font-size: 12px; color: var(--lv-faint); margin: 0 0 0 6px; padding: 0; }
+.lv-sheet-rule { height: 2px; width: 100%; background-color: var(--lv-sand); margin: 4px 0; flex-shrink: 0; }
+.lv-own { border-top-width: 2px; border-color: var(--lv-sand); padding-top: 8px; flex-shrink: 0; }
+.lv-own-row { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.lv-btn.lv-chip { margin: 0 6px 6px 0; min-height: 30px; padding-left: 12px; padding-right: 12px; font-size: 13px; --lv-icon-surface: var(--lv-sand); }
+.lv-btn.lv-chip.lv-btn-selected { --lv-icon-ink: var(--lv-on-fill); --lv-icon-accent: var(--lv-sun); --lv-icon-surface: var(--lv-sea); }
+.lv-segments { flex-direction: row; align-items: center; background-color: var(--lv-sand); border-radius: 17px; padding: 2px; margin: 0 28px 0 8px; }
+.lv-segments > .lv-btn { margin: 0; min-height: 28px; font-size: 13px; background-color: rgba(0, 0, 0, 0); }
+.lv-segments > .lv-btn.lv-btn-selected { background-color: var(--lv-paper); color: var(--lv-sea-text); }
 
-/* ------------------------------------------------ menus e dicas ------------------------------------------------ */
-.lv-menu {
-    position: absolute; min-width: 246px; padding: 6px;
-    background-image: resource("LifeVerse/UI/Skin/panel-solid");
-    -unity-slice-left: 14; -unity-slice-top: 14; -unity-slice-right: 14; -unity-slice-bottom: 14; -unity-slice-scale: 0.5px;
-}
-.lv-btn.lv-menu-item { margin: 0; padding-top: 3px; padding-bottom: 3px; min-height: 27px; -unity-text-align: middle-left; background-image: none; }
-.lv-btn.lv-menu-item:hover { background-image: resource("LifeVerse/UI/Skin/tab-selected"); }
-.lv-menu-separator { height: 1px; background-color: rgba(255, 255, 255, 0.13); margin: 4px 6px; }
-.lv-tooltip {
-    position: absolute; max-width: 280px; padding: 4px 9px; font-size: 12px; color: #2B2108; white-space: normal;
-    background-image: resource("LifeVerse/UI/Skin/tooltip");
-    -unity-slice-left: 10; -unity-slice-top: 10; -unity-slice-right: 10; -unity-slice-bottom: 10; -unity-slice-scale: 0.5px;
-}
+/* menu solto, sob um título */
+.lv-menu { position: absolute; min-width: 246px; padding: 6px; background-color: var(--lv-paper); border-radius: 12px; border-width: 1px 1px 3px 1px; border-color: var(--lv-line); }
+.lv-btn.lv-menu-item { margin: 0; padding-top: 3px; padding-bottom: 3px; min-height: 29px; -unity-text-align: middle-left; border-radius: 8px; }
+.lv-btn.lv-menu-item:hover { background-color: var(--lv-sand); }
+.lv-menu-separator { height: 2px; background-color: var(--lv-sand); margin: 4px 6px; }
+.lv-tooltip { position: absolute; max-width: 280px; padding: 5px 11px; font-size: 13px; color: var(--lv-paper); white-space: normal; background-color: var(--lv-ink); border-radius: 9px; }
 
 /* ------------------------------------------------ progresso e notificações ------------------------------------------------ */
-.lv-progress {
-    height: 12px;
-    background-image: resource("LifeVerse/UI/Skin/track");
-    -unity-slice-left: 8; -unity-slice-top: 6; -unity-slice-right: 8; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
-}
-.lv-progress-fill {
-    height: 12px; width: 0;
-    background-image: resource("LifeVerse/UI/Skin/fill");
-    -unity-slice-left: 8; -unity-slice-top: 6; -unity-slice-right: 8; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
-}
-.lv-toast {
-    background-image: resource("LifeVerse/UI/Skin/panel-solid");
-    -unity-slice-left: 14; -unity-slice-top: 14; -unity-slice-right: 14; -unity-slice-bottom: 14; -unity-slice-scale: 0.5px;
-    padding: 9px 14px 9px 16px; margin: 3px 0; max-width: 360px; min-width: 220px;
-    border-left-width: 4px; border-top-left-radius: 6px; border-bottom-left-radius: 6px;
-}
-.lv-toast-info { border-left-color: #3FE3D3; }
-.lv-toast-good { border-left-color: #4ADE80; }
-.lv-toast-warn { border-left-color: #FBBF24; }
-.lv-toast-bad { border-left-color: #FF5C5C; }
+.lv-progress { height: 12px; background-color: var(--lv-sand); border-radius: 6px; overflow: hidden; }
+.lv-progress-fill { height: 12px; width: 0; background-color: var(--lv-sea); border-radius: 6px; }
+.lv-toast { flex-direction: row; align-items: center; background-color: var(--lv-paper); min-height: 44px; margin: 0 0 8px 0; padding-right: 16px; max-width: 380px; border-radius: 8px; border-bottom-width: 3px; border-color: var(--lv-sand); }
+.lv-stamp { width: 44px; align-self: stretch; align-items: center; justify-content: center; border-top-left-radius: 8px; border-bottom-left-radius: 6px; margin-right: 12px; color: var(--lv-on-fill); background-color: var(--lv-sea); }
+.lv-toast-info > .lv-stamp { background-color: var(--lv-wood); }
+.lv-toast-good > .lv-stamp { background-color: var(--lv-sea); }
+.lv-toast-warn > .lv-stamp { background-color: #8A5A00; }
+.lv-toast-bad > .lv-stamp { background-color: var(--lv-clay); }
+.lv-toast > Label { margin: 7px 0; padding: 0; }
 
-/* ------------------------------------------------ conversa, mini-mapa, nomes ------------------------------------------------ */
-.lv-chat { padding: 0; }
-.lv-chat > .lv-window-title { height: 28px; }
-.lv-chat-log { flex-grow: 1; margin: 4px 6px 0 8px; }
-.lv-chat-line { margin: 1px 0; white-space: normal; }
-.lv-chat-entry { flex-direction: row; align-items: center; flex-shrink: 0; padding: 4px 6px 6px 6px; }
-.lv-chat-entry > .unity-base-text-field { flex-grow: 1; margin: 0 4px 0 0; }
-.lv-map { padding: 0; }
-.lv-map > .lv-window-title { height: 26px; }
-.lv-map > .lv-window-title .lv-btn.lv-window-button { height: 19px; min-height: 19px; width: 21px; }
-.lv-plate {
-    background-image: resource("LifeVerse/UI/Skin/plate");
-    -unity-slice-left: 22; -unity-slice-top: 22; -unity-slice-right: 22; -unity-slice-bottom: 22; -unity-slice-scale: 0.5px;
-    padding: 3px 12px 3px 10px;
+/* legendas, sobre a barra */
+.lv-caption { background-color: rgba(30, 20, 14, 0.88); color: #FFF8EC; font-size: 15px; padding: 3px 14px; margin-top: 3px; border-radius: 12px; }
+
+/* ------------------------------------------------ conversa ------------------------------------------------ */
+.lv-chat { position: absolute; justify-content: flex-end; }   /* the heads stay right over what was said, and both over the line to write in */
+.lv-chat-tabs { flex-direction: row; align-items: center; flex-shrink: 0; overflow: hidden; margin-bottom: 6px; }
+.lv-chat-tabs .lv-btn { min-height: 30px; height: 30px; margin: 0 4px 0 0; padding: 0 11px; font-size: 13px; white-space: nowrap; background-color: var(--lv-paper); }
+.lv-root .lv-chat-tabs .lv-btn { -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-Bold"); }
+.lv-chat-tabs .lv-btn:hover { background-color: var(--lv-sand); }
+.lv-chat-tabs .lv-btn.lv-btn-selected { background-color: var(--lv-sea); color: var(--lv-on-fill); }
+.lv-chat-tabs .lv-btn.lv-btn-secondary { background-color: var(--lv-clay); color: var(--lv-on-fill); }
+.lv-chat-head { flex-direction: row; align-items: center; flex-shrink: 1; margin-right: 4px; }
+.lv-chat-tabs .lv-chat-head > .lv-btn { margin: 0; }
+.lv-chat-tabs .lv-btn.lv-chat-close, .lv-chat-tabs .lv-btn.lv-chat-fold { width: 26px; height: 26px; min-height: 26px; border-radius: 13px; padding: 0; margin-left: 3px; align-items: center; justify-content: center; flex-shrink: 0; }
+.lv-chat-log { margin: 0; }
+.lv-chat-line { flex-direction: row; align-items: flex-end; margin-bottom: 5px; flex-shrink: 0; }
+.lv-chat-mine { justify-content: flex-end; }
+.lv-chat-system { justify-content: center; }
+.lv-bubble { padding: 4px 12px 4px 12px; max-width: 310px; flex-shrink: 1; }
+.lv-bubble-back { position: absolute; left: 0; top: 0; right: 0; bottom: 0; background-color: var(--lv-paper); border-radius: 14px; border-bottom-left-radius: 3px; }
+.lv-chat-mine .lv-bubble-back { background-color: var(--lv-clay); border-bottom-left-radius: 14px; border-bottom-right-radius: 3px; }
+.lv-chat-system .lv-bubble-back { background-color: var(--lv-sand); border-radius: 12px; }
+.lv-bubble Label { margin: 0; padding: 0; white-space: normal; }
+.lv-root .lv-chat-by { font-size: 13px; color: var(--lv-sea-text); -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); }
+.lv-chat-mine Label { color: var(--lv-on-fill); }
+.lv-chat-system .lv-chat-text { color: var(--lv-soft); -unity-font-style: italic; }
+.lv-chat-when { font-size: 13px; color: var(--lv-soft); align-self: flex-end; }
+.lv-chat-mine .lv-chat-when { color: var(--lv-on-fill); }
+.lv-chat-entry { flex-direction: row; align-items: center; flex-shrink: 0; height: 46px; margin-top: 4px; padding: 0 5px 0 6px; border-radius: 23px; }
+.lv-chat-entry > .unity-base-text-field { flex-grow: 1; margin: 0 5px 0 0; }
+.lv-chat-entry .unity-base-text-field__input { border-radius: 18px; background-color: rgba(0, 0, 0, 0); border-color: rgba(0, 0, 0, 0); min-height: 34px; padding-left: 12px; }
+.lv-chat-entry .unity-base-text-field:focus > .unity-base-text-field__input { border-color: var(--lv-sea-text); background-color: var(--lv-raised); }
+.lv-chat-entry > .lv-btn { width: 36px; height: 36px; min-height: 36px; border-radius: 18px; padding: 0; margin: 0; align-items: center; justify-content: center; flex-shrink: 0; }
+
+/* ------------------------------------------------ mini-mapa (cartão-postal), nomes, radial ------------------------------------------------ */
+.lv-postcard { position: absolute; background-color: var(--lv-raised); border-radius: 8px; border-bottom-width: 3px; border-color: var(--lv-sand); }
+.lv-postcard-foot { flex-direction: row; align-items: center; height: 36px; padding: 0 6px 2px 9px; }
+.lv-root .lv-postcard-caption { -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-MediumItalic"); font-size: 14px; flex-grow: 1; flex-shrink: 1; overflow: hidden; white-space: nowrap; margin: 0; padding: 0; }
+.lv-postcard-foot > .lv-btn { width: 26px; height: 26px; min-height: 26px; border-radius: 13px; padding: 0; margin: 0 0 0 4px; align-items: center; justify-content: center; flex-shrink: 0; }
+.lv-plate { background-color: var(--lv-paper); border-radius: 15px; padding: 2px 11px 2px 3px; min-height: 28px; }
+.lv-root .lv-plate-name { color: var(--lv-ink); font-size: 14px; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); padding: 0; margin: 0; }
+.lv-radial {
+    --lv-radial-fill: var(--lv-paper); --lv-radial-hover: var(--lv-sea); --lv-radial-line: var(--lv-wood);
 }
-.lv-plate-name { color: #FFFFFF; font-size: 13px; -unity-font-style: bold; padding: 0; margin: 0; }
+.lv-radial-label { color: var(--lv-ink); }
+.lv-radial-label.lv-radial-hot { color: var(--lv-on-fill); }
+.lv-radial-label.lv-radial-off { color: var(--lv-faint); }
+.lv-radial-tip { position: absolute; }
 
 /* ------------------------------------------------ entrada e carregamento ------------------------------------------------ */
-.lv-root .lv-brand { font-size: 60px; color: #FFFFFF; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); -unity-text-outline-width: 1px; -unity-text-outline-color: rgba(9, 60, 66, 0.9); text-shadow: 0px 3px 8px rgba(0, 0, 0, 0.75); letter-spacing: 2px; }
-.lv-slogan { font-size: 15px; color: #E8F6FF; text-shadow: 0px 1px 4px rgba(0, 0, 0, 0.9); }
-.lv-login-dock {
-    align-self: stretch; flex-shrink: 0; padding: 12px 20px 8px 20px;
-    background-image: resource("LifeVerse/UI/Skin/toolbar");
-    -unity-slice-left: 4; -unity-slice-top: 22; -unity-slice-right: 4; -unity-slice-bottom: 6; -unity-slice-scale: 0.5px;
-}
+.lv-root .lv-brand { font-size: 66px; color: #FFF8EC; -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-SemiBold"); text-shadow: 0px 3px 10px rgba(20, 10, 4, 0.8); letter-spacing: 1px; }
+.lv-root .lv-slogan { font-size: 16px; color: #FFF8EC; text-shadow: 0px 1px 4px rgba(0, 0, 0, 0.9); -unity-font: resource("LifeVerse/UI/Fonts/Fraunces-MediumItalic"); }
+.lv-login-dock { align-self: stretch; flex-shrink: 0; padding: 10px 20px 8px 20px; background-color: var(--lv-paper); border-top-width: 7px; border-color: var(--lv-wood); }
 .lv-login-fields { flex-direction: row; justify-content: center; align-items: flex-end; flex-wrap: wrap; }
 .lv-login-fields > * { margin: 3px 5px; }
 .lv-login-column { width: 180px; }
 .lv-login-column > .unity-base-field { margin: 0; }
-.lv-root .lv-btn.lv-login-enter { height: 31px; font-size: 14px; padding-left: 6px; padding-right: 6px; white-space: nowrap; -unity-font: resource("LifeVerse/UI/Fonts/Inter-Bold"); }
-.lv-login-strip {
-    align-self: stretch; flex-direction: row; align-items: center; flex-shrink: 0; height: 30px; padding: 0 16px; background-color: rgba(5, 8, 12, 0.88);
-}
+.lv-root .lv-btn.lv-login-enter { height: 33px; font-size: 15px; padding-left: 6px; padding-right: 6px; white-space: nowrap; -unity-font: resource("LifeVerse/UI/Fonts/NunitoSans-ExtraBold"); }
+.lv-login-strip { align-self: stretch; flex-direction: row; align-items: center; flex-shrink: 0; height: 34px; padding: 0 16px; background-color: var(--lv-sand); }
 .lv-card { padding: 14px 18px; }

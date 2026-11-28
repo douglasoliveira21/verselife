@@ -17,7 +17,10 @@ namespace LifeVerse.Unity.EditorTools
             if (!UnityEngine.Application.isBatchMode)
             {
                 EditorApplication.ExecuteMenuItem("Window/General/Game");   // the frames are drawn into the Game view
-                PlayModeWindow.SetCustomRenderingResolution(1280, 720, "LifeVerse checks");   // so the photos are always the same size
+                // so the photos are always the same size; "-lifeverse-editor-size 1920x1080" asks for another one
+                var args = System.Environment.GetCommandLineArgs(); var at = System.Array.IndexOf(args, "-lifeverse-editor-size"); uint width = 1280, height = 720;
+                if (at >= 0 && at + 1 < args.Length) { var parts = args[at + 1].Split('x'); if (parts.Length == 2 && uint.TryParse(parts[0], out var w) && uint.TryParse(parts[1], out var h)) { width = w; height = h; } }
+                PlayModeWindow.SetCustomRenderingResolution(width, height, "LifeVerse checks");
             }
             EditorApplication.EnterPlaymode();
         }

@@ -7,34 +7,41 @@ using UnityEngine.UIElements;
 namespace LifeVerse.Unity.UI
 {
     /// <summary>
-    /// The map in the corner: the island seen from above (north up) painted from the terrain heights, deep and shallow water by the sea level, then sand, grass, rock and snow by height,
-    /// with a white arrow for the person (turned the way they face) and a teal dot for each other person. It is repainted when the terrain or the sea level change.
+    /// The map in the corner, as a postcard: the island seen from above (north up) painted from the terrain heights, deep and shallow water by the sea level, then sand, grass, rock and snow
+    /// by height, with a large dot for the person and a smaller one in their colour for each other person; under the picture, its buttons. It is repainted when the terrain or the sea level change.
     /// </summary>
     public sealed class Minimap : VisualElement
     {
-        public const int Pixels = 128; public const float Size = 180f;
+        public const int Pixels = 128; public const float Size = 188f;
         private Texture2D _texture; private TerrainMap _map; private long _revision = -1; private float _sea = float.NaN;
         private readonly VisualElement _self; private readonly List<VisualElement> _others = new List<VisualElement>(); private readonly VisualElement _picture;
         public Texture2D Texture => _texture;
         public int OtherDots { get; private set; }
 
-        /// <summary>The buttons of the title: closer (a factor below 1) or farther (above 1), and close.</summary>
+        /// <summary>The buttons under the picture: closer (a factor below 1) or farther (above 1), and close.</summary>
         public Action<float> ZoomAsked; public Action CloseAsked;
         private readonly VisualElement _holder; private readonly Label _north;
         public Vector2 NorthAt => new Vector2(_north.style.left.value.value, _north.style.top.value.value);
 
         public Minimap()
         {
-            name = "minimap"; AddToClassList("lv-window"); AddToClassList("lv-map"); style.width = Size + 16; style.minWidth = Size + 16; pickingMode = PickingMode.Position;
-            var title = new VisualElement { name = "map-title" }; title.AddToClassList("lv-window-title"); var mark = new Icon("map", 14); mark.style.marginRight = 6; title.Add(mark); title.Add(UiKit.Text("Mini-mapa", "lv-title-text"));
-            title.Add(TitleButton("zoom-in", "Aproximar", () => ZoomAsked?.Invoke(1f / 1.3f))); title.Add(TitleButton("zoom-out", "Afastar", () => ZoomAsked?.Invoke(1.3f))); title.Add(TitleButton("close", "Fechar o mini-mapa", () => CloseAsked?.Invoke())); Add(title);
-            _holder = new VisualElement { name = "map-area" }; _holder.style.width = Size; _holder.style.height = Size; _holder.style.marginLeft = _holder.style.marginRight = 7; _holder.style.marginTop = _holder.style.marginBottom = 6; Add(_holder);
-            _picture = new VisualElement { pickingMode = PickingMode.Ignore }; _picture.style.width = Size; _picture.style.height = Size; _picture.style.borderTopLeftRadius = _picture.style.borderTopRightRadius = _picture.style.borderBottomLeftRadius = _picture.style.borderBottomRightRadius = 9; _picture.style.overflow = Overflow.Hidden; _picture.style.backgroundColor = new Color(.04f, .16f, .34f); _holder.Add(_picture);
-            _self = new VisualElement { pickingMode = PickingMode.Ignore }; _self.style.position = Position.Absolute; _self.style.width = 12; _self.style.height = 12; _self.style.backgroundColor = Color.white; _self.style.borderTopLeftRadius = _self.style.borderTopRightRadius = _self.style.borderBottomLeftRadius = _self.style.borderBottomRightRadius = 6; _self.style.borderTopWidth = _self.style.borderBottomWidth = _self.style.borderLeftWidth = _self.style.borderRightWidth = 2; _self.style.borderTopColor = _self.style.borderBottomColor = _self.style.borderLeftColor = _self.style.borderRightColor = new Color(.07f, .95f, .88f); _picture.Add(_self);
+            name = "minimap"; AddToClassList("lv-postcard"); style.width = Size + 18; style.minWidth = Size + 18; pickingMode = PickingMode.Position;
+            _holder = new VisualElement { name = "map-area" }; _holder.style.width = Size; _holder.style.height = Size; _holder.style.marginLeft = _holder.style.marginRight = 9; _holder.style.marginTop = 9; Add(_holder);
+            var foot = new VisualElement { name = "map-foot" }; foot.AddToClassList("lv-postcard-foot"); foot.Add(UiKit.Text("Você está aqui", "lv-postcard-caption"));
+            foot.Add(FootButton("zoom-in", "Aproximar", () => ZoomAsked?.Invoke(1f / 1.3f))); foot.Add(FootButton("zoom-out", "Afastar", () => ZoomAsked?.Invoke(1.3f))); foot.Add(FootButton("close", "Fechar o mini-mapa", () => CloseAsked?.Invoke())); Add(foot);
+            _picture = new VisualElement { pickingMode = PickingMode.Ignore }; _picture.style.width = Size; _picture.style.height = Size; _picture.style.borderTopLeftRadius = _picture.style.borderTopRightRadius = _picture.style.borderBottomLeftRadius = _picture.style.borderBottomRightRadius = 9; _picture.style.overflow = Overflow.Hidden; _picture.style.backgroundColor = (Color)ColourOf(-8f, 0f); _holder.Add(_picture);
+            _self = Dot(14f, new Color(.71f, .28f, .18f), 3f); _picture.Add(_self);
             _north = new Label("N") { pickingMode = PickingMode.Ignore, name = "north" }; _north.AddToClassList("lv-bold"); _north.style.position = Position.Absolute; _north.style.width = 16; _north.style.height = 16; _north.style.fontSize = 12; _north.style.paddingLeft = _north.style.paddingRight = _north.style.paddingTop = _north.style.paddingBottom = 0; _north.style.marginLeft = _north.style.marginRight = _north.style.marginTop = _north.style.marginBottom = 0; _north.style.unityTextAlign = TextAnchor.MiddleCenter; _north.style.color = Color.white; _north.style.unityTextOutlineColor = Color.black; _north.style.unityTextOutlineWidth = .8f; _holder.Add(_north); PlaceNorth();
         }
 
-        private static Button TitleButton(string icon, string tip, Action run) { var button = UiKit.Button("", run, icon == "close" ? "lv-close" : "lv-window-button"); button.tooltip = tip; button.name = "map-" + icon; button.Add(new Icon(icon, 12)); return button; }
+        private static Button FootButton(string icon, string tip, Action run) { var button = UiKit.Button("", run); button.tooltip = tip; button.name = "map-" + icon; button.Add(new Icon(icon, 13)); return button; }
+
+        private static VisualElement Dot(float size, Color colour, float ring)
+        {
+            var dot = new VisualElement { pickingMode = PickingMode.Ignore }; var s = dot.style; s.position = Position.Absolute; s.width = size; s.height = size; s.backgroundColor = colour;
+            s.borderTopLeftRadius = s.borderTopRightRadius = s.borderBottomLeftRadius = s.borderBottomRightRadius = size / 2f; s.borderTopWidth = s.borderBottomWidth = s.borderLeftWidth = s.borderRightWidth = ring;
+            s.borderTopColor = s.borderBottomColor = s.borderLeftColor = s.borderRightColor = Color.white; return dot;
+        }
 
         /// <summary>The letter of the north: at the top of the map, or turning with it around the disc.</summary>
         private void PlaceNorth()
@@ -47,10 +54,10 @@ namespace LifeVerse.Unity.UI
         public static Color32 ColourOf(float height, float sea)
         {
             var depth = sea - height;
-            if (depth > 0f) { var t = Mathf.Clamp01(depth / 6f); return (Color32)Color.Lerp(new Color(.25f, .62f, .75f), new Color(.04f, .16f, .34f), t); }
+            if (depth > 0f) { var t = Mathf.Clamp01(depth / 6f); return (Color32)Color.Lerp(new Color(.45f, .74f, .75f), new Color(.15f, .42f, .52f), t); }
             var above = height - sea;
-            if (above < .8f) return new Color32(222, 204, 150, 255);                                           // sand
-            if (above < 10f) return (Color32)Color.Lerp(new Color(.36f, .62f, .3f), new Color(.25f, .45f, .22f), Mathf.Clamp01(above / 10f));   // grass
+            if (above < .8f) return new Color32(242, 221, 168, 255);                                           // sand
+            if (above < 10f) return (Color32)Color.Lerp(new Color(.55f, .75f, .42f), new Color(.34f, .54f, .28f), Mathf.Clamp01(above / 10f));   // grass
             if (above < 24f) return (Color32)Color.Lerp(new Color(.45f, .4f, .34f), new Color(.6f, .58f, .55f), Mathf.Clamp01((above - 10f) / 14f));   // rock
             return new Color32(240, 244, 248, 255);                                                              // snow
         }
@@ -114,7 +121,7 @@ namespace LifeVerse.Unity.UI
         private void DrawBuildings(MeshGenerationContext context)
         {
             var drawn = 0; if (!ShowBuildings || _map == null) { BuildingsDrawn = 0; return; }
-            var p = context.painter2D; p.fillColor = new Color(.92f, .9f, .86f, .55f); p.strokeColor = new Color(.15f, .13f, .12f, .8f); p.lineWidth = 1f;
+            var p = context.painter2D; p.fillColor = new Color(.75f, .54f, .36f, .8f); p.strokeColor = new Color(.18f, .14f, .13f, .8f); p.lineWidth = 1f;
             foreach (var b in Buildings)
             {
                 var a = InFrame(new Vector3(b.xMin, 0f, b.yMin)); var c = InFrame(new Vector3(b.xMax, 0f, b.yMax)); if (a == null && c == null) continue;
@@ -133,15 +140,16 @@ namespace LifeVerse.Unity.UI
             if (_coords == null) { _coords = new Label { pickingMode = PickingMode.Ignore }; _coords.AddToClassList("lv-small"); _coords.style.position = Position.Absolute; _coords.style.left = 4; _coords.style.bottom = 2; _coords.style.color = Color.white; _coords.style.unityTextOutlineColor = Color.black; _coords.style.unityTextOutlineWidth = .6f; _holder.Add(_coords); }
             _coords.style.display = ShowCoords ? DisplayStyle.Flex : DisplayStyle.None; _coords.text = Mathf.RoundToInt(self.x) + ", " + Mathf.RoundToInt(self.y) + ", " + Mathf.RoundToInt(self.z);
             if (!ShowAvatars) others = new List<Vector3>();
-            if ((_map != null ? InFrame(self) : PointOf(self)) is { } p) { _self.style.display = DisplayStyle.Flex; _self.style.left = p.x - 6; _self.style.top = p.y - 6; } else _self.style.display = DisplayStyle.None;
+            if ((_map != null ? InFrame(self) : PointOf(self)) is { } p) { _self.style.display = DisplayStyle.Flex; _self.style.left = p.x - 7; _self.style.top = p.y - 7; } else _self.style.display = DisplayStyle.None;
             var shown = 0;
             foreach (var other in others)
             {
                 if ((_map != null ? InFrame(other) : PointOf(other)) is not { } q) continue;
-                if (shown >= _others.Count) { var dot = new VisualElement { pickingMode = PickingMode.Ignore }; dot.style.position = Position.Absolute; dot.style.width = 7; dot.style.height = 7; dot.style.backgroundColor = new Color(.07f, .95f, .88f); dot.style.borderTopLeftRadius = dot.style.borderTopRightRadius = dot.style.borderBottomLeftRadius = dot.style.borderBottomRightRadius = 4; _picture.Add(dot); _others.Add(dot); }
-                var element = _others[shown++]; element.style.display = DisplayStyle.Flex; element.style.left = q.x - 3.5f; element.style.top = q.y - 3.5f;
+                if (shown >= _others.Count) { var dot = Dot(10f, Faces.ColourOf(""), 2f); _picture.Add(dot); _others.Add(dot); }
+                var element = _others[shown++]; element.style.display = DisplayStyle.Flex; element.style.left = q.x - 5f; element.style.top = q.y - 5f;
             }
             for (var i = shown; i < _others.Count; i++) _others[i].style.display = DisplayStyle.None; OtherDots = shown;
+            if (names != null) { var dot = 0; for (var i = 0; i < others.Count && i < names.Count && dot < shown; i++) if ((_map != null ? InFrame(others[i]) : PointOf(others[i])) != null) _others[dot++].style.backgroundColor = Faces.ColourOf(names[i]); }
             var named = 0;
             if (ShowNames && ShowAvatars && names != null)
                 for (var i = 0; i < others.Count && i < names.Count; i++)
@@ -165,7 +173,7 @@ namespace LifeVerse.Unity.UI
 
         public PerformanceOverlay()
         {
-            name = "performance"; AddToClassList("lv-glass"); pickingMode = PickingMode.Ignore; style.position = Position.Absolute; style.left = Hud.Edge; style.top = FloatingWindow.TopInset; style.paddingTop = style.paddingBottom = 6;
+            name = "performance"; AddToClassList("lv-glass"); pickingMode = PickingMode.Ignore; style.position = Position.Absolute; style.paddingTop = style.paddingBottom = 6;
             _text = UiKit.Text("", "lv-small"); _text.style.whiteSpace = WhiteSpace.Pre; Add(_text);
         }
 

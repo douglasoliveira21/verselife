@@ -78,6 +78,7 @@ namespace LifeVerse.Unity.UI
             Hud.Map.ZoomAsked = ZoomMap; Hud.Map.CloseAsked = () => SetMinimap(false);
             Subtitles = new Captions(); Hud.Chat.Load = LoadConversation; Hud.Chat.SendConversation = SendConversation; Context.OpenConversation = OpenConversation; Context.Live += OnLiveMessage;
             RegisterWindows(); Hud.Chat.Send = text => Client != null && Client.SendChat(text);
+            Hud.Chat.IsMine = peer => Client != null && peer == Client.SelfPeerId;
             Hud.Chat.TypingChanged += typing => { if (Player != null) Player.Typing = typing; };
             Hud.Perf.Extra = () => (Store != null && Store.Bool("metrics.cpu_gpu") ? SettingsEffects.BusyNow() + "\n" : "") + (Store != null && Store.Bool("network.ping") ? Network.Describe() + "\n" : "") + (Store != null && Store.Bool("metrics.memory") ? "memória " + (UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / 1048576L) + " MB   " : "") + (Client == null ? "" : "pessoas " + (PeopleViews?.Count ?? 0) + "   objetos " + Client.Objects.Count + " (" + Client.Objects.CulledCount + " fora do alcance)   mensagens do mundo " + Client.Snapshots);
             if (SavedLogin.Load(SavedLoginPath) is { } saved) Login.FillSaved(saved.Login, saved.Password);
@@ -215,7 +216,7 @@ namespace LifeVerse.Unity.UI
         }
 
         /// <summary>The number on the bell: the unread notifications as the server counts them.</summary>
-        public void SetBell(int unread) { Unread = Math.Max(0, unread); if (Bell != null) { Bell.text = Unread > 0 ? "Avisos (" + (Unread > 99 ? "99+" : Unread.ToString()) + ")" : "Avisos"; UiKit.Alert(Bell, Unread > 0); } }
+        public void SetBell(int unread) { Unread = Math.Max(0, unread); Hud?.SetBell(Unread); if (Bell != null) { Bell.text = Unread > 0 ? "Avisos (" + (Unread > 99 ? "99+" : Unread.ToString()) + ")" : "Avisos"; UiKit.Alert(Bell, Unread > 0); } }
 
         public void CountBell() => Ui.Root.Then(_api.ApiAsync("GET", CenterPage.ListPath("todas", true, null, 0, 1)), r => { if (r.Status == 200 && CenterPage.Parse(r.Body) is { } page) SetBell(page.Unread); });
 
@@ -259,7 +260,7 @@ namespace LifeVerse.Unity.UI
             VoiceButton = Hud.Register("Voz", "voice", () => { if (Voice == null) return null; if (Voice.Off) { Notices.Show("A voz está desligada em Configurações > Voz.", NoticeKind.Info); return null; } if (Voice.BlockedIn != null) { Notices.Show(LifeVerse.Unity.Audio.VoiceChat.BlockedWords(Voice.BlockedIn), NoticeKind.Warn); return null; } Voice.Locked = !Voice.Locked; Notices.Show(Voice.Locked ? "Microfone aberto: quem está perto ouve você." : "Microfone fechado. Segure " + KeyBindings.KeyName(KeyBindings.Of(GameAction.Talk)) + " para falar.", NoticeKind.Info); return null; });
             Bell = Hud.Register("Avisos", "notifications", () => new NotificationCenterWindow(Context, SetBell));
             Hud.Register("Mapa", "map", MapWindow);
-            Hud.Register("Mais", "more", MoreWindow);
+            Hud.Register("Mais", Hud.FixedTool, () => { Hud.ToggleSheet(); return null; });
             Hud.Register("Configurações", "settings", SettingsPanel);
             Hud.Register("Ajuda", "help", () => Hud.HelpWindow(Ui)); Hud.Travel = TravelIslands;
             Hud.Register("Gestos", "gestures", () => { OpenRadial(new Vector2(Screen.width / 2f, Screen.height / 2f) / Mathf.Max(.01f, Ui.Panel.scale)); return null; }); Hud.Register("Foto", "photo", () => { TakePhoto(); return null; });
@@ -267,8 +268,13 @@ namespace LifeVerse.Unity.UI
             Hud.Register("Mover", "move", MovePanel); Hud.Register("Câmera", "camera", CameraPanel);
             Hud.SearchAsked = SearchFor; Hud.AddressPressed = () => Hud.Toggle("map", MapWindow); Hud.IslandPressed = () => { if (_island != Guid.Empty) new IslandInfoWindow(Context, _island).Open(); }; Hud.ParcelPressed = () => OpenParcelHere();
             Hud.Reordered += (id, onto) => { Settings.ToolbarOrder = ToolbarLayout.Place(ToolbarLayout.Order(Hud.ToolbarDefaults, Settings.ToolbarOrder), id, onto); if (!Settings.ToolbarCustomized) { Settings.ToolbarHidden = new List<string>(Hud.DefaultHidden); Settings.ToolbarCustomized = true; } Settings.Save(SettingsPath); ApplyInterface(); };
-            Hud.SetDefaultOrder("chat", "voice", "move", "camera", "gestures", "photo", "build", "people", "map", "minimap", "inventory", "search", "wallet", "notifications");
+            Hud.SetDefaultOrder("chat", "voice", "gestures", "people", "map", "build", "inventory", "photo", "move", "camera", "minimap", "search", "wallet", "notifications");
             Hud.BuyCoinsPressed = () => Hud.Toggle("wallet", () => new WalletHubWindow(Context));
+            Hud.BellPressed = () => Hud.Toggle("notifications", () => new NotificationCenterWindow(Context, SetBell));
+            // the choices of the sheet ("Sua varanda")
+            Hud.ToolShownAsked = SetToolShown;
+            Hud.EdgeAsked = edge => { Settings.ToolbarEdge = edge; Settings.Save(SettingsPath); ApplyInterface(); };
+            Hud.ModeAsked = mode => { Store.Set("interface.mode", mode); ApplyInterface(); if (mode == "immersive") Notices.Show("Modo imersivo: aperte F10 para mostrar a interface.", NoticeKind.Info, 8f); };
             // the menus of the top bar, as in the Godot client
             FloatingWindow Open(FloatingWindow w) { w?.Open(); return w; }
             (string, string, Action) Line() => (Hud.MenuLine, "", null);
@@ -288,7 +294,7 @@ namespace LifeVerse.Unity.UI
             });
             Hud.AddMenu("Mundo", new (string, string, Action)[]
             {
-                ("Mapa do mundo", "globe", () => Hud.Toggle("map", MapWindow)), ("Ir para a Ilha de Boas-vindas", "home", GoToWelcome), ("Hora e clima só para você", "sun", () => Open(new LocalSkyWindow(Ui, () => Client != null ? Client.Environment : null))), ("Buscar no LifeVerse", "search", () => Hud.Toggle("search", SearchWindow)),
+                ("Mapa do mundo", "globe", () => Hud.Toggle("map", MapWindow)), ("Ir para a Ilha de Boas-vindas", "home", GoToWelcome), ("Hora e clima só para você", "sun", () => Open(new LocalSkyWindow(Ui, () => Client != null ? Client.Environment : null))), ("Mini-mapa", "map", () => SetMinimap(!MinimapShown)), ("Buscar no LifeVerse", "search", () => Hud.Toggle("search", SearchWindow)),
                 ("Eventos, marcos e fotos", "calendar", () => Open(new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f))), Line(),
                 ("Sobre a ilha", "info", () => Open(new IslandInfoWindow(Context, _island))), ("Gerenciar esta ilha", "settings", () => Open(new IslandManagementWindow(Context, _island))), ("Gerenciar terrenos", "grid", () => Open(new LandManagementWindow(Context, _island, Here))),
                 ("Sobre este terreno", "pin", () => OpenParcelHere()), ("Mercado imobiliário", "home", () => Open(new RealEstateMarketWindow(Context))), ("Editar terreno   T", "mountain", ToggleTerrain), Line(),
@@ -304,26 +310,6 @@ namespace LifeVerse.Unity.UI
                 ("Desempenho   F3", "chart", () => Hud.TogglePerformance()), ("Exportar diagnóstico", "download", () => { var path = SettingsEffects.WriteDiagnostics(Store, this); Notices.Show("Diagnóstico salvo em " + path, NoticeKind.Good); }),
             });
             Hud.Presence.RegisterValueChangedCallback(e => { if (Current == Phase.Playing) Api.ApiAsync("PUT", "/api/v1/social/presence", System.Text.Json.JsonSerializer.Serialize(new { status = e.newValue, privacyJson = (string)null })); });
-        }
-
-        private static string MoreIcon(string label)
-        {
-            if (label.StartsWith("Perfil") || label.Contains("personagem")) return "user"; if (label.StartsWith("Grupos")) return "people"; if (label.StartsWith("Mercado imob") || label.Contains("propriedades")) return "home"; if (label.StartsWith("Mercado")) return "bag";
-            if (label.StartsWith("Eventos")) return "calendar"; if (label.StartsWith("Ofertas")) return "download"; if (label.StartsWith("Sobre")) return "info"; if (label.Contains("ilha")) return "settings"; if (label.Contains("terreno")) return "grid";
-            if (label.StartsWith("Script")) return "code"; if (label.StartsWith("Avatar")) return "avatar"; if (label.StartsWith("Barra")) return "layers"; if (label.StartsWith("Anexos")) return "pin"; return "dots";
-        }
-
-        /// <summary>The windows that do not fit in the bar: profile, groups, market, events and photos, the island and its management, item offers, scripts and the character.</summary>
-        private FloatingWindow MoreWindow()
-        {
-            var window = new FloatingWindow(Ui, "more", "Mais", 470f, -1f, new Vector2(420, 130));
-            var grid = new VisualElement(); grid.style.flexDirection = FlexDirection.Row; grid.style.flexWrap = Wrap.Wrap; window.Body.Add(grid);
-            void Add(string label, Func<FloatingWindow> create) { var button = UiKit.WithIcon(UiKit.Button(label, () => { window.Close(); create()?.Open(); }), MoreIcon(label), 16); button.style.width = 218; button.style.unityTextAlign = TextAnchor.MiddleLeft; button.style.whiteSpace = WhiteSpace.Normal; button.style.height = 38; grid.Add(button); }
-            Add("Perfil", () => new ProfileHubWindow(Context, _api.UserId)); Add("Grupos", () => new GroupsHubWindow(Context)); Add("Mercado", () => new MarketWindow(Context)); Add("Mercado imobiliário", () => new RealEstateMarketWindow(Context)); Add("Minhas propriedades", () => new MyPropertiesWindow(Context));
-            Add("Eventos, marcos e fotos", () => new DiscoveryWindow(Context, this, () => Player != null ? Player.GamePosition : Vector3.zero, () => Player != null ? Player.HeadingDegrees * Mathf.Deg2Rad : 0f));
-            Add("Ofertas de itens", () => new OffersWindow(Context)); Add("Sobre a ilha", () => new IslandInfoWindow(Context, _island)); Add("Gestão da ilha", () => new IslandManagementWindow(Context, _island)); Add("Gestão de terrenos", () => new LandManagementWindow(Context, _island, Here)); Add("Sobre este terreno", OpenParcelHere);
-            Add("Script de um objeto", ScriptOpener); Add("Meu personagem", OpenCharacter); Add("Avatar: visuais, corpo, roupas e animações", OpenAvatarStudio); Add("Barra de ferramentas", ToolbarWindow); Add("Anexos do corpo", () => new AttachmentsWindow(Context, RefreshOwnAttachments, EditAttachment, () => OwnAttachments));
-            return window;
         }
 
         /// <summary>After a change of what is worn: asks the platform for the avatar again and shows it on the own body.</summary>
@@ -736,7 +722,7 @@ namespace LifeVerse.Unity.UI
         private void Update()
         {
             if (_sessionGone) { _sessionGone = false; OnSessionExpired(); }
-            TickLoginMusic(); SettingsEffects.RenderScale.Tick(Time.unscaledDeltaTime);
+            TickLoginMusic(); SettingsEffects.RenderScale.Tick(Time.unscaledDeltaTime); TickAppearance();
             if (Current == Phase.Playing && Store != null) TickAutoQuality();
             if (Current != Phase.Playing || Client == null) return;
             var views = PeopleViews; Hud.SetConnection(Client.Connected, Mathf.Max(0, (views?.Count ?? 1) - 1));
@@ -748,7 +734,7 @@ namespace LifeVerse.Unity.UI
                 _mapClock = 0f; Hud.Map.Paint(Client.Terrain.Map);
                 var others = new List<Vector3>(); var names = new List<string>(); if (views != null) foreach (var peer in views.Peers) if (peer != Client.SelfPeerId) { var view = views.ViewOf(peer); others.Add(view.GamePosition); names.Add(view.DisplayName); }
                 _footprintClock += .25f; if (_footprintClock >= 2f && Client.Objects != null) { _footprintClock = 0f; if (Hud.Map.ShowBuildings) Client.Objects.Footprints(Hud.Map.Buildings); else Hud.Map.Buildings.Clear(); }
-                Hud.Map.Place(Player.GamePosition, others, names); Hud.SetPosition(Player.GamePosition); VoiceButton?.EnableInClassList("lv-btn-open", Voice != null && Voice.Locked);
+                Hud.Map.Place(Player.GamePosition, others, names); Hud.SetPeople(views?.ViewOf(Client.SelfPeerId)?.DisplayName, names); Hud.SetPosition(Player.GamePosition); VoiceButton?.EnableInClassList("lv-btn-open", Voice != null && Voice.Locked);
             }
             _recentClock += Time.unscaledDeltaTime; if (_recentClock > 2f) { _recentClock = 0f; NoteRecent(); }
             Builder?.Tick(Time.unscaledDeltaTime); TerrainTools?.Tick(Time.unscaledDeltaTime);
@@ -987,6 +973,16 @@ namespace LifeVerse.Unity.UI
             Notices.Show(step < 0 ? "Voltando à ilha anterior…" : "Indo para a próxima ilha…", NoticeKind.Info); Teleport(island);
         }
 
+        /// <summary>Shows or hides a button of the bar for good (the bar keeps at least one).</summary>
+        public void SetToolShown(string id, bool shown)
+        {
+            if (id == Hud.FixedTool) return;
+            if (!Settings.ToolbarCustomized) { Settings.ToolbarHidden = new List<string>(Hud.DefaultHidden); Settings.ToolbarCustomized = true; }
+            if (!shown && !ToolbarLayout.CanHide(ToolbarLayout.Order(Hud.ToolbarDefaults, Settings.ToolbarOrder).Where(x => x != Hud.FixedTool).ToList(), Settings.ToolbarHidden, id)) { Notices.Show("A barra precisa de pelo menos um botão.", NoticeKind.Warn); return; }
+            if (shown) Settings.ToolbarHidden.Remove(id); else if (!Settings.ToolbarHidden.Contains(id)) Settings.ToolbarHidden.Add(id);
+            Settings.Save(SettingsPath); ApplyInterface();
+        }
+
         /// <summary>The window that orders and hides the buttons of the bottom toolbar.</summary>
         public FloatingWindow ToolbarWindow()
         {
@@ -997,6 +993,7 @@ namespace LifeVerse.Unity.UI
                 list.Clear(); var order = ToolbarLayout.Order(Hud.ToolbarDefaults, Settings.ToolbarOrder);
                 foreach (var id in order)
                 {
+                    if (id == Hud.FixedTool) continue;   // "Mais" is always on the bar
                     var key = id; var label = Hud.BottomBar.Q<Button>("btn-" + id)?.text ?? id; var hidden = Settings.ToolbarHidden.Contains(id);
                     var toggle = new Toggle { value = !hidden }; toggle.RegisterValueChangedCallback(e => { if (!e.newValue && !ToolbarLayout.CanHide(order, Settings.ToolbarHidden, key)) { toggle.SetValueWithoutNotify(true); Notices.Show("A barra precisa de pelo menos um botão.", NoticeKind.Warn); return; } if (e.newValue) Settings.ToolbarHidden.Remove(key); else if (!Settings.ToolbarHidden.Contains(key)) Settings.ToolbarHidden.Add(key); Settings.Save(SettingsPath); ApplyInterface(); });
                     list.Add(UiKit.Row(toggle, UiKit.Text(label, "lv-body"), UiKit.Spacer(), UiKit.Button("◀", () => { Settings.ToolbarOrder = ToolbarLayout.Move(order, key, -1); Settings.Save(SettingsPath); ApplyInterface(); Fill(); }), UiKit.Button("▶", () => { Settings.ToolbarOrder = ToolbarLayout.Move(order, key, 1); Settings.Save(SettingsPath); ApplyInterface(); Fill(); })));
@@ -1169,6 +1166,17 @@ namespace LifeVerse.Unity.UI
             Store.Set("graphics.preset", lower, false); SettingsApplied();
             Notices.Show("O jogo estava abaixo da meta de quadros: a qualidade gráfica passou para " + (SettingsCatalog.Find("graphics.preset")?.Choices.FirstOrDefault(c => c.Id == lower).Label ?? lower) + ".", NoticeKind.Info, 8f);
         }
+
+        /// <summary>The paper of the interface, light or dark ("Aparência da interface"): automatic follows the sky on screen, with a margin so dusk does not make it flicker.</summary>
+        public void TickAppearance()
+        {
+            if (Store == null || Ui == null) return;
+            var chosen = Store.Get("interface.appearance"); var sky = Current == Phase.Playing && Client != null ? Client.Environment : null;
+            Ui.SetNight(chosen == "night" || chosen != "day" && sky != null && NightFor(sky.DayFactor, Ui.Night));
+        }
+
+        /// <summary>Whether the sky is dark enough for the dark paper (0 is night, 1 day): it takes less light to leave the night than to enter it.</summary>
+        public static bool NightFor(float day, bool night) => day < (night ? .55f : .35f);
 
         // ---- moving between screens ----
 

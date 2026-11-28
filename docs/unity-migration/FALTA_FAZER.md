@@ -12,7 +12,7 @@ Os outros documentos desta pasta contam a história do trabalho. Alguns estão *
 - **O Godot saiu do repositório em 27/11/2026** (`client/`, `island-server/` e as ferramentas que dependiam dele). O comportamento antigo se consulta no histórico: `git show 177c0c1:client/...`. Onde este documento ou os outros citam um desses caminhos, é no histórico que ele está.
 - Arquivos que vão no jogo: `assets/` (corpo, sons, ícone, licenças); os desenhos de referência da interface estão em `docs/design/`.
 - Cliente Unity: `unity/UnityClient/Assets/LifeVerse/`, com as pastas:
-  - `UI`: janelas e HUD em UI Toolkit, construídas por código. O visual fica em `Resources/LifeVerse/UI/Theme.uss` e nas texturas de `Resources/LifeVerse/UI/Skin`, desenhadas por `python unity/tools/ui-skin/generate.py`;
+  - `UI`: janelas e HUD em UI Toolkit, construídas por código. O visual é o **Varanda** e fica em `Resources/LifeVerse/UI/Theme.uss` (as cores são variáveis no começo do arquivo, uma lista para o dia e outra para a noite); os ícones da barra são `VarandaIcons.cs`; só cinco texturas pequenas saem de `python unity/tools/ui-skin/generate.py`;
   - `World`: terreno, mar, objetos, ambiente;
   - `Avatar`: corpo, câmera, jogador;
   - `Audio`;
@@ -39,7 +39,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
   ```
   LifeVerse.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 -lifeverse-world-selfcheck
   ```
-  Espera-se `event=world_sync_check result=passed checks=342`.
+  Espera-se `event=world_sync_check result=passed checks=370`.
   - A cena inicial (`Bootstrap.unity`) **não tem luz própria**: o sol e a lua são do `IslandEnvironment`. A luz padrão da Unity que estava lá iluminava todas as ilhas, inclusive de noite. O teste de sentar ou o de pulo podem falhar por tempo: rode de novo.
 - **Verificação contra a API real, local:**
   1. Suba a API: `dotnet run --project tools/ApiLiveHost -c Release --no-build -- 5099`.
@@ -54,7 +54,7 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
 
   O autoteste precisa da **janela** do editor (sem `-batchmode`): sem ela o fim do quadro nunca chega e ele trava. O erro `ArgumentOutOfRangeException` em `UnityEditor.Search`, logo no começo, é do editor.
 - **Outros modos de foto e teste:**
-  - `-lifeverse-ui-shots <prefixo>`: fotos das telas (no editor, sem `-batchmode`, pelo `EditorChecks.Play`);
+  - `-lifeverse-ui-shots <prefixo>`: fotos das telas (no editor, sem `-batchmode`, pelo `EditorChecks.Play`); com `-lifeverse-editor-size 1920x1080` o editor desenha nesse tamanho e a escala automática da interface é a que se vê;
   - `-lifeverse-doc-shots <pasta>`, junto do autoteste: as fotos `ui-*.png` das janelas com dados;
   - `-lifeverse-world-preview <prefixo>`: as 9 vistas do mundo;
   - `-lifeverse-e2e <api> <usuário> <senha>`: ponta a ponta, contra uma API e um supervisor de verdade.
@@ -82,11 +82,14 @@ O executável da Unity é `C:\Program Files\Unity\Hub\Editor\6000.6.9f1\Editor\U
 ### Armadilhas conhecidas
 - **Botões:** um `Button` com elementos filhos para de medir o próprio texto. Ícones são desenhados pelo `UiKit.WithIcon`, com `generateVisualContent`.
 - **Desenho sem GPU:** o `generateVisualContent` não roda com `-nographics`. Contagens de desenho só podem ser conferidas com GPU.
+- **Nome cortado apaga a dica:** quando um `Button` com `text-overflow: ellipsis` volta a caber, a Unity zera o `tooltip` dele. Use `displayTooltipWhenElided = false` em quem tem dica própria.
+- **Altura em listas roláveis:** o tema padrão está vazio; sem `overflow: hidden` e `min-height: 0` o conteúdo passa por cima do que está em volta.
 - **Autoteste:**
   - no `WorldSyncSelfCheck`, `_shots` é nulo dentro de `Entering`; o `Snap` já se protege;
   - toggles de abas escondidas não disparam eventos de mudança;
   - para dar exemplo de opção indisponível, use uma que o Godot também não tenha (`graphics.vegetation`), nunca uma que o Unity possa ganhar depois;
-  - os testes de sentar antigo e de pulo às vezes falham: rode de novo.
+  - os testes de sentar antigo e de pulo às vezes falham: rode de novo;
+  - o clique no menu do chão usa um mouse simulado e falha de vez em quando ("«Sobre este terreno» abrir uma janela"), ao que parece quando a janela do editor perde o foco ou o mouse de verdade se mexe (a causa não foi confirmada): rode de novo sem mexer no computador. A abertura sozinha do criador de personagem falhou uma vez e não se repetiu.
 - **Banco:** uma coluna `jsonb` volta reescrita pelo PostgreSQL (`{"a": 1}`, com espaço) e não aceita operações de texto. Para ler um valor, interprete o JSON; para filtrar numa consulta, use `JsonColumn.Text(coluna)`. Os testes em memória não pegam nenhum dos dois erros.
 - **Heredoc:** um heredoc no Bash estraga barras invertidas. Use `chr(92)` em Python ou a ferramenta de edição.
 - **WSL:** servidores esquecidos no WSL prendem as portas 17777 e 17070 do Windows.
@@ -118,7 +121,7 @@ Achadas ao rodar a API inteira sobre um PostgreSQL local. Foram enviadas (`4a525
 
 As rotas novas de privacidade, bloqueados e sessões foram no mesmo deploy.
 
-**Envio de arquivos quebrado (27/11/2026):** a API não resolve o nome do MinIO (`Name does not resolve (verselife_minio:9000)`). Enquanto isso não for corrigido no Easypanel, nenhum envio (foto, modelo, textura, som) funciona. O dono informou o nome interno `verselife_minio_minio` (com a porta 9001, que é a do painel web; a API usa a 9000): `ObjectStorage__Endpoint=http://verselife_minio_minio:9000`. Como o nome tem `_`, é preciso também implantar a correção de `S3ObjectStore.cs` (o MinIO recusa `_` no `Host`, segundo relatos). No console do app da API, `getent hosts <nome>` confirma que o nome existe.
+**Envio de arquivos (resolvido em 27/11/2026):** a API apontava para nomes que não existem (`Name does not resolve`). Funcionou com `ObjectStorage__Endpoint=http://verselife_minio_minio:9000` (o nome interno do serviço; a 9001 é a do painel web) e a correção de `S3ObjectStore.cs` do commit `3f13a5e` (o MinIO recusa `_` no `Host`, segundo relatos); o dono confirmou depois de ajustar. Se voltar a falhar, `getent hosts <nome>` no console do app da API diz se o nome existe.
 
 ### 1.1 Ilhas Unity (no ar desde 27/11/2026)
 
@@ -211,13 +214,21 @@ Céu, nuvens, pôr do sol, chuva, tempestade, noite, mar, chão e a vista debaix
 
 ## 5.1. Interface: o que ainda falta em relação ao Second Life
 
-A interface segue o visualizador do Second Life, com tamanho das janelas guardado, barra de ferramentas embaixo ou numa borda, conversas particulares e de grupo em abas e o inventário também como árvore. Ainda faltaria:
+**Direção de arte (27/11/2026):** o dono escolheu a **Varanda** entre três protótipos (`docs/ui-directions/README.md`) e ela **está no jogo**: HUD, conversa, mini-mapa, avisos, nomes, menu radial, janelas, entrada e carregamento, com papel claro de dia e escuro à noite (**Configurações → Interface → Aparência da interface**). **Falta:**
+
+- **o dono usar de verdade**, com mouse e teclado, e dizer o que ajustar;
+- as janelas ganharam as cores e as letras, mas **a organização por dentro é a antiga** (formulários, o inventário em lista); redesenhá-las é a próxima etapa;
+- os ícones de dentro das janelas continuam os de linha; só a barra, a placa, o alto e o cartão-postal têm os ícones da Varanda;
+- o medalhão mostra a inicial, não a foto do perfil;
+- com muitos botões na barra, os nomes longos são cortados (a dica diz o nome);
+- ver em 1440p, 4K e 32:9, no player gerado, e as animações em movimento.
+
+A organização continua a de um mundo como o Second Life, com tamanho das janelas guardado, barra de ferramentas embaixo ou numa borda, conversas particulares e de grupo em abas e o inventário também como árvore. Ainda faltaria:
 
 - **Janelas:** não há "destacar" abas. O encaixe entre janelas e nas bordas existe (Shift arrasta sem encaixar), mas só foi testado pela regra, não com o mouse.
 - **Barra de ferramentas:** é uma só (o Second Life permite várias, cada uma com os seus botões).
 - **Conversas:** o histórico é o que a API guarda; o nome de quem escreve num grupo depende de a notificação ao vivo trazê-lo.
-- **Texto:** só a fonte Inter; não há uma fonte de exibição própria para o jogo.
-- **Verificado só no editor**, em 1280×720; falta ver no player gerado e em telas grandes.
+- **Verificado só no editor** (1280×720, 1366×768, 1920×1080 e 2560×1080).
 
 ## 6. Build, distribuição e CI
 

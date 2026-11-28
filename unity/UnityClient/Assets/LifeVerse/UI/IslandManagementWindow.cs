@@ -299,7 +299,7 @@ namespace LifeVerse.Unity.UI
             if (series.Count == 0) Line("Sem medidas neste período.", "lv-small", "lv-muted");
             else foreach (var key in new[] { ("fps", "quadros/s"), ("processMs", "ms por quadro"), ("memoryMb", "MB"), ("players", "pessoas") }) { var s = Obj(summary, key.Item1); if (s.ValueKind == JsonValueKind.Object) Line(key.Item2 + ": mín " + D(s, "min").ToString("0.#", Pt) + " · média " + D(s, "avg").ToString("0.#", Pt) + " · máx " + D(s, "max").ToString("0.#", Pt) + " (" + series.Count + " medidas)", "lv-small"); }
             if (series.Count > 1)
-                foreach (var key in new[] { ("fps", "Quadros por segundo", new Color(.3f, .9f, .6f)), ("processMs", "Milissegundos por quadro", new Color(1f, .7f, .3f)), ("memoryMb", "Memória (MB)", new Color(.5f, .7f, 1f)), ("players", "Pessoas", new Color(.9f, .5f, .9f)) })
+                foreach (var key in new[] { ("fps", "Quadros por segundo", new Color(.12f, .58f, .4f)), ("processMs", "Milissegundos por quadro", new Color(.8f, .48f, .08f)), ("memoryMb", "Memória (MB)", new Color(.25f, .45f, .8f)), ("players", "Pessoas", new Color(.66f, .3f, .62f)) })
                 {
                     var values = series.Select(x => (float)D(x, key.Item1)).ToList(); if (values.All(v => v == 0f)) continue;
                     Line(key.Item2, "lv-small", "lv-muted"); _page.Add(new Sparkline(values, key.Item3) { name = "graph-" + key.Item1 });
@@ -478,7 +478,7 @@ namespace LifeVerse.Unity.UI
         public readonly IReadOnlyList<float> Values; private readonly Color _colour;
         public Sparkline(IReadOnlyList<float> values, Color colour)
         {
-            Values = values ?? new List<float>(); _colour = colour; style.height = 54; style.marginBottom = 6; style.backgroundColor = new Color(0f, 0f, 0f, .25f);
+            Values = values ?? new List<float>(); _colour = colour; style.height = 54; style.marginBottom = 6; AddToClassList("lv-chart");
             style.borderTopLeftRadius = style.borderTopRightRadius = style.borderBottomLeftRadius = style.borderBottomRightRadius = 6; generateVisualContent += Draw;
             var low = Values.Count > 0 ? Values.Min() : 0f; var high = Values.Count > 0 ? Values.Max() : 0f;
             var scale = UiKit.Text(high.ToString("0.#") + "\n" + low.ToString("0.#"), "lv-small", "lv-muted"); scale.style.position = Position.Absolute; scale.style.right = 6; scale.style.top = 4; scale.style.whiteSpace = WhiteSpace.Pre; scale.style.unityTextAlign = TextAnchor.UpperRight; Add(scale);

@@ -46,7 +46,7 @@ namespace LifeVerse.Unity.UI
             Application.targetFrameRate = 30;
             var camera = new GameObject("Camera") { tag = "MainCamera" }.AddComponent<Camera>(); camera.clearFlags = CameraClearFlags.SolidColor; camera.backgroundColor = new Color(.35f, .5f, .62f); camera.gameObject.AddComponent<UnityEngine.Rendering.HighDefinition.HDAdditionalCameraData>();
             var path = Path.Combine(Application.temporaryCachePath, "ui-preview-settings.json"); if (File.Exists(path)) File.Delete(path);
-            var settings = new UserSettings { AutoScale = false, InterfaceScale = 1f }; var ui = UiRoot.Create(settings); var notices = new NotificationCenter(ui); var hud = new Hud(ui, notices);
+            var settings = new UserSettings { AutoScale = Array.IndexOf(Environment.GetCommandLineArgs(), "-lifeverse-editor-size") >= 0, InterfaceScale = 1f };   /* at another size, the automatic scale is what is checked */ var ui = UiRoot.Create(settings); var notices = new NotificationCenter(ui); var hud = new Hud(ui, notices);
             yield return null;
 
             // login
@@ -63,12 +63,12 @@ namespace LifeVerse.Unity.UI
             loading.RemoveFromHierarchy();
 
             // HUD
-            hud.Show(); hud.SetIsland("Praia do Sol"); hud.SetPosition(new Vector3(128f, 4f, -62f)); hud.SetBalance(12450); hud.SetConnection(true, 3);
-            hud.AddMenu("Eu", new (string, string, Action)[0]); hud.AddMenu("Comunicar", new (string, string, Action)[0]); var world = new (string, string, Action)[] { ("Mapa do mundo", "globe", null), ("Buscar no LifeVerse", "search", null), (Hud.MenuLine, "", null), ("Sobre a ilha", "info", null), ("Tirar foto   F12", "photo", null) }; var worldMenu = hud.AddMenu("Mundo", world); hud.AddMenu("Conteúdo", new (string, string, Action)[0]); hud.AddMenu("Ajuda", new (string, string, Action)[0]);
+            hud.Show(); hud.SetIsland("Praia do Sol"); hud.SetPosition(new Vector3(128f, 4f, -62f)); hud.SetBalance(12450); hud.SetConnection(true, 3); hud.SetPeople("Douglas", new[] { "Ana", "Beto" }); hud.SetBell(2);
+            hud.AddMenu("Eu", new (string, string, Action)[] { ("Inventário", "bag", null) }); hud.AddMenu("Comunicar", new (string, string, Action)[] { ("Pessoas", "people", null), ("Gestos", "hand", null) }); var world = new (string, string, Action)[] { ("Mapa do mundo", "globe", null), ("Buscar no LifeVerse", "search", null), (Hud.MenuLine, "", null), ("Sobre a ilha", "info", null), ("Tirar foto   F12", "photo", null) }; var worldMenu = hud.AddMenu("Mundo", world); hud.AddMenu("Conteúdo", new (string, string, Action)[0]); hud.AddMenu("Ajuda", new (string, string, Action)[0]);
             hud.Register("Chat", "chat", () => null); hud.Register("Pessoas", "people", () => null); foreach (var (label, id) in new[] { ("Social", "social"), ("Inventário", "inventory"), ("Carteira", "wallet"), ("Buscar", "search"), ("Construir", "build"), ("Voz", "voice"), ("Avisos", "notifications"), ("Mapa", "map"), ("Mais", "more") }) hud.Register(label, id, () => null); hud.Register("Configurações", "settings", () => new SettingsWindow(ui, path)); hud.Register("Ajuda", "help", () => Hud.HelpWindow(ui));
             foreach (var (label, id) in new[] { ("Gestos", "gestures"), ("Foto", "photo"), ("Mini-mapa", "minimap") }) hud.Register(label, id, () => null);
             hud.Register("Mover", "move", () => new MoveWindow(ui, () => null, () => null)); hud.Register("Câmera", "camera", () => new CameraWindow(ui, () => null, () => 0f));
-            hud.SetDefaultOrder("chat", "voice", "move", "camera", "gestures", "photo", "build", "people", "map", "minimap", "inventory", "search", "wallet", "notifications"); hud.ApplyLayout("full", false, null, Hud.DefaultHidden); UiKit.Alert(hud.BottomBar.Q<Button>("btn-notifications"), true);
+            hud.SetDefaultOrder("chat", "voice", "gestures", "people", "map", "build", "inventory", "photo", "move", "camera", "minimap", "search", "wallet", "notifications"); hud.ApplyLayout("full", false, null, Hud.DefaultHidden); UiKit.Alert(hud.BottomBar.Q<Button>("btn-notifications"), true);
             var island = new LifeVerse.Shared.Terrain.TerrainMap(); island.Apply(LifeVerse.Shared.Terrain.TerrainTool.Raise, 20, 10, 60, 14f); hud.Map.Paint(island); hud.Map.Place(new Vector3(12f, 2f, -20f), new[] { new Vector3(30f, 2f, -10f), new Vector3(-24f, 2f, 18f) }, new[] { "Ana", "Beto" });
             hud.Chat.Add(7, "Ana", "Oi, tudo bem?", DateTimeOffset.Now.AddMinutes(-2)); hud.Chat.Add(9, "Beto", "Cheguei agora, que ilha linda!", DateTimeOffset.Now.AddMinutes(-1)); hud.Chat.AddSystem("Você entrou na ilha."); hud.Chat.Add(7, "Ana", "Vem ver a casa que eu construí perto do lago <3", DateTimeOffset.Now);
             notices.Show("Beto chegou.", NoticeKind.Info); notices.Show("Conexão estável.", NoticeKind.Good); notices.Show("Sua mensagem não foi enviada.", NoticeKind.Warn);
@@ -81,7 +81,8 @@ namespace LifeVerse.Unity.UI
             window.Close(); hud.WindowOf("help")?.Close();
             hud.Toggle("move", () => new MoveWindow(ui, () => null, () => null)); hud.Toggle("camera", () => new CameraWindow(ui, () => null, () => 0f)); yield return null; yield return null;
             var move = (MoveWindow)hud.WindowOf("move"); move.SetRunning(true); move.Forward.Set(true); Expect(move.Sample().Forward == 1f && move.Sample().Run, "segurar a seta anda, correndo quando pedido"); move.Forward.Set(false); Expect(move.Sample().Forward == 0f, "soltar para"); _checks++;
-            hud.ToggleMenu(worldMenu, world); yield return Shot("controls"); Expect(hud.OpenMenu != null && hud.OpenMenu.resolvedStyle.width > 200f, "o menu desenha"); _checks++; hud.CloseMenu();
+            yield return Shot("controls"); hud.OpenSheet(); yield return Shot("sheet"); Expect(hud.OpenMenu != null && hud.OpenMenu.resolvedStyle.width > 200f, "o menu desenha"); _checks++; hud.CloseMenu();
+            ui.SetNight(true); hud.Chat.Add(7, "Ana", "A noite chegou.", DateTimeOffset.Now); notices.Show("Boa noite.", NoticeKind.Good); yield return Shot("night"); hud.OpenSheet(); yield return Shot("night-sheet"); hud.CloseMenu(); ui.SetNight(false);
             var minimized = hud.WindowOf("camera"); minimized.SetMinimized(true); yield return null; yield return null; Expect(minimized.Minimized && minimized.resolvedStyle.height < 60f, "minimizada fica só a barra do título: " + minimized.resolvedStyle.height); _checks++;
             ui.Hints.Show(hud.NavigationBar.Q<VisualElement>("address")); Expect(ui.Hints.Shown, "a dica aparece"); 
             var list = hud.Presence.Q(null, "unity-popup-field__input"); using (var press = PointerDownEvent.GetPooled(new Event { type = EventType.MouseDown, button = 0, mousePosition = list.worldBound.center })) { press.target = list; hud.Presence.SendEvent(press); }
